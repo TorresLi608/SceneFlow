@@ -65,10 +65,15 @@ func (h *ProjectHandler) ParseProject(c *gin.Context) {
 		return
 	}
 
-	provider, key, err := h.resolveProviderKey(userID)
+	provider, key, modelFromConfig, err := h.resolveProviderConfig(userID, "script")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user provider config"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve script provider config"})
 		return
+	}
+
+	selectedModel := strings.TrimSpace(req.Model)
+	if selectedModel == "" {
+		selectedModel = modelFromConfig
 	}
 
 	h.broadcast(projectID, gin.H{
@@ -79,7 +84,7 @@ func (h *ProjectHandler) ParseProject(c *gin.Context) {
 		},
 	})
 
-	result, err := h.Parser.ParseScript(c.Request.Context(), provider, key, req.Model, script)
+	result, err := h.Parser.ParseScript(c.Request.Context(), provider, key, selectedModel, script)
 	if err != nil {
 		_ = h.DB.Model(&project).Updates(map[string]any{"status": "idle"}).Error
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to parse script: " + err.Error()})
@@ -146,6 +151,7 @@ func (h *ProjectHandler) ensureProject(projectID string, userID uint, script str
 			UserID:         userID,
 			OriginalScript: script,
 			Status:         "parsing",
+			VideoStatus:    "idle",
 		}
 		if createErr := h.DB.Create(&project).Error; createErr != nil {
 			return models.Project{}, createErr
@@ -154,25 +160,6 @@ func (h *ProjectHandler) ensureProject(projectID string, userID uint, script str
 	default:
 		return models.Project{}, err
 	}
-}
-
-func (h *ProjectHandler) resolveProviderKey(userID uint) (string, string, error) {
-	var config models.UserConfig
-	if err := h.DB.Where("user_id = ? AND is_active = ?", userID, true).
-		Order("updated_at DESC").
-		First(&config).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", "", nil
-		}
-		return "", "", err
-	}
-
-	plainKey, err := security.Decrypt(config.EncryptedKey, h.AESKey)
-	if err != nil {
-		return "", "", err
-	}
-
-	return strings.ToLower(strings.TrimSpace(config.Provider)), plainKey, nil
 }
 
 func (h *ProjectHandler) replaceScenes(projectID string, script string, drafts []ai.SceneDraft) ([]models.Scene, error) {
@@ -215,6 +202,39 @@ func (h *ProjectHandler) replaceScenes(projectID string, script string, drafts [
 	return scenes, nil
 }
 
+func (h *ProjectHandler) loadProjectForUser(projectID string, userID uint) (models.Project, error) {
+	var project models.Project
+	if err := h.DB.Where("id = ?", projectID).First(&project).Error; err != nil {
+		return models.Project{}, err
+	}
+
+	if project.UserID != userID {
+		return models.Project{}, errProjectForbidden
+	}
+
+	return project, nil
+}
+
+func (h *ProjectHandler) resolveProviderConfig(userID uint, purpose string) (provider string, apiKey string, model string, err error) {
+	purpose = normalizePurpose(purpose)
+	var config models.UserConfig
+	if err := h.DB.Where("user_id = ? AND purpose = ? AND is_active = ?", userID, purpose, true).
+		Order("updated_at DESC").
+		First(&config).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return "", "", "", nil
+		}
+		return "", "", "", err
+	}
+
+	plainKey, err := security.Decrypt(config.EncryptedKey, h.AESKey)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	return strings.ToLower(strings.TrimSpace(config.Provider)), plainKey, strings.TrimSpace(config.ModelName), nil
+}
+
 func (h *ProjectHandler) broadcast(projectID string, payload any) {
 	if h.Hub == nil {
 		return
@@ -238,6 +258,7 @@ func serializeScenes(scenes []models.Scene) []gin.H {
 			"audio": gin.H{
 				"url":      emptyToNil(scene.AudioURL),
 				"status":   scene.AudioStatus,
+				"progress": 0,
 				"duration": 0,
 			},
 		})

@@ -19,6 +19,7 @@ Copy `.env.example` to `.env.local` and adjust if needed:
 
 ```bash
 NEXT_PUBLIC_BFF_BASE_URL=
+NEXT_PUBLIC_WS_BASE_URL=ws://127.0.0.1:8080
 BACKEND_API_BASE_URL=http://127.0.0.1:8080
 ```
 
@@ -36,4 +37,6 @@ BACKEND_API_BASE_URL=http://127.0.0.1:8080
 - Action layer (`src/actions/*`) for page/component data operations
 - Workbench layout with left sidebar menu and multi-project list
 - Real script parsing (`/api/projects/:id/parse`) via BFF + action layer
+- Real generate trigger (`/api/projects/:id/generate`) via BFF + action layer
+- WebSocket real-time scene/project updates (`/ws/projects/:id`)
 - Project list/config list/scene list skeleton + entry animations

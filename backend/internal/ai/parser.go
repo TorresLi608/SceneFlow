@@ -264,6 +264,10 @@ func pickModel(provider string, requested string) string {
 	switch provider {
 	case "deepseek":
 		return "deepseek-chat"
+	case "qwen":
+		return "qwen-plus"
+	case "doubao":
+		return "doubao-seed-1-6-250615"
 	default:
 		return "gpt-4o-mini"
 	}
@@ -275,6 +279,10 @@ func endpointForProvider(provider string) (string, error) {
 		return "https://api.openai.com/v1/chat/completions", nil
 	case "deepseek":
 		return "https://api.deepseek.com/chat/completions", nil
+	case "qwen":
+		return "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", nil
+	case "doubao":
+		return "https://ark.cn-beijing.volces.com/api/v3/chat/completions", nil
 	default:
 		return "", fmt.Errorf("unsupported provider: %s", provider)
 	}

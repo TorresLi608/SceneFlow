@@ -22,13 +22,13 @@ export const useUserStore = create<UserStoreState>()(
     (set) => ({
       token: null,
       user: null,
-      selectedModel: "gpt-4o",
+      selectedModel: "qwen-plus",
       hydrated: false,
       setAuth: (token, user) => set({ token, user }),
       setUser: (user) => set({ user }),
       setSelectedModel: (selectedModel) => set({ selectedModel }),
       setHydrated: (hydrated) => set({ hydrated }),
-      logout: () => set({ token: null, user: null, selectedModel: "gpt-4o" }),
+      logout: () => set({ token: null, user: null, selectedModel: "qwen-plus" }),
     }),
     {
       name: STORE_KEY,

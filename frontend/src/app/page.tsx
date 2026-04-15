@@ -1,15 +1,18 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Clapperboard,
+  Film,
   FolderKanban,
   LayoutDashboard,
   LogOut,
   Plus,
   Settings2,
+  Sparkles,
+  Trash2,
   WandSparkles,
 } from "lucide-react";
 import {
@@ -22,10 +25,16 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
-import { getProjectTemplatesAction, parseProjectAction } from "@/actions/projects-actions";
+import {
+  deleteProjectAction,
+  generateProjectAction,
+  generateVideoAction,
+  getProjectTemplatesAction,
+  optimizeProjectAction,
+  parseProjectAction,
+} from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { getMeAction } from "@/actions/user-actions";
-import { SceneCard } from "@/components/workbench/scene-card";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,11 +49,13 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { SceneCard } from "@/components/workbench/scene-card";
 import { resolveRequestError } from "@/lib/http/errors";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { ModelOption } from "@/types/auth";
+import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
 
 const formatter = new Intl.DateTimeFormat("zh-CN", {
   month: "2-digit",
@@ -53,12 +64,23 @@ const formatter = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
 });
 
+const wsBaseURL =
+  (process.env.NEXT_PUBLIC_WS_BASE_URL?.trim() || "ws://127.0.0.1:8080").replace(/\/$/, "");
+
+function isTaskStatus(value: unknown): value is SceneTaskStatus | "idle" {
+  return (
+    value === "idle" || value === "generating" || value === "success" || value === "error"
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const wsRef = useRef<WebSocket | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [parseMessage, setParseMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
 
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
@@ -74,8 +96,11 @@ export default function HomePage() {
   const initializeProjects = useProjectStore((state) => state.initializeProjects);
   const selectProject = useProjectStore((state) => state.selectProject);
   const createProject = useProjectStore((state) => state.createProject);
+  const removeProject = useProjectStore((state) => state.removeProject);
   const setProjectStatus = useProjectStore((state) => state.setProjectStatus);
+  const updateProjectFields = useProjectStore((state) => state.updateProjectFields);
   const applyParsedScenes = useProjectStore((state) => state.applyParsedScenes);
+  const applySceneStreamUpdate = useProjectStore((state) => state.applySceneStreamUpdate);
   const updateCurrentScript = useProjectStore((state) => state.updateCurrentScript);
   const updateScene = useProjectStore((state) => state.updateScene);
   const reorderScenes = useProjectStore((state) => state.reorderScenes);
@@ -105,7 +130,7 @@ export default function HomePage() {
         model: params.model,
       }),
     onMutate: ({ projectId }) => {
-      setParseMessage(null);
+      setStatusMessage(null);
       setProjectStatus(projectId, "parsing");
     },
     onSuccess: (response) => {
@@ -118,16 +143,96 @@ export default function HomePage() {
       );
 
       if (response.warning) {
-        setParseMessage(response.warning);
+        setStatusMessage(response.warning);
       } else if (response.source === "llm") {
-        setParseMessage("分镜解析完成（LLM）");
+        setStatusMessage("分镜解析完成（LLM）");
       } else {
-        setParseMessage("分镜解析完成（Fallback）");
+        setStatusMessage("分镜解析完成（Fallback）");
       }
     },
     onError: (error, variables) => {
       setProjectStatus(variables.projectId, "idle");
-      setParseMessage(resolveRequestError(error, "分镜解析失败，请检查模型配置或稍后重试"));
+      setStatusMessage(resolveRequestError(error, "分镜解析失败，请检查模型配置或稍后重试"));
+    },
+  });
+
+  const generateProjectMutation = useMutation({
+    mutationFn: (params: { projectId: string; model: string }) =>
+      generateProjectAction(params.projectId, { model: params.model }),
+    onMutate: ({ projectId }) => {
+      setStatusMessage(null);
+      setProjectStatus(projectId, "generating");
+    },
+    onSuccess: () => {
+      setStatusMessage("已启动并发生成，正在接收实时进度...");
+    },
+    onError: (error, variables) => {
+      setProjectStatus(variables.projectId, "idle");
+      setStatusMessage(resolveRequestError(error, "一键生成启动失败，请稍后重试"));
+    },
+  });
+
+  const optimizeProjectMutation = useMutation({
+    mutationFn: (params: { projectId: string; script: string; model: string }) =>
+      optimizeProjectAction(params.projectId, {
+        script: params.script,
+        model: params.model,
+      }),
+    onMutate: () => {
+      setStatusMessage(null);
+    },
+    onSuccess: (response, variables) => {
+      updateProjectFields(variables.projectId, {
+        originalScript: response.optimizedScript,
+        status: "idle",
+      });
+
+      if (response.warning) {
+        setStatusMessage(`剧本优化完成（${response.source}）: ${response.warning}`);
+      } else {
+        setStatusMessage(`剧本优化完成（${response.source.toUpperCase()}）`);
+      }
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, "剧本优化失败，请检查脚本和配置"));
+    },
+  });
+
+  const generateVideoMutation = useMutation({
+    mutationFn: (params: { projectId: string; model: string }) =>
+      generateVideoAction(params.projectId, { model: params.model }),
+    onMutate: ({ projectId }) => {
+      setStatusMessage(null);
+      updateProjectFields(projectId, {
+        status: "video_generating",
+        videoStatus: "generating",
+        videoProgress: 0,
+      });
+    },
+    onSuccess: () => {
+      setStatusMessage("视频生成任务已启动（Seedance 2.0）");
+    },
+    onError: (error, variables) => {
+      updateProjectFields(variables.projectId, {
+        status: "idle",
+        videoStatus: "idle",
+        videoProgress: 0,
+      });
+      setStatusMessage(resolveRequestError(error, "视频生成启动失败，请检查 Seedance 配置"));
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: string) => deleteProjectAction(projectId),
+    onMutate: () => {
+      setStatusMessage(null);
+    },
+    onSuccess: (_, projectId) => {
+      removeProject(projectId);
+      setStatusMessage("项目已删除");
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, "删除项目失败，请稍后重试"));
     },
   });
 
@@ -164,6 +269,131 @@ export default function HomePage() {
 
     initializeProjects(projectTemplatesQuery.data.projects);
   }, [initializeProjects, projectTemplatesQuery.data?.projects]);
+
+  useEffect(() => {
+    if (!hydrated || !token || !selectedProjectId) {
+      return;
+    }
+
+    const wsURL = `${wsBaseURL}/ws/projects/${selectedProjectId}?token=${encodeURIComponent(token)}`;
+    const socket = new WebSocket(wsURL);
+    wsRef.current = socket;
+
+    socket.onopen = () => {
+      setWsConnected(true);
+    };
+
+    socket.onclose = () => {
+      setWsConnected(false);
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          type?: string;
+          projectId?: string;
+          sceneId?: string;
+          data?: Record<string, unknown>;
+        };
+
+        if (!payload.projectId || payload.projectId !== selectedProjectId) {
+          return;
+        }
+
+        if (payload.type === "PROJECT_UPDATE") {
+          const status = payload.data?.status;
+          const warning = payload.data?.warning;
+          const optimizedScript = payload.data?.optimizedScript;
+          const videoStatus = payload.data?.videoStatus;
+          const videoProgress = payload.data?.videoProgress;
+          const videoUrl = payload.data?.videoUrl;
+
+          if (typeof status === "string") {
+            setProjectStatus(payload.projectId, status as ProjectStatus);
+          }
+
+          const patch: Parameters<typeof updateProjectFields>[1] = {};
+          if (typeof optimizedScript === "string") {
+            patch.originalScript = optimizedScript;
+          }
+          if (isTaskStatus(videoStatus)) {
+            patch.videoStatus = videoStatus;
+          }
+          if (typeof videoProgress === "number") {
+            patch.videoProgress = videoProgress;
+          }
+          if (typeof videoUrl === "string") {
+            patch.videoUrl = videoUrl;
+          }
+          if (Object.keys(patch).length > 0) {
+            updateProjectFields(payload.projectId, patch);
+          }
+
+          if (typeof warning === "string" && warning.trim()) {
+            setStatusMessage(warning);
+          }
+
+          if (status === "done") {
+            setStatusMessage("并发生成完成");
+          }
+
+          if (videoStatus === "success") {
+            setStatusMessage("视频生成完成");
+          }
+
+          return;
+        }
+
+        if (payload.type === "VIDEO_UPDATE") {
+          const videoStatus = payload.data?.videoStatus;
+          const videoProgress = payload.data?.videoProgress;
+          const videoUrl = payload.data?.videoUrl;
+
+          const patch: Parameters<typeof updateProjectFields>[1] = {};
+          if (isTaskStatus(videoStatus)) {
+            patch.videoStatus = videoStatus;
+          }
+          if (typeof videoProgress === "number") {
+            patch.videoProgress = videoProgress;
+          }
+          if (typeof videoUrl === "string") {
+            patch.videoUrl = videoUrl;
+          }
+          if (Object.keys(patch).length > 0) {
+            updateProjectFields(payload.projectId, patch);
+          }
+
+          return;
+        }
+
+        if (payload.type === "PROJECT_DELETED") {
+          removeProject(payload.projectId);
+          setStatusMessage("当前项目已删除");
+          return;
+        }
+
+        if (payload.type === "SCENE_UPDATE" && payload.sceneId) {
+          applySceneStreamUpdate(payload.projectId, payload.sceneId, payload.data as SceneUpdatePayload);
+        }
+      } catch {
+        // Ignore malformed messages.
+      }
+    };
+
+    return () => {
+      socket.close();
+      wsRef.current = null;
+      setWsConnected(false);
+    };
+  }, [
+    hydrated,
+    token,
+    selectedProjectId,
+    applySceneStreamUpdate,
+    setProjectStatus,
+    updateProjectFields,
+    removeProject,
+  ]);
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -279,6 +509,10 @@ export default function HomePage() {
               </div>
 
               <div className="flex items-center gap-2">
+                <Badge variant="outline" className="hidden sm:inline-flex">
+                  WS: {wsConnected ? "已连接" : "未连接"}
+                </Badge>
+
                 <Select
                   value={selectedModel}
                   onValueChange={(value) => {
@@ -291,8 +525,10 @@ export default function HomePage() {
                     <SelectValue placeholder="选择模型" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                    <SelectItem value="deepseek-v3">DeepSeek-V3</SelectItem>
+                    <SelectItem value="qwen-plus">千问 Plus</SelectItem>
+                    <SelectItem value="deepseek-chat">DeepSeek Chat</SelectItem>
+                    <SelectItem value="doubao-seed-1-6-250615">豆包 Seed</SelectItem>
+                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -328,28 +564,134 @@ export default function HomePage() {
                   disabled={!currentProject}
                 />
 
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Badge variant="secondary">状态: {currentProject?.status ?? "loading"}</Badge>
-                  <Button
-                    onClick={() => {
-                      if (!currentProject) {
-                        return;
-                      }
 
-                      parseProjectMutation.mutate({
-                        projectId: currentProject.id,
-                        script: currentProject.originalScript,
-                        model: selectedModel,
-                      });
-                    }}
-                    disabled={!currentProject || currentProject.status === "parsing"}
-                  >
-                    <WandSparkles className="mr-2 size-4" />
-                    {currentProject?.status === "parsing" ? "分镜解析中..." : "智能分镜"}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!currentProject) {
+                          return;
+                        }
+
+                        optimizeProjectMutation.mutate({
+                          projectId: currentProject.id,
+                          script: currentProject.originalScript,
+                          model: selectedModel,
+                        });
+                      }}
+                      disabled={
+                        !currentProject ||
+                        optimizeProjectMutation.isPending ||
+                        currentProject.originalScript.trim().length === 0
+                      }
+                    >
+                      <Sparkles className="mr-2 size-4" />
+                      {optimizeProjectMutation.isPending ? "优化中..." : "优化剧本"}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!currentProject) {
+                          return;
+                        }
+
+                        parseProjectMutation.mutate({
+                          projectId: currentProject.id,
+                          script: currentProject.originalScript,
+                          model: selectedModel,
+                        });
+                      }}
+                      disabled={!currentProject || currentProject.status === "parsing"}
+                    >
+                      <WandSparkles className="mr-2 size-4" />
+                      {currentProject?.status === "parsing" ? "分镜解析中..." : "智能分镜"}
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        if (!currentProject) {
+                          return;
+                        }
+
+                        generateProjectMutation.mutate({
+                          projectId: currentProject.id,
+                          model: selectedModel,
+                        });
+                      }}
+                      disabled={
+                        !currentProject ||
+                        currentProject.status === "parsing" ||
+                        currentProject.status === "generating" ||
+                        currentProject.scenes.length === 0
+                      }
+                    >
+                      <Sparkles className="mr-2 size-4" />
+                      {currentProject?.status === "generating" ? "并发生成中..." : "一键生成"}
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        if (!currentProject) {
+                          return;
+                        }
+
+                        generateVideoMutation.mutate({
+                          projectId: currentProject.id,
+                          model: "seedance-2.0",
+                        });
+                      }}
+                      disabled={
+                        !currentProject ||
+                        generateVideoMutation.isPending ||
+                        currentProject.status === "parsing" ||
+                        currentProject.status === "generating" ||
+                        currentProject.status === "video_generating" ||
+                        currentProject.scenes.length === 0
+                      }
+                    >
+                      <Film className="mr-2 size-4" />
+                      {currentProject?.status === "video_generating" ? "视频生成中..." : "生成视频"}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!currentProject || deleteProjectMutation.isPending) {
+                          return;
+                        }
+                        if (!window.confirm(`确认删除项目「${currentProject.title}」吗？`)) {
+                          return;
+                        }
+                        deleteProjectMutation.mutate(currentProject.id);
+                      }}
+                      disabled={!currentProject || deleteProjectMutation.isPending}
+                    >
+                      <Trash2 className="mr-2 size-4" />
+                      {deleteProjectMutation.isPending ? "删除中..." : "删除项目"}
+                    </Button>
+                  </div>
                 </div>
 
-                {parseMessage ? <p className="text-xs text-muted-foreground">{parseMessage}</p> : null}
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">视频状态: {currentProject?.videoStatus ?? "idle"}</Badge>
+                  <Badge variant="outline">视频进度: {currentProject?.videoProgress ?? 0}%</Badge>
+                </div>
+
+                {currentProject?.videoUrl ? (
+                  <a
+                    href={currentProject.videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center text-xs text-primary underline-offset-4 hover:underline"
+                  >
+                    打开生成视频链接
+                  </a>
+                ) : null}
+
+                {statusMessage ? <p className="text-xs text-muted-foreground">{statusMessage}</p> : null}
               </CardContent>
             </Card>
 

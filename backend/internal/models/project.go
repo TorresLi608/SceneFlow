@@ -7,6 +7,8 @@ type Project struct {
 	ID             string  `gorm:"primaryKey;size:80"`
 	UserID         uint    `gorm:"index;not null"`
 	OriginalScript string  `gorm:"type:text"`
-	Status         string  `gorm:"size:20;default:'idle'"`
+	Status         string  `gorm:"size:24;default:'idle'"`
+	VideoURL       string
+	VideoStatus    string  `gorm:"size:20;default:'idle'"`
 	Scenes         []Scene `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"`
 }

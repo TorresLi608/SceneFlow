@@ -37,7 +37,7 @@
 - Validate strict JSON and persist scenes.
 - Gorilla WebSocket hub with heartbeat and broadcast.
 
-## Phase 5 - Concurrent Generation + End-to-End Sync (Planned)
+## Phase 5 - Concurrent Generation + End-to-End Sync (Completed)
 - `POST /api/projects/:id/generate` with goroutine pool.
 - Simulated image/TTS worker execution.
 - Progress streaming via channel -> WebSocket.

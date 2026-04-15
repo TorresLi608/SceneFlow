@@ -18,13 +18,17 @@ type UserConfigHandler struct {
 }
 
 type createUserConfigRequest struct {
+	Purpose  string `json:"purpose" binding:"required"`
 	Provider string `json:"provider" binding:"required,min=2,max=32"`
+	Model    string `json:"model"`
 	APIKey   string `json:"apiKey" binding:"required,min=8,max=512"`
 	IsActive bool   `json:"isActive"`
 }
 
 type updateUserConfigRequest struct {
+	Purpose  *string `json:"purpose,omitempty"`
 	Provider *string `json:"provider,omitempty"`
+	Model    *string `json:"model,omitempty"`
 	APIKey   *string `json:"apiKey,omitempty"`
 	IsActive *bool   `json:"isActive,omitempty"`
 }
@@ -42,6 +46,15 @@ func (h *UserConfigHandler) Create(c *gin.Context) {
 		return
 	}
 
+	purpose := normalizePurpose(req.Purpose)
+	provider := normalizeProvider(req.Provider)
+	model := strings.TrimSpace(req.Model)
+
+	if err := validateConfigFields(purpose, provider, model); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	encrypted, err := security.Encrypt(req.APIKey, h.AESKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt api key"})
@@ -50,7 +63,9 @@ func (h *UserConfigHandler) Create(c *gin.Context) {
 
 	config := models.UserConfig{
 		UserID:       userID,
-		Provider:     strings.TrimSpace(req.Provider),
+		Purpose:      purpose,
+		Provider:     provider,
+		ModelName:    model,
 		EncryptedKey: encrypted,
 		IsActive:     req.IsActive,
 	}
@@ -58,7 +73,7 @@ func (h *UserConfigHandler) Create(c *gin.Context) {
 	tx := h.DB.Begin()
 	if req.IsActive {
 		if err := tx.Model(&models.UserConfig{}).
-			Where("user_id = ?", userID).
+			Where("user_id = ? AND purpose = ?", userID, purpose).
 			Update("is_active", false).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset active config"})
@@ -128,16 +143,37 @@ func (h *UserConfigHandler) Update(c *gin.Context) {
 		return
 	}
 
+	purpose := config.Purpose
+	provider := config.Provider
+	model := config.ModelName
+
 	updates := map[string]any{}
 	activate := false
 
-	if req.Provider != nil {
-		provider := strings.TrimSpace(*req.Provider)
-		if len(provider) < 2 || len(provider) > 32 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "provider length must be between 2 and 32"})
+	if req.Purpose != nil {
+		nextPurpose := normalizePurpose(*req.Purpose)
+		if !isAllowedPurpose(nextPurpose) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid purpose"})
 			return
 		}
-		updates["provider"] = provider
+		purpose = nextPurpose
+		updates["purpose"] = nextPurpose
+	}
+
+	if req.Provider != nil {
+		nextProvider := normalizeProvider(*req.Provider)
+		provider = nextProvider
+		updates["provider"] = nextProvider
+	}
+
+	if req.Model != nil {
+		model = strings.TrimSpace(*req.Model)
+		updates["model_name"] = model
+	}
+
+	if err := validateConfigFields(purpose, provider, model); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	if req.APIKey != nil {
@@ -166,7 +202,7 @@ func (h *UserConfigHandler) Update(c *gin.Context) {
 	tx := h.DB.Begin()
 	if activate {
 		if err := tx.Model(&models.UserConfig{}).
-			Where("user_id = ? AND id <> ?", userID, config.ID).
+			Where("user_id = ? AND purpose = ? AND id <> ?", userID, purpose, config.ID).
 			Update("is_active", false).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset active config"})
@@ -232,9 +268,66 @@ func (h *UserConfigHandler) findOwnedConfig(c *gin.Context) (models.UserConfig, 
 func serializeConfig(config models.UserConfig) gin.H {
 	return gin.H{
 		"id":        config.ID,
+		"purpose":   config.Purpose,
 		"provider":  config.Provider,
+		"model":     config.ModelName,
 		"isActive":  config.IsActive,
 		"createdAt": config.CreatedAt,
 		"updatedAt": config.UpdatedAt,
 	}
+}
+
+func normalizePurpose(value string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(value))
+	if trimmed == "" {
+		return "script"
+	}
+	return trimmed
+}
+
+func normalizeProvider(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isAllowedPurpose(purpose string) bool {
+	switch purpose {
+	case "script", "image", "video":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateConfigFields(purpose, provider, model string) error {
+	if !isAllowedPurpose(purpose) {
+		return errBadRequest("invalid purpose")
+	}
+
+	switch purpose {
+	case "video":
+		if provider != "seedance2.0" {
+			return errBadRequest("video purpose only supports provider seedance2.0")
+		}
+		if strings.TrimSpace(model) == "" {
+			return errBadRequest("video purpose requires model")
+		}
+	default:
+		if provider != "qwen" && provider != "deepseek" && provider != "doubao" && provider != "openai" {
+			return errBadRequest("provider must be one of qwen/deepseek/doubao/openai")
+		}
+	}
+
+	return nil
+}
+
+func errBadRequest(message string) error {
+	return &requestError{message: message}
+}
+
+type requestError struct {
+	message string
+}
+
+func (e *requestError) Error() string {
+	return e.message
 }

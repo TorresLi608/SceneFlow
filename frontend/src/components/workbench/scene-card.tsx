@@ -7,6 +7,7 @@ import { GripVertical, Image as ImageIcon, Mic } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Scene } from "@/types/project";
@@ -70,6 +71,45 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
       </CardHeader>
 
       <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>图像进度</span>
+            <span>{scene.image.progress}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary transition-all duration-500"
+              style={{ width: `${scene.image.progress}%` }}
+            />
+          </div>
+
+          {scene.image.status === "generating" ? <Skeleton className="h-20 w-full" /> : null}
+          {scene.image.status === "success" ? (
+            <div className="rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+              图片已生成 {scene.image.url ? "(URL ready)" : ""}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>音频进度</span>
+            <span>{scene.audio.progress}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-emerald-500 transition-all duration-500"
+              style={{ width: `${scene.audio.progress}%` }}
+            />
+          </div>
+
+          {scene.audio.status === "success" ? (
+            <div className="rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+              音频已生成 · 时长 {scene.audio.duration.toFixed(1)}s
+            </div>
+          ) : null}
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor={`narration_${scene.id}`}>旁白</Label>
           <Textarea

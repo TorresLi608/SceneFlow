@@ -37,6 +37,11 @@ go run .
   - request body: `{ "script": "...", "model": "gpt-4o" }`
   - parses script to scenes and persists to DB
 
+### Project Generate (JWT required)
+- `POST /api/projects/:id/generate`
+  - request body: `{ "model": "gpt-4o" }` (optional)
+  - starts goroutine-based concurrent image/audio generation simulation
+
 ### WebSocket
 - `GET /ws/projects/:id?token=<JWT>`
   - heartbeat enabled
@@ -48,3 +53,4 @@ go run .
 - Password is stored by bcrypt hash.
 - Provider API keys are encrypted by AES-256-GCM before persisting.
 - Parse flow tries active provider LLM first; if missing/failed, a local fallback parser is used.
+- Generate flow streams per-scene progress events over WebSocket (`SCENE_UPDATE`).
