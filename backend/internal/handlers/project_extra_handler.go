@@ -105,6 +105,10 @@ func (h *ProjectHandler) OptimizeScript(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve script config"})
 		return
 	}
+	if strings.TrimSpace(provider) == "" || strings.TrimSpace(key) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing active script config, please validate and activate one in settings"})
+		return
+	}
 
 	selectedModel := strings.TrimSpace(req.Model)
 	if selectedModel == "" {

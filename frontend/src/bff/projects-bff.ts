@@ -95,4 +95,9 @@ export async function deleteProjectByBff(projectID: string, authorization?: stri
       Authorization: authorization,
     },
   });
+
+  return {
+    projectId: projectID,
+    deleted: true,
+  };
 }

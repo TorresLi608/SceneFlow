@@ -3,7 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { createUserConfigAction, listUserConfigsAction } from "@/actions/settings-actions";
+import {
+  createUserConfigAction,
+  listUserConfigsAction,
+  validateUserConfigAction,
+} from "@/actions/settings-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,20 +35,23 @@ interface SettingsDialogProps {
   onOpenChange: (next: boolean) => void;
 }
 
-const providerOptions: Record<ConfigPurpose, Array<{ value: string; label: string; model: string }>> = {
+const providerOptions: Record<
+  ConfigPurpose,
+  Array<{ value: string; label: string; modelSeries: string }>
+> = {
   script: [
-    { value: "qwen", label: "千问", model: "qwen-plus" },
-    { value: "deepseek", label: "DeepSeek", model: "deepseek-chat" },
-    { value: "doubao", label: "豆包", model: "doubao-seed-1-6-250615" },
-    { value: "openai", label: "OpenAI", model: "gpt-4o-mini" },
+    { value: "qwen", label: "千问", modelSeries: "qwen-plus" },
+    { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
+    { value: "doubao", label: "豆包", modelSeries: "doubao-seed-1-6-250615" },
+    { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
   ],
   image: [
-    { value: "qwen", label: "千问", model: "qwen-plus" },
-    { value: "deepseek", label: "DeepSeek", model: "deepseek-chat" },
-    { value: "doubao", label: "豆包", model: "doubao-seed-1-6-250615" },
-    { value: "openai", label: "OpenAI", model: "gpt-4o-mini" },
+    { value: "qwen", label: "千问", modelSeries: "qwen-plus" },
+    { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
+    { value: "doubao", label: "豆包", modelSeries: "doubao-seed-1-6-250615" },
+    { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
   ],
-  video: [{ value: "seedance2.0", label: "Seedance 2.0", model: "seedance-2.0" }],
+  video: [{ value: "seedance2.0", label: "Seedance 2.0", modelSeries: "seedance-2.0" }],
 };
 
 const purposeLabel: Record<ConfigPurpose, string> = {
@@ -58,9 +65,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
   const [provider, setProvider] = useState("qwen");
-  const [model, setModel] = useState("qwen-plus");
+  const [modelSeries, setModelSeries] = useState("qwen-plus");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [validationPassed, setValidationPassed] = useState(false);
 
   const configsQuery = useQuery({
     queryKey: queryKeys.userConfigs,
@@ -71,12 +79,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const saveConfigMutation = useMutation({
     mutationFn: createUserConfigAction,
     onSuccess: async () => {
-      setMessage("配置已保存并激活");
+      setMessage("配置校验通过，已保存并激活");
       setApiKey("");
+      setValidationPassed(false);
       await queryClient.invalidateQueries({ queryKey: queryKeys.userConfigs });
     },
     onError: (error) => {
       setMessage(resolveRequestError(error, "保存失败，请稍后重试"));
+    },
+  });
+
+  const validateConfigMutation = useMutation({
+    mutationFn: validateUserConfigAction,
+    onSuccess: () => {
+      setValidationPassed(true);
+      setMessage("模型校验通过，可保存配置。");
+    },
+    onError: (error) => {
+      setValidationPassed(false);
+      setMessage(resolveRequestError(error, "模型校验失败，请检查 provider / modelSeries / key"));
     },
   });
 
@@ -99,29 +120,49 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     saveConfigMutation.mutate({
       purpose,
       provider,
-      model,
+      modelSeries,
       apiKey,
       isActive: true,
     });
   };
 
   const onPurposeChange = (nextPurpose: string | null) => {
+    setValidationPassed(false);
+    setMessage(null);
     const value = (nextPurpose ?? "script") as ConfigPurpose;
     setPurpose(value);
     const nextOption = providerOptions[value][0];
     if (nextOption) {
       setProvider(nextOption.value);
-      setModel(nextOption.model);
+      setModelSeries(nextOption.modelSeries);
     }
   };
 
   const onProviderChange = (nextProvider: string | null) => {
+    setValidationPassed(false);
+    setMessage(null);
     const value = nextProvider ?? options[0]?.value ?? "qwen";
     setProvider(value);
     const hit = options.find((item) => item.value === value);
     if (hit) {
-      setModel(hit.model);
+      setModelSeries(hit.modelSeries);
     }
+  };
+
+  const validateConfig = () => {
+    if (!apiKey.trim()) {
+      setValidationPassed(false);
+      setMessage("请先输入 API Key，再进行校验");
+      return;
+    }
+
+    setMessage(null);
+    validateConfigMutation.mutate({
+      purpose,
+      provider,
+      modelSeries: modelSeries.trim(),
+      apiKey: apiKey.trim(),
+    });
   };
 
   return (
@@ -168,12 +209,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="model">模型 ID</Label>
+            <Label htmlFor="modelSeries">模型系列</Label>
             <Input
-              id="model"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="例如 qwen-plus / seedance-2.0"
+              id="modelSeries"
+              value={modelSeries}
+              onChange={(event) => {
+                setValidationPassed(false);
+                setMessage(null);
+                setModelSeries(event.target.value);
+              }}
+              placeholder="例如 qwen-plus / deepseek-chat / seedance-2.0"
               autoComplete="off"
             />
           </div>
@@ -184,10 +229,34 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               id="apiKey"
               type="password"
               value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
+              onChange={(event) => {
+                setValidationPassed(false);
+                setMessage(null);
+                setApiKey(event.target.value);
+              }}
               placeholder="输入对应 provider 的 key"
               autoComplete="off"
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={validateConfig}
+              disabled={validateConfigMutation.isPending || saveConfigMutation.isPending}
+            >
+              {validateConfigMutation.isPending ? "校验中..." : "校验模型可用性"}
+            </Button>
+            <Button
+              className="w-full"
+              onClick={saveConfig}
+              disabled={
+                saveConfigMutation.isPending || validateConfigMutation.isPending || !validationPassed
+              }
+            >
+              {saveConfigMutation.isPending ? "保存中..." : "保存并激活"}
+            </Button>
           </div>
 
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
@@ -209,10 +278,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <span className="text-sm">
-                      {purposeLabel[config.purpose]} · {config.provider} · {config.model}
+                      {purposeLabel[config.purpose]} · {config.provider} · {config.modelSeries}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {config.isActive ? "Active" : "Inactive"}
+                      {config.isActive ? "Active" : "Inactive"} ·{" "}
+                      {config.isVerified ? "Verified" : "Unverified"}
                     </span>
                   </div>
                 ))
@@ -224,10 +294,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
 
           {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
-
-          <Button className="w-full" onClick={saveConfig} disabled={saveConfigMutation.isPending}>
-            {saveConfigMutation.isPending ? "保存中..." : "保存并激活"}
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

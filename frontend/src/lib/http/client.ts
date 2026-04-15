@@ -6,7 +6,7 @@ const BFF_BASE_URL = process.env.NEXT_PUBLIC_BFF_BASE_URL?.trim() || "";
 
 export const httpClient = axios.create({
   baseURL: BFF_BASE_URL,
-  timeout: 15000,
+  timeout: 90000,
 });
 
 httpClient.interceptors.request.use((config) => {
