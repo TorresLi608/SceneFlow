@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { deleteProjectByBff } from "@/bff/projects-bff";
 import { toBffErrorResponse } from "@/bff/route-error";
+import { validateUserConfigByBff } from "@/bff/settings-bff";
 
-interface Context {
-  params: Promise<{ id: string }>;
-}
-
-export async function DELETE(request: NextRequest, context: Context) {
+export async function POST(request: NextRequest) {
   try {
-    const { id } = await context.params;
     const authorization = request.headers.get("authorization") ?? undefined;
-
-    const data = await deleteProjectByBff(id, authorization);
+    const payload = await request.json();
+    const data = await validateUserConfigByBff(payload, authorization);
     return NextResponse.json(data);
   } catch (error) {
     return toBffErrorResponse(error);

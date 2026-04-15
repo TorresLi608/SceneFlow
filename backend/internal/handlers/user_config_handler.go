@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strings"
+	"time"
 
+	"sceneflow/backend/internal/ai"
 	"sceneflow/backend/internal/middleware"
 	"sceneflow/backend/internal/models"
 	"sceneflow/backend/internal/security"
@@ -15,22 +18,33 @@ import (
 type UserConfigHandler struct {
 	DB     *gorm.DB
 	AESKey []byte
+	Parser *ai.Parser
 }
 
 type createUserConfigRequest struct {
-	Purpose  string `json:"purpose" binding:"required"`
-	Provider string `json:"provider" binding:"required,min=2,max=32"`
-	Model    string `json:"model"`
-	APIKey   string `json:"apiKey" binding:"required,min=8,max=512"`
-	IsActive bool   `json:"isActive"`
+	Purpose     string `json:"purpose" binding:"required"`
+	Provider    string `json:"provider" binding:"required,min=2,max=32"`
+	ModelSeries string `json:"modelSeries"`
+	Model       string `json:"model"`
+	APIKey      string `json:"apiKey" binding:"required,min=8,max=512"`
+	IsActive    bool   `json:"isActive"`
 }
 
 type updateUserConfigRequest struct {
-	Purpose  *string `json:"purpose,omitempty"`
-	Provider *string `json:"provider,omitempty"`
-	Model    *string `json:"model,omitempty"`
-	APIKey   *string `json:"apiKey,omitempty"`
-	IsActive *bool   `json:"isActive,omitempty"`
+	Purpose     *string `json:"purpose,omitempty"`
+	Provider    *string `json:"provider,omitempty"`
+	ModelSeries *string `json:"modelSeries,omitempty"`
+	Model       *string `json:"model,omitempty"`
+	APIKey      *string `json:"apiKey,omitempty"`
+	IsActive    *bool   `json:"isActive,omitempty"`
+}
+
+type validateUserConfigRequest struct {
+	Purpose     string `json:"purpose" binding:"required"`
+	Provider    string `json:"provider" binding:"required,min=2,max=32"`
+	ModelSeries string `json:"modelSeries"`
+	Model       string `json:"model"`
+	APIKey      string `json:"apiKey" binding:"required,min=8,max=512"`
 }
 
 func (h *UserConfigHandler) Create(c *gin.Context) {
@@ -48,9 +62,14 @@ func (h *UserConfigHandler) Create(c *gin.Context) {
 
 	purpose := normalizePurpose(req.Purpose)
 	provider := normalizeProvider(req.Provider)
-	model := strings.TrimSpace(req.Model)
+	model := normalizeModelSeries(req.ModelSeries, req.Model)
+	model = normalizeModelSeriesForProvider(provider, model)
 
 	if err := validateConfigFields(purpose, provider, model); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.validateProviderAvailability(c.Request.Context(), purpose, provider, model, req.APIKey); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -68,6 +87,7 @@ func (h *UserConfigHandler) Create(c *gin.Context) {
 		ModelName:    model,
 		EncryptedKey: encrypted,
 		IsActive:     req.IsActive,
+		IsVerified:   true,
 	}
 
 	tx := h.DB.Begin()
@@ -166,14 +186,40 @@ func (h *UserConfigHandler) Update(c *gin.Context) {
 		updates["provider"] = nextProvider
 	}
 
-	if req.Model != nil {
-		model = strings.TrimSpace(*req.Model)
+	if req.ModelSeries != nil || req.Model != nil {
+		model = normalizeModelSeries(optionalStringValue(req.ModelSeries), optionalStringValue(req.Model))
+		model = normalizeModelSeriesForProvider(provider, model)
 		updates["model_name"] = model
 	}
 
 	if err := validateConfigFields(purpose, provider, model); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	needsValidation :=
+		req.APIKey != nil || req.Provider != nil || req.ModelSeries != nil || req.Model != nil || req.Purpose != nil
+	if req.IsActive != nil && *req.IsActive {
+		needsValidation = true
+	}
+	if needsValidation {
+		plainKey := ""
+		if req.APIKey != nil {
+			plainKey = strings.TrimSpace(*req.APIKey)
+		} else {
+			existingKey, decryptErr := security.Decrypt(config.EncryptedKey, h.AESKey)
+			if decryptErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decrypt existing api key"})
+				return
+			}
+			plainKey = existingKey
+		}
+
+		if err := h.validateProviderAvailability(c.Request.Context(), purpose, provider, model, plainKey); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		updates["is_verified"] = true
 	}
 
 	if req.APIKey != nil {
@@ -244,6 +290,38 @@ func (h *UserConfigHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *UserConfigHandler) Validate(c *gin.Context) {
+	var req validateUserConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	purpose := normalizePurpose(req.Purpose)
+	provider := normalizeProvider(req.Provider)
+	model := normalizeModelSeries(req.ModelSeries, req.Model)
+	model = normalizeModelSeriesForProvider(provider, model)
+	apiKey := strings.TrimSpace(req.APIKey)
+
+	if err := validateConfigFields(purpose, provider, model); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.validateProviderAvailability(c.Request.Context(), purpose, provider, model, apiKey); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"valid":       true,
+		"purpose":     purpose,
+		"provider":    provider,
+		"modelSeries": model,
+		"model":       model, // Backward compatible.
+	})
+}
+
 func (h *UserConfigHandler) findOwnedConfig(c *gin.Context) (models.UserConfig, bool) {
 	userID, ok := middleware.CurrentUserID(c)
 	if !ok {
@@ -267,13 +345,15 @@ func (h *UserConfigHandler) findOwnedConfig(c *gin.Context) (models.UserConfig, 
 
 func serializeConfig(config models.UserConfig) gin.H {
 	return gin.H{
-		"id":        config.ID,
-		"purpose":   config.Purpose,
-		"provider":  config.Provider,
-		"model":     config.ModelName,
-		"isActive":  config.IsActive,
-		"createdAt": config.CreatedAt,
-		"updatedAt": config.UpdatedAt,
+		"id":          config.ID,
+		"purpose":     config.Purpose,
+		"provider":    config.Provider,
+		"modelSeries": config.ModelName,
+		"model":       config.ModelName, // Backward compatible.
+		"isActive":    config.IsActive,
+		"isVerified":  config.IsVerified,
+		"createdAt":   config.CreatedAt,
+		"updatedAt":   config.UpdatedAt,
 	}
 }
 
@@ -309,7 +389,7 @@ func validateConfigFields(purpose, provider, model string) error {
 			return errBadRequest("video purpose only supports provider seedance2.0")
 		}
 		if strings.TrimSpace(model) == "" {
-			return errBadRequest("video purpose requires model")
+			return errBadRequest("video purpose requires modelSeries")
 		}
 	default:
 		if provider != "qwen" && provider != "deepseek" && provider != "doubao" && provider != "openai" {
@@ -330,4 +410,67 @@ type requestError struct {
 
 func (e *requestError) Error() string {
 	return e.message
+}
+
+func normalizeModelSeries(modelSeries string, legacyModel string) string {
+	series := strings.TrimSpace(modelSeries)
+	if series != "" {
+		return series
+	}
+	return strings.TrimSpace(legacyModel)
+}
+
+func optionalStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func normalizeModelSeriesForProvider(provider string, modelSeries string) string {
+	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+	series := strings.TrimSpace(modelSeries)
+	if series == "" {
+		return ""
+	}
+
+	switch normalizedProvider {
+	case "qwen", "deepseek", "doubao", "openai":
+		return strings.ToLower(series)
+	default:
+		return series
+	}
+}
+
+func (h *UserConfigHandler) validateProviderAvailability(
+	ctx context.Context,
+	purpose string,
+	provider string,
+	model string,
+	apiKey string,
+) error {
+	if strings.TrimSpace(apiKey) == "" {
+		return errBadRequest("apiKey is required")
+	}
+
+	if purpose == "video" {
+		return nil
+	}
+
+	if h.Parser == nil {
+		return errBadRequest("validator is unavailable, please retry later")
+	}
+
+	validateCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+
+	if err := h.Parser.ValidateProviderModel(validateCtx, provider, apiKey, model); err != nil {
+		message := strings.TrimSpace(err.Error())
+		if len(message) > 180 {
+			message = message[:180] + "..."
+		}
+		return errBadRequest("model validation failed: " + message)
+	}
+
+	return nil
 }

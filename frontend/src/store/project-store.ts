@@ -110,10 +110,9 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
     set((state) => {
       const nextProjects = state.projects.filter((project) => project.id !== projectId);
       if (nextProjects.length === 0) {
-        const fallback = createEmptyProject(1);
         return {
-          projects: [fallback],
-          selectedProjectId: fallback.id,
+          projects: [],
+          selectedProjectId: "",
           initialized: true,
         };
       }

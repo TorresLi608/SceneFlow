@@ -26,8 +26,8 @@ func main() {
 
 	authHandler := &handlers.AuthHandler{DB: db, JWTSecret: cfg.JWTSecret}
 	userHandler := &handlers.UserHandler{DB: db}
-	userConfigHandler := &handlers.UserConfigHandler{DB: db, AESKey: cfg.AESKey}
 	parser := ai.NewParser()
+	userConfigHandler := &handlers.UserConfigHandler{DB: db, AESKey: cfg.AESKey, Parser: parser}
 	hub := ws.NewHub()
 	projectHandler := &handlers.ProjectHandler{DB: db, AESKey: cfg.AESKey, Parser: parser, Hub: hub}
 	projectWSHandler := &handlers.ProjectWSHandler{DB: db, JWTSecret: cfg.JWTSecret, Hub: hub}
@@ -67,6 +67,7 @@ func main() {
 			protected.DELETE("/users/me", userHandler.DeleteMe)
 
 			protected.POST("/settings/keys", userConfigHandler.Create)
+			protected.POST("/settings/keys/validate", userConfigHandler.Validate)
 			protected.GET("/settings/keys", userConfigHandler.List)
 			protected.GET("/settings/keys/:id", userConfigHandler.Get)
 			protected.PATCH("/settings/keys/:id", userConfigHandler.Update)

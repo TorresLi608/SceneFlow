@@ -1,4 +1,4 @@
-export type ModelOption = "qwen-plus" | "deepseek-chat" | "doubao-seed-1-6-250615" | "gpt-4o-mini";
+export type ModelOption = string;
 
 export type ConfigPurpose = "script" | "image" | "video";
 
@@ -22,8 +22,10 @@ export interface UserConfig {
   id: number;
   purpose: ConfigPurpose;
   provider: string;
-  model: string;
+  modelSeries: string;
+  model?: string;
   isActive: boolean;
+  isVerified: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,7 +41,22 @@ export interface UserConfigItemResponse {
 export interface CreateUserConfigInput {
   purpose: ConfigPurpose;
   provider: string;
-  model: string;
+  modelSeries: string;
   apiKey: string;
   isActive: boolean;
+}
+
+export interface ValidateUserConfigInput {
+  purpose: ConfigPurpose;
+  provider: string;
+  modelSeries: string;
+  apiKey: string;
+}
+
+export interface ValidateUserConfigResponse {
+  valid: boolean;
+  purpose: ConfigPurpose;
+  provider: string;
+  modelSeries: string;
+  model?: string;
 }

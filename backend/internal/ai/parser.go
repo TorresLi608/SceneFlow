@@ -49,26 +49,104 @@ func (p *Parser) ParseScript(
 	selectedModel := pickModel(normalizedProvider, model)
 
 	if normalizedProvider == "" || strings.TrimSpace(apiKey) == "" {
-		return ParseResult{
-			Scenes:  fallbackScenes(normalizedScript),
-			Source:  "fallback",
-			Warning: "missing active provider config, fallback parser used",
-		}, nil
+		return ParseResult{}, errors.New("missing active script model config")
 	}
 
 	scenes, err := p.parseWithProvider(ctx, normalizedProvider, strings.TrimSpace(apiKey), selectedModel, normalizedScript)
 	if err != nil {
-		return ParseResult{
-			Scenes:  fallbackScenes(normalizedScript),
-			Source:  "fallback",
-			Warning: fmt.Sprintf("provider parse failed: %v; fallback parser used", err),
-		}, nil
+		return ParseResult{}, err
 	}
 
 	return ParseResult{
 		Scenes: scenes,
 		Source: "llm",
 	}, nil
+}
+
+func (p *Parser) ValidateProviderModel(
+	ctx context.Context,
+	provider string,
+	apiKey string,
+	model string,
+) error {
+	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+	plainKey := strings.TrimSpace(apiKey)
+	if normalizedProvider == "" {
+		return errors.New("provider is required")
+	}
+	if plainKey == "" {
+		return errors.New("apiKey is required")
+	}
+
+	endpoint, err := endpointForProvider(normalizedProvider)
+	if err != nil {
+		return err
+	}
+
+	payload := map[string]any{
+		"model":       pickModel(normalizedProvider, model),
+		"temperature": 0,
+		"max_tokens":  12,
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": "reply with ok",
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+plainKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode >= 300 {
+		message := strings.TrimSpace(string(respBody))
+		if len(message) > 180 {
+			message = message[:180] + "..."
+		}
+		return fmt.Errorf("provider status %d: %s", resp.StatusCode, message)
+	}
+
+	var completion struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &completion); err != nil {
+		return err
+	}
+
+	if len(completion.Choices) == 0 {
+		return errors.New("empty choices from provider")
+	}
+
+	content := strings.TrimSpace(completion.Choices[0].Message.Content)
+	if content == "" {
+		return errors.New("empty content from provider")
+	}
+
+	return nil
 }
 
 func (p *Parser) parseWithProvider(
@@ -258,7 +336,12 @@ func fallbackScenes(script string) []SceneDraft {
 func pickModel(provider string, requested string) string {
 	trimmed := strings.TrimSpace(requested)
 	if trimmed != "" {
-		return trimmed
+		switch provider {
+		case "qwen", "deepseek", "doubao", "openai":
+			return strings.ToLower(trimmed)
+		default:
+			return trimmed
+		}
 	}
 
 	switch provider {

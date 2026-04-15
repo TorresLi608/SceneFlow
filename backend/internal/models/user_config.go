@@ -10,4 +10,5 @@ type UserConfig struct {
 	ModelName    string `gorm:"size:64"`
 	EncryptedKey string `gorm:"type:text;not null"`
 	IsActive     bool   `gorm:"default:false"`
+	IsVerified   bool   `gorm:"default:false"`
 }

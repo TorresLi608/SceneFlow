@@ -33,12 +33,12 @@ func (p *Parser) OptimizeScript(
 	selectedModel := pickModel(normalizedProvider, model)
 
 	if normalizedProvider == "" || strings.TrimSpace(apiKey) == "" {
-		return fallbackOptimize(normalizedScript, "missing active script config, fallback optimizer used"), nil
+		return OptimizeResult{}, fmt.Errorf("missing active script model config")
 	}
 
 	endpoint, err := endpointForProvider(normalizedProvider)
 	if err != nil {
-		return fallbackOptimize(normalizedScript, "unsupported provider, fallback optimizer used"), nil
+		return OptimizeResult{}, err
 	}
 
 	payload := map[string]any{
@@ -73,7 +73,7 @@ func (p *Parser) OptimizeScript(
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return fallbackOptimize(normalizedScript, "provider optimize call failed, fallback optimizer used"), nil
+		return OptimizeResult{}, err
 	}
 	defer resp.Body.Close()
 
@@ -83,7 +83,11 @@ func (p *Parser) OptimizeScript(
 	}
 
 	if resp.StatusCode >= 300 {
-		return fallbackOptimize(normalizedScript, "provider optimize failed, fallback optimizer used"), nil
+		message := strings.TrimSpace(string(respBody))
+		if len(message) > 220 {
+			message = message[:220] + "..."
+		}
+		return OptimizeResult{}, fmt.Errorf("provider status %d: %s", resp.StatusCode, message)
 	}
 
 	var completion struct {
@@ -98,18 +102,17 @@ func (p *Parser) OptimizeScript(
 	}
 
 	if len(completion.Choices) == 0 {
-		return fallbackOptimize(normalizedScript, "empty optimize response, fallback optimizer used"), nil
+		return OptimizeResult{}, fmt.Errorf("empty optimize response")
 	}
 
 	content := strings.TrimSpace(completion.Choices[0].Message.Content)
 	if content == "" {
-		return fallbackOptimize(normalizedScript, "empty optimize content, fallback optimizer used"), nil
+		return OptimizeResult{}, fmt.Errorf("empty optimize content")
 	}
 
 	result, err := decodeOptimizeResult(content)
 	if err != nil {
-		fallback := fallbackOptimize(normalizedScript, "invalid optimize json, fallback optimizer used")
-		return fallback, nil
+		return OptimizeResult{}, err
 	}
 
 	result.Source = "llm"

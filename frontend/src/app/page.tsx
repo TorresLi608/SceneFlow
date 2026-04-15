@@ -34,6 +34,7 @@ import {
   parseProjectAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { listUserConfigsAction } from "@/actions/settings-actions";
 import { getMeAction } from "@/actions/user-actions";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -122,6 +123,31 @@ export default function HomePage() {
     enabled: hydrated && Boolean(token) && !initialized,
     staleTime: 300_000,
   });
+
+  const userConfigsQuery = useQuery({
+    queryKey: queryKeys.userConfigs,
+    queryFn: listUserConfigsAction,
+    enabled: hydrated && Boolean(token),
+    staleTime: 30_000,
+  });
+
+  const activeScriptConfigs = useMemo(
+    () =>
+      (userConfigsQuery.data?.configs ?? []).filter(
+        (config) =>
+          config.isActive &&
+          config.isVerified &&
+          config.purpose === "script" &&
+          config.modelSeries.trim().length > 0
+      ),
+    [userConfigsQuery.data?.configs]
+  );
+  const hasUsableScriptConfig = activeScriptConfigs.length > 0;
+  const selectableModels = useMemo(
+    () =>
+      Array.from(new Set(activeScriptConfigs.map((config) => config.modelSeries.trim()).filter(Boolean))),
+    [activeScriptConfigs]
+  );
 
   const parseProjectMutation = useMutation({
     mutationFn: (params: { projectId: string; script: string; model: string }) =>
@@ -269,6 +295,16 @@ export default function HomePage() {
 
     initializeProjects(projectTemplatesQuery.data.projects);
   }, [initializeProjects, projectTemplatesQuery.data?.projects]);
+
+  useEffect(() => {
+    if (!hasUsableScriptConfig || selectableModels.length === 0) {
+      return;
+    }
+
+    if (!selectableModels.includes(selectedModel)) {
+      setSelectedModel(selectableModels[0]);
+    }
+  }, [hasUsableScriptConfig, selectableModels, selectedModel, setSelectedModel]);
 
   useEffect(() => {
     if (!hydrated || !token || !selectedProjectId) {
@@ -515,6 +551,7 @@ export default function HomePage() {
 
                 <Select
                   value={selectedModel}
+                  disabled={!hasUsableScriptConfig}
                   onValueChange={(value) => {
                     if (value) {
                       setSelectedModel(value as ModelOption);
@@ -522,13 +559,16 @@ export default function HomePage() {
                   }}
                 >
                   <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="选择模型" />
+                    <SelectValue
+                      placeholder={hasUsableScriptConfig ? "选择模型" : "先在设置中校验并激活 script 模型"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="qwen-plus">千问 Plus</SelectItem>
-                    <SelectItem value="deepseek-chat">DeepSeek Chat</SelectItem>
-                    <SelectItem value="doubao-seed-1-6-250615">豆包 Seed</SelectItem>
-                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
+                    {selectableModels.map((model) => (
+                      <SelectItem key={model} value={model}>
+                        {model}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
 
@@ -583,6 +623,7 @@ export default function HomePage() {
                       }}
                       disabled={
                         !currentProject ||
+                        !hasUsableScriptConfig ||
                         optimizeProjectMutation.isPending ||
                         currentProject.originalScript.trim().length === 0
                       }
@@ -604,7 +645,7 @@ export default function HomePage() {
                           model: selectedModel,
                         });
                       }}
-                      disabled={!currentProject || currentProject.status === "parsing"}
+                      disabled={!currentProject || !hasUsableScriptConfig || currentProject.status === "parsing"}
                     >
                       <WandSparkles className="mr-2 size-4" />
                       {currentProject?.status === "parsing" ? "分镜解析中..." : "智能分镜"}
@@ -623,6 +664,7 @@ export default function HomePage() {
                       }}
                       disabled={
                         !currentProject ||
+                        !hasUsableScriptConfig ||
                         currentProject.status === "parsing" ||
                         currentProject.status === "generating" ||
                         currentProject.scenes.length === 0
@@ -689,6 +731,12 @@ export default function HomePage() {
                   >
                     打开生成视频链接
                   </a>
+                ) : null}
+
+                {!hasUsableScriptConfig ? (
+                  <p className="text-xs text-amber-600">
+                    请先在设置中完成 script 模型的可用性校验并保存激活后，再进行优化剧本和智能分镜。
+                  </p>
                 ) : null}
 
                 {statusMessage ? <p className="text-xs text-muted-foreground">{statusMessage}</p> : null}
