@@ -16,7 +16,7 @@ export const makeScene = (index: number, narration: string, visualPrompt: string
   narration,
   visualPrompt,
   image: { url: null, status: "idle", progress: 0 },
-  audio: { url: null, status: "idle", duration: 0 },
+  audio: { url: null, status: "idle", progress: 0, duration: 0 },
 });
 
 export const normalizeOrder = (scenes: Scene[]) =>
@@ -68,6 +68,9 @@ export const createTemplateProjects = (): Project[] => {
       title: "赛博追光 预告片",
       originalScript: launchScript,
       status: "idle",
+      videoStatus: "idle",
+      videoProgress: 0,
+      videoUrl: null,
       updatedAt: nowISO(),
       scenes: scriptToScenes(launchScript),
     },
@@ -76,6 +79,9 @@ export const createTemplateProjects = (): Project[] => {
       title: "品牌短片 - 开场",
       originalScript: brandScript,
       status: "idle",
+      videoStatus: "idle",
+      videoProgress: 0,
+      videoUrl: null,
       updatedAt: nowISO(),
       scenes: scriptToScenes(brandScript),
     },
@@ -87,6 +93,9 @@ export const createEmptyProject = (sequence: number): Project => ({
   title: `新项目 ${sequence}`,
   originalScript: "",
   status: "idle",
+  videoStatus: "idle",
+  videoProgress: 0,
+  videoUrl: null,
   updatedAt: nowISO(),
   scenes: scriptToScenes(""),
 });

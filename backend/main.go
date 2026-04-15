@@ -73,6 +73,10 @@ func main() {
 			protected.DELETE("/settings/keys/:id", userConfigHandler.Delete)
 
 			protected.POST("/projects/:id/parse", projectHandler.ParseProject)
+			protected.POST("/projects/:id/optimize", projectHandler.OptimizeScript)
+			protected.POST("/projects/:id/generate", projectHandler.GenerateProject)
+			protected.POST("/projects/:id/generate-video", projectHandler.GenerateVideo)
+			protected.DELETE("/projects/:id", projectHandler.DeleteProject)
 		}
 	}
 

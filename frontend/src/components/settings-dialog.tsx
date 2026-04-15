@@ -24,16 +24,41 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveRequestError } from "@/lib/http/errors";
+import type { ConfigPurpose } from "@/types/auth";
 
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }
 
+const providerOptions: Record<ConfigPurpose, Array<{ value: string; label: string; model: string }>> = {
+  script: [
+    { value: "qwen", label: "千问", model: "qwen-plus" },
+    { value: "deepseek", label: "DeepSeek", model: "deepseek-chat" },
+    { value: "doubao", label: "豆包", model: "doubao-seed-1-6-250615" },
+    { value: "openai", label: "OpenAI", model: "gpt-4o-mini" },
+  ],
+  image: [
+    { value: "qwen", label: "千问", model: "qwen-plus" },
+    { value: "deepseek", label: "DeepSeek", model: "deepseek-chat" },
+    { value: "doubao", label: "豆包", model: "doubao-seed-1-6-250615" },
+    { value: "openai", label: "OpenAI", model: "gpt-4o-mini" },
+  ],
+  video: [{ value: "seedance2.0", label: "Seedance 2.0", model: "seedance-2.0" }],
+};
+
+const purposeLabel: Record<ConfigPurpose, string> = {
+  script: "剧本/提示词",
+  image: "图片生成",
+  video: "视频生成",
+};
+
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const queryClient = useQueryClient();
 
-  const [provider, setProvider] = useState("OpenAI");
+  const [purpose, setPurpose] = useState<ConfigPurpose>("script");
+  const [provider, setProvider] = useState("qwen");
+  const [model, setModel] = useState("qwen-plus");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -55,6 +80,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     },
   });
 
+  const options = providerOptions[purpose];
+
   const hasConfigs = (configsQuery.data?.configs?.length ?? 0) > 0;
 
   const orderedConfigs = useMemo(
@@ -70,34 +97,85 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
     setMessage(null);
     saveConfigMutation.mutate({
+      purpose,
       provider,
+      model,
       apiKey,
       isActive: true,
     });
   };
 
+  const onPurposeChange = (nextPurpose: string | null) => {
+    const value = (nextPurpose ?? "script") as ConfigPurpose;
+    setPurpose(value);
+    const nextOption = providerOptions[value][0];
+    if (nextOption) {
+      setProvider(nextOption.value);
+      setModel(nextOption.model);
+    }
+  };
+
+  const onProviderChange = (nextProvider: string | null) => {
+    const value = nextProvider ?? options[0]?.value ?? "qwen";
+    setProvider(value);
+    const hit = options.find((item) => item.value === value);
+    if (hit) {
+      setModel(hit.model);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>全局模型与密钥设置</DialogTitle>
+          <DialogTitle>AI Provider 配置中心</DialogTitle>
           <DialogDescription>
-            保存你自己的第三方 API Key，后续解析与生成将走你的配置。
+            按用途配置模型与密钥：剧本/分镜/图片建议使用千问、DeepSeek、豆包；视频仅支持 Seedance 2.0。
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="purpose">用途</Label>
+              <Select value={purpose} onValueChange={onPurposeChange}>
+                <SelectTrigger id="purpose">
+                  <SelectValue placeholder="选择用途" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="script">剧本/提示词</SelectItem>
+                  <SelectItem value="image">图片生成</SelectItem>
+                  <SelectItem value="video">视频生成</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="provider">Provider</Label>
+              <Select value={provider} onValueChange={onProviderChange}>
+                <SelectTrigger id="provider">
+                  <SelectValue placeholder="选择 Provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="provider">Provider</Label>
-            <Select value={provider} onValueChange={(value) => setProvider(value ?? "OpenAI")}>
-              <SelectTrigger id="provider">
-                <SelectValue placeholder="选择 Provider" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="OpenAI">OpenAI</SelectItem>
-                <SelectItem value="DeepSeek">DeepSeek</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label htmlFor="model">模型 ID</Label>
+            <Input
+              id="model"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="例如 qwen-plus / seedance-2.0"
+              autoComplete="off"
+            />
           </div>
 
           <div className="space-y-2">
@@ -107,7 +185,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               type="password"
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
-              placeholder="sk-..."
+              placeholder="输入对应 provider 的 key"
               autoComplete="off"
             />
           </div>
@@ -130,7 +208,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     className="animate-in fade-in-0 slide-in-from-bottom-1 flex items-center justify-between rounded-md border border-border/60 bg-background px-3 py-2 duration-300"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <span className="text-sm">{config.provider}</span>
+                    <span className="text-sm">
+                      {purposeLabel[config.purpose]} · {config.provider} · {config.model}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {config.isActive ? "Active" : "Inactive"}
                     </span>
@@ -139,7 +219,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               : null}
 
             {!configsQuery.isLoading && !hasConfigs ? (
-              <p className="text-sm text-muted-foreground">还没有保存任何 API Key。</p>
+              <p className="text-sm text-muted-foreground">还没有保存任何配置。</p>
             ) : null}
           </div>
 
