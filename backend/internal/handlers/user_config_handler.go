@@ -22,6 +22,8 @@ type UserConfigHandler struct {
 }
 
 type createUserConfigRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 	Purpose     string `json:"purpose" binding:"required"`
 	Provider    string `json:"provider" binding:"required,min=2,max=32"`
 	ModelSeries string `json:"modelSeries"`
@@ -31,6 +33,8 @@ type createUserConfigRequest struct {
 }
 
 type updateUserConfigRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 	Purpose     *string `json:"purpose,omitempty"`
 	Provider    *string `json:"provider,omitempty"`
 	ModelSeries *string `json:"modelSeries,omitempty"`
@@ -40,6 +44,8 @@ type updateUserConfigRequest struct {
 }
 
 type validateUserConfigRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 	Purpose     string `json:"purpose" binding:"required"`
 	Provider    string `json:"provider" binding:"required,min=2,max=32"`
 	ModelSeries string `json:"modelSeries"`
@@ -82,6 +88,8 @@ func (h *UserConfigHandler) Create(c *gin.Context) {
 
 	config := models.UserConfig{
 		UserID:       userID,
+		Name:         normalizeConfigName(req.Name),
+		Description:  normalizeConfigDescription(req.Description),
 		Purpose:      purpose,
 		Provider:     provider,
 		ModelName:    model,
@@ -169,6 +177,14 @@ func (h *UserConfigHandler) Update(c *gin.Context) {
 
 	updates := map[string]any{}
 	activate := false
+
+	if req.Name != nil {
+		updates["name"] = normalizeConfigName(*req.Name)
+	}
+
+	if req.Description != nil {
+		updates["description"] = normalizeConfigDescription(*req.Description)
+	}
 
 	if req.Purpose != nil {
 		nextPurpose := normalizePurpose(*req.Purpose)
@@ -346,6 +362,8 @@ func (h *UserConfigHandler) findOwnedConfig(c *gin.Context) (models.UserConfig, 
 func serializeConfig(config models.UserConfig) gin.H {
 	return gin.H{
 		"id":          config.ID,
+		"name":        config.Name,
+		"description": config.Description,
 		"purpose":     config.Purpose,
 		"provider":    config.Provider,
 		"modelSeries": config.ModelName,
@@ -367,6 +385,22 @@ func normalizePurpose(value string) string {
 
 func normalizeProvider(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeConfigName(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) > 64 {
+		return trimmed[:64]
+	}
+	return trimmed
+}
+
+func normalizeConfigDescription(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) > 255 {
+		return trimmed[:255]
+	}
+	return trimmed
 }
 
 func isAllowedPurpose(purpose string) bool {

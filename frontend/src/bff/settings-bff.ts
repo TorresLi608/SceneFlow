@@ -1,5 +1,6 @@
 import type {
   CreateUserConfigInput,
+  UpdateUserConfigInput,
   ValidateUserConfigInput,
   ValidateUserConfigResponse,
   UserConfigItemResponse,
@@ -45,4 +46,26 @@ export async function validateUserConfigByBff(
   );
 
   return response.data;
+}
+
+export async function updateUserConfigByBff(
+  id: number,
+  payload: UpdateUserConfigInput,
+  authorization?: string
+) {
+  const response = await backendClient.patch<UserConfigItemResponse>(`/api/settings/keys/${id}`, payload, {
+    headers: {
+      Authorization: authorization,
+    },
+  });
+
+  return response.data;
+}
+
+export async function deleteUserConfigByBff(id: number, authorization?: string) {
+  await backendClient.delete(`/api/settings/keys/${id}`, {
+    headers: {
+      Authorization: authorization,
+    },
+  });
 }

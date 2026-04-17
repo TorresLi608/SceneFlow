@@ -40,13 +40,6 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,7 +48,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
-import type { ModelOption } from "@/types/auth";
+import type { ConfigPurpose, UserConfig } from "@/types/auth";
 import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
 
 const formatter = new Intl.DateTimeFormat("zh-CN", {
@@ -74,6 +67,29 @@ function isTaskStatus(value: unknown): value is SceneTaskStatus | "idle" {
   );
 }
 
+const purposeLabel: Record<ConfigPurpose, string> = {
+  script: "剧本/提示词",
+  image: "图片生成",
+  video: "视频生成",
+};
+
+const providerLabelMap: Record<string, string> = {
+  qwen: "千问",
+  deepseek: "DeepSeek",
+  doubao: "豆包",
+  openai: "OpenAI",
+  "seedance2.0": "Seedance 2.0",
+};
+
+function summarizeActiveConfig(config?: UserConfig) {
+  if (!config) {
+    return "未配置";
+  }
+
+  const providerLabel = providerLabelMap[config.provider] ?? config.provider;
+  return `${providerLabel} · ${config.modelSeries}`;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -86,9 +102,7 @@ export default function HomePage() {
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
   const user = useUserStore((state) => state.user);
-  const selectedModel = useUserStore((state) => state.selectedModel);
   const setUser = useUserStore((state) => state.setUser);
-  const setSelectedModel = useUserStore((state) => state.setSelectedModel);
   const logout = useUserStore((state) => state.logout);
 
   const projects = useProjectStore((state) => state.projects);
@@ -131,26 +145,27 @@ export default function HomePage() {
     staleTime: 30_000,
   });
 
-  const activeScriptConfigs = useMemo(
+  const activeConfigByPurpose = useMemo(
     () =>
-      (userConfigsQuery.data?.configs ?? []).filter(
-        (config) =>
-          config.isActive &&
-          config.isVerified &&
-          config.purpose === "script" &&
-          config.modelSeries.trim().length > 0
-      ),
+      (userConfigsQuery.data?.configs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
+        const isUsableActiveConfig =
+          config.isActive && config.isVerified && config.modelSeries.trim().length > 0;
+
+        if (isUsableActiveConfig && !acc[config.purpose]) {
+          acc[config.purpose] = config;
+        }
+
+        return acc;
+      }, {}),
     [userConfigsQuery.data?.configs]
   );
-  const hasUsableScriptConfig = activeScriptConfigs.length > 0;
-  const selectableModels = useMemo(
-    () =>
-      Array.from(new Set(activeScriptConfigs.map((config) => config.modelSeries.trim()).filter(Boolean))),
-    [activeScriptConfigs]
-  );
+  const activeScriptConfig = activeConfigByPurpose.script;
+  const activeImageConfig = activeConfigByPurpose.image;
+  const activeVideoConfig = activeConfigByPurpose.video;
+  const hasUsableScriptConfig = Boolean(activeScriptConfig);
 
   const parseProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; script: string; model: string }) =>
+    mutationFn: (params: { projectId: string; script: string; model?: string }) =>
       parseProjectAction(params.projectId, {
         script: params.script,
         model: params.model,
@@ -183,7 +198,7 @@ export default function HomePage() {
   });
 
   const generateProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; model: string }) =>
+    mutationFn: (params: { projectId: string; model?: string }) =>
       generateProjectAction(params.projectId, { model: params.model }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
@@ -199,7 +214,7 @@ export default function HomePage() {
   });
 
   const optimizeProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; script: string; model: string }) =>
+    mutationFn: (params: { projectId: string; script: string; model?: string }) =>
       optimizeProjectAction(params.projectId, {
         script: params.script,
         model: params.model,
@@ -225,7 +240,7 @@ export default function HomePage() {
   });
 
   const generateVideoMutation = useMutation({
-    mutationFn: (params: { projectId: string; model: string }) =>
+    mutationFn: (params: { projectId: string; model?: string }) =>
       generateVideoAction(params.projectId, { model: params.model }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
@@ -295,16 +310,6 @@ export default function HomePage() {
 
     initializeProjects(projectTemplatesQuery.data.projects);
   }, [initializeProjects, projectTemplatesQuery.data?.projects]);
-
-  useEffect(() => {
-    if (!hasUsableScriptConfig || selectableModels.length === 0) {
-      return;
-    }
-
-    if (!selectableModels.includes(selectedModel)) {
-      setSelectedModel(selectableModels[0]);
-    }
-  }, [hasUsableScriptConfig, selectableModels, selectedModel, setSelectedModel]);
 
   useEffect(() => {
     if (!hydrated || !token || !selectedProjectId) {
@@ -549,29 +554,6 @@ export default function HomePage() {
                   WS: {wsConnected ? "已连接" : "未连接"}
                 </Badge>
 
-                <Select
-                  value={selectedModel}
-                  disabled={!hasUsableScriptConfig}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setSelectedModel(value as ModelOption);
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue
-                      placeholder={hasUsableScriptConfig ? "选择模型" : "先在设置中校验并激活 script 模型"}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectableModels.map((model) => (
-                      <SelectItem key={model} value={model}>
-                        {model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
                 <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}>
                   <Settings2 className="size-4" />
                 </Button>
@@ -596,6 +578,12 @@ export default function HomePage() {
                 <CardTitle className="text-base">剧本输入</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid gap-2 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-3">
+                  <p>{purposeLabel.script}：{summarizeActiveConfig(activeScriptConfig)}</p>
+                  <p>{purposeLabel.image}：{summarizeActiveConfig(activeImageConfig)}</p>
+                  <p>{purposeLabel.video}：{summarizeActiveConfig(activeVideoConfig)}</p>
+                </div>
+
                 <Textarea
                   value={currentProject?.originalScript ?? ""}
                   onChange={(event) => updateCurrentScript(event.target.value)}
@@ -618,7 +606,7 @@ export default function HomePage() {
                         optimizeProjectMutation.mutate({
                           projectId: currentProject.id,
                           script: currentProject.originalScript,
-                          model: selectedModel,
+                          model: activeScriptConfig?.modelSeries,
                         });
                       }}
                       disabled={
@@ -642,7 +630,7 @@ export default function HomePage() {
                         parseProjectMutation.mutate({
                           projectId: currentProject.id,
                           script: currentProject.originalScript,
-                          model: selectedModel,
+                          model: activeScriptConfig?.modelSeries,
                         });
                       }}
                       disabled={!currentProject || !hasUsableScriptConfig || currentProject.status === "parsing"}
@@ -659,7 +647,7 @@ export default function HomePage() {
 
                         generateProjectMutation.mutate({
                           projectId: currentProject.id,
-                          model: selectedModel,
+                          model: activeImageConfig?.modelSeries,
                         });
                       }}
                       disabled={
@@ -682,7 +670,7 @@ export default function HomePage() {
 
                         generateVideoMutation.mutate({
                           projectId: currentProject.id,
-                          model: "seedance-2.0",
+                          model: activeVideoConfig?.modelSeries,
                         });
                       }}
                       disabled={
@@ -735,7 +723,7 @@ export default function HomePage() {
 
                 {!hasUsableScriptConfig ? (
                   <p className="text-xs text-amber-600">
-                    请先在设置中完成 script 模型的可用性校验并保存激活后，再进行优化剧本和智能分镜。
+                    请先在设置中完成剧本/提示词默认模型的可用性校验并保存激活后，再进行优化剧本和智能分镜。
                   </p>
                 ) : null}
 

@@ -1,5 +1,3 @@
-export type ModelOption = string;
-
 export type ConfigPurpose = "script" | "image" | "video";
 
 export interface AuthUser {
@@ -20,6 +18,8 @@ export interface UserMeResponse {
 
 export interface UserConfig {
   id: number;
+  name: string;
+  description: string;
   purpose: ConfigPurpose;
   provider: string;
   modelSeries: string;
@@ -39,6 +39,8 @@ export interface UserConfigItemResponse {
 }
 
 export interface CreateUserConfigInput {
+  name?: string;
+  description?: string;
   purpose: ConfigPurpose;
   provider: string;
   modelSeries: string;
@@ -47,10 +49,22 @@ export interface CreateUserConfigInput {
 }
 
 export interface ValidateUserConfigInput {
+  name?: string;
+  description?: string;
   purpose: ConfigPurpose;
   provider: string;
   modelSeries: string;
   apiKey: string;
+}
+
+export interface UpdateUserConfigInput {
+  name?: string;
+  description?: string;
+  purpose?: ConfigPurpose;
+  provider?: string;
+  modelSeries?: string;
+  apiKey?: string;
+  isActive?: boolean;
 }
 
 export interface ValidateUserConfigResponse {
