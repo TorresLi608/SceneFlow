@@ -41,13 +41,10 @@ func (h *ProjectHandler) GenerateProject(c *gin.Context) {
 	var req generateProjectRequest
 	_ = c.ShouldBindJSON(&req)
 
-	imageProvider, _, imageModel, cfgErr := h.resolveProviderConfig(userID, "image")
-	if cfgErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve image config"})
+	config, warning, err := h.preflightShotPromptModel(c.Request.Context(), userID)
+	if err != nil {
+		h.respondPreflightError(c, err, "failed to run shot prompt model preflight")
 		return
-	}
-	if imageProvider == "" {
-		imageProvider, _, imageModel, _ = h.resolveProviderConfig(userID, "script")
 	}
 
 	project, scenes, err := h.getProjectWithScenes(projectID, userID)
@@ -91,17 +88,12 @@ func (h *ProjectHandler) GenerateProject(c *gin.Context) {
 
 	go h.runGeneration(projectID, scenes)
 
-	warning := ""
-	if imageProvider == "" {
-		warning = "missing active image/script config, using fallback generator simulation"
-	}
-
 	c.JSON(http.StatusAccepted, gin.H{
 		"projectId":  projectID,
 		"status":     "generating",
 		"model":      strings.TrimSpace(req.Model),
-		"provider":   imageProvider,
-		"imageModel": imageModel,
+		"provider":   config.Provider,
+		"imageModel": config.Model,
 		"warning":    warning,
 		"sceneCount": len(scenes),
 	})

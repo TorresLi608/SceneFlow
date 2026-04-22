@@ -100,22 +100,18 @@ func (h *ProjectHandler) OptimizeScript(c *gin.Context) {
 		return
 	}
 
-	provider, key, modelFromConfig, err := h.resolveProviderConfig(userID, "script")
+	config, err := h.preflightModelConfig(c.Request.Context(), userID, "script", "故事生成/剧本优化")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve script config"})
-		return
-	}
-	if strings.TrimSpace(provider) == "" || strings.TrimSpace(key) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing active script config, please validate and activate one in settings"})
+		h.respondPreflightError(c, err, "failed to run script model preflight")
 		return
 	}
 
 	selectedModel := strings.TrimSpace(req.Model)
 	if selectedModel == "" {
-		selectedModel = modelFromConfig
+		selectedModel = config.Model
 	}
 
-	result, err := h.Parser.OptimizeScript(c.Request.Context(), provider, key, selectedModel, script)
+	result, err := h.Parser.OptimizeScript(c.Request.Context(), config.Provider, config.APIKey, selectedModel, script)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to optimize script: " + err.Error()})
 		return
@@ -185,13 +181,9 @@ func (h *ProjectHandler) GenerateVideo(c *gin.Context) {
 		return
 	}
 
-	provider, _, modelFromConfig, err := h.resolveProviderConfig(userID, "video")
+	config, err := h.preflightModelConfig(c.Request.Context(), userID, "video", "视频生成")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve video config"})
-		return
-	}
-	if provider != "seedance2.0" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "video generation requires active Seedance2.0 config in video purpose"})
+		h.respondPreflightError(c, err, "failed to run video model preflight")
 		return
 	}
 
@@ -199,10 +191,7 @@ func (h *ProjectHandler) GenerateVideo(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 	selectedModel := strings.TrimSpace(req.Model)
 	if selectedModel == "" {
-		selectedModel = modelFromConfig
-	}
-	if selectedModel == "" {
-		selectedModel = "seedance-2.0"
+		selectedModel = config.Model
 	}
 
 	if err := h.DB.Model(&models.Project{}).
