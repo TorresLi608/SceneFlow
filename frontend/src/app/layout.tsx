@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { cn } from "@/lib/utils";
+import { AppPreferencesProvider } from "@/providers/app-preferences-provider";
 import { QueryProvider } from "@/providers/query-provider";
 
 import "./globals.css";
@@ -27,9 +28,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={cn(geistSans.variable, geistMono.variable, "dark h-full antialiased")}>
+    <html lang="zh-CN" className={cn(geistSans.variable, geistMono.variable, "h-full antialiased")}>
       <body className="min-h-full flex flex-col">
-        <QueryProvider>{children}</QueryProvider>
+        <AppPreferencesProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </AppPreferencesProvider>
       </body>
     </html>
   );

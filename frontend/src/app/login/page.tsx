@@ -6,15 +6,18 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { loginAction } from "@/actions/auth-actions";
+import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useUserStore } from "@/store/user-store";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const setAuth = useUserStore((state) => state.setAuth);
 
   const [username, setUsername] = useState("");
@@ -28,7 +31,7 @@ export default function LoginPage() {
       router.replace("/");
     },
     onError: (requestError) => {
-      setError(resolveRequestError(requestError, "登录失败，请稍后重试"));
+      setError(resolveRequestError(requestError, t("auth.loginFailed")));
     },
   });
 
@@ -44,15 +47,16 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6">
+    <main className="relative flex min-h-screen items-center justify-center bg-background p-6">
+      <PreferencesSwitcher className="absolute top-6 right-6" />
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>登录 SceneFlow</CardTitle>
+          <CardTitle>{t("auth.loginTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-2">
-              <Label htmlFor="username">用户名</Label>
+              <Label htmlFor="username">{t("auth.username")}</Label>
               <Input
                 id="username"
                 value={username}
@@ -61,7 +65,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">密码</Label>
+              <Label htmlFor="password">{t("auth.password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -72,13 +76,13 @@ export default function LoginPage() {
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button className="w-full" type="submit" disabled={loginMutation.isPending}>
-              {loginMutation.isPending ? "登录中..." : "登录"}
+              {loginMutation.isPending ? t("auth.loggingIn") : t("auth.login")}
             </Button>
           </form>
           <p className="mt-4 text-sm text-muted-foreground">
-            还没有账号？
+            {t("auth.noAccount")}
             <Link href="/register" className="ml-1 text-foreground underline">
-              去注册
+              {t("auth.goRegister")}
             </Link>
           </p>
         </CardContent>

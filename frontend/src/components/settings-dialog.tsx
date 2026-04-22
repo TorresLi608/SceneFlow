@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
 import { cn } from "@/lib/utils";
 import type { ConfigPurpose, CreateUserConfigInput, UpdateUserConfigInput, UserConfig } from "@/types/auth";
@@ -45,9 +46,9 @@ const providerOptions: Record<
   Array<{ value: string; label: string; modelSeries: string }>
 > = {
   script: [
-    { value: "qwen", label: "千问", modelSeries: "qwen-plus" },
+    { value: "qwen", label: "Qwen", modelSeries: "qwen-plus" },
     { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
-    { value: "doubao", label: "豆包", modelSeries: "doubao-seed-1-6-250615" },
+    { value: "doubao", label: "Doubao", modelSeries: "doubao-seed-1-6-250615" },
     { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
   ],
   image: [
@@ -56,23 +57,17 @@ const providerOptions: Record<
   video: [{ value: "seedance2.0", label: "Seedance 2.0", modelSeries: "seedance-2.0" }],
 };
 
-const purposeLabel: Record<ConfigPurpose, string> = {
-  script: "剧本/提示词",
-  image: "图片生成",
-  video: "视频生成",
-};
-
 const providerLabelMap: Record<string, string> = {
-  qwen: "千问",
+  qwen: "Qwen",
   deepseek: "DeepSeek",
-  doubao: "豆包",
+  doubao: "Doubao",
   openai: "OpenAI",
   "seedance2.0": "Seedance 2.0",
 };
 
-function displayConfigName(config?: UserConfig) {
+function displayConfigName(config: UserConfig | undefined, unconfiguredLabel: string) {
   if (!config) {
-    return "未配置";
+    return unconfiguredLabel;
   }
 
   if (config.name?.trim()) {
@@ -84,6 +79,7 @@ function displayConfigName(config?: UserConfig) {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
 
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
@@ -121,11 +117,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     mutationFn: createUserConfigAction,
     onSuccess: async () => {
       resetForm();
-      setMessage("配置已保存并激活");
+      setMessage(t("settings.saved"));
       await refreshConfigs();
     },
     onError: (error) => {
-      setMessage(resolveRequestError(error, "保存失败，请稍后重试"));
+      setMessage(resolveRequestError(error, t("settings.saveFailed")));
     },
   });
 
@@ -134,11 +130,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       updateUserConfigAction(id, payload),
     onSuccess: async () => {
       resetForm();
-      setMessage("配置已更新");
+      setMessage(t("settings.updated"));
       await refreshConfigs();
     },
     onError: (error) => {
-      setMessage(resolveRequestError(error, "更新失败，请稍后重试"));
+      setMessage(resolveRequestError(error, t("settings.updateFailed")));
     },
   });
 
@@ -148,11 +144,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       if (editingConfigId === deletedId) {
         resetForm();
       }
-      setMessage("配置已删除");
+      setMessage(t("settings.deleted"));
       await refreshConfigs();
     },
     onError: (error) => {
-      setMessage(resolveRequestError(error, "删除失败，请稍后重试"));
+      setMessage(resolveRequestError(error, t("settings.deleteFailed")));
     },
   });
 
@@ -160,11 +156,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     mutationFn: validateUserConfigAction,
     onSuccess: () => {
       setValidationPassed(true);
-      setMessage("模型校验通过，可保存配置。");
+      setMessage(t("settings.validationPassed"));
     },
     onError: (error) => {
       setValidationPassed(false);
-      setMessage(resolveRequestError(error, "模型校验失败，请检查 provider / modelSeries / key"));
+      setMessage(resolveRequestError(error, t("settings.validationFailed")));
     },
   });
 
@@ -193,6 +189,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     [configsQuery.data?.configs]
   );
 
+  const purposeLabel: Record<ConfigPurpose, string> = {
+    script: t("settings.scriptPurpose"),
+    image: t("settings.imagePurpose"),
+    video: t("settings.videoPurpose"),
+  };
+
   const onPurposeChange = (nextPurpose: string | null) => {
     setValidationPassed(editingConfigId !== null && !apiKey.trim());
     setMessage(null);
@@ -219,7 +221,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const validateConfig = () => {
     if (!apiKey.trim()) {
       setValidationPassed(false);
-      setMessage("请先输入 API Key，再进行校验。编辑已有配置时，不改 Key 可直接保存。");
+      setMessage(t("settings.enterApiKeyBeforeValidate"));
       return;
     }
 
@@ -236,7 +238,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const saveConfig = () => {
     if (!editingConfigId && !apiKey.trim()) {
-      setMessage("请输入 API Key");
+      setMessage(t("settings.enterApiKey"));
       return;
     }
 
@@ -279,12 +281,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setModelSeries(config.modelSeries);
     setApiKey("");
     setValidationPassed(true);
-    setMessage("已载入配置，若不修改 API Key 可直接保存。");
+    setMessage(t("settings.loadedEdit"));
   };
 
   const activateConfig = (config: UserConfig) => {
     if (config.isActive) {
-      setMessage("当前已是默认模型");
+      setMessage(t("settings.currentDefaultHint"));
       return;
     }
 
@@ -296,7 +298,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const deleteConfig = (config: UserConfig) => {
-    if (!window.confirm(`确认删除配置「${config.name || config.modelSeries}」吗？`)) {
+    if (!window.confirm(t("settings.confirmDelete", { name: config.name || config.modelSeries }))) {
       return;
     }
 
@@ -308,36 +310,36 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>AI Provider 配置中心</DialogTitle>
-          <DialogDescription>
-            按应用用途设置默认模型。每个已保存配置都可以编辑、删除，并可切换为当前用途的默认模型。
-          </DialogDescription>
+          <DialogTitle>{t("settings.title")}</DialogTitle>
+          <DialogDescription>{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="rounded-lg border border-border/80 bg-muted/40 p-3">
-            <p className="text-sm font-medium">当前应用默认模型</p>
+            <p className="text-sm font-medium">{t("settings.currentDefaults")}</p>
             <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-              <p>剧本/提示词：{displayConfigName(activeConfigByPurpose.script)}</p>
-              <p>图片生成：{displayConfigName(activeConfigByPurpose.image)}</p>
-              <p>视频生成：{displayConfigName(activeConfigByPurpose.video)}</p>
+              <p>{t("settings.scriptPurpose")}：{displayConfigName(activeConfigByPurpose.script, t("settings.unconfigured"))}</p>
+              <p>{t("settings.imagePurpose")}：{displayConfigName(activeConfigByPurpose.image, t("settings.unconfigured"))}</p>
+              <p>{t("settings.videoPurpose")}：{displayConfigName(activeConfigByPurpose.video, t("settings.unconfigured"))}</p>
             </div>
           </div>
 
           <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">{editingConfigId ? "编辑配置" : "新增配置"}</p>
+              <p className="text-sm font-medium">
+                {editingConfigId ? t("settings.editConfig") : t("settings.newConfig")}
+              </p>
               {editingConfigId ? (
                 <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
                   <X className="mr-1 size-4" />
-                  取消编辑
+                  {t("settings.cancelEdit")}
                 </Button>
               ) : null}
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="configName">名称</Label>
+                <Label htmlFor="configName">{t("settings.name")}</Label>
                 <Input
                   id="configName"
                   value={name}
@@ -346,28 +348,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     setMessage(null);
                     setName(event.target.value);
                   }}
-                  placeholder="例如：剧本默认千问 / 图片豆包"
+                  placeholder={t("settings.namePlaceholder")}
                   autoComplete="off"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="purpose">用途</Label>
+                <Label htmlFor="purpose">{t("settings.purpose")}</Label>
                 <Select value={purpose} onValueChange={onPurposeChange}>
                   <SelectTrigger id="purpose">
-                    <SelectValue placeholder="选择用途" />
+                    <SelectValue placeholder={t("settings.purpose")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="script">剧本/提示词</SelectItem>
-                    <SelectItem value="image">图片生成</SelectItem>
-                    <SelectItem value="video">视频生成</SelectItem>
+                    <SelectItem value="script">{t("settings.scriptPurpose")}</SelectItem>
+                    <SelectItem value="image">{t("settings.imagePurpose")}</SelectItem>
+                    <SelectItem value="video">{t("settings.videoPurpose")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="configDescription">描述</Label>
+              <Label htmlFor="configDescription">{t("settings.descriptionLabel")}</Label>
               <Textarea
                 id="configDescription"
                 value={description}
@@ -376,17 +378,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   setMessage(null);
                   setDescription(event.target.value);
                 }}
-                placeholder="可选。说明这个模型配置适合做什么，例如长文剧本优化、快速出图、高清图像生成。"
+                placeholder={t("settings.descriptionPlaceholder")}
                 className="min-h-20"
               />
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="provider">Provider</Label>
+                <Label htmlFor="provider">{t("settings.provider")}</Label>
                 <Select value={provider} onValueChange={onProviderChange}>
                   <SelectTrigger id="provider">
-                    <SelectValue placeholder="选择 Provider" />
+                    <SelectValue placeholder={t("settings.provider")} />
                   </SelectTrigger>
                   <SelectContent>
                     {options.map((option) => (
@@ -399,7 +401,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="modelSeries">模型系列</Label>
+                <Label htmlFor="modelSeries">{t("settings.modelSeries")}</Label>
                 <Input
                   id="modelSeries"
                   value={modelSeries}
@@ -408,14 +410,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     setMessage(null);
                     setModelSeries(event.target.value);
                   }}
-                  placeholder="例如 qwen-plus / deepseek-chat / seedance-2.0"
+                  placeholder={t("settings.modelSeriesPlaceholder")}
                   autoComplete="off"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="apiKey">API Key</Label>
+              <Label htmlFor="apiKey">{t("settings.apiKey")}</Label>
               <Input
                 id="apiKey"
                 type="password"
@@ -425,23 +427,27 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   setMessage(null);
                   setApiKey(event.target.value);
                 }}
-                placeholder={editingConfigId ? "留空则沿用原 Key，填写则更新 Key" : "输入对应 provider 的 key"}
+                placeholder={
+                  editingConfigId ? t("settings.apiKeyPlaceholderEdit") : t("settings.apiKeyPlaceholderNew")
+                }
                 autoComplete="off"
               />
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button type="button" variant="outline" onClick={validateConfig} disabled={isMutating}>
-                {validateConfigMutation.isPending ? "校验中..." : "校验模型可用性"}
+                {validateConfigMutation.isPending ? t("settings.validatingModel") : t("settings.validateModel")}
               </Button>
               <Button className="w-full" onClick={saveConfig} disabled={isMutating || !validationPassed}>
-                {saveConfigMutation.isPending || updateConfigMutation.isPending ? "保存中..." : "保存并激活"}
+                {saveConfigMutation.isPending || updateConfigMutation.isPending
+                  ? t("settings.saving")
+                  : t("settings.saveAndActivate")}
               </Button>
             </div>
           </div>
 
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">已保存配置</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("settings.savedConfigs")}</p>
 
             {configsQuery.isLoading ? (
               <div className="space-y-2">
@@ -473,14 +479,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       </div>
 
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        {config.isActive ? "Active" : "Inactive"} · {config.isVerified ? "Verified" : "Unverified"}
+                        {config.isActive ? t("settings.active") : t("settings.inactive")} ·{" "}
+                        {config.isVerified ? t("settings.verified") : t("settings.unverified")}
                       </span>
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button type="button" size="sm" variant="outline" onClick={() => startEdit(config)}>
                         <Pencil className="mr-1 size-3.5" />
-                        编辑
+                        {t("common.edit")}
                       </Button>
                       <Button
                         type="button"
@@ -490,7 +497,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         disabled={isMutating}
                       >
                         <Star className={cn("mr-1 size-3.5", config.isActive && "fill-current")} />
-                        {config.isActive ? "当前默认" : "设为默认"}
+                        {config.isActive ? t("settings.currentDefault") : t("settings.setDefault")}
                       </Button>
                       <Button
                         type="button"
@@ -500,7 +507,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         disabled={isMutating}
                       >
                         <Trash2 className="mr-1 size-3.5" />
-                        删除
+                        {t("common.delete")}
                       </Button>
                     </div>
                   </div>
@@ -508,7 +515,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               : null}
 
             {!configsQuery.isLoading && !hasConfigs ? (
-              <p className="text-sm text-muted-foreground">还没有保存任何配置。</p>
+              <p className="text-sm text-muted-foreground">{t("settings.empty")}</p>
             ) : null}
           </div>
 
