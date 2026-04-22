@@ -3,12 +3,14 @@
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
 import { GripVertical, Image as ImageIcon, Mic } from "lucide-react";
+import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { backendBaseURL } from "@/lib/http/backend-client";
 import { cn } from "@/lib/utils";
 import type { Scene } from "@/types/project";
 
@@ -34,6 +36,11 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const resolvedImageURL =
+    scene.image.url && scene.image.url.startsWith("/")
+      ? `${backendBaseURL}${scene.image.url}`
+      : scene.image.url;
 
   return (
     <Card
@@ -85,8 +92,20 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
 
           {scene.image.status === "generating" ? <Skeleton className="h-20 w-full" /> : null}
           {scene.image.status === "success" ? (
-            <div className="rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
-              图片已生成 {scene.image.url ? "(URL ready)" : ""}
+            <div className="space-y-2">
+              {resolvedImageURL ? (
+                <Image
+                  src={resolvedImageURL}
+                  alt={`Scene ${scene.order}`}
+                  width={1536}
+                  height={1024}
+                  unoptimized
+                  className="h-auto w-full rounded-md border border-border/70 object-cover"
+                />
+              ) : null}
+              <div className="rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+                图片已生成 {resolvedImageURL ? "(AI ready)" : ""}
+              </div>
             </div>
           ) : null}
         </div>

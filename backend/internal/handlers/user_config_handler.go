@@ -425,6 +425,13 @@ func validateConfigFields(purpose, provider, model string) error {
 		if strings.TrimSpace(model) == "" {
 			return errBadRequest("video purpose requires modelSeries")
 		}
+	case "image":
+		if provider != "openai" {
+			return errBadRequest("image purpose currently only supports provider openai")
+		}
+		if strings.TrimSpace(model) == "" {
+			return errBadRequest("image purpose requires modelSeries")
+		}
 	default:
 		if provider != "qwen" && provider != "deepseek" && provider != "doubao" && provider != "openai" {
 			return errBadRequest("provider must be one of qwen/deepseek/doubao/openai")
@@ -498,7 +505,13 @@ func (h *UserConfigHandler) validateProviderAvailability(
 	validateCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
-	if err := h.Parser.ValidateProviderModel(validateCtx, provider, apiKey, model); err != nil {
+	var err error
+	if purpose == "image" {
+		err = h.Parser.ValidateImageModel(validateCtx, provider, apiKey, model)
+	} else {
+		err = h.Parser.ValidateProviderModel(validateCtx, provider, apiKey, model)
+	}
+	if err != nil {
 		message := strings.TrimSpace(err.Error())
 		if len(message) > 180 {
 			message = message[:180] + "..."

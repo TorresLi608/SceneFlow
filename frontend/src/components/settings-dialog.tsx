@@ -50,10 +50,7 @@ const providerOptions: Record<
     { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
   ],
   image: [
-    { value: "qwen", label: "千问", modelSeries: "qwen-plus" },
-    { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
-    { value: "doubao", label: "豆包", modelSeries: "doubao-seed-1-6-250615" },
-    { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
+    { value: "openai", label: "OpenAI", modelSeries: "gpt-image-1" },
   ],
   video: [{ value: "seedance2.0", label: "Seedance 2.0", modelSeries: "seedance-2.0" }],
 };

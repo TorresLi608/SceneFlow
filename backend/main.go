@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"sceneflow/backend/internal/ai"
@@ -29,8 +30,19 @@ func main() {
 	parser := ai.NewParser()
 	userConfigHandler := &handlers.UserConfigHandler{DB: db, AESKey: cfg.AESKey, Parser: parser}
 	hub := ws.NewHub()
-	projectHandler := &handlers.ProjectHandler{DB: db, AESKey: cfg.AESKey, Parser: parser, Hub: hub}
+	projectHandler := &handlers.ProjectHandler{
+		DB:            db,
+		AESKey:        cfg.AESKey,
+		Parser:        parser,
+		Hub:           hub,
+		PublicBaseURL: cfg.PublicBaseURL,
+		GeneratedDir:  cfg.GeneratedDir,
+	}
 	projectWSHandler := &handlers.ProjectWSHandler{DB: db, JWTSecret: cfg.JWTSecret, Hub: hub}
+
+	if err := os.MkdirAll(cfg.GeneratedDir, 0o755); err != nil {
+		log.Fatalf("failed to create generated dir: %v", err)
+	}
 
 	go hub.Run()
 
@@ -49,6 +61,7 @@ func main() {
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	router.Static("/generated", cfg.GeneratedDir)
 	router.GET("/ws/projects/:id", projectWSHandler.ServeWS)
 
 	api := router.Group("/api")

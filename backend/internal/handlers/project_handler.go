@@ -16,10 +16,12 @@ import (
 )
 
 type ProjectHandler struct {
-	DB     *gorm.DB
-	AESKey []byte
-	Parser *ai.Parser
-	Hub    *ws.Hub
+	DB            *gorm.DB
+	AESKey        []byte
+	Parser        *ai.Parser
+	Hub           *ws.Hub
+	PublicBaseURL string
+	GeneratedDir  string
 }
 
 type parseProjectRequest struct {

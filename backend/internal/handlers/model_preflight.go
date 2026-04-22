@@ -90,7 +90,14 @@ func (h *ProjectHandler) preflightModelConfig(
 		validateCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 
-		if err := h.Parser.ValidateProviderModel(validateCtx, provider, plainKey, resolvedModel); err != nil {
+		var validateErr error
+		if purpose == "image" {
+			validateErr = h.Parser.ValidateImageModel(validateCtx, provider, plainKey, resolvedModel)
+		} else {
+			validateErr = h.Parser.ValidateProviderModel(validateCtx, provider, plainKey, resolvedModel)
+		}
+
+		if err := validateErr; err != nil {
 			return resolvedModelConfig{}, errBadRequest(fmt.Sprintf(
 				"%s默认模型不可用：%s / %s。请前往设置重新验证或切换“%s”默认模型后重试。详细原因：%s",
 				stageName,

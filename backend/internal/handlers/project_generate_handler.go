@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -86,7 +89,7 @@ func (h *ProjectHandler) GenerateProject(c *gin.Context) {
 		},
 	})
 
-	go h.runGeneration(projectID, scenes)
+	go h.runGeneration(projectID, scenes, config)
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"projectId":  projectID,
@@ -117,7 +120,7 @@ func (h *ProjectHandler) getProjectWithScenes(projectID string, userID uint) (mo
 	return project, scenes, nil
 }
 
-func (h *ProjectHandler) runGeneration(projectID string, scenes []models.Scene) {
+func (h *ProjectHandler) runGeneration(projectID string, scenes []models.Scene, config resolvedModelConfig) {
 	updates := make(chan sceneEvent, 256)
 	semaphore := make(chan struct{}, maxSceneConcurrency)
 
@@ -134,7 +137,7 @@ func (h *ProjectHandler) runGeneration(projectID string, scenes []models.Scene) 
 				<-semaphore
 			}()
 
-			h.generateScene(scene, updates)
+			h.generateScene(scene, config, updates)
 		}()
 	}
 
@@ -165,47 +168,97 @@ func (h *ProjectHandler) runGeneration(projectID string, scenes []models.Scene) 
 	})
 }
 
-func (h *ProjectHandler) generateScene(scene models.Scene, updates chan<- sceneEvent) {
+func (h *ProjectHandler) generateScene(
+	scene models.Scene,
+	config resolvedModelConfig,
+	updates chan<- sceneEvent,
+) {
 	updates <- sceneEvent{
 		SceneID: scene.ID,
 		Data: gin.H{
 			"imageStatus":   "generating",
-			"imageProgress": 0,
+			"imageProgress": 5,
 			"audioStatus":   "generating",
 			"audioProgress": 0,
 			"errorMsg":      "",
 		},
 	}
 
-	imageProgressSteps := []int{15, 35, 55, 80, 100}
-	for index, progress := range imageProgressSteps {
-		time.Sleep(stepDelay(scene.OrderNum, index))
+	_ = h.DB.Model(&models.Scene{}).
+		Where("id = ?", scene.ID).
+		Update("image_status", "generating").Error
+
+	prompt := buildSceneImagePrompt(scene)
+	updates <- sceneEvent{
+		SceneID: scene.ID,
+		Data: gin.H{
+			"imageStatus":   "generating",
+			"imageProgress": 20,
+			"errorMsg":      "",
+		},
+	}
+
+	imageCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	imageResult, err := h.Parser.GenerateImage(imageCtx, config.Provider, config.APIKey, config.Model, prompt)
+	if err != nil {
+		message := "AI 图片生成失败：" + trimPreflightReason(err) + "。请检查图片生成默认模型、API Key 或稍后重试。"
+		_ = h.DB.Model(&models.Scene{}).
+			Where("id = ?", scene.ID).
+			Update("image_status", "error").Error
+
+		updates <- sceneEvent{
+			SceneID: scene.ID,
+			Data: gin.H{
+				"imageStatus":   "error",
+				"imageProgress": 0,
+				"errorMsg":      message,
+			},
+		}
+	} else {
 		updates <- sceneEvent{
 			SceneID: scene.ID,
 			Data: gin.H{
 				"imageStatus":   "generating",
-				"imageProgress": progress,
+				"imageProgress": 85,
 				"errorMsg":      "",
 			},
 		}
-	}
 
-	imageURL := fmt.Sprintf("https://picsum.photos/seed/%s/960/540", scene.ID)
-	_ = h.DB.Model(&models.Scene{}).
-		Where("id = ?", scene.ID).
-		Updates(map[string]any{
-			"image_status": "success",
-			"image_url":    imageURL,
-		}).Error
+		imageURL, saveErr := h.persistSceneImage(scene, imageResult.Bytes, imageResult.Format)
+		if saveErr != nil {
+			message := "AI 图片保存失败：" + trimPreflightReason(saveErr) + "。请检查服务端生成目录配置。"
+			_ = h.DB.Model(&models.Scene{}).
+				Where("id = ?", scene.ID).
+				Update("image_status", "error").Error
 
-	updates <- sceneEvent{
-		SceneID: scene.ID,
-		Data: gin.H{
-			"imageStatus":   "success",
-			"imageProgress": 100,
-			"imageUrl":      imageURL,
-			"errorMsg":      "",
-		},
+			updates <- sceneEvent{
+				SceneID: scene.ID,
+				Data: gin.H{
+					"imageStatus":   "error",
+					"imageProgress": 0,
+					"errorMsg":      message,
+				},
+			}
+		} else {
+			_ = h.DB.Model(&models.Scene{}).
+				Where("id = ?", scene.ID).
+				Updates(map[string]any{
+					"image_status": "success",
+					"image_url":    imageURL,
+				}).Error
+
+			updates <- sceneEvent{
+				SceneID: scene.ID,
+				Data: gin.H{
+					"imageStatus":   "success",
+					"imageProgress": 100,
+					"imageUrl":      imageURL,
+					"errorMsg":      "",
+				},
+			}
+		}
 	}
 
 	audioProgressSteps := []int{25, 50, 75, 100}
@@ -241,6 +294,50 @@ func (h *ProjectHandler) generateScene(scene models.Scene, updates chan<- sceneE
 			"errorMsg":      "",
 		},
 	}
+}
+
+func (h *ProjectHandler) persistSceneImage(scene models.Scene, imageBytes []byte, format string) (string, error) {
+	if len(imageBytes) == 0 {
+		return "", fmt.Errorf("empty image bytes")
+	}
+
+	normalizedFormat := strings.ToLower(strings.TrimSpace(format))
+	if normalizedFormat == "" {
+		normalizedFormat = "png"
+	}
+
+	sceneDir := filepath.Join(h.GeneratedDir, "projects", scene.ProjectID)
+	if err := os.MkdirAll(sceneDir, 0o755); err != nil {
+		return "", err
+	}
+
+	filename := fmt.Sprintf("%s.%s", scene.ID, normalizedFormat)
+	fullPath := filepath.Join(sceneDir, filename)
+	if err := os.WriteFile(fullPath, imageBytes, 0o644); err != nil {
+		return "", err
+	}
+
+	baseURL := strings.TrimRight(strings.TrimSpace(h.PublicBaseURL), "/")
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:8080"
+	}
+
+	return fmt.Sprintf("%s/generated/projects/%s/%s", baseURL, scene.ProjectID, filename), nil
+}
+
+func buildSceneImagePrompt(scene models.Scene) string {
+	visualPrompt := strings.TrimSpace(scene.VisualPrompt)
+	narration := strings.TrimSpace(scene.Narration)
+
+	if visualPrompt == "" {
+		visualPrompt = narration
+	}
+
+	return fmt.Sprintf(
+		"Create a cinematic anime storyboard frame for a short video. Keep one clear subject, strong composition, dramatic lighting, high detail, no text, no watermark. Scene narration: %s. Visual direction: %s.",
+		narration,
+		visualPrompt,
+	)
 }
 
 func stepDelay(orderNum, step int) time.Duration {
