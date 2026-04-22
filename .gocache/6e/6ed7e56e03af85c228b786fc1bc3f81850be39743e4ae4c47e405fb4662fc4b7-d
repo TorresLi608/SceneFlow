@@ -1,8 +1,0 @@
-./auth_handler.go
-./model_preflight.go
-./project_extra_handler.go
-./project_generate_handler.go
-./project_handler.go
-./project_ws_handler.go
-./user_config_handler.go
-./user_handler.go
