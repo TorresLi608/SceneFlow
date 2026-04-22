@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+
+import { cn } from "@/lib/utils";
 import { QueryProvider } from "@/providers/query-provider";
+
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,10 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="zh-CN"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
-    >
+    <html lang="zh-CN" className={cn(geistSans.variable, geistMono.variable, "dark h-full antialiased")}>
       <body className="min-h-full flex flex-col">
         <QueryProvider>{children}</QueryProvider>
       </body>

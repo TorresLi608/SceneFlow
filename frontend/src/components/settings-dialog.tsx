@@ -32,6 +32,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
+import { cn } from "@/lib/utils";
 import type { ConfigPurpose, CreateUserConfigInput, UpdateUserConfigInput, UserConfig } from "@/types/auth";
 
 interface SettingsDialogProps {
@@ -50,7 +51,7 @@ const providerOptions: Record<
     { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
   ],
   image: [
-    { value: "openai", label: "OpenAI", modelSeries: "gpt-image-1" },
+    { value: "openai", label: "OpenAI", modelSeries: "" },
   ],
   video: [{ value: "seedance2.0", label: "Seedance 2.0", modelSeries: "seedance-2.0" }],
 };
@@ -282,6 +283,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const activateConfig = (config: UserConfig) => {
+    if (config.isActive) {
+      setMessage("当前已是默认模型");
+      return;
+    }
+
     setMessage(null);
     updateConfigMutation.mutate({
       id: config.id,
@@ -481,10 +487,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         size="sm"
                         variant="outline"
                         onClick={() => activateConfig(config)}
-                        disabled={config.isActive || isMutating}
+                        disabled={isMutating}
                       >
-                        <Star className="mr-1 size-3.5" />
-                        设为默认
+                        <Star className={cn("mr-1 size-3.5", config.isActive && "fill-current")} />
+                        {config.isActive ? "当前默认" : "设为默认"}
                       </Button>
                       <Button
                         type="button"
