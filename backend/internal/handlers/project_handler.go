@@ -8,7 +8,6 @@ import (
 	"sceneflow/backend/internal/ai"
 	"sceneflow/backend/internal/middleware"
 	"sceneflow/backend/internal/models"
-	"sceneflow/backend/internal/security"
 	"sceneflow/backend/internal/utils"
 	"sceneflow/backend/internal/ws"
 
@@ -65,19 +64,15 @@ func (h *ProjectHandler) ParseProject(c *gin.Context) {
 		return
 	}
 
-	provider, key, modelFromConfig, err := h.resolveProviderConfig(userID, "script")
+	config, err := h.preflightModelConfig(c.Request.Context(), userID, "script", "故事生成/分镜拆分")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve script provider config"})
-		return
-	}
-	if strings.TrimSpace(provider) == "" || strings.TrimSpace(key) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing active script config, please validate and activate one in settings"})
+		h.respondPreflightError(c, err, "failed to run script model preflight")
 		return
 	}
 
 	selectedModel := strings.TrimSpace(req.Model)
 	if selectedModel == "" {
-		selectedModel = modelFromConfig
+		selectedModel = config.Model
 	}
 
 	h.broadcast(projectID, gin.H{
@@ -88,7 +83,7 @@ func (h *ProjectHandler) ParseProject(c *gin.Context) {
 		},
 	})
 
-	result, err := h.Parser.ParseScript(c.Request.Context(), provider, key, selectedModel, script)
+	result, err := h.Parser.ParseScript(c.Request.Context(), config.Provider, config.APIKey, selectedModel, script)
 	if err != nil {
 		_ = h.DB.Model(&project).Updates(map[string]any{"status": "idle"}).Error
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to parse script: " + err.Error()})
@@ -219,31 +214,25 @@ func (h *ProjectHandler) loadProjectForUser(projectID string, userID uint) (mode
 	return project, nil
 }
 
-func (h *ProjectHandler) resolveProviderConfig(userID uint, purpose string) (provider string, apiKey string, model string, err error) {
-	purpose = normalizePurpose(purpose)
-	var config models.UserConfig
-	if err := h.DB.Where("user_id = ? AND purpose = ? AND is_active = ?", userID, purpose, true).
-		Order("updated_at DESC").
-		First(&config).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", "", "", nil
-		}
-		return "", "", "", err
-	}
-
-	plainKey, err := security.Decrypt(config.EncryptedKey, h.AESKey)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	return strings.ToLower(strings.TrimSpace(config.Provider)), plainKey, strings.TrimSpace(config.ModelName), nil
-}
-
 func (h *ProjectHandler) broadcast(projectID string, payload any) {
 	if h.Hub == nil {
 		return
 	}
 	_ = h.Hub.PublishJSON(projectID, payload)
+}
+
+func (h *ProjectHandler) respondPreflightError(c *gin.Context, err error, fallback string) {
+	if err == nil {
+		return
+	}
+
+	var reqErr *requestError
+	if errors.As(err, &reqErr) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reqErr.Error()})
+		return
+	}
+
+	c.JSON(http.StatusInternalServerError, gin.H{"error": fallback})
 }
 
 func serializeScenes(scenes []models.Scene) []gin.H {
