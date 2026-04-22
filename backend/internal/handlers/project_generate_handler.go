@@ -50,6 +50,11 @@ func (h *ProjectHandler) GenerateProject(c *gin.Context) {
 		return
 	}
 
+	selectedModel := strings.TrimSpace(req.Model)
+	if selectedModel == "" {
+		selectedModel = config.Model
+	}
+
 	project, scenes, err := h.getProjectWithScenes(projectID, userID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -94,7 +99,7 @@ func (h *ProjectHandler) GenerateProject(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{
 		"projectId":  projectID,
 		"status":     "generating",
-		"model":      strings.TrimSpace(req.Model),
+		"model":      selectedModel,
 		"provider":   config.Provider,
 		"imageModel": config.Model,
 		"warning":    warning,
