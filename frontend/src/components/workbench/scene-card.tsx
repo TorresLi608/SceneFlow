@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/lib/i18n";
 import { backendBaseURL } from "@/lib/http/backend-client";
 import { cn } from "@/lib/utils";
 import type { Scene } from "@/types/project";
@@ -20,14 +21,8 @@ interface SceneCardProps {
   onPromptChange: (value: string) => void;
 }
 
-const statusLabel: Record<Scene["image"]["status"], string> = {
-  idle: "待生成",
-  generating: "生成中",
-  success: "成功",
-  error: "失败",
-};
-
 export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCardProps) {
+  const { t } = useI18n();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scene.id,
   });
@@ -42,6 +37,13 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
       ? `${backendBaseURL}${scene.image.url}`
       : scene.image.url;
 
+  const statusLabel: Record<Scene["image"]["status"], string> = {
+    idle: t("scene.status.idle"),
+    generating: t("scene.status.generating"),
+    success: t("scene.status.success"),
+    error: t("scene.status.error"),
+  };
+
   return (
     <Card
       ref={setNodeRef}
@@ -53,10 +55,10 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
     >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">Scene {scene.order}</CardTitle>
+          <CardTitle className="text-base font-semibold">{t("scene.sceneLabel", { order: scene.order })}</CardTitle>
           <button
             type="button"
-            aria-label="拖拽排序"
+            aria-label={t("scene.dragSort")}
             className="rounded-md p-1 text-muted-foreground hover:bg-muted"
             {...attributes}
             {...listeners}
@@ -68,11 +70,11 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Badge variant="secondary" className="gap-1">
             <ImageIcon className="size-3.5" />
-            图像: {statusLabel[scene.image.status]}
+            {t("scene.imageStatus", { status: statusLabel[scene.image.status] })}
           </Badge>
           <Badge variant="secondary" className="gap-1">
             <Mic className="size-3.5" />
-            音频: {statusLabel[scene.audio.status]}
+            {t("scene.audioStatus", { status: statusLabel[scene.audio.status] })}
           </Badge>
         </div>
       </CardHeader>
@@ -80,7 +82,7 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>图像进度</span>
+            <span>{t("scene.imageProgress")}</span>
             <span>{scene.image.progress}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -104,7 +106,7 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
                 />
               ) : null}
               <div className="rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
-                图片已生成 {resolvedImageURL ? "(AI ready)" : ""}
+                {t("scene.imageReady")} {resolvedImageURL ? "(AI ready)" : ""}
               </div>
             </div>
           ) : null}
@@ -112,7 +114,7 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>音频进度</span>
+            <span>{t("scene.audioProgress")}</span>
             <span>{scene.audio.progress}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -124,13 +126,13 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
 
           {scene.audio.status === "success" ? (
             <div className="rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
-              音频已生成 · 时长 {scene.audio.duration.toFixed(1)}s
+              {t("scene.audioReady", { duration: scene.audio.duration.toFixed(1) })}
             </div>
           ) : null}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor={`narration_${scene.id}`}>旁白</Label>
+          <Label htmlFor={`narration_${scene.id}`}>{t("scene.narration")}</Label>
           <Textarea
             id={`narration_${scene.id}`}
             value={scene.narration}
@@ -140,7 +142,7 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor={`prompt_${scene.id}`}>画面 Prompt</Label>
+          <Label htmlFor={`prompt_${scene.id}`}>{t("scene.prompt")}</Label>
           <Textarea
             id={`prompt_${scene.id}`}
             value={scene.visualPrompt}

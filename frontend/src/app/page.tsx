@@ -36,6 +36,7 @@ import {
 import { queryKeys } from "@/actions/query-keys";
 import { listUserConfigsAction } from "@/actions/settings-actions";
 import { getMeAction } from "@/actions/user-actions";
+import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,19 +45,13 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { SceneCard } from "@/components/workbench/scene-card";
+import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig } from "@/types/auth";
 import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
-
-const formatter = new Intl.DateTimeFormat("zh-CN", {
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 const wsBaseURL =
   (process.env.NEXT_PUBLIC_WS_BASE_URL?.trim() || "ws://127.0.0.1:8080").replace(/\/$/, "");
@@ -67,23 +62,17 @@ function isTaskStatus(value: unknown): value is SceneTaskStatus | "idle" {
   );
 }
 
-const purposeLabel: Record<ConfigPurpose, string> = {
-  script: "剧本/提示词",
-  image: "图片生成",
-  video: "视频生成",
-};
-
 const providerLabelMap: Record<string, string> = {
-  qwen: "千问",
+  qwen: "Qwen",
   deepseek: "DeepSeek",
-  doubao: "豆包",
+  doubao: "Doubao",
   openai: "OpenAI",
   "seedance2.0": "Seedance 2.0",
 };
 
-function summarizeActiveConfig(config?: UserConfig) {
+function summarizeActiveConfig(config: UserConfig | undefined, unconfiguredLabel: string) {
   if (!config) {
-    return "未配置";
+    return unconfiguredLabel;
   }
 
   const providerLabel = providerLabelMap[config.provider] ?? config.provider;
@@ -92,6 +81,7 @@ function summarizeActiveConfig(config?: UserConfig) {
 
 export default function HomePage() {
   const router = useRouter();
+  const { t, formatDateTime } = useI18n();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -186,14 +176,14 @@ export default function HomePage() {
       if (response.warning) {
         setStatusMessage(response.warning);
       } else if (response.source === "llm") {
-        setStatusMessage("分镜解析完成（LLM）");
+        setStatusMessage(t("home.status.parsingDoneLlm"));
       } else {
-        setStatusMessage("分镜解析完成（Fallback）");
+        setStatusMessage(t("home.status.parsingDoneFallback"));
       }
     },
     onError: (error, variables) => {
       setProjectStatus(variables.projectId, "idle");
-      setStatusMessage(resolveRequestError(error, "分镜解析失败，请检查模型配置或稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.status.parseFailed")));
     },
   });
 
@@ -205,11 +195,11 @@ export default function HomePage() {
       setProjectStatus(projectId, "generating");
     },
     onSuccess: () => {
-      setStatusMessage("已启动并发生成，正在接收实时进度...");
+      setStatusMessage(t("home.status.generateStarted"));
     },
     onError: (error, variables) => {
       setProjectStatus(variables.projectId, "idle");
-      setStatusMessage(resolveRequestError(error, "一键生成启动失败，请稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.status.generateFailed")));
     },
   });
 
@@ -229,13 +219,18 @@ export default function HomePage() {
       });
 
       if (response.warning) {
-        setStatusMessage(`剧本优化完成（${response.source}）: ${response.warning}`);
+        setStatusMessage(
+          t("home.status.optimizeDoneWithWarning", {
+            source: response.source,
+            warning: response.warning,
+          })
+        );
       } else {
-        setStatusMessage(`剧本优化完成（${response.source.toUpperCase()}）`);
+        setStatusMessage(t("home.status.optimizeDone", { source: response.source.toUpperCase() }));
       }
     },
     onError: (error) => {
-      setStatusMessage(resolveRequestError(error, "剧本优化失败，请检查脚本和配置"));
+      setStatusMessage(resolveRequestError(error, t("home.status.optimizeFailed")));
     },
   });
 
@@ -251,7 +246,7 @@ export default function HomePage() {
       });
     },
     onSuccess: () => {
-      setStatusMessage("视频生成任务已启动（Seedance 2.0）");
+      setStatusMessage(t("home.status.videoStarted"));
     },
     onError: (error, variables) => {
       updateProjectFields(variables.projectId, {
@@ -259,7 +254,7 @@ export default function HomePage() {
         videoStatus: "idle",
         videoProgress: 0,
       });
-      setStatusMessage(resolveRequestError(error, "视频生成启动失败，请检查 Seedance 配置"));
+      setStatusMessage(resolveRequestError(error, t("home.status.videoFailed")));
     },
   });
 
@@ -270,10 +265,10 @@ export default function HomePage() {
     },
     onSuccess: (_, projectId) => {
       removeProject(projectId);
-      setStatusMessage("项目已删除");
+      setStatusMessage(t("home.status.projectDeleted"));
     },
     onError: (error) => {
-      setStatusMessage(resolveRequestError(error, "删除项目失败，请稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.status.deleteFailed")));
     },
   });
 
@@ -375,11 +370,11 @@ export default function HomePage() {
           }
 
           if (status === "done") {
-            setStatusMessage("并发生成完成");
+            setStatusMessage(t("home.status.generationDone"));
           }
 
           if (videoStatus === "success") {
-            setStatusMessage("视频生成完成");
+            setStatusMessage(t("home.status.videoDone"));
           }
 
           return;
@@ -409,7 +404,7 @@ export default function HomePage() {
 
         if (payload.type === "PROJECT_DELETED") {
           removeProject(payload.projectId);
-          setStatusMessage("当前项目已删除");
+          setStatusMessage(t("home.status.currentProjectDeleted"));
           return;
         }
 
@@ -434,6 +429,7 @@ export default function HomePage() {
     setProjectStatus,
     updateProjectFields,
     removeProject,
+    t,
   ]);
 
   const onDragEnd = (event: DragEndEvent) => {
@@ -446,17 +442,17 @@ export default function HomePage() {
   };
 
   if (!hydrated) {
-    return <main className="flex min-h-screen items-center justify-center">初始化中...</main>;
+    return <main className="flex min-h-screen items-center justify-center">{t("common.initializing")}</main>;
   }
 
   if (!token) {
-    return <main className="flex min-h-screen items-center justify-center">跳转登录...</main>;
+    return <main className="flex min-h-screen items-center justify-center">{t("common.redirectingToLogin")}</main>;
   }
 
   if (!currentProject && !projectTemplatesQuery.isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <Button onClick={createProject}>创建你的第一个项目</Button>
+        <Button onClick={createProject}>{t("common.createFirstProject")}</Button>
       </main>
     );
   }
@@ -472,38 +468,38 @@ export default function HomePage() {
               </div>
               <div>
                 <p className="text-sm font-semibold">SceneFlow</p>
-                <p className="text-xs text-muted-foreground">AI 漫剧可视化工作台</p>
+                <p className="text-xs text-muted-foreground">{t("home.brandSubtitle")}</p>
               </div>
             </div>
 
             <Button className="w-full justify-start" onClick={createProject}>
               <Plus className="mr-2 size-4" />
-              新建项目
+              {t("home.newProject")}
             </Button>
           </div>
 
           <div className="space-y-1 px-3 pb-3">
-            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">菜单</p>
+            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.menu")}</p>
             <button
               type="button"
               className="flex w-full items-center gap-2 rounded-md bg-muted px-2 py-2 text-left text-sm"
             >
               <LayoutDashboard className="size-4" />
-              工作台
+              {t("home.workspace")}
             </button>
             <button
               type="button"
               className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground"
             >
               <FolderKanban className="size-4" />
-              项目资产
+              {t("home.assets")}
             </button>
           </div>
 
           <Separator />
 
           <div className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
-            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">项目列表</p>
+            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.projectList")}</p>
 
             {projectTemplatesQuery.isLoading && projects.length === 0 ? (
               <div className="space-y-2 px-1">
@@ -531,7 +527,10 @@ export default function HomePage() {
                 >
                   <p className="truncate text-sm font-medium">{project.title}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {project.scenes.length} scenes · {formatter.format(new Date(project.updatedAt))}
+                    {t("home.scenesCount", {
+                      count: project.scenes.length,
+                      time: formatDateTime(project.updatedAt),
+                    })}
                   </p>
                 </button>
               );
@@ -543,16 +542,20 @@ export default function HomePage() {
           <header className="border-b border-border/70 bg-card/60">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
               <div>
-                <p className="text-base font-semibold">{currentProject?.title ?? "加载项目中..."}</p>
+                <p className="text-base font-semibold">{currentProject?.title ?? t("home.projectTitleLoading")}</p>
                 <p className="text-xs text-muted-foreground">
-                  当前用户：{meQuery.isLoading ? "加载中..." : user?.username ?? "未知用户"}
+                  {t("common.currentUser", {
+                    username: meQuery.isLoading ? t("common.loading") : user?.username ?? t("common.unknownUser"),
+                  })}
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="hidden sm:inline-flex">
-                  WS: {wsConnected ? "已连接" : "未连接"}
+                  WS: {wsConnected ? t("common.wsConnected") : t("common.wsDisconnected")}
                 </Badge>
+
+                <PreferencesSwitcher />
 
                 <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}>
                   <Settings2 className="size-4" />
@@ -566,7 +569,7 @@ export default function HomePage() {
                   }}
                 >
                   <LogOut className="mr-2 size-4" />
-                  退出
+                  {t("common.logout")}
                 </Button>
               </div>
             </div>
@@ -575,25 +578,39 @@ export default function HomePage() {
           <div className="grid flex-1 gap-6 p-4 md:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
             <Card className="h-fit border-border/80">
               <CardHeader>
-                <CardTitle className="text-base">剧本输入</CardTitle>
+                <CardTitle className="text-base">{t("home.scriptInput")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-2 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-3">
-                  <p>{purposeLabel.script}：{summarizeActiveConfig(activeScriptConfig)}</p>
-                  <p>{purposeLabel.image}：{summarizeActiveConfig(activeImageConfig)}</p>
-                  <p>{purposeLabel.video}：{summarizeActiveConfig(activeVideoConfig)}</p>
+                  <p>
+                    {t("home.scriptConfigSummary", {
+                      value: summarizeActiveConfig(activeScriptConfig, t("settings.unconfigured")),
+                    })}
+                  </p>
+                  <p>
+                    {t("home.imageConfigSummary", {
+                      value: summarizeActiveConfig(activeImageConfig, t("settings.unconfigured")),
+                    })}
+                  </p>
+                  <p>
+                    {t("home.videoConfigSummary", {
+                      value: summarizeActiveConfig(activeVideoConfig, t("settings.unconfigured")),
+                    })}
+                  </p>
                 </div>
 
                 <Textarea
                   value={currentProject?.originalScript ?? ""}
                   onChange={(event) => updateCurrentScript(event.target.value)}
-                  placeholder="输入你的故事剧本，每一段建议一行..."
+                  placeholder={t("home.storyPlaceholder")}
                   className="min-h-[300px]"
                   disabled={!currentProject}
                 />
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge variant="secondary">状态: {currentProject?.status ?? "loading"}</Badge>
+                  <Badge variant="secondary">
+                    {t("home.status", { status: currentProject?.status ?? "loading" })}
+                  </Badge>
 
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -617,7 +634,7 @@ export default function HomePage() {
                       }
                     >
                       <Sparkles className="mr-2 size-4" />
-                      {optimizeProjectMutation.isPending ? "优化中..." : "优化剧本"}
+                      {optimizeProjectMutation.isPending ? t("home.optimizingScript") : t("home.optimizeScript")}
                     </Button>
 
                     <Button
@@ -636,7 +653,7 @@ export default function HomePage() {
                       disabled={!currentProject || !hasUsableScriptConfig || currentProject.status === "parsing"}
                     >
                       <WandSparkles className="mr-2 size-4" />
-                      {currentProject?.status === "parsing" ? "分镜解析中..." : "智能分镜"}
+                      {currentProject?.status === "parsing" ? t("home.parsingScenes") : t("home.parseScenes")}
                     </Button>
 
                     <Button
@@ -659,7 +676,7 @@ export default function HomePage() {
                       }
                     >
                       <Sparkles className="mr-2 size-4" />
-                      {currentProject?.status === "generating" ? "并发生成中..." : "一键生成"}
+                      {currentProject?.status === "generating" ? t("home.generatingAll") : t("home.generateAll")}
                     </Button>
 
                     <Button
@@ -683,7 +700,9 @@ export default function HomePage() {
                       }
                     >
                       <Film className="mr-2 size-4" />
-                      {currentProject?.status === "video_generating" ? "视频生成中..." : "生成视频"}
+                      {currentProject?.status === "video_generating"
+                        ? t("home.generatingVideo")
+                        : t("home.generateVideo")}
                     </Button>
 
                     <Button
@@ -692,7 +711,7 @@ export default function HomePage() {
                         if (!currentProject || deleteProjectMutation.isPending) {
                           return;
                         }
-                        if (!window.confirm(`确认删除项目「${currentProject.title}」吗？`)) {
+                        if (!window.confirm(t("home.deleteProjectConfirm", { title: currentProject.title }))) {
                           return;
                         }
                         deleteProjectMutation.mutate(currentProject.id);
@@ -700,14 +719,18 @@ export default function HomePage() {
                       disabled={!currentProject || deleteProjectMutation.isPending}
                     >
                       <Trash2 className="mr-2 size-4" />
-                      {deleteProjectMutation.isPending ? "删除中..." : "删除项目"}
+                      {deleteProjectMutation.isPending ? t("home.deletingProject") : t("home.deleteProject")}
                     </Button>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">视频状态: {currentProject?.videoStatus ?? "idle"}</Badge>
-                  <Badge variant="outline">视频进度: {currentProject?.videoProgress ?? 0}%</Badge>
+                  <Badge variant="outline">
+                    {t("home.videoStatus", { status: currentProject?.videoStatus ?? "idle" })}
+                  </Badge>
+                  <Badge variant="outline">
+                    {t("home.videoProgress", { progress: currentProject?.videoProgress ?? 0 })}
+                  </Badge>
                 </div>
 
                 {currentProject?.videoUrl ? (
@@ -717,13 +740,13 @@ export default function HomePage() {
                     rel="noreferrer"
                     className="inline-flex items-center text-xs text-primary underline-offset-4 hover:underline"
                   >
-                    打开生成视频链接
+                    {t("home.openVideoLink")}
                   </a>
                 ) : null}
 
                 {!hasUsableScriptConfig ? (
                   <p className="text-xs text-amber-600">
-                    请先在设置中完成剧本/提示词默认模型的可用性校验并保存激活后，再进行优化剧本和智能分镜。
+                    {t("home.scriptRequiredHint")}
                   </p>
                 ) : null}
 
@@ -733,7 +756,7 @@ export default function HomePage() {
 
             <Card className="min-h-[500px] border-border/80">
               <CardHeader>
-                <CardTitle className="text-base">分镜卡片流（可拖拽排序）</CardTitle>
+                <CardTitle className="text-base">{t("home.sceneFlowTitle")}</CardTitle>
               </CardHeader>
               <CardContent>
                 {!currentProject ? (
@@ -742,7 +765,7 @@ export default function HomePage() {
                     <Skeleton className="h-40 w-full" />
                   </div>
                 ) : currentProject.scenes.length === 0 ? (
-                  <p className="py-14 text-center text-sm text-muted-foreground">暂无分镜，先点击智能分镜生成。</p>
+                  <p className="py-14 text-center text-sm text-muted-foreground">{t("home.noScenes")}</p>
                 ) : (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                     <SortableContext
