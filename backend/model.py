@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 
@@ -158,6 +158,77 @@ class ModelRouter:
             optimizedScript=optimized,
             tips=tips or ["补充镜头情绪变化", "每段保持单一动作焦点", "减少重复描述，增加视觉细节"],
         )
+
+    async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]]) -> str:
+        content = ""
+        async for chunk in self.chat_stream(provider, api_key, model, messages):
+            if chunk["type"] == "content_delta":
+                content += chunk["content"]
+        content = content.strip()
+        if not content:
+            raise ValueError("empty content from provider")
+        return content
+
+    async def chat_stream(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]]):
+        provider = provider.strip().lower()
+        if provider not in CHAT_BASE_URLS:
+            raise ValueError(f"unsupported provider: {provider}")
+        payload_messages = []
+        for message in messages:
+            role = (message.get("role") or "user").strip().lower()
+            content = (message.get("content") or "").strip()
+            if content:
+                payload_messages.append({"role": role if role in {"system", "user", "assistant"} else "user", "content": content})
+        if not payload_messages:
+            raise ValueError("message is empty")
+
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream(
+                "POST",
+                f"{CHAT_BASE_URLS[provider]}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"},
+                json={"model": pick_model(provider, model), "messages": payload_messages, "temperature": 0.4, "stream": True},
+            ) as response:
+                if response.status_code >= 300:
+                    text = await response.aread()
+                    raise ValueError(f"provider status {response.status_code}: {text.decode(errors='ignore')[:220]}")
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    payload = json.loads(data)
+                    delta = (payload.get("choices") or [{}])[0].get("delta") or {}
+                    reasoning = str(delta.get("reasoning_content") or delta.get("reasoning") or "")
+                    content = str(delta.get("content") or "")
+                    if reasoning:
+                        yield {"type": "reasoning_delta", "content": reasoning}
+                    if content:
+                        yield {"type": "content_delta", "content": content}
+
+    async def langchain_chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]]) -> str:
+        llm_messages = []
+        for message in messages:
+            role = (message.get("role") or "").strip().lower()
+            content = (message.get("content") or "").strip()
+            if not content:
+                continue
+            if role == "system":
+                llm_messages.append(SystemMessage(content=content))
+            elif role == "assistant":
+                llm_messages.append(AIMessage(content=content))
+            else:
+                llm_messages.append(HumanMessage(content=content))
+        if not llm_messages:
+            raise ValueError("message is empty")
+        llm = self.chat_model(provider, api_key, model, temperature=0.4)
+        response = await llm.ainvoke(llm_messages)
+        content = str(response.content).strip()
+        if not content:
+            raise ValueError("empty content from provider")
+        return content
 
     async def validate_image_model(self, provider: str, api_key: str, model: str) -> None:
         if provider.strip().lower() != "openai":

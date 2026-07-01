@@ -81,8 +81,38 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_scenes_project_id ON scenes(project_id);
             CREATE INDEX IF NOT EXISTS idx_scenes_deleted_at ON scenes(deleted_at);
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id text PRIMARY KEY,
+                created_at datetime,
+                updated_at datetime,
+                deleted_at datetime,
+                user_id integer NOT NULL,
+                title text NOT NULL,
+                config_id integer,
+                provider text,
+                model_name text,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(config_id) REFERENCES user_configs(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_deleted_at ON chat_sessions(deleted_at);
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id text PRIMARY KEY,
+                created_at datetime,
+                session_id text NOT NULL,
+                role text NOT NULL,
+                content text NOT NULL,
+                reasoning text,
+                provider text,
+                model_name text,
+                FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
             """
         )
+        columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
+        if "reasoning" not in columns:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN reasoning text")
 
 
 def row(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] = ()) -> sqlite3.Row | None:

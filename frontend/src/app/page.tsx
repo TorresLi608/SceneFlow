@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import {
   Clapperboard,
   Film,
-  FolderKanban,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   Plus,
   Settings2,
   Sparkles,
@@ -38,6 +38,7 @@ import { listUserConfigsAction } from "@/actions/settings-actions";
 import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { SettingsDialog } from "@/components/settings-dialog";
+import { ChatPanel } from "@/components/chat/chat-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,6 +87,7 @@ export default function HomePage() {
   const wsRef = useRef<WebSocket | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeView, setActiveView] = useState<"workspace" | "chat">("workspace");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
 
@@ -482,17 +484,25 @@ export default function HomePage() {
             <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.menu")}</p>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md bg-muted px-2 py-2 text-left text-sm"
+              onClick={() => setActiveView("workspace")}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm",
+                activeView === "workspace" ? "bg-muted" : "text-muted-foreground"
+              )}
             >
               <LayoutDashboard className="size-4" />
               {t("home.workspace")}
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground"
+              onClick={() => setActiveView("chat")}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm",
+                activeView === "chat" ? "bg-muted" : "text-muted-foreground"
+              )}
             >
-              <FolderKanban className="size-4" />
-              {t("home.assets")}
+              <MessageSquare className="size-4" />
+              {t("home.chat")}
             </button>
           </div>
 
@@ -575,6 +585,12 @@ export default function HomePage() {
             </div>
           </header>
 
+          {activeView === "chat" ? (
+            <ChatPanel
+              configs={userConfigsQuery.data?.configs ?? []}
+              formatDateTime={formatDateTime}
+            />
+          ) : (
           <div className="grid flex-1 gap-6 p-4 md:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
             <Card className="h-fit border-border/80">
               <CardHeader>
@@ -801,6 +817,7 @@ export default function HomePage() {
               </CardContent>
             </Card>
           </div>
+          )}
         </section>
       </div>
 

@@ -33,3 +33,28 @@ def scene_json(scene: sqlite3.Row) -> dict[str, Any]:
         "image": {"url": scene["image_url"] or None, "status": scene["image_status"], "progress": 0},
         "audio": {"url": scene["audio_url"] or None, "status": scene["audio_status"], "progress": 0, "duration": 0},
     }
+
+
+def chat_session_json(session: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": session["id"],
+        "title": session["title"],
+        "configId": session["config_id"],
+        "provider": session["provider"] or "",
+        "model": session["model_name"] or "",
+        "createdAt": session["created_at"],
+        "updatedAt": session["updated_at"],
+    }
+
+
+def chat_message_json(message: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": message["id"],
+        "sessionId": message["session_id"],
+        "role": message["role"],
+        "content": message["content"],
+        "reasoning": message["reasoning"] or "",
+        "provider": message["provider"] or "",
+        "model": message["model_name"] or "",
+        "createdAt": message["created_at"],
+    }
