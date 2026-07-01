@@ -12,6 +12,8 @@ from security import decrypt
 from serializers import chat_message_json, chat_session_json
 from utils import new_id, now
 
+SYSTEM_PROMPT = "You are SceneFlow Assistant. Answer clearly and concisely."
+
 
 def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None) -> dict[str, Any]:
     if config_id is None:
@@ -70,6 +72,32 @@ def list_chat_messages(conn: sqlite3.Connection, session_id: str, user_id: int) 
     require_session(conn, session_id, user_id)
     messages = rows(conn, "SELECT * FROM chat_messages WHERE session_id=? ORDER BY created_at ASC", (session_id,))
     return [chat_message_json(message) for message in messages]
+
+
+def prepare_chat_turn(
+    conn: sqlite3.Connection,
+    session_id: str,
+    user_id: int,
+    content: str,
+    config_id: int | None,
+) -> tuple[dict[str, Any], sqlite3.Row, list[dict[str, str]]]:
+    content = content.strip()
+    if not content:
+        raise HTTPException(400, "content is required")
+    if len(content) > 12000:
+        raise HTTPException(400, "content is too long")
+
+    session = require_session(conn, session_id, user_id)
+    config = chat_config(conn, user_id, config_id if config_id else session["config_id"])
+    user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"])
+    history = rows(
+        conn,
+        "SELECT role, content FROM (SELECT role, content, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at DESC LIMIT 40) ORDER BY created_at ASC",
+        (session_id,),
+    )
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend({"role": message["role"], "content": message["content"]} for message in history)
+    return config, user_message, messages
 
 
 def save_chat_message(

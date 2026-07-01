@@ -6,8 +6,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from chat_service import chat_config, create_chat_session, list_chat_messages, list_chat_sessions, require_session, save_chat_message
-from database import db, rows
+from chat_service import create_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
+from database import db
 from model_registry import models
 from security import current_user_id
 from serializers import chat_message_json
@@ -39,20 +39,9 @@ def get_messages(session_id: str, user_id: int = Depends(current_user_id)) -> di
 @router.post("/sessions/{session_id}/messages")
 async def post_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     content = str(payload.get("content", "")).strip()
-    if not content:
-        raise HTTPException(400, "content is required")
-    if len(content) > 12000:
-        raise HTTPException(400, "content is too long")
-
     config_id = payload.get("configId")
     with db() as conn:
-        session = require_session(conn, session_id, user_id)
-        config = chat_config(conn, user_id, int(config_id) if config_id else session["config_id"])
-        user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"])
-        history = rows(conn, "SELECT role, content FROM chat_messages WHERE session_id=? ORDER BY created_at ASC LIMIT 40", (session_id,))
-
-    messages = [{"role": "system", "content": "You are SceneFlow Assistant. Answer clearly and concisely."}]
-    messages.extend({"role": message["role"], "content": message["content"]} for message in history)
+        config, user_message, messages = prepare_chat_turn(conn, session_id, user_id, content, int(config_id) if config_id else None)
 
     try:
         answer = await models.chat(config["provider"], config["apiKey"], config["model"], messages)
@@ -71,20 +60,9 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
 @router.post("/sessions/{session_id}/messages/stream")
 async def stream_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> StreamingResponse:
     content = str(payload.get("content", "")).strip()
-    if not content:
-        raise HTTPException(400, "content is required")
-    if len(content) > 12000:
-        raise HTTPException(400, "content is too long")
-
     config_id = payload.get("configId")
     with db() as conn:
-        session = require_session(conn, session_id, user_id)
-        config = chat_config(conn, user_id, int(config_id) if config_id else session["config_id"])
-        user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"])
-        history = rows(conn, "SELECT role, content FROM chat_messages WHERE session_id=? ORDER BY created_at ASC LIMIT 40", (session_id,))
-
-    messages = [{"role": "system", "content": "You are SceneFlow Assistant. Answer clearly and concisely."}]
-    messages.extend({"role": message["role"], "content": message["content"]} for message in history)
+        config, user_message, messages = prepare_chat_turn(conn, session_id, user_id, content, int(config_id) if config_id else None)
 
     async def events():
         yield json.dumps({"type": "userMessage", "message": chat_message_json(user_message)}, ensure_ascii=False) + "\n"

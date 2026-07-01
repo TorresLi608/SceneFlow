@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 
@@ -207,28 +207,6 @@ class ModelRouter:
                         yield {"type": "reasoning_delta", "content": reasoning}
                     if content:
                         yield {"type": "content_delta", "content": content}
-
-    async def langchain_chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]]) -> str:
-        llm_messages = []
-        for message in messages:
-            role = (message.get("role") or "").strip().lower()
-            content = (message.get("content") or "").strip()
-            if not content:
-                continue
-            if role == "system":
-                llm_messages.append(SystemMessage(content=content))
-            elif role == "assistant":
-                llm_messages.append(AIMessage(content=content))
-            else:
-                llm_messages.append(HumanMessage(content=content))
-        if not llm_messages:
-            raise ValueError("message is empty")
-        llm = self.chat_model(provider, api_key, model, temperature=0.4)
-        response = await llm.ainvoke(llm_messages)
-        content = str(response.content).strip()
-        if not content:
-            raise ValueError("empty content from provider")
-        return content
 
     async def validate_image_model(self, provider: str, api_key: str, model: str) -> None:
         if provider.strip().lower() != "openai":
