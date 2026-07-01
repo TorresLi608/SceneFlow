@@ -5,17 +5,16 @@
 - Move to the next phase only after manual acceptance.
 
 ## Phase 1 - Backend Foundation and Auth (Completed)
-- Go module initialization and service entrypoint.
-- Gin router and route grouping.
-- SQLite + GORM setup and migration.
-- JWT issue/verify and auth middleware.
+- FastAPI service entrypoint and route grouping.
+- SQLite setup and compatible table creation.
+- PyJWT issue/verify and auth dependency.
 - AES-256-GCM utility for provider API key encryption/decryption.
 - User CRUD APIs (`/api/users/me`).
 - UserConfig CRUD APIs (`/api/settings/keys`).
+- LangChain model routing in `backend/model.py`.
 
 ### Acceptance checks
-- `go test ./...` passes.
-- `go build -buildvcs=false ./...` passes.
+- `python3 -m py_compile backend/app.py backend/model.py` passes.
 
 ## Phase 2 - Frontend Foundation and Auth Loop (Completed)
 - Initialize Next.js + Tailwind + shadcn/ui.
@@ -33,14 +32,13 @@
 
 ## Phase 4 - Parse API + WebSocket Foundation (Completed)
 - `POST /api/projects/:id/parse` implementation.
-- Decrypt user API key and call selected LLM.
+- Decrypt user API key and call selected LLM through LangChain.
 - Validate strict JSON and persist scenes.
-- Gorilla WebSocket hub with heartbeat and broadcast.
+- FastAPI WebSocket project broadcast.
 
 ## Phase 5 - Concurrent Generation + End-to-End Sync (Completed)
-- `POST /api/projects/:id/generate` with goroutine pool.
+- `POST /api/projects/:id/generate` with async task concurrency.
 - Simulated image/TTS worker execution.
-- Progress streaming via channel -> WebSocket.
+- Progress streaming via WebSocket.
 - Frontend WS subscription updates scene progress/status.
 - Skeleton and progress animation for generating scenes.
-test

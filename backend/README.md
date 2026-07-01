@@ -1,10 +1,13 @@
-# SceneFlow Backend (Phase 4)
+# SceneFlow Backend
 
 ## Run
 
 ```bash
 cd backend
-go run .
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
 ## Optional env
@@ -13,6 +16,14 @@ go run .
 - `SCENEFLOW_DB_PATH` (default `./sceneflow.db`)
 - `SCENEFLOW_JWT_SECRET` (default `dev-jwt-secret-change-me`)
 - `SCENEFLOW_AES_KEY` (default `dev-aes-key-change-me`, internally SHA-256 -> 32 bytes)
+- `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
+- `SCENEFLOW_GENERATED_DIR` (default `./generated`)
+
+## Model routing
+
+- `model.py` owns LLM provider switching.
+- Chat models use LangChain (`langchain-openai`) with OpenAI-compatible base URLs for `openai`, `deepseek`, `qwen`, and `doubao`.
+- Image generation currently uses OpenAI Images directly because LangChain does not add useful value for that endpoint.
 
 ## APIs
 
@@ -50,7 +61,7 @@ go run .
 
 ## Notes
 
-- Password is stored by bcrypt hash.
+- Passwords are stored by bcrypt hash.
 - Provider API keys are encrypted by AES-256-GCM before persisting.
-- Parse flow tries active provider LLM first; if missing/failed, a local fallback parser is used.
+- Existing SQLite data is kept compatible with the old GORM table names and columns.
 - Generate flow streams per-scene progress events over WebSocket (`SCENE_UPDATE`).
