@@ -19,6 +19,11 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 - `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
 - `SCENEFLOW_GENERATED_DIR` (default `./generated`)
 
+## Super admin
+
+- Startup seeds `superAdmin` / `superAdmin@123` with role `superAdmin`.
+- Disabled users cannot log in or use existing tokens.
+
 ## Model routing
 
 - `model.py` owns LLM provider switching.
@@ -42,6 +47,19 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 - `GET /api/settings/keys/:id`
 - `PATCH /api/settings/keys/:id`
 - `DELETE /api/settings/keys/:id`
+- `POST /api/settings/official/:id/activate`
+
+### Admin (superAdmin required)
+- `GET /api/admin/users`
+- `PATCH /api/admin/users/:id`
+- `DELETE /api/admin/users/:id`
+- `GET /api/admin/default-models`
+- `POST /api/admin/default-models`
+- `PATCH /api/admin/default-models/:id`
+- `DELETE /api/admin/default-models/:id`
+
+Official script configs support OpenAI-compatible relays by setting `provider: "custom"`,
+`modelSeries`, and `baseUrl` such as `https://www.juaiapi.com/v1`.
 
 ### Project Parse (JWT required)
 - `POST /api/projects/:id/parse`

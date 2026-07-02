@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Plus,
   Settings2,
+  Shield,
   Sparkles,
   Trash2,
   WandSparkles,
@@ -68,16 +69,22 @@ const providerLabelMap: Record<string, string> = {
   deepseek: "DeepSeek",
   doubao: "Doubao",
   openai: "OpenAI",
+  custom: "Custom relay",
   "seedance2.0": "Seedance 2.0",
 };
 
-function summarizeActiveConfig(config: UserConfig | undefined, unconfiguredLabel: string) {
+function summarizeActiveConfig(
+  config: UserConfig | undefined,
+  unconfiguredLabel: string,
+  officialLabel: string,
+  customLabel: string
+) {
   if (!config) {
     return unconfiguredLabel;
   }
 
   const providerLabel = providerLabelMap[config.provider] ?? config.provider;
-  return `${providerLabel} · ${config.modelSeries}`;
+  return `${config.source === "official" ? officialLabel : customLabel} · ${providerLabel} · ${config.modelSeries}`;
 }
 
 export default function HomePage() {
@@ -137,7 +144,7 @@ export default function HomePage() {
     staleTime: 30_000,
   });
 
-  const activeConfigByPurpose = useMemo(
+  const activeUserConfigByPurpose = useMemo(
     () =>
       (userConfigsQuery.data?.configs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
         const isUsableActiveConfig =
@@ -150,6 +157,24 @@ export default function HomePage() {
         return acc;
       }, {}),
     [userConfigsQuery.data?.configs]
+  );
+  const officialConfigByPurpose = useMemo(
+    () =>
+      (userConfigsQuery.data?.officialConfigs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
+        const isUsableActiveConfig =
+          config.isActive && config.isVerified && config.modelSeries.trim().length > 0;
+
+        if (isUsableActiveConfig && !acc[config.purpose]) {
+          acc[config.purpose] = config;
+        }
+
+        return acc;
+      }, {}),
+    [userConfigsQuery.data?.officialConfigs]
+  );
+  const activeConfigByPurpose = useMemo(
+    () => ({ ...officialConfigByPurpose, ...activeUserConfigByPurpose }),
+    [activeUserConfigByPurpose, officialConfigByPurpose]
   );
   const activeScriptConfig = activeConfigByPurpose.script;
   const activeImageConfig = activeConfigByPurpose.image;
@@ -567,6 +592,12 @@ export default function HomePage() {
 
                 <PreferencesSwitcher />
 
+                {user?.role === "superAdmin" ? (
+                  <Button variant="outline" size="icon" onClick={() => router.push("/admin")}>
+                    <Shield className="size-4" />
+                  </Button>
+                ) : null}
+
                 <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}>
                   <Settings2 className="size-4" />
                 </Button>
@@ -588,6 +619,7 @@ export default function HomePage() {
           {activeView === "chat" ? (
             <ChatPanel
               configs={userConfigsQuery.data?.configs ?? []}
+              officialConfigs={userConfigsQuery.data?.officialConfigs ?? []}
               formatDateTime={formatDateTime}
             />
           ) : (
@@ -600,17 +632,32 @@ export default function HomePage() {
                 <div className="grid gap-2 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-3">
                   <p>
                     {t("home.scriptConfigSummary", {
-                      value: summarizeActiveConfig(activeScriptConfig, t("settings.unconfigured")),
+                      value: summarizeActiveConfig(
+                        activeScriptConfig,
+                        t("settings.unconfigured"),
+                        t("settings.officialConfig"),
+                        t("settings.customConfig")
+                      ),
                     })}
                   </p>
                   <p>
                     {t("home.imageConfigSummary", {
-                      value: summarizeActiveConfig(activeImageConfig, t("settings.unconfigured")),
+                      value: summarizeActiveConfig(
+                        activeImageConfig,
+                        t("settings.unconfigured"),
+                        t("settings.officialConfig"),
+                        t("settings.customConfig")
+                      ),
                     })}
                   </p>
                   <p>
                     {t("home.videoConfigSummary", {
-                      value: summarizeActiveConfig(activeVideoConfig, t("settings.unconfigured")),
+                      value: summarizeActiveConfig(
+                        activeVideoConfig,
+                        t("settings.unconfigured"),
+                        t("settings.officialConfig"),
+                        t("settings.customConfig")
+                      ),
                     })}
                   </p>
                 </div>

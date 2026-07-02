@@ -27,6 +27,11 @@ export async function deleteUserConfigAction(id: number) {
   await httpClient.delete(`/api/bff/settings/keys/${id}`);
 }
 
+export async function activateOfficialConfigAction(id: number) {
+  const response = await httpClient.post<UserConfigItemResponse>(`/api/bff/settings/official/${id}/activate`);
+  return response.data;
+}
+
 export async function validateUserConfigAction(payload: ValidateUserConfigInput) {
   const response = await httpClient.post<ValidateUserConfigResponse>(
     "/api/bff/settings/keys/validate",

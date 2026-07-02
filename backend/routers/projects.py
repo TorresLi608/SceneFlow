@@ -29,7 +29,13 @@ async def parse_project(project_id: str, payload: dict[str, Any], user_id: int =
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "parsing"}})
     config = data["config"]
     try:
-        result = await models.parse_script(config["provider"], config["apiKey"], str(payload.get("model") or config["model"]), data["script"])
+        result = await models.parse_script(
+            config["provider"],
+            config["apiKey"],
+            str(payload.get("model") or config["model"]),
+            data["script"],
+            config.get("baseUrl", ""),
+        )
     except Exception as exc:
         with db() as conn:
             conn.execute("UPDATE projects SET status='idle', updated_at=? WHERE id=?", (now(), project_id))
@@ -65,7 +71,13 @@ async def optimize_project(project_id: str, payload: dict[str, Any], user_id: in
             raise HTTPException(400, "script is required")
         config = active_model_config(conn, user_id, "script", "故事生成/剧本优化")
     try:
-        result = await models.optimize_script(config["provider"], config["apiKey"], str(payload.get("model") or config["model"]), script)
+        result = await models.optimize_script(
+            config["provider"],
+            config["apiKey"],
+            str(payload.get("model") or config["model"]),
+            script,
+            config.get("baseUrl", ""),
+        )
     except Exception as exc:
         raise HTTPException(502, "failed to optimize script: " + str(exc)) from exc
     with db() as conn:

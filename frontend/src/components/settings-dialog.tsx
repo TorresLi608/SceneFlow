@@ -5,6 +5,7 @@ import { Pencil, Star, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
+  activateOfficialConfigAction,
   createUserConfigAction,
   deleteUserConfigAction,
   listUserConfigsAction,
@@ -43,9 +44,10 @@ interface SettingsDialogProps {
 
 const providerOptions: Record<
   ConfigPurpose,
-  Array<{ value: string; label: string; modelSeries: string }>
+  Array<{ value: string; label: string; modelSeries: string; baseUrl?: string }>
 > = {
   script: [
+    { value: "custom", label: "Custom relay", modelSeries: "gpt-5.5", baseUrl: "https://www.juaiapi.com/v1" },
     { value: "qwen", label: "Qwen", modelSeries: "qwen-plus" },
     { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
     { value: "doubao", label: "Doubao", modelSeries: "doubao-seed-1-6-250615" },
@@ -62,20 +64,27 @@ const providerLabelMap: Record<string, string> = {
   deepseek: "DeepSeek",
   doubao: "Doubao",
   openai: "OpenAI",
+  custom: "Custom relay",
   "seedance2.0": "Seedance 2.0",
 };
 
-function displayConfigName(config: UserConfig | undefined, unconfiguredLabel: string) {
+function displayConfigName(
+  config: UserConfig | undefined,
+  unconfiguredLabel: string,
+  officialLabel: string,
+  customLabel: string
+) {
   if (!config) {
     return unconfiguredLabel;
   }
+  const sourceLabel = config.source === "official" ? officialLabel : customLabel;
 
   if (config.name?.trim()) {
-    return `${config.name} · ${config.modelSeries}`;
+    return `${sourceLabel} · ${config.name} · ${config.modelSeries}`;
   }
 
   const providerLabel = providerLabelMap[config.provider] ?? config.provider;
-  return `${providerLabel} · ${config.modelSeries}`;
+  return `${sourceLabel} · ${providerLabel} · ${config.modelSeries}`;
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
@@ -87,6 +96,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
   const [provider, setProvider] = useState("qwen");
+  const [baseUrl, setBaseUrl] = useState("");
   const [modelSeries, setModelSeries] = useState("qwen-plus");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -108,6 +118,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setDescription("");
     setPurpose("script");
     setProvider("qwen");
+    setBaseUrl("");
     setModelSeries("qwen-plus");
     setApiKey("");
     setValidationPassed(false);
@@ -152,6 +163,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     },
   });
 
+  const activateOfficialMutation = useMutation({
+    mutationFn: activateOfficialConfigAction,
+    onSuccess: async () => {
+      setMessage(t("settings.officialActivated"));
+      await refreshConfigs();
+    },
+    onError: (error) => {
+      setMessage(resolveRequestError(error, t("settings.officialActivateFailed")));
+    },
+  });
+
   const validateConfigMutation = useMutation({
     mutationFn: validateUserConfigAction,
     onSuccess: () => {
@@ -169,16 +191,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     saveConfigMutation.isPending ||
     updateConfigMutation.isPending ||
     deleteConfigMutation.isPending ||
+    activateOfficialMutation.isPending ||
     validateConfigMutation.isPending;
 
   const hasConfigs = (configsQuery.data?.configs?.length ?? 0) > 0;
+  const hasOfficialConfigs = (configsQuery.data?.officialConfigs?.length ?? 0) > 0;
 
   const orderedConfigs = useMemo(
     () => [...(configsQuery.data?.configs ?? [])].sort((a, b) => Number(b.isActive) - Number(a.isActive)),
     [configsQuery.data?.configs]
   );
 
-  const activeConfigByPurpose = useMemo(
+  const activeUserConfigByPurpose = useMemo(
     () =>
       (configsQuery.data?.configs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
         if (config.isActive && !acc[config.purpose]) {
@@ -187,6 +211,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         return acc;
       }, {}),
     [configsQuery.data?.configs]
+  );
+
+  const officialConfigByPurpose = useMemo(
+    () =>
+      (configsQuery.data?.officialConfigs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
+        if (config.isActive && config.isVerified && !acc[config.purpose]) {
+          acc[config.purpose] = config;
+        }
+        return acc;
+      }, {}),
+    [configsQuery.data?.officialConfigs]
+  );
+
+  const activeConfigByPurpose = useMemo(
+    () => ({ ...officialConfigByPurpose, ...activeUserConfigByPurpose }),
+    [activeUserConfigByPurpose, officialConfigByPurpose]
   );
 
   const purposeLabel: Record<ConfigPurpose, string> = {
@@ -203,6 +243,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const nextOption = providerOptions[value][0];
     if (nextOption) {
       setProvider(nextOption.value);
+      setBaseUrl(nextOption.baseUrl ?? "");
       setModelSeries(nextOption.modelSeries);
     }
   };
@@ -214,6 +255,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setProvider(value);
     const hit = options.find((item) => item.value === value);
     if (hit) {
+      setBaseUrl(hit.baseUrl ?? "");
       setModelSeries(hit.modelSeries);
     }
   };
@@ -231,6 +273,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description: description.trim(),
       purpose,
       provider,
+      baseUrl: baseUrl.trim(),
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim(),
     });
@@ -247,6 +290,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description: description.trim(),
       purpose,
       provider,
+      baseUrl: baseUrl.trim(),
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim() || undefined,
       isActive: true,
@@ -278,6 +322,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setDescription(config.description ?? "");
     setPurpose(config.purpose);
     setProvider(config.provider);
+    setBaseUrl(config.baseUrl ?? "");
     setModelSeries(config.modelSeries);
     setApiKey("");
     setValidationPassed(true);
@@ -295,6 +340,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       id: config.id,
       payload: { isActive: true },
     });
+  };
+
+  const activateOfficialConfig = (config: UserConfig) => {
+    if (!activeUserConfigByPurpose[config.purpose] && officialConfigByPurpose[config.purpose]?.id === config.id) {
+      setMessage(t("settings.currentDefaultHint"));
+      return;
+    }
+
+    setMessage(null);
+    activateOfficialMutation.mutate(config.id);
   };
 
   const deleteConfig = (config: UserConfig) => {
@@ -318,10 +373,75 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="rounded-lg border border-border/80 bg-muted/40 p-3">
             <p className="text-sm font-medium">{t("settings.currentDefaults")}</p>
             <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-              <p>{t("settings.scriptPurpose")}：{displayConfigName(activeConfigByPurpose.script, t("settings.unconfigured"))}</p>
-              <p>{t("settings.imagePurpose")}：{displayConfigName(activeConfigByPurpose.image, t("settings.unconfigured"))}</p>
-              <p>{t("settings.videoPurpose")}：{displayConfigName(activeConfigByPurpose.video, t("settings.unconfigured"))}</p>
+              <p>
+                {t("settings.scriptPurpose")}：
+                {displayConfigName(activeConfigByPurpose.script, t("settings.unconfigured"), t("settings.officialConfig"), t("settings.customConfig"))}
+              </p>
+              <p>
+                {t("settings.imagePurpose")}：
+                {displayConfigName(activeConfigByPurpose.image, t("settings.unconfigured"), t("settings.officialConfig"), t("settings.customConfig"))}
+              </p>
+              <p>
+                {t("settings.videoPurpose")}：
+                {displayConfigName(activeConfigByPurpose.video, t("settings.unconfigured"), t("settings.officialConfig"), t("settings.customConfig"))}
+              </p>
             </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t("settings.officialConfigs")}
+            </p>
+
+            {hasOfficialConfigs
+              ? (configsQuery.data?.officialConfigs ?? []).map((config) => {
+                  const isCurrent =
+                    !activeUserConfigByPurpose[config.purpose] &&
+                    officialConfigByPurpose[config.purpose]?.id === config.id;
+
+                  return (
+                    <div key={config.id} className="rounded-md border border-border/60 bg-background px-3 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {config.name ||
+                              `${purposeLabel[config.purpose]} · ${providerLabelMap[config.provider] ?? config.provider}`}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {purposeLabel[config.purpose]} · {providerLabelMap[config.provider] ?? config.provider} ·{" "}
+                            {config.modelSeries}
+                          </p>
+                          {config.baseUrl ? (
+                            <p className="mt-1 truncate text-xs text-muted-foreground">{config.baseUrl}</p>
+                          ) : null}
+                          {config.description ? (
+                            <p className="mt-1 text-xs text-muted-foreground">{config.description}</p>
+                          ) : null}
+                        </div>
+
+                        <span className="shrink-0 text-xs text-muted-foreground">{t("settings.officialConfig")}</span>
+                      </div>
+
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => activateOfficialConfig(config)}
+                          disabled={isMutating}
+                        >
+                          <Star className={cn("mr-1 size-3.5", isCurrent && "fill-current")} />
+                          {isCurrent ? t("settings.currentDefault") : t("settings.useOfficialDefault")}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              : null}
+
+            {!hasOfficialConfigs ? (
+              <p className="text-sm text-muted-foreground">{t("settings.officialEmpty")}</p>
+            ) : null}
           </div>
 
           <div className="space-y-4 rounded-lg border border-border/70 bg-muted/20 p-4">
@@ -417,6 +537,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="baseUrl">{t("settings.baseUrl")}</Label>
+              <Input
+                id="baseUrl"
+                value={baseUrl}
+                onChange={(event) => {
+                  setValidationPassed(editingConfigId !== null && !apiKey.trim());
+                  setMessage(null);
+                  setBaseUrl(event.target.value);
+                }}
+                placeholder={t("settings.baseUrlPlaceholder")}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="apiKey">{t("settings.apiKey")}</Label>
               <Input
                 id="apiKey"
@@ -447,7 +582,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
 
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("settings.savedConfigs")}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("settings.customConfigs")}</p>
 
             {configsQuery.isLoading ? (
               <div className="space-y-2">
@@ -473,6 +608,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           {purposeLabel[config.purpose]} · {providerLabelMap[config.provider] ?? config.provider} ·{" "}
                           {config.modelSeries}
                         </p>
+                        {config.baseUrl ? (
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{config.baseUrl}</p>
+                        ) : null}
                         {config.description ? (
                           <p className="mt-1 text-xs text-muted-foreground">{config.description}</p>
                         ) : null}

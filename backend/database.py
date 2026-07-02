@@ -4,7 +4,14 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Any
 
+import bcrypt
+
 from config import DB_PATH
+from utils import now
+
+
+SUPER_ADMIN_USERNAME = "superAdmin"
+SUPER_ADMIN_PASSWORD = "superAdmin@123"
 
 
 @contextmanager
@@ -29,7 +36,9 @@ def init_db() -> None:
                 updated_at datetime,
                 deleted_at datetime,
                 username text NOT NULL UNIQUE,
-                password text NOT NULL
+                password text NOT NULL,
+                role text DEFAULT "user",
+                is_disabled numeric DEFAULT false
             );
             CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
             CREATE TABLE IF NOT EXISTS user_configs (
@@ -46,11 +55,29 @@ def init_db() -> None:
                 is_verified numeric DEFAULT false,
                 name text,
                 description text,
+                base_url text,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_user_configs_user_id ON user_configs(user_id);
             CREATE INDEX IF NOT EXISTS idx_user_configs_purpose ON user_configs(purpose);
             CREATE INDEX IF NOT EXISTS idx_user_configs_deleted_at ON user_configs(deleted_at);
+            CREATE TABLE IF NOT EXISTS official_model_configs (
+                id integer PRIMARY KEY AUTOINCREMENT,
+                created_at datetime,
+                updated_at datetime,
+                deleted_at datetime,
+                provider text NOT NULL,
+                encrypted_key text NOT NULL,
+                is_active numeric DEFAULT false,
+                purpose text DEFAULT "script",
+                model_name text,
+                is_verified numeric DEFAULT false,
+                name text,
+                description text,
+                base_url text
+            );
+            CREATE INDEX IF NOT EXISTS idx_official_model_configs_purpose ON official_model_configs(purpose);
+            CREATE INDEX IF NOT EXISTS idx_official_model_configs_deleted_at ON official_model_configs(deleted_at);
             CREATE TABLE IF NOT EXISTS projects (
                 id text PRIMARY KEY,
                 created_at datetime,
@@ -89,10 +116,12 @@ def init_db() -> None:
                 user_id integer NOT NULL,
                 title text NOT NULL,
                 config_id integer,
+                official_config_id integer,
                 provider text,
                 model_name text,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(config_id) REFERENCES user_configs(id) ON DELETE SET NULL
+                FOREIGN KEY(config_id) REFERENCES user_configs(id) ON DELETE SET NULL,
+                FOREIGN KEY(official_config_id) REFERENCES official_model_configs(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_deleted_at ON chat_sessions(deleted_at);
@@ -113,6 +142,37 @@ def init_db() -> None:
         columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
         if "reasoning" not in columns:
             conn.execute("ALTER TABLE chat_messages ADD COLUMN reasoning text")
+        user_columns = {item["name"] for item in conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "role" not in user_columns:
+            conn.execute('ALTER TABLE users ADD COLUMN role text DEFAULT "user"')
+        if "is_disabled" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN is_disabled numeric DEFAULT false")
+        user_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(user_configs)").fetchall()}
+        if "base_url" not in user_config_columns:
+            conn.execute("ALTER TABLE user_configs ADD COLUMN base_url text")
+        official_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(official_model_configs)").fetchall()}
+        if "base_url" not in official_config_columns:
+            conn.execute("ALTER TABLE official_model_configs ADD COLUMN base_url text")
+        session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
+        if "official_config_id" not in session_columns:
+            conn.execute("ALTER TABLE chat_sessions ADD COLUMN official_config_id integer")
+        seed_super_admin(conn)
+
+
+def seed_super_admin(conn: sqlite3.Connection) -> None:
+    stamp = now()
+    password = bcrypt.hashpw(SUPER_ADMIN_PASSWORD.encode(), bcrypt.gensalt()).decode()
+    user = row(conn, "SELECT * FROM users WHERE username=?", (SUPER_ADMIN_USERNAME,))
+    if user:
+        conn.execute(
+            "UPDATE users SET password=?, role='superAdmin', is_disabled=0, deleted_at=NULL, updated_at=? WHERE id=?",
+            (password, stamp, user["id"]),
+        )
+        return
+    conn.execute(
+        "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled) VALUES (?, ?, ?, ?, 'superAdmin', 0)",
+        (stamp, stamp, SUPER_ADMIN_USERNAME, password),
+    )
 
 
 def row(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] = ()) -> sqlite3.Row | None:

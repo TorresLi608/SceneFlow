@@ -5,16 +5,25 @@ from typing import Any
 
 
 def user_json(user: sqlite3.Row) -> dict[str, Any]:
-    return {"id": user["id"], "username": user["username"], "createdAt": user["created_at"], "updatedAt": user["updated_at"]}
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"] or "user",
+        "isDisabled": bool(user["is_disabled"]),
+        "createdAt": user["created_at"],
+        "updatedAt": user["updated_at"],
+    }
 
 
 def config_json(config: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": config["id"],
+        "source": "user",
         "name": config["name"] or "",
         "description": config["description"] or "",
         "purpose": config["purpose"],
         "provider": config["provider"],
+        "baseUrl": config["base_url"] or "",
         "modelSeries": config["model_name"] or "",
         "model": config["model_name"] or "",
         "isActive": bool(config["is_active"]),
@@ -22,6 +31,12 @@ def config_json(config: sqlite3.Row) -> dict[str, Any]:
         "createdAt": config["created_at"],
         "updatedAt": config["updated_at"],
     }
+
+
+def official_config_json(config: sqlite3.Row) -> dict[str, Any]:
+    data = config_json(config)
+    data["source"] = "official"
+    return data
 
 
 def scene_json(scene: sqlite3.Row) -> dict[str, Any]:
@@ -40,6 +55,7 @@ def chat_session_json(session: sqlite3.Row) -> dict[str, Any]:
         "id": session["id"],
         "title": session["title"],
         "configId": session["config_id"],
+        "officialConfigId": session["official_config_id"],
         "provider": session["provider"] or "",
         "model": session["model_name"] or "",
         "createdAt": session["created_at"],

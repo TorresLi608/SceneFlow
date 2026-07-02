@@ -13,11 +13,12 @@ import { useChatController } from "./use-chat-controller";
 
 interface ChatPanelProps {
   configs: UserConfig[];
+  officialConfigs: UserConfig[];
   formatDateTime: (value: Date | string | number) => string;
 }
 
-export function ChatPanel({ configs, formatDateTime }: ChatPanelProps) {
-  const chat = useChatController(configs);
+export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPanelProps) {
+  const chat = useChatController(configs, officialConfigs);
 
   return (
     <div className="grid flex-1 gap-4 p-4 md:grid-cols-[280px_minmax(0,1fr)] md:p-6">

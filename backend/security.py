@@ -6,9 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from config import AES_KEY, JWT_SECRET
+from database import db, row
 
 
 def encrypt(value: str) -> str:
@@ -37,6 +38,21 @@ def current_user_id(authorization: str | None = Header(default=None)) -> int:
     if not token:
         raise HTTPException(401, "missing token")
     try:
-        return user_id_from_token(token)
+        user_id = user_id_from_token(token)
     except Exception as exc:
         raise HTTPException(401, "invalid token") from exc
+    with db() as conn:
+        user = row(conn, "SELECT * FROM users WHERE id=? AND deleted_at IS NULL", (user_id,))
+    if not user:
+        raise HTTPException(401, "user not found")
+    if bool(user["is_disabled"]):
+        raise HTTPException(403, "user is disabled")
+    return user_id
+
+
+def current_super_admin_id(user_id: int = Depends(current_user_id)) -> int:
+    with db() as conn:
+        user = row(conn, "SELECT role FROM users WHERE id=? AND deleted_at IS NULL", (user_id,))
+    if not user or user["role"] != "superAdmin":
+        raise HTTPException(403, "superAdmin required")
+    return user_id

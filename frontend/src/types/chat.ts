@@ -2,6 +2,7 @@ export interface ChatSession {
   id: string;
   title: string;
   configId: number | null;
+  officialConfigId: number | null;
   provider: string;
   model: string;
   createdAt: string;

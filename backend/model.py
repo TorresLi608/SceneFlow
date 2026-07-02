@@ -56,6 +56,15 @@ def pick_model(provider: str, requested: str = "") -> str:
     }.get(provider, "gpt-4o-mini")
 
 
+def base_url_for(provider: str, base_url: str = "") -> str:
+    base_url = base_url.strip().rstrip("/")
+    if base_url:
+        return base_url
+    if provider in CHAT_BASE_URLS:
+        return CHAT_BASE_URLS[provider]
+    raise ValueError(f"unsupported provider: {provider}")
+
+
 def _json_object(text: str) -> dict[str, Any]:
     text = text.strip()
     if not text.startswith("{"):
@@ -74,31 +83,29 @@ def _trim_prompt(value: str) -> str:
 class ModelRouter:
     """LangChain wrapper for switching SceneFlow chat models."""
 
-    def chat_model(self, provider: str, api_key: str, model: str, **kwargs: Any) -> ChatOpenAI:
+    def chat_model(self, provider: str, api_key: str, model: str, base_url: str = "", **kwargs: Any) -> ChatOpenAI:
         provider = provider.strip().lower()
-        if provider not in CHAT_BASE_URLS:
-            raise ValueError(f"unsupported provider: {provider}")
         return ChatOpenAI(
             model=pick_model(provider, model),
             api_key=api_key.strip(),
-            base_url=CHAT_BASE_URLS[provider],
+            base_url=base_url_for(provider, base_url),
             timeout=45,
             max_retries=1,
             **kwargs,
         )
 
-    async def validate_chat_model(self, provider: str, api_key: str, model: str) -> None:
-        llm = self.chat_model(provider, api_key, model, temperature=0, max_tokens=12)
+    async def validate_chat_model(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
+        llm = self.chat_model(provider, api_key, model, base_url, temperature=0, max_tokens=12)
         response = await llm.ainvoke([HumanMessage(content="reply with ok")])
         if not str(response.content).strip():
             raise ValueError("empty content from provider")
 
-    async def parse_script(self, provider: str, api_key: str, model: str, script: str) -> ParseResult:
+    async def parse_script(self, provider: str, api_key: str, model: str, script: str, base_url: str = "") -> ParseResult:
         script = script.strip()
         if not script:
             raise ValueError("script is empty")
 
-        llm = self.chat_model(provider, api_key, model, temperature=0.2).bind(
+        llm = self.chat_model(provider, api_key, model, base_url, temperature=0.2).bind(
             response_format={"type": "json_object"}
         )
         response = await llm.ainvoke(
@@ -130,12 +137,12 @@ class ModelRouter:
             raise ValueError("no scenes in parsed output")
         return ParseResult(scenes=scenes)
 
-    async def optimize_script(self, provider: str, api_key: str, model: str, script: str) -> OptimizeResult:
+    async def optimize_script(self, provider: str, api_key: str, model: str, script: str, base_url: str = "") -> OptimizeResult:
         script = script.strip()
         if not script:
             raise ValueError("script is empty")
 
-        llm = self.chat_model(provider, api_key, model, temperature=0.3).bind(
+        llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3).bind(
             response_format={"type": "json_object"}
         )
         response = await llm.ainvoke(
@@ -159,9 +166,9 @@ class ModelRouter:
             tips=tips or ["补充镜头情绪变化", "每段保持单一动作焦点", "减少重复描述，增加视觉细节"],
         )
 
-    async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]]) -> str:
+    async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]], base_url: str = "") -> str:
         content = ""
-        async for chunk in self.chat_stream(provider, api_key, model, messages):
+        async for chunk in self.chat_stream(provider, api_key, model, messages, base_url):
             if chunk["type"] == "content_delta":
                 content += chunk["content"]
         content = content.strip()
@@ -169,10 +176,9 @@ class ModelRouter:
             raise ValueError("empty content from provider")
         return content
 
-    async def chat_stream(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]]):
+    async def chat_stream(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]], base_url: str = ""):
         provider = provider.strip().lower()
-        if provider not in CHAT_BASE_URLS:
-            raise ValueError(f"unsupported provider: {provider}")
+        base_url = base_url_for(provider, base_url)
         payload_messages = []
         for message in messages:
             role = (message.get("role") or "user").strip().lower()
@@ -185,7 +191,7 @@ class ModelRouter:
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream(
                 "POST",
-                f"{CHAT_BASE_URLS[provider]}/chat/completions",
+                f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"},
                 json={"model": pick_model(provider, model), "messages": payload_messages, "temperature": 0.4, "stream": True},
             ) as response:
@@ -208,12 +214,12 @@ class ModelRouter:
                     if content:
                         yield {"type": "content_delta", "content": content}
 
-    async def validate_image_model(self, provider: str, api_key: str, model: str) -> None:
+    async def validate_image_model(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
         if provider.strip().lower() != "openai":
             raise ValueError("image generation currently only supports provider openai")
         if not model.strip():
             raise ValueError("image purpose requires modelSeries")
-        await self.generate_image(api_key, model, "Generate a simple gray square with soft light.", "1024x1024", "low")
+        await self.generate_image(api_key, model, "Generate a simple gray square with soft light.", "1024x1024", "low", base_url)
 
     async def generate_image(
         self,
@@ -222,10 +228,11 @@ class ModelRouter:
         prompt: str,
         size: str = "1536x1024",
         quality: str = "medium",
+        base_url: str = "",
     ) -> ImageResult:
         async with httpx.AsyncClient(timeout=90) as client:
             response = await client.post(
-                "https://api.openai.com/v1/images/generations",
+                f"{base_url_for('openai', base_url)}/images/generations",
                 headers={"Authorization": f"Bearer {api_key.strip()}"},
                 json={
                     "model": model.strip(),

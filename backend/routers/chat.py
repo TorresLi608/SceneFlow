@@ -25,8 +25,15 @@ def get_sessions(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
 @router.post("/sessions", status_code=201)
 def post_session(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     config_id = payload.get("configId")
+    official_config_id = payload.get("officialConfigId")
     with db() as conn:
-        session = create_chat_session(conn, user_id, str(payload.get("title", "")), int(config_id) if config_id else None)
+        session = create_chat_session(
+            conn,
+            user_id,
+            str(payload.get("title", "")),
+            int(config_id) if config_id else None,
+            int(official_config_id) if official_config_id else None,
+        )
     return {"session": session}
 
 
@@ -40,11 +47,19 @@ def get_messages(session_id: str, user_id: int = Depends(current_user_id)) -> di
 async def post_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     content = str(payload.get("content", "")).strip()
     config_id = payload.get("configId")
+    official_config_id = payload.get("officialConfigId")
     with db() as conn:
-        config, user_message, messages = prepare_chat_turn(conn, session_id, user_id, content, int(config_id) if config_id else None)
+        config, user_message, messages = prepare_chat_turn(
+            conn,
+            session_id,
+            user_id,
+            content,
+            int(config_id) if config_id else None,
+            int(official_config_id) if official_config_id else None,
+        )
 
     try:
-        answer = await models.chat(config["provider"], config["apiKey"], config["model"], messages)
+        answer = await models.chat(config["provider"], config["apiKey"], config["model"], messages, config.get("baseUrl", ""))
     except Exception as exc:
         raise HTTPException(502, "failed to chat: " + str(exc)) from exc
 
@@ -61,15 +76,23 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
 async def stream_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> StreamingResponse:
     content = str(payload.get("content", "")).strip()
     config_id = payload.get("configId")
+    official_config_id = payload.get("officialConfigId")
     with db() as conn:
-        config, user_message, messages = prepare_chat_turn(conn, session_id, user_id, content, int(config_id) if config_id else None)
+        config, user_message, messages = prepare_chat_turn(
+            conn,
+            session_id,
+            user_id,
+            content,
+            int(config_id) if config_id else None,
+            int(official_config_id) if official_config_id else None,
+        )
 
     async def events():
         yield json.dumps({"type": "userMessage", "message": chat_message_json(user_message)}, ensure_ascii=False) + "\n"
         answer = ""
         reasoning = ""
         try:
-            async for chunk in models.chat_stream(config["provider"], config["apiKey"], config["model"], messages):
+            async for chunk in models.chat_stream(config["provider"], config["apiKey"], config["model"], messages, config.get("baseUrl", "")):
                 if chunk["type"] == "reasoning_delta":
                     reasoning += chunk["content"]
                 elif chunk["type"] == "content_delta":

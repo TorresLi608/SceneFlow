@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from config_service import active_model_config, normalize_model, normalize_provider, validate_config_fields
+from config_service import active_model_config, normalize_base_url, normalize_model, normalize_provider, official_model_config, validate_config_fields
 from database import row, rows
 from model import pick_model
 from security import decrypt
@@ -15,10 +15,14 @@ from utils import new_id, now
 SYSTEM_PROMPT = "You are SceneFlow Assistant. Answer clearly and concisely."
 
 
-def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None) -> dict[str, Any]:
+def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None, official_config_id: int | None = None) -> dict[str, Any]:
+    if official_config_id is not None:
+        config = official_model_config(conn, official_config_id, "script", "智能问答")
+        return {**config, "configId": None, "officialConfigId": official_config_id}
+
     if config_id is None:
         config = active_model_config(conn, user_id, "script", "智能问答")
-        return {**config, "configId": None}
+        return {**config, "configId": None, "officialConfigId": None}
 
     config = row(conn, "SELECT * FROM user_configs WHERE id=? AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
     if not config:
@@ -26,14 +30,15 @@ def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None) -
     if config["purpose"] != "script":
         raise HTTPException(400, "chat only supports script/prompt configs")
     provider = normalize_provider(config["provider"])
+    base_url = normalize_base_url(config["base_url"] or "")
     model = pick_model(provider, normalize_model(provider, config["model_name"] or ""))
-    validate_config_fields("script", provider, model)
+    validate_config_fields("script", provider, model, base_url)
     if not bool(config["is_verified"]):
         raise HTTPException(400, "config is not verified")
     api_key = decrypt(config["encrypted_key"]).strip()
     if not api_key:
         raise HTTPException(400, "config missing API key")
-    return {"provider": provider, "model": model, "apiKey": api_key, "configId": config_id}
+    return {"provider": provider, "model": model, "apiKey": api_key, "baseUrl": base_url, "configId": config_id, "officialConfigId": None}
 
 
 def list_chat_sessions(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
@@ -45,15 +50,15 @@ def list_chat_sessions(conn: sqlite3.Connection, user_id: int) -> list[dict[str,
     return [chat_session_json(session) for session in sessions]
 
 
-def create_chat_session(conn: sqlite3.Connection, user_id: int, title: str, config_id: int | None) -> dict[str, Any]:
-    config = chat_config(conn, user_id, config_id)
+def create_chat_session(conn: sqlite3.Connection, user_id: int, title: str, config_id: int | None, official_config_id: int | None = None) -> dict[str, Any]:
+    config = chat_config(conn, user_id, config_id, official_config_id)
     stamp = now()
     session_id = new_id("chat")
     conn.execute(
         """INSERT INTO chat_sessions
-        (id, created_at, updated_at, user_id, title, config_id, provider, model_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (session_id, stamp, stamp, user_id, (title.strip() or "新对话")[:80], config["configId"], config["provider"], config["model"]),
+        (id, created_at, updated_at, user_id, title, config_id, official_config_id, provider, model_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (session_id, stamp, stamp, user_id, (title.strip() or "新对话")[:80], config["configId"], config["officialConfigId"], config["provider"], config["model"]),
     )
     session = row(conn, "SELECT * FROM chat_sessions WHERE id=?", (session_id,))
     return chat_session_json(session)
@@ -80,6 +85,7 @@ def prepare_chat_turn(
     user_id: int,
     content: str,
     config_id: int | None,
+    official_config_id: int | None = None,
 ) -> tuple[dict[str, Any], sqlite3.Row, list[dict[str, str]]]:
     content = content.strip()
     if not content:
@@ -88,7 +94,12 @@ def prepare_chat_turn(
         raise HTTPException(400, "content is too long")
 
     session = require_session(conn, session_id, user_id)
-    config = chat_config(conn, user_id, config_id if config_id else session["config_id"])
+    config = chat_config(
+        conn,
+        user_id,
+        config_id if config_id else session["config_id"],
+        official_config_id if official_config_id else session["official_config_id"],
+    )
     user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"])
     history = rows(
         conn,

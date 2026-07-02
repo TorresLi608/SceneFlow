@@ -13,7 +13,7 @@ export async function listChatSessionsAction() {
   return response.data;
 }
 
-export async function createChatSessionAction(payload: { title?: string; configId?: number }) {
+export async function createChatSessionAction(payload: { title?: string; configId?: number; officialConfigId?: number }) {
   const response = await httpClient.post<ChatSessionItemResponse>("/api/bff/chat/sessions", payload);
   return response.data;
 }
@@ -23,7 +23,10 @@ export async function listChatMessagesAction(sessionId: string) {
   return response.data;
 }
 
-export async function sendChatMessageAction(sessionId: string, payload: { content: string; configId?: number }) {
+export async function sendChatMessageAction(
+  sessionId: string,
+  payload: { content: string; configId?: number; officialConfigId?: number }
+) {
   const response = await httpClient.post<SendChatMessageResponse>(
     `/api/bff/chat/sessions/${sessionId}/messages`,
     payload
@@ -33,7 +36,7 @@ export async function sendChatMessageAction(sessionId: string, payload: { conten
 
 export async function streamChatMessageAction(
   sessionId: string,
-  payload: { content: string; configId?: number },
+  payload: { content: string; configId?: number; officialConfigId?: number },
   onEvent: (event: ChatStreamEvent) => void
 ) {
   const token = useUserStore.getState().token;

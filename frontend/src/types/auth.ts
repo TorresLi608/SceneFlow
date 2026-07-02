@@ -3,6 +3,8 @@ export type ConfigPurpose = "script" | "image" | "video";
 export interface AuthUser {
   id: number;
   username: string;
+  role: "user" | "superAdmin";
+  isDisabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -18,10 +20,12 @@ export interface UserMeResponse {
 
 export interface UserConfig {
   id: number;
+  source: "user" | "official";
   name: string;
   description: string;
   purpose: ConfigPurpose;
   provider: string;
+  baseUrl: string;
   modelSeries: string;
   model?: string;
   isActive: boolean;
@@ -32,6 +36,7 @@ export interface UserConfig {
 
 export interface UserConfigListResponse {
   configs: UserConfig[];
+  officialConfigs: UserConfig[];
 }
 
 export interface UserConfigItemResponse {
@@ -43,6 +48,7 @@ export interface CreateUserConfigInput {
   description?: string;
   purpose: ConfigPurpose;
   provider: string;
+  baseUrl?: string;
   modelSeries: string;
   apiKey: string;
   isActive: boolean;
@@ -53,6 +59,7 @@ export interface ValidateUserConfigInput {
   description?: string;
   purpose: ConfigPurpose;
   provider: string;
+  baseUrl?: string;
   modelSeries: string;
   apiKey: string;
 }
@@ -62,6 +69,7 @@ export interface UpdateUserConfigInput {
   description?: string;
   purpose?: ConfigPurpose;
   provider?: string;
+  baseUrl?: string;
   modelSeries?: string;
   apiKey?: string;
   isActive?: boolean;
@@ -71,6 +79,7 @@ export interface ValidateUserConfigResponse {
   valid: boolean;
   purpose: ConfigPurpose;
   provider: string;
+  baseUrl?: string;
   modelSeries: string;
   model?: string;
 }

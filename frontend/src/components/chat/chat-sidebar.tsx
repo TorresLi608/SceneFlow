@@ -53,7 +53,7 @@ export function ChatSidebar({
           </SelectTrigger>
           <SelectContent>
             {chatConfigs.map((config) => (
-              <SelectItem key={config.id} value={String(config.id)}>
+              <SelectItem key={`${config.source}:${config.id}`} value={`${config.source}:${config.id}`}>
                 {configName(config)}
               </SelectItem>
             ))}
@@ -61,7 +61,7 @@ export function ChatSidebar({
         </Select>
 
         {chatConfigs.length === 0 ? (
-          <p className="text-sm text-amber-600">请先在设置里保存并校验一个剧本/提示词模型。</p>
+          <p className="text-sm text-amber-600">请先使用官方配置，或在设置里保存并校验一个剧本/提示词模型。</p>
         ) : null}
 
         <div className="space-y-2">

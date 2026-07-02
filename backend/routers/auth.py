@@ -41,4 +41,6 @@ def login(payload: dict[str, Any]) -> dict[str, Any]:
         user = row(conn, "SELECT * FROM users WHERE username=? AND deleted_at IS NULL", (username,))
     if not user or not bcrypt.checkpw(password.encode(), user["password"].encode()):
         raise HTTPException(401, "invalid credentials")
+    if bool(user["is_disabled"]):
+        raise HTTPException(403, "user is disabled")
     return {"token": token_for(user["id"]), "user": user_json(user)}

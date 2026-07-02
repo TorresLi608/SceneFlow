@@ -69,3 +69,17 @@ export async function deleteUserConfigByBff(id: number, authorization?: string) 
     },
   });
 }
+
+export async function activateOfficialConfigByBff(id: number, authorization?: string) {
+  const response = await backendClient.post<UserConfigItemResponse>(
+    `/api/settings/official/${id}/activate`,
+    {},
+    {
+      headers: {
+        Authorization: authorization,
+      },
+    }
+  );
+
+  return response.data;
+}

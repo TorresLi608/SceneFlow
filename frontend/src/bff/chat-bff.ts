@@ -13,7 +13,10 @@ export async function listChatSessionsByBff(authorization?: string) {
   return response.data;
 }
 
-export async function createChatSessionByBff(payload: { title?: string; configId?: number }, authorization?: string) {
+export async function createChatSessionByBff(
+  payload: { title?: string; configId?: number; officialConfigId?: number },
+  authorization?: string
+) {
   const response = await backendClient.post<ChatSessionItemResponse>("/api/chat/sessions", payload, {
     headers: { Authorization: authorization },
   });
@@ -29,7 +32,7 @@ export async function listChatMessagesByBff(sessionId: string, authorization?: s
 
 export async function sendChatMessageByBff(
   sessionId: string,
-  payload: { content: string; configId?: number },
+  payload: { content: string; configId?: number; officialConfigId?: number },
   authorization?: string
 ) {
   const response = await backendClient.post<SendChatMessageResponse>(

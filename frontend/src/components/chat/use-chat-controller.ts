@@ -14,7 +14,18 @@ import { resolveRequestError } from "@/lib/http/errors";
 import type { UserConfig } from "@/types/auth";
 import type { ChatMessage } from "@/types/chat";
 
-export function useChatController(configs: UserConfig[]) {
+function configSelectValue(config: UserConfig) {
+  return `${config.source}:${config.id}`;
+}
+
+function selectedConfigPayload(config: UserConfig | undefined) {
+  if (!config) {
+    return {};
+  }
+  return config.source === "official" ? { officialConfigId: config.id } : { configId: config.id };
+}
+
+export function useChatController(configs: UserConfig[], officialConfigs: UserConfig[]) {
   const queryClient = useQueryClient();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
@@ -23,13 +34,25 @@ export function useChatController(configs: UserConfig[]) {
   const [streamMessages, setStreamMessages] = useState<ChatMessage[] | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
-  const chatConfigs = useMemo(
+  const userChatConfigs = useMemo(
     () => configs.filter((config) => config.purpose === "script" && config.isVerified && config.modelSeries.trim()),
     [configs]
   );
+  const officialChatConfigs = useMemo(
+    () => officialConfigs.filter((config) => config.purpose === "script" && config.isVerified && config.modelSeries.trim()),
+    [officialConfigs]
+  );
+  const chatConfigs = useMemo(() => [...officialChatConfigs, ...userChatConfigs], [officialChatConfigs, userChatConfigs]);
   const defaultConfigId = useMemo(
-    () => String((chatConfigs.find((config) => config.isActive) ?? chatConfigs[0])?.id ?? ""),
-    [chatConfigs]
+    () => {
+      const config =
+        userChatConfigs.find((item) => item.isActive) ??
+        officialChatConfigs.find((item) => item.isActive) ??
+        userChatConfigs[0] ??
+        officialChatConfigs[0];
+      return config ? configSelectValue(config) : "";
+    },
+    [officialChatConfigs, userChatConfigs]
   );
   const sessionsQuery = useQuery({
     queryKey: queryKeys.chatSessions,
@@ -56,14 +79,14 @@ export function useChatController(configs: UserConfig[]) {
   });
 
   const effectiveConfigId = selectedConfigId || defaultConfigId;
-  const selectedConfig = chatConfigs.find((config) => String(config.id) === effectiveConfigId);
+  const selectedConfig = chatConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
   const messages = messagesQuery.data?.messages ?? [];
   const isBusy = createSessionMutation.isPending || isStreaming;
 
   const createSession = () => {
     createSessionMutation.mutate({
       title: input.trim().slice(0, 40) || "新对话",
-      configId: selectedConfig?.id,
+      ...selectedConfigPayload(selectedConfig),
     });
   };
 
@@ -81,7 +104,7 @@ export function useChatController(configs: UserConfig[]) {
     setErrorMessage(null);
     setStreamMessages(messages);
     try {
-      await streamChatMessageAction(sessionId, { content, configId: selectedConfig.id }, (event) => {
+      await streamChatMessageAction(sessionId, { content, ...selectedConfigPayload(selectedConfig) }, (event) => {
         if (event.type === "error") {
           throw new Error(event.error);
         }
@@ -146,7 +169,7 @@ export function useChatController(configs: UserConfig[]) {
       try {
         const response = await createChatSessionAction({
           title: content.slice(0, 40),
-          configId: selectedConfig.id,
+          ...selectedConfigPayload(selectedConfig),
         });
         setSelectedSessionId(response.session.id);
         await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
