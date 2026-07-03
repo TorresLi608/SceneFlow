@@ -12,7 +12,7 @@ import {
 import { queryKeys } from "@/actions/query-keys";
 import { resolveRequestError } from "@/lib/http/errors";
 import type { UserConfig } from "@/types/auth";
-import type { ChatMessage } from "@/types/chat";
+import type { ChatAgentStep, ChatMessage } from "@/types/chat";
 
 function configSelectValue(config: UserConfig) {
   return `${config.source}:${config.id}`;
@@ -32,6 +32,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const [input, setInput] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [streamMessages, setStreamMessages] = useState<ChatMessage[] | null>(null);
+  const [agentSteps, setAgentSteps] = useState<ChatAgentStep[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
 
   const userChatConfigs = useMemo(
@@ -93,6 +94,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const selectSession = (id: string) => {
     setSelectedSessionId(id);
     setStreamMessages(null);
+    setAgentSteps([]);
   };
 
   const streamToSession = async (sessionId: string, content: string) => {
@@ -102,11 +104,21 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     const assistantId = `stream-${Date.now()}`;
     setIsStreaming(true);
     setErrorMessage(null);
+    setAgentSteps([]);
     setStreamMessages(messages);
     try {
       await streamChatMessageAction(sessionId, { content, ...selectedConfigPayload(selectedConfig) }, (event) => {
         if (event.type === "error") {
           throw new Error(event.error);
+        }
+        if (event.type === "agent_step") {
+          setAgentSteps((current) => {
+            const existing = current.find((step) => step.id === event.step.id);
+            return existing
+              ? current.map((step) => (step.id === event.step.id ? event.step : step))
+              : [...current, event.step];
+          });
+          return;
         }
         if (event.type === "userMessage") {
           setStreamMessages((current) => [...(current ?? messages), event.message]);
@@ -160,8 +172,8 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     }
   };
 
-  const sendMessage = async () => {
-    const content = input.trim();
+  const sendMessage = async (nextContent?: string) => {
+    const content = (nextContent ?? input).trim();
     if (!content || isBusy || !selectedConfig) {
       return;
     }
@@ -190,6 +202,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     sessions: sessionsQuery.data?.sessions ?? [],
     sessionsLoading: sessionsQuery.isLoading,
     messages: streamMessages ?? messages,
+    agentSteps,
     messagesLoading: messagesQuery.isLoading,
     input,
     setInput,

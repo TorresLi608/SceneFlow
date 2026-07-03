@@ -34,6 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
+import { providerLabelMap, providerOption, providerOptions } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import type { ConfigPurpose, CreateUserConfigInput, UpdateUserConfigInput, UserConfig } from "@/types/auth";
 
@@ -41,32 +42,6 @@ interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }
-
-const providerOptions: Record<
-  ConfigPurpose,
-  Array<{ value: string; label: string; modelSeries: string; baseUrl?: string }>
-> = {
-  script: [
-    { value: "custom", label: "Custom relay", modelSeries: "gpt-5.5", baseUrl: "https://www.juaiapi.com/v1" },
-    { value: "qwen", label: "Qwen", modelSeries: "qwen-plus" },
-    { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
-    { value: "doubao", label: "Doubao", modelSeries: "doubao-seed-1-6-250615" },
-    { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
-  ],
-  image: [
-    { value: "openai", label: "OpenAI", modelSeries: "" },
-  ],
-  video: [{ value: "seedance2.0", label: "Seedance 2.0", modelSeries: "seedance-2.0" }],
-};
-
-const providerLabelMap: Record<string, string> = {
-  qwen: "Qwen",
-  deepseek: "DeepSeek",
-  doubao: "Doubao",
-  openai: "OpenAI",
-  custom: "Custom relay",
-  "seedance2.0": "Seedance 2.0",
-};
 
 function displayConfigName(
   config: UserConfig | undefined,
@@ -92,12 +67,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const queryClient = useQueryClient();
 
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState("通义千问");
+  const [description, setDescription] = useState("https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
   const [provider, setProvider] = useState("qwen");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [modelSeries, setModelSeries] = useState("qwen-plus");
+  const [baseUrl, setBaseUrl] = useState("https://dashscope.aliyuncs.com/compatible-mode/v1");
+  const [modelSeries, setModelSeries] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [validationPassed, setValidationPassed] = useState(false);
@@ -113,13 +88,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const resetForm = () => {
+    const option = providerOptions.script[0];
     setEditingConfigId(null);
-    setName("");
-    setDescription("");
+    setName(option.label);
+    setDescription(option.docsUrl ?? "");
     setPurpose("script");
-    setProvider("qwen");
-    setBaseUrl("");
-    setModelSeries("qwen-plus");
+    setProvider(option.value);
+    setBaseUrl(option.baseUrl ?? "");
+    setModelSeries(option.modelSeries);
     setApiKey("");
     setValidationPassed(false);
   };
@@ -236,31 +212,41 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const onPurposeChange = (nextPurpose: string | null) => {
-    setValidationPassed(editingConfigId !== null && !apiKey.trim());
+    setValidationPassed(false);
     setMessage(null);
     const value = (nextPurpose ?? "script") as ConfigPurpose;
     setPurpose(value);
     const nextOption = providerOptions[value][0];
     if (nextOption) {
       setProvider(nextOption.value);
+      setName(nextOption.label);
+      setDescription(nextOption.docsUrl ?? "");
       setBaseUrl(nextOption.baseUrl ?? "");
       setModelSeries(nextOption.modelSeries);
     }
   };
 
   const onProviderChange = (nextProvider: string | null) => {
-    setValidationPassed(editingConfigId !== null && !apiKey.trim());
+    setValidationPassed(false);
     setMessage(null);
     const value = nextProvider ?? options[0]?.value ?? "qwen";
     setProvider(value);
     const hit = options.find((item) => item.value === value);
     if (hit) {
+      setName(hit.label);
+      setDescription(hit.docsUrl ?? "");
       setBaseUrl(hit.baseUrl ?? "");
       setModelSeries(hit.modelSeries);
     }
   };
 
   const validateConfig = () => {
+    if (!modelSeries.trim()) {
+      setValidationPassed(false);
+      setMessage(t("settings.enterModelSeries"));
+      return;
+    }
+
     if (!apiKey.trim()) {
       setValidationPassed(false);
       setMessage(t("settings.enterApiKeyBeforeValidate"));
@@ -280,6 +266,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const saveConfig = () => {
+    if (!modelSeries.trim()) {
+      setMessage(t("settings.enterModelSeries"));
+      return;
+    }
+
     if (!editingConfigId && !apiKey.trim()) {
       setMessage(t("settings.enterApiKey"));
       return;
@@ -308,6 +299,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description: description.trim(),
       purpose,
       provider,
+      baseUrl: baseUrl.trim(),
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim(),
       isActive: true,
@@ -351,6 +343,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setMessage(null);
     activateOfficialMutation.mutate(config.id);
   };
+
+  const selectedProviderOption = providerOption(purpose, provider);
 
   const deleteConfig = (config: UserConfig) => {
     if (!window.confirm(t("settings.confirmDelete", { name: config.name || config.modelSeries }))) {
@@ -530,7 +524,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     setMessage(null);
                     setModelSeries(event.target.value);
                   }}
-                  placeholder={t("settings.modelSeriesPlaceholder")}
+                  placeholder={selectedProviderOption?.modelPlaceholder ?? t("settings.modelSeriesPlaceholder")}
                   autoComplete="off"
                 />
               </div>
@@ -549,6 +543,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 placeholder={t("settings.baseUrlPlaceholder")}
                 autoComplete="off"
               />
+              {selectedProviderOption?.docsUrl ? (
+                <a
+                  href={selectedProviderOption.docsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  {t("settings.officialDocs")}
+                </a>
+              ) : null}
             </div>
 
             <div className="space-y-2">

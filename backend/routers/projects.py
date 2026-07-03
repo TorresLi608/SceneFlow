@@ -6,17 +6,119 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from config_service import active_model_config
-from database import db, row
+from database import db, row, rows
 from generation_service import run_generation, run_video_generation
 from model_registry import models
 from project_service import parse_project_model, project_and_scenes
 from realtime import broadcast
 from security import current_user_id
-from serializers import scene_json
+from serializers import project_json, scene_json
 from utils import new_id, now
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+
+@router.get("")
+def list_projects(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    with db() as conn:
+        projects = rows(
+            conn,
+            "SELECT * FROM projects WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC",
+            (user_id,),
+        )
+        data = [
+            project_json(
+                project,
+                rows(conn, "SELECT * FROM scenes WHERE project_id=? AND deleted_at IS NULL ORDER BY order_num ASC", (project["id"],)),
+            )
+            for project in projects
+        ]
+    return {"projects": data}
+
+
+@router.post("", status_code=201)
+def create_project(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    stamp = now()
+    title = str(payload.get("title", "")).strip()[:80] or "新项目"
+    script = str(payload.get("originalScript", "")).strip()
+    project_id = new_id("proj")
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO projects
+            (id, created_at, updated_at, user_id, title, original_script, status, video_status, video_progress)
+            VALUES (?, ?, ?, ?, ?, ?, 'idle', 'idle', 0)""",
+            (project_id, stamp, stamp, user_id, title, script),
+        )
+        project = row(conn, "SELECT * FROM projects WHERE id=?", (project_id,))
+    return {"project": project_json(project, [])}
+
+
+@router.patch("/{project_id}")
+async def update_project(project_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    stamp = now()
+    updates: dict[str, Any] = {}
+    if "title" in payload:
+        updates["title"] = str(payload["title"]).strip()[:80] or "未命名项目"
+    if "originalScript" in payload:
+        updates["original_script"] = str(payload["originalScript"])
+    if not updates:
+        raise HTTPException(400, "no fields to update")
+
+    with db() as conn:
+        project, _ = project_and_scenes(conn, project_id, user_id)
+        conn.execute(
+            f"UPDATE projects SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
+            (*updates.values(), stamp, project["id"]),
+        )
+        project, scenes = project_and_scenes(conn, project_id, user_id)
+    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": payload})
+    return {"project": project_json(project, scenes)}
+
+
+@router.patch("/{project_id}/scenes/reorder")
+async def reorder_project_scenes(project_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    scene_ids = [str(item) for item in payload.get("sceneIds", []) if str(item).strip()]
+    if not scene_ids:
+        raise HTTPException(400, "sceneIds is required")
+    stamp = now()
+    with db() as conn:
+        project, scenes = project_and_scenes(conn, project_id, user_id)
+        existing_ids = {scene["id"] for scene in scenes}
+        if set(scene_ids) != existing_ids:
+            raise HTTPException(400, "sceneIds must match current project scenes")
+        for index, scene_id in enumerate(scene_ids, start=1):
+            conn.execute("UPDATE scenes SET order_num=?, updated_at=? WHERE id=? AND project_id=?", (index, stamp, scene_id, project_id))
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (stamp, project["id"]))
+        project, scenes = project_and_scenes(conn, project_id, user_id)
+    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"updatedAt": stamp}})
+    return {"project": project_json(project, scenes)}
+
+
+@router.patch("/{project_id}/scenes/{scene_id}")
+async def update_project_scene(project_id: str, scene_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    stamp = now()
+    updates: dict[str, Any] = {}
+    if "narration" in payload:
+        updates["narration"] = str(payload["narration"])
+    if "visualPrompt" in payload:
+        updates["visual_prompt"] = str(payload["visualPrompt"])
+    if not updates:
+        raise HTTPException(400, "no fields to update")
+
+    with db() as conn:
+        project_and_scenes(conn, project_id, user_id)
+        scene = row(conn, "SELECT * FROM scenes WHERE id=? AND project_id=? AND deleted_at IS NULL", (scene_id, project_id))
+        if not scene:
+            raise HTTPException(404, "scene not found")
+        conn.execute(
+            f"UPDATE scenes SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND project_id=?",
+            (*updates.values(), stamp, scene_id, project_id),
+        )
+        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (stamp, project_id))
+        scene = row(conn, "SELECT * FROM scenes WHERE id=?", (scene_id,))
+    await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene_id, "data": payload})
+    return {"scene": scene_json(scene)}
 
 
 @router.post("/{project_id}/parse")
@@ -43,7 +145,10 @@ async def parse_project(project_id: str, payload: dict[str, Any], user_id: int =
 
     stamp = now()
     with db() as conn:
-        conn.execute("UPDATE projects SET original_script=?, status='idle', updated_at=? WHERE id=?", (data["script"], stamp, project_id))
+        conn.execute(
+            "UPDATE projects SET original_script=?, status='idle', video_status='idle', video_progress=0, video_url=NULL, updated_at=? WHERE id=?",
+            (data["script"], stamp, project_id),
+        )
         conn.execute("UPDATE scenes SET deleted_at=?, updated_at=? WHERE project_id=? AND deleted_at IS NULL", (stamp, stamp, project_id))
         scene_rows = []
         for index, draft in enumerate(result.scenes, start=1):
@@ -115,7 +220,7 @@ async def generate_video(project_id: str, payload: dict[str, Any], user_id: int 
             raise HTTPException(409, "project video is already generating")
         config = active_model_config(conn, user_id, "video", "视频生成")
         model = str(payload.get("model") or config["model"]).strip()
-        conn.execute("UPDATE projects SET status='video_generating', video_status='generating', updated_at=? WHERE id=?", (now(), project_id))
+        conn.execute("UPDATE projects SET status='video_generating', video_status='generating', video_progress=0, updated_at=? WHERE id=?", (now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "video_generating", "videoStatus": "generating", "videoModel": model}})
     asyncio.create_task(run_video_generation(project_id, model))
     return {"projectId": project_id, "status": "video_generating", "model": model}

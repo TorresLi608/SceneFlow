@@ -50,6 +50,20 @@ def scene_json(scene: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def project_json(project: sqlite3.Row, scenes: list[sqlite3.Row]) -> dict[str, Any]:
+    return {
+        "id": project["id"],
+        "title": project["title"] or "未命名项目",
+        "originalScript": project["original_script"] or "",
+        "status": project["status"] or "idle",
+        "videoStatus": project["video_status"] or "idle",
+        "videoProgress": project["video_progress"] or 0,
+        "videoUrl": project["video_url"] or None,
+        "updatedAt": project["updated_at"],
+        "scenes": [scene_json(scene) for scene in scenes],
+    }
+
+
 def chat_session_json(session: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": session["id"],

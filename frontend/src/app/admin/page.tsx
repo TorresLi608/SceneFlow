@@ -24,37 +24,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
+import { providerLabelMap, providerOptions } from "@/lib/model-providers";
 import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig } from "@/types/auth";
-
-const providerOptions: Record<ConfigPurpose, Array<{ value: string; label: string; modelSeries: string }>> = {
-  script: [
-    { value: "custom", label: "Custom relay", modelSeries: "gpt-5.5" },
-    { value: "qwen", label: "Qwen", modelSeries: "qwen-plus" },
-    { value: "deepseek", label: "DeepSeek", modelSeries: "deepseek-chat" },
-    { value: "doubao", label: "Doubao", modelSeries: "doubao-seed-1-6-250615" },
-    { value: "openai", label: "OpenAI", modelSeries: "gpt-4o-mini" },
-  ],
-  image: [{ value: "openai", label: "OpenAI", modelSeries: "" }],
-  video: [{ value: "seedance2.0", label: "Seedance 2.0", modelSeries: "seedance-2.0" }],
-};
 
 const purposeLabel: Record<ConfigPurpose, string> = {
   script: "剧本/提示词",
   image: "图片生成",
   video: "视频生成",
 };
-
-const providerLabel: Record<string, string> = {
-  qwen: "Qwen",
-  deepseek: "DeepSeek",
-  doubao: "Doubao",
-  openai: "OpenAI",
-  custom: "Custom relay",
-  "seedance2.0": "Seedance 2.0",
-};
-
-const defaultRelayUrl = "https://www.juaiapi.com/v1";
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
@@ -66,12 +44,12 @@ export default function AdminPage() {
 
   const [view, setView] = useState<"models" | "users">("models");
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(providerOptions.script[0].label);
+  const [description, setDescription] = useState(providerOptions.script[0].docsUrl ?? "");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
-  const [provider, setProvider] = useState("custom");
-  const [baseUrl, setBaseUrl] = useState(defaultRelayUrl);
-  const [modelSeries, setModelSeries] = useState("gpt-5.5");
+  const [provider, setProvider] = useState(providerOptions.script[0].value);
+  const [baseUrl, setBaseUrl] = useState(providerOptions.script[0].baseUrl ?? "");
+  const [modelSeries, setModelSeries] = useState(providerOptions.script[0].modelSeries);
   const [apiKey, setApiKey] = useState("");
   const [isActive, setIsActive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -107,13 +85,14 @@ export default function AdminPage() {
   const officialConfigs = useMemo(() => officialConfigsQuery.data?.configs ?? [], [officialConfigsQuery.data?.configs]);
 
   const resetForm = () => {
+    const option = providerOptions.script[0];
     setEditingConfigId(null);
-    setName("");
-    setDescription("");
+    setName(option.label);
+    setDescription(option.docsUrl ?? "");
     setPurpose("script");
-    setProvider("custom");
-    setBaseUrl(defaultRelayUrl);
-    setModelSeries("gpt-5.5");
+    setProvider(option.value);
+    setBaseUrl(option.baseUrl ?? "");
+    setModelSeries(option.modelSeries);
     setApiKey("");
     setIsActive(false);
   };
@@ -196,15 +175,20 @@ export default function AdminPage() {
     setPurpose(value);
     const nextOption = providerOptions[value][0];
     setProvider(nextOption.value);
-    setBaseUrl(nextOption.value === "custom" ? defaultRelayUrl : "");
+    setName(nextOption.label);
+    setDescription(nextOption.docsUrl ?? "");
+    setBaseUrl(nextOption.baseUrl ?? "");
     setModelSeries(nextOption.modelSeries);
   };
 
   const onProviderChange = (nextProvider: string | null) => {
     const value = nextProvider ?? options[0]?.value ?? "qwen";
     setProvider(value);
-    setBaseUrl(value === "custom" ? defaultRelayUrl : "");
-    setModelSeries(options.find((item) => item.value === value)?.modelSeries ?? "");
+    const option = options.find((item) => item.value === value);
+    setName(option?.label ?? "");
+    setDescription(option?.docsUrl ?? "");
+    setBaseUrl(option?.baseUrl ?? "");
+    setModelSeries(option?.modelSeries ?? "");
   };
 
   const startEdit = (config: UserConfig) => {
@@ -221,6 +205,11 @@ export default function AdminPage() {
   };
 
   const saveConfig = () => {
+    if (!modelSeries.trim()) {
+      setMessage("请输入模型系列。");
+      return;
+    }
+
     if (!editingConfigId && isActive && !apiKey.trim()) {
       setMessage("启用官方默认前请输入 API Key；不启用时可以先保存草稿。");
       return;
@@ -375,7 +364,12 @@ export default function AdminPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="officialModel">模型系列</Label>
-                  <Input id="officialModel" value={modelSeries} onChange={(event) => setModelSeries(event.target.value)} />
+                  <Input
+                    id="officialModel"
+                    value={modelSeries}
+                    onChange={(event) => setModelSeries(event.target.value)}
+                    placeholder={options.find((item) => item.value === provider)?.modelPlaceholder}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="officialBaseUrl">中转站 Base URL</Label>
@@ -383,8 +377,18 @@ export default function AdminPage() {
                     id="officialBaseUrl"
                     value={baseUrl}
                     onChange={(event) => setBaseUrl(event.target.value)}
-                    placeholder="https://www.juaiapi.com/v1"
+                    placeholder="https://api.example.com/v1"
                   />
+                  {options.find((item) => item.value === provider)?.docsUrl ? (
+                    <a
+                      href={options.find((item) => item.value === provider)?.docsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex text-xs text-primary underline-offset-4 hover:underline"
+                    >
+                      官方文档
+                    </a>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="officialKey">API Key</Label>
@@ -428,10 +432,10 @@ export default function AdminPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">
-                          {config.name || `${purposeLabel[config.purpose]} · ${providerLabel[config.provider] ?? config.provider}`}
+                          {config.name || `${purposeLabel[config.purpose]} · ${providerLabelMap[config.provider] ?? config.provider}`}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {purposeLabel[config.purpose]} · {providerLabel[config.provider] ?? config.provider} · {config.modelSeries}
+                          {purposeLabel[config.purpose]} · {providerLabelMap[config.provider] ?? config.provider} · {config.modelSeries}
                         </p>
                         {config.baseUrl ? <p className="mt-1 truncate text-xs text-muted-foreground">{config.baseUrl}</p> : null}
                         {config.description ? <p className="mt-1 text-xs text-muted-foreground">{config.description}</p> : null}

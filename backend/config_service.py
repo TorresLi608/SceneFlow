@@ -16,7 +16,13 @@ def normalize_purpose(value: str) -> str:
 
 
 def normalize_provider(value: str) -> str:
-    return (value or "").strip().lower()
+    provider = (value or "").strip().lower()
+    return {
+        "chatgpt": "openai",
+        "claude": "anthropic",
+        "claude-code": "anthropic",
+        "claude code": "anthropic",
+    }.get(provider, provider)
 
 
 def normalize_base_url(value: str) -> str:
@@ -31,7 +37,7 @@ def normalize_base_url(value: str) -> str:
 
 def normalize_model(provider: str, value: str) -> str:
     value = (value or "").strip()
-    return value.lower() if value and provider in {"qwen", "deepseek", "doubao", "openai"} else value
+    return value.lower() if value and provider in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"} else value
 
 
 def validate_config_fields(purpose: str, provider: str, model: str, base_url: str = "") -> None:
@@ -55,8 +61,10 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
             raise HTTPException(400, "image purpose currently only supports provider openai")
         if not model.strip():
             raise HTTPException(400, "image purpose requires modelSeries")
-    elif provider not in {"qwen", "deepseek", "doubao", "openai"}:
-        raise HTTPException(400, "provider must be one of qwen/deepseek/doubao/openai/custom")
+    elif provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"}:
+        raise HTTPException(400, "provider must be one of qwen/deepseek/doubao/openai/gemini/anthropic/custom")
+    elif not model.strip():
+        raise HTTPException(400, "script purpose requires modelSeries")
 
 
 async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:

@@ -65,8 +65,10 @@ def persist_scene_image(project_id: str, scene_id: str, data: bytes, ext: str) -
 async def run_video_generation(project_id: str, model: str) -> None:
     for progress in [10, 25, 40, 60, 75, 90, 100]:
         await asyncio.sleep(0.35)
+        with db() as conn:
+            conn.execute("UPDATE projects SET video_progress=?, updated_at=? WHERE id=?", (progress, now(), project_id))
         await broadcast(project_id, {"type": "VIDEO_UPDATE", "projectId": project_id, "data": {"videoStatus": "generating", "videoProgress": progress, "videoModel": model}})
     video_url = f"https://example.com/video/{project_id}.mp4"
     with db() as conn:
-        conn.execute("UPDATE projects SET status='done', video_status='success', video_url=?, updated_at=? WHERE id=?", (video_url, now(), project_id))
+        conn.execute("UPDATE projects SET status='done', video_status='success', video_progress=100, video_url=?, updated_at=? WHERE id=?", (video_url, now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "done", "videoStatus": "success", "videoUrl": video_url, "videoModel": model}})

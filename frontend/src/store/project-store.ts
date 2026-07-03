@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { createEmptyProject, normalizeOrder, nowISO } from "@/lib/project-factory";
+import { normalizeOrder, nowISO } from "@/lib/project-factory";
 import type { Project, Scene, SceneUpdatePayload } from "@/types/project";
 
 interface ProjectStoreState {
@@ -9,7 +9,7 @@ interface ProjectStoreState {
   initialized: boolean;
   initializeProjects: (projects: Project[]) => void;
   selectProject: (projectId: string) => void;
-  createProject: () => void;
+  createProject: (project: Project) => void;
   removeProject: (projectId: string) => void;
   setProjectStatus: (projectID: string, status: Project["status"]) => void;
   updateProjectFields: (
@@ -72,14 +72,13 @@ const reorder = (items: Scene[], activeId: string, overId: string) => {
   return normalizeOrder(cloned);
 };
 
-export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
+export const useProjectStore = create<ProjectStoreState>()((set) => ({
   projects: [],
   selectedProjectId: "",
   initialized: false,
 
   initializeProjects: (projects) => {
     const normalized = projects.map(normalizeProject);
-    const safeProjects = normalized.length > 0 ? normalized : [createEmptyProject(1)];
 
     set((state) => {
       if (state.initialized) {
@@ -87,8 +86,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
       }
 
       return {
-        projects: safeProjects,
-        selectedProjectId: safeProjects[0]?.id ?? "",
+        projects: normalized,
+        selectedProjectId: normalized[0]?.id ?? "",
         initialized: true,
       };
     });
@@ -96,9 +95,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
 
   selectProject: (projectId) => set({ selectedProjectId: projectId }),
 
-  createProject: () => {
-    const nextProject = createEmptyProject(get().projects.length + 1);
-
+  createProject: (project) => {
+    const nextProject = normalizeProject(project);
     set((state) => ({
       projects: [nextProject, ...state.projects],
       selectedProjectId: nextProject.id,

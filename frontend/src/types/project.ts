@@ -32,6 +32,33 @@ export interface Project {
   scenes: Scene[];
 }
 
+export interface ProjectItemResponse {
+  project: Project;
+}
+
+export interface ProjectListResponse {
+  projects: Project[];
+}
+
+export interface CreateProjectInput {
+  title?: string;
+  originalScript?: string;
+}
+
+export interface UpdateProjectInput {
+  title?: string;
+  originalScript?: string;
+}
+
+export interface UpdateSceneInput {
+  narration?: string;
+  visualPrompt?: string;
+}
+
+export interface ReorderScenesInput {
+  sceneIds: string[];
+}
+
 export interface ParseProjectInput {
   script: string;
   model?: string;

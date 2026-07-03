@@ -84,10 +84,12 @@ def init_db() -> None:
                 updated_at datetime,
                 deleted_at datetime,
                 user_id integer NOT NULL,
+                title text,
                 original_script text,
                 status text DEFAULT "idle",
                 video_url text,
-                video_status text DEFAULT "idle"
+                video_status text DEFAULT "idle",
+                video_progress integer DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
             CREATE INDEX IF NOT EXISTS idx_projects_deleted_at ON projects(deleted_at);
@@ -119,6 +121,8 @@ def init_db() -> None:
                 official_config_id integer,
                 provider text,
                 model_name text,
+                context_summary text,
+                context_summary_until datetime,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(config_id) REFERENCES user_configs(id) ON DELETE SET NULL,
                 FOREIGN KEY(official_config_id) REFERENCES official_model_configs(id) ON DELETE SET NULL
@@ -156,6 +160,15 @@ def init_db() -> None:
         session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         if "official_config_id" not in session_columns:
             conn.execute("ALTER TABLE chat_sessions ADD COLUMN official_config_id integer")
+        if "context_summary" not in session_columns:
+            conn.execute("ALTER TABLE chat_sessions ADD COLUMN context_summary text")
+        if "context_summary_until" not in session_columns:
+            conn.execute("ALTER TABLE chat_sessions ADD COLUMN context_summary_until datetime")
+        project_columns = {item["name"] for item in conn.execute("PRAGMA table_info(projects)").fetchall()}
+        if "title" not in project_columns:
+            conn.execute("ALTER TABLE projects ADD COLUMN title text")
+        if "video_progress" not in project_columns:
+            conn.execute("ALTER TABLE projects ADD COLUMN video_progress integer DEFAULT 0")
         seed_super_admin(conn)
 
 

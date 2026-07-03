@@ -27,8 +27,10 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 ## Model routing
 
 - `model.py` owns LLM provider switching.
-- Chat models use LangChain (`langchain-openai`) with OpenAI-compatible base URLs for `openai`, `deepseek`, `qwen`, and `doubao`.
-- Image generation currently uses OpenAI Images directly because LangChain does not add useful value for that endpoint.
+- Chat models use LangChain adapters. OpenAI-compatible providers share `ChatOpenAI(base_url=...)`; Anthropic uses `ChatAnthropic`.
+- Chat context assembly uses LangGraph: SQLite history -> 1M-token budget check -> old-context summary compression -> model messages.
+- Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
+- Image generation currently supports OpenAI Images.
 
 ## APIs
 

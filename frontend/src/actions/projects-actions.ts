@@ -8,15 +8,36 @@ import type {
   OptimizeProjectResponse,
   ParseProjectInput,
   ParseProjectResponse,
-  Project,
+  CreateProjectInput,
+  ProjectItemResponse,
+  ProjectListResponse,
+  ReorderScenesInput,
+  UpdateProjectInput,
+  UpdateSceneInput,
 } from "@/types/project";
 
-interface ProjectTemplatesResponse {
-  projects: Project[];
+export async function listProjectsAction() {
+  const response = await httpClient.get<ProjectListResponse>("/api/bff/projects");
+  return response.data;
 }
 
-export async function getProjectTemplatesAction() {
-  const response = await httpClient.get<ProjectTemplatesResponse>("/api/bff/projects/templates");
+export async function createProjectAction(payload: CreateProjectInput) {
+  const response = await httpClient.post<ProjectItemResponse>("/api/bff/projects", payload);
+  return response.data;
+}
+
+export async function updateProjectAction(projectID: string, payload: UpdateProjectInput) {
+  const response = await httpClient.patch<ProjectItemResponse>(`/api/bff/projects/${projectID}`, payload);
+  return response.data;
+}
+
+export async function updateProjectSceneAction(projectID: string, sceneID: string, payload: UpdateSceneInput) {
+  const response = await httpClient.patch<{ scene: unknown }>(`/api/bff/projects/${projectID}/scenes/${sceneID}`, payload);
+  return response.data;
+}
+
+export async function reorderProjectScenesAction(projectID: string, payload: ReorderScenesInput) {
+  const response = await httpClient.patch<ProjectItemResponse>(`/api/bff/projects/${projectID}/scenes/reorder`, payload);
   return response.data;
 }
 

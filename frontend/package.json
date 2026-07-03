@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.14.24",
     "@base-ui/react": "^1.4.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",

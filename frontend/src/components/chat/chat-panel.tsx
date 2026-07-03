@@ -1,11 +1,7 @@
 "use client";
 
-import { Send } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import type { UserConfig } from "@/types/auth";
+import { AssistantComposer } from "./assistant-composer";
 import { configName } from "./chat-format";
 import { ChatMessageList } from "./chat-message-list";
 import { ChatSidebar } from "./chat-sidebar";
@@ -21,7 +17,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
   const chat = useChatController(configs, officialConfigs);
 
   return (
-    <div className="grid flex-1 gap-4 p-4 md:grid-cols-[280px_minmax(0,1fr)] md:p-6">
+    <div className="grid flex-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
       <ChatSidebar
         chatConfigs={chat.chatConfigs}
         effectiveConfigId={chat.effectiveConfigId}
@@ -35,35 +31,30 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
         onSelectSession={chat.selectSession}
       />
 
-      <Card className="min-h-[640px] border-border/80">
-        <CardHeader>
-          <CardTitle className="text-base">
+      <section className="flex min-h-[calc(100vh-65px)] min-w-0 flex-col">
+        <div className="border-b border-border/60 px-5 py-4">
+          <h2 className="truncate text-sm font-medium">
             {chat.selectedConfig ? configName(chat.selectedConfig) : "选择模型开始对话"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex min-h-[560px] flex-col gap-3">
-          <ChatMessageList messages={chat.messages} isLoading={chat.messagesLoading} />
+          </h2>
+        </div>
 
+        <ChatMessageList
+          messages={chat.messages}
+          agentSteps={chat.agentSteps}
+          isLoading={chat.messagesLoading}
+        />
+
+        <div className="mx-auto w-full max-w-3xl px-4 pb-5">
           {chat.errorMessage ? <p className="text-sm text-amber-600">{chat.errorMessage}</p> : null}
 
-          <div className="flex gap-2">
-            <Textarea
-              value={chat.input}
-              onChange={(event) => chat.setInput(event.target.value)}
-              placeholder="输入问题..."
-              className="min-h-20"
-              disabled={!chat.selectedConfig || chat.isBusy}
-            />
-            <Button
-              className="h-20 px-4"
-              onClick={chat.sendMessage}
-              disabled={!chat.input.trim() || !chat.selectedConfig || chat.isBusy}
-            >
-              <Send className="size-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          <AssistantComposer
+            messages={chat.messages}
+            disabled={!chat.selectedConfig || chat.isBusy}
+            isRunning={chat.isBusy}
+            onSend={chat.sendMessage}
+          />
+        </div>
+      </section>
     </div>
   );
 }

@@ -27,12 +27,16 @@ import {
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 import {
+  createProjectAction,
   deleteProjectAction,
   generateProjectAction,
   generateVideoAction,
-  getProjectTemplatesAction,
+  listProjectsAction,
   optimizeProjectAction,
   parseProjectAction,
+  reorderProjectScenesAction,
+  updateProjectAction,
+  updateProjectSceneAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { listUserConfigsAction } from "@/actions/settings-actions";
@@ -49,6 +53,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SceneCard } from "@/components/workbench/scene-card";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
+import { providerLabelMap } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
@@ -63,15 +68,6 @@ function isTaskStatus(value: unknown): value is SceneTaskStatus | "idle" {
     value === "idle" || value === "generating" || value === "success" || value === "error"
   );
 }
-
-const providerLabelMap: Record<string, string> = {
-  qwen: "Qwen",
-  deepseek: "DeepSeek",
-  doubao: "Doubao",
-  openai: "OpenAI",
-  custom: "Custom relay",
-  "seedance2.0": "Seedance 2.0",
-};
 
 function summarizeActiveConfig(
   config: UserConfig | undefined,
@@ -92,11 +88,12 @@ export default function HomePage() {
   const { t, formatDateTime } = useI18n();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const wsRef = useRef<WebSocket | null>(null);
+  const scriptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeView, setActiveView] = useState<"workspace" | "chat">("workspace");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
 
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
@@ -130,9 +127,9 @@ export default function HomePage() {
     enabled: hydrated && Boolean(token),
   });
 
-  const projectTemplatesQuery = useQuery({
-    queryKey: queryKeys.projectTemplates,
-    queryFn: getProjectTemplatesAction,
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: listProjectsAction,
     enabled: hydrated && Boolean(token) && !initialized,
     staleTime: 300_000,
   });
@@ -211,6 +208,41 @@ export default function HomePage() {
     onError: (error, variables) => {
       setProjectStatus(variables.projectId, "idle");
       setStatusMessage(resolveRequestError(error, t("home.status.parseFailed")));
+    },
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: () => createProjectAction({ title: `新项目 ${projects.length + 1}` }),
+    onSuccess: (response) => {
+      createProject(response.project);
+      setStatusMessage(null);
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, "新建项目失败，请稍后重试"));
+    },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: (params: { projectId: string; originalScript: string }) =>
+      updateProjectAction(params.projectId, { originalScript: params.originalScript }),
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, "保存项目失败，请稍后重试"));
+    },
+  });
+
+  const updateSceneMutation = useMutation({
+    mutationFn: (params: { projectId: string; sceneId: string; patch: Partial<Pick<SceneUpdatePayload, "narration" | "visualPrompt">> }) =>
+      updateProjectSceneAction(params.projectId, params.sceneId, params.patch),
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, "保存分镜失败，请稍后重试"));
+    },
+  });
+
+  const reorderScenesMutation = useMutation({
+    mutationFn: (params: { projectId: string; sceneIds: string[] }) =>
+      reorderProjectScenesAction(params.projectId, { sceneIds: params.sceneIds }),
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, "保存分镜排序失败，请稍后重试"));
     },
   });
 
@@ -326,12 +358,12 @@ export default function HomePage() {
   }, [hydrated, token, meQuery.isError, logout, router]);
 
   useEffect(() => {
-    if (!projectTemplatesQuery.data?.projects) {
+    if (!projectsQuery.data?.projects) {
       return;
     }
 
-    initializeProjects(projectTemplatesQuery.data.projects);
-  }, [initializeProjects, projectTemplatesQuery.data?.projects]);
+    initializeProjects(projectsQuery.data.projects);
+  }, [initializeProjects, projectsQuery.data?.projects]);
 
   useEffect(() => {
     if (!hydrated || !token || !selectedProjectId) {
@@ -341,14 +373,6 @@ export default function HomePage() {
     const wsURL = `${wsBaseURL}/ws/projects/${selectedProjectId}?token=${encodeURIComponent(token)}`;
     const socket = new WebSocket(wsURL);
     wsRef.current = socket;
-
-    socket.onopen = () => {
-      setWsConnected(true);
-    };
-
-    socket.onclose = () => {
-      setWsConnected(false);
-    };
 
     socket.onmessage = (event) => {
       try {
@@ -446,7 +470,6 @@ export default function HomePage() {
     return () => {
       socket.close();
       wsRef.current = null;
-      setWsConnected(false);
     };
   }, [
     hydrated,
@@ -459,6 +482,49 @@ export default function HomePage() {
     t,
   ]);
 
+  useEffect(() => {
+    const sceneSaveTimers = sceneSaveTimersRef.current;
+    return () => {
+      if (scriptSaveTimerRef.current) {
+        clearTimeout(scriptSaveTimerRef.current);
+      }
+      Object.values(sceneSaveTimers).forEach(clearTimeout);
+    };
+  }, []);
+
+  const saveCurrentScript = (value: string) => {
+    if (!currentProject) {
+      return;
+    }
+    updateCurrentScript(value);
+    if (scriptSaveTimerRef.current) {
+      clearTimeout(scriptSaveTimerRef.current);
+    }
+    const projectId = currentProject.id;
+    scriptSaveTimerRef.current = setTimeout(() => {
+      updateProjectMutation.mutate({ projectId, originalScript: value });
+    }, 500);
+  };
+
+  const saveScenePatch = (
+    sceneId: string,
+    patch: Partial<Pick<SceneUpdatePayload, "narration" | "visualPrompt">>
+  ) => {
+    if (!currentProject) {
+      return;
+    }
+    updateScene(sceneId, patch);
+    const projectId = currentProject.id;
+    const key = `${projectId}:${sceneId}`;
+    if (sceneSaveTimersRef.current[key]) {
+      clearTimeout(sceneSaveTimersRef.current[key]);
+    }
+    sceneSaveTimersRef.current[key] = setTimeout(() => {
+      updateSceneMutation.mutate({ projectId, sceneId, patch });
+      delete sceneSaveTimersRef.current[key];
+    }, 500);
+  };
+
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) {
@@ -466,6 +532,13 @@ export default function HomePage() {
     }
 
     reorderScenes(String(active.id), String(over.id));
+    const nextProject = useProjectStore.getState().projects.find((project) => project.id === selectedProjectId);
+    if (nextProject) {
+      reorderScenesMutation.mutate({
+        projectId: nextProject.id,
+        sceneIds: nextProject.scenes.map((scene) => scene.id),
+      });
+    }
   };
 
   if (!hydrated) {
@@ -476,10 +549,12 @@ export default function HomePage() {
     return <main className="flex min-h-screen items-center justify-center">{t("common.redirectingToLogin")}</main>;
   }
 
-  if (!currentProject && !projectTemplatesQuery.isLoading) {
+  if (!currentProject && !projectsQuery.isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <Button onClick={createProject}>{t("common.createFirstProject")}</Button>
+        <Button onClick={() => createProjectMutation.mutate()} disabled={createProjectMutation.isPending}>
+          {t("common.createFirstProject")}
+        </Button>
       </main>
     );
   }
@@ -499,7 +574,11 @@ export default function HomePage() {
               </div>
             </div>
 
-            <Button className="w-full justify-start" onClick={createProject}>
+            <Button
+              className="w-full justify-start"
+              onClick={() => createProjectMutation.mutate()}
+              disabled={createProjectMutation.isPending}
+            >
               <Plus className="mr-2 size-4" />
               {t("home.newProject")}
             </Button>
@@ -536,7 +615,7 @@ export default function HomePage() {
           <div className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
             <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.projectList")}</p>
 
-            {projectTemplatesQuery.isLoading && projects.length === 0 ? (
+            {projectsQuery.isLoading && projects.length === 0 ? (
               <div className="space-y-2 px-1">
                 <Skeleton className="h-14 w-full" />
                 <Skeleton className="h-14 w-full" />
@@ -586,10 +665,6 @@ export default function HomePage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="hidden sm:inline-flex">
-                  WS: {wsConnected ? t("common.wsConnected") : t("common.wsDisconnected")}
-                </Badge>
-
                 <PreferencesSwitcher />
 
                 {user?.role === "superAdmin" ? (
@@ -664,7 +739,7 @@ export default function HomePage() {
 
                 <Textarea
                   value={currentProject?.originalScript ?? ""}
-                  onChange={(event) => updateCurrentScript(event.target.value)}
+                  onChange={(event) => saveCurrentScript(event.target.value)}
                   placeholder={t("home.storyPlaceholder")}
                   className="min-h-[300px]"
                   disabled={!currentProject}
@@ -845,12 +920,12 @@ export default function HomePage() {
                             <SceneCard
                               scene={scene}
                               onNarrationChange={(value) =>
-                                updateScene(scene.id, {
+                                saveScenePatch(scene.id, {
                                   narration: value,
                                 })
                               }
                               onPromptChange={(value) =>
-                                updateScene(scene.id, {
+                                saveScenePatch(scene.id, {
                                   visualPrompt: value,
                                 })
                               }

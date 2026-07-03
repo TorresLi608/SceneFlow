@@ -7,18 +7,72 @@ import type {
   OptimizeProjectResponse,
   ParseProjectInput,
   ParseProjectResponse,
+  CreateProjectInput,
+  ProjectItemResponse,
+  ProjectListResponse,
+  ReorderScenesInput,
+  UpdateProjectInput,
+  UpdateSceneInput,
 } from "@/types/project";
 import { backendClient } from "@/lib/http/backend-client";
-import { createTemplateProjects } from "@/lib/project-factory";
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+export async function getProjectsByBff(authorization?: string) {
+  const response = await backendClient.get<ProjectListResponse>("/api/projects", {
+    headers: {
+      Authorization: authorization,
+    },
+  });
 
-export async function getProjectTemplatesByBff() {
-  await sleep(600);
+  return response.data;
+}
 
-  return {
-    projects: createTemplateProjects(),
-  };
+export async function createProjectByBff(payload: CreateProjectInput, authorization?: string) {
+  const response = await backendClient.post<ProjectItemResponse>("/api/projects", payload, {
+    headers: {
+      Authorization: authorization,
+    },
+  });
+
+  return response.data;
+}
+
+export async function updateProjectByBff(projectID: string, payload: UpdateProjectInput, authorization?: string) {
+  const response = await backendClient.patch<ProjectItemResponse>(`/api/projects/${projectID}`, payload, {
+    headers: {
+      Authorization: authorization,
+    },
+  });
+
+  return response.data;
+}
+
+export async function updateProjectSceneByBff(
+  projectID: string,
+  sceneID: string,
+  payload: UpdateSceneInput,
+  authorization?: string
+) {
+  const response = await backendClient.patch(`/api/projects/${projectID}/scenes/${sceneID}`, payload, {
+    headers: {
+      Authorization: authorization,
+    },
+  });
+
+  return response.data;
+}
+
+export async function reorderProjectScenesByBff(
+  projectID: string,
+  payload: ReorderScenesInput,
+  authorization?: string
+) {
+  const response = await backendClient.patch<ProjectItemResponse>(`/api/projects/${projectID}/scenes/reorder`, payload, {
+    headers: {
+      Authorization: authorization,
+    },
+  });
+
+  return response.data;
 }
 
 export async function parseProjectByBff(

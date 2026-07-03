@@ -22,6 +22,13 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface ChatAgentStep {
+  id: string;
+  label: string;
+  status: "running" | "done" | "error";
+  detail?: string;
+}
+
 export interface ChatSessionListResponse {
   sessions: ChatSession[];
 }
@@ -41,6 +48,7 @@ export interface SendChatMessageResponse {
 
 export type ChatStreamEvent =
   | { type: "userMessage"; message: ChatMessage }
+  | { type: "agent_step"; step: ChatAgentStep }
   | { type: "reasoning_delta"; content: string }
   | { type: "content_delta"; content: string }
   | { type: "assistantMessage"; message: ChatMessage }

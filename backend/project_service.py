@@ -21,9 +21,10 @@ async def parse_project_model(conn: sqlite3.Connection, user_id: int, project_id
     if existing:
         conn.execute("UPDATE projects SET original_script=?, status='parsing', updated_at=? WHERE id=?", (script, stamp, project_id))
     else:
+        title = str(payload.get("title", "")).strip()[:80] or "新项目"
         conn.execute(
-            "INSERT INTO projects (id, created_at, updated_at, user_id, original_script, status, video_status) VALUES (?, ?, ?, ?, ?, 'parsing', 'idle')",
-            (project_id, stamp, stamp, user_id, script),
+            "INSERT INTO projects (id, created_at, updated_at, user_id, title, original_script, status, video_status, video_progress) VALUES (?, ?, ?, ?, ?, ?, 'parsing', 'idle', 0)",
+            (project_id, stamp, stamp, user_id, title, script),
         )
     config = active_model_config(conn, user_id, "script", "故事生成/分镜拆分")
     return {"script": script, "config": config}

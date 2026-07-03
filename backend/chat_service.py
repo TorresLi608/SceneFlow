@@ -6,14 +6,12 @@ from typing import Any
 from fastapi import HTTPException
 
 from config_service import active_model_config, normalize_base_url, normalize_model, normalize_provider, official_model_config, validate_config_fields
+from context_graph import build_context_messages
 from database import row, rows
 from model import pick_model
 from security import decrypt
 from serializers import chat_message_json, chat_session_json
 from utils import new_id, now
-
-SYSTEM_PROMPT = "You are SceneFlow Assistant. Answer clearly and concisely."
-
 
 def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None, official_config_id: int | None = None) -> dict[str, Any]:
     if official_config_id is not None:
@@ -79,14 +77,14 @@ def list_chat_messages(conn: sqlite3.Connection, session_id: str, user_id: int) 
     return [chat_message_json(message) for message in messages]
 
 
-def prepare_chat_turn(
+def begin_chat_turn(
     conn: sqlite3.Connection,
     session_id: str,
     user_id: int,
     content: str,
     config_id: int | None,
     official_config_id: int | None = None,
-) -> tuple[dict[str, Any], sqlite3.Row, list[dict[str, str]]]:
+) -> tuple[dict[str, Any], sqlite3.Row]:
     content = content.strip()
     if not content:
         raise HTTPException(400, "content is required")
@@ -101,13 +99,19 @@ def prepare_chat_turn(
         official_config_id if official_config_id else session["official_config_id"],
     )
     user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"])
-    history = rows(
-        conn,
-        "SELECT role, content FROM (SELECT role, content, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at DESC LIMIT 40) ORDER BY created_at ASC",
-        (session_id,),
-    )
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend({"role": message["role"], "content": message["content"]} for message in history)
+    return config, user_message
+
+
+async def prepare_chat_turn(
+    conn: sqlite3.Connection,
+    session_id: str,
+    user_id: int,
+    content: str,
+    config_id: int | None,
+    official_config_id: int | None = None,
+) -> tuple[dict[str, Any], sqlite3.Row, list[dict[str, str]]]:
+    config, user_message = begin_chat_turn(conn, session_id, user_id, content, config_id, official_config_id)
+    messages = await build_context_messages(conn, session_id, config)
     return config, user_message, messages
 
 

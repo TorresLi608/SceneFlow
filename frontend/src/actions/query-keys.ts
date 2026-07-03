@@ -1,7 +1,7 @@
 export const queryKeys = {
   me: ["me"] as const,
   userConfigs: ["user-configs"] as const,
-  projectTemplates: ["project-templates"] as const,
+  projects: ["projects"] as const,
   adminUsers: ["admin-users"] as const,
   officialConfigs: ["official-configs"] as const,
   chatSessions: ["chat-sessions"] as const,
