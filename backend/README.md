@@ -50,6 +50,7 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 - `PATCH /api/settings/keys/:id`
 - `DELETE /api/settings/keys/:id`
 - `POST /api/settings/official/:id/activate`
+- `DELETE /api/settings/official/:id/activate`
 
 ### Admin (superAdmin required)
 - `GET /api/admin/users`

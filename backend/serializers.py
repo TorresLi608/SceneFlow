@@ -27,15 +27,18 @@ def config_json(config: sqlite3.Row) -> dict[str, Any]:
         "modelSeries": config["model_name"] or "",
         "model": config["model_name"] or "",
         "isActive": bool(config["is_active"]),
+        "isEnabled": bool(config["is_enabled"]) if "is_enabled" in config.keys() else True,
         "isVerified": bool(config["is_verified"]),
         "createdAt": config["created_at"],
         "updatedAt": config["updated_at"],
     }
 
 
-def official_config_json(config: sqlite3.Row) -> dict[str, Any]:
+def official_config_json(config: sqlite3.Row, is_active: bool | None = None) -> dict[str, Any]:
     data = config_json(config)
     data["source"] = "official"
+    if is_active is not None:
+        data["isActive"] = is_active
     return data
 
 

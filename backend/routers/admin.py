@@ -69,14 +69,17 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
     if api_key or payload.get("isActive"):
         await validate_provider(purpose, provider, model, api_key, base_url)
         is_verified = 1
+    is_enabled = 1 if payload.get("isEnabled", True) else 0
+    if payload.get("isActive") and not is_enabled:
+        raise HTTPException(400, "disabled config cannot be default")
     stamp = now()
     with db() as conn:
         if bool(payload.get("isActive")):
             conn.execute("UPDATE official_model_configs SET is_active=0, updated_at=? WHERE purpose=? AND deleted_at IS NULL", (stamp, purpose))
         cur = conn.execute(
             """INSERT INTO official_model_configs
-            (created_at, updated_at, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (created_at, updated_at, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 stamp,
                 stamp,
@@ -88,6 +91,7 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
                 model,
                 encrypt(api_key),
                 1 if payload.get("isActive") else 0,
+                is_enabled,
                 is_verified,
             ),
         )
@@ -130,7 +134,13 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
     if needs_validation:
         updates["is_verified"] = 1
     if "isActive" in payload:
+        if payload["isActive"] and not bool(payload.get("isEnabled", config["is_enabled"])):
+            raise HTTPException(400, "disabled config cannot be default")
         updates["is_active"] = 1 if payload["isActive"] else 0
+    if "isEnabled" in payload:
+        updates["is_enabled"] = 1 if payload["isEnabled"] else 0
+        if not payload["isEnabled"]:
+            updates["is_active"] = 0
     if not updates:
         raise HTTPException(400, "no fields to update")
 

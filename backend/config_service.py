@@ -41,11 +41,11 @@ def normalize_model(provider: str, value: str) -> str:
 
 
 def validate_config_fields(purpose: str, provider: str, model: str, base_url: str = "") -> None:
-    if purpose not in {"script", "image", "video"}:
+    if purpose not in {"general", "script", "image", "video"}:
         raise HTTPException(400, "invalid purpose")
     if provider == "custom":
-        if purpose != "script":
-            raise HTTPException(400, "custom provider currently only supports script purpose")
+        if purpose not in {"general", "script"}:
+            raise HTTPException(400, "custom provider currently only supports general/script purpose")
         if not model.strip():
             raise HTTPException(400, "custom provider requires modelSeries")
         if not base_url:
@@ -64,7 +64,7 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
     elif provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"}:
         raise HTTPException(400, "provider must be one of qwen/deepseek/doubao/openai/gemini/anthropic/custom")
     elif not model.strip():
-        raise HTTPException(400, "script purpose requires modelSeries")
+        raise HTTPException(400, "general/script purpose requires modelSeries")
 
 
 async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:
@@ -101,7 +101,7 @@ def _model_config(config: sqlite3.Row, purpose: str, stage: str, source: str) ->
 def official_model_config(conn: sqlite3.Connection, config_id: int, purpose: str, stage: str) -> dict[str, str]:
     config = row(
         conn,
-        "SELECT * FROM official_model_configs WHERE id=? AND purpose=? AND is_active=1 AND deleted_at IS NULL",
+        "SELECT * FROM official_model_configs WHERE id=? AND purpose=? AND is_enabled=1 AND deleted_at IS NULL",
         (config_id, purpose),
     )
     return _model_config(config, purpose, stage, "official")
@@ -110,14 +110,29 @@ def official_model_config(conn: sqlite3.Connection, config_id: int, purpose: str
 def active_model_config(conn: sqlite3.Connection, user_id: int, purpose: str, stage: str) -> dict[str, str]:
     config = row(
         conn,
-        "SELECT * FROM user_configs WHERE user_id=? AND purpose=? AND is_active=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
+        "SELECT * FROM user_configs WHERE user_id=? AND purpose=? AND is_active=1 AND is_enabled=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
         (user_id, purpose),
     )
     if config:
         return _model_config(config, purpose, stage, "user")
     config = row(
         conn,
-        "SELECT * FROM official_model_configs WHERE purpose=? AND is_active=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
+        """SELECT official_model_configs.*
+        FROM user_official_config_defaults
+        JOIN official_model_configs ON official_model_configs.id=user_official_config_defaults.official_config_id
+        WHERE user_official_config_defaults.user_id=?
+          AND user_official_config_defaults.purpose=?
+          AND official_model_configs.is_enabled=1
+          AND official_model_configs.is_verified=1
+          AND official_model_configs.deleted_at IS NULL
+        LIMIT 1""",
+        (user_id, purpose),
+    )
+    if config:
+        return _model_config(config, purpose, stage, "official")
+    config = row(
+        conn,
+        "SELECT * FROM official_model_configs WHERE purpose=? AND is_active=1 AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
         (purpose,),
     )
     return _model_config(config, purpose, stage, "official")

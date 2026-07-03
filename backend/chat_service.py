@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from config_service import active_model_config, normalize_base_url, normalize_model, normalize_provider, official_model_config, validate_config_fields
+from config_service import normalize_base_url, normalize_model, normalize_provider, validate_config_fields
 from context_graph import build_context_messages
 from database import row, rows
 from model import pick_model
@@ -13,30 +13,74 @@ from security import decrypt
 from serializers import chat_message_json, chat_session_json
 from utils import new_id, now
 
-def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None, official_config_id: int | None = None) -> dict[str, Any]:
-    if official_config_id is not None:
-        config = official_model_config(conn, official_config_id, "script", "智能问答")
-        return {**config, "configId": None, "officialConfigId": official_config_id}
+CHAT_PURPOSES = ("script", "general")
 
-    if config_id is None:
-        config = active_model_config(conn, user_id, "script", "智能问答")
-        return {**config, "configId": None, "officialConfigId": None}
 
-    config = row(conn, "SELECT * FROM user_configs WHERE id=? AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+def _row_chat_config(config: sqlite3.Row | None, config_id: int | None = None, official_config_id: int | None = None) -> dict[str, Any]:
     if not config:
-        raise HTTPException(404, "config not found")
-    if config["purpose"] != "script":
-        raise HTTPException(400, "chat only supports script/prompt configs")
+        raise HTTPException(400, "智能问答未配置可用的默认模型。请先使用官方配置或添加自定义配置。")
+    if config["purpose"] not in CHAT_PURPOSES:
+        raise HTTPException(400, "chat only supports text configs")
+    if not bool(config["is_enabled"]):
+        raise HTTPException(400, "config is disabled")
     provider = normalize_provider(config["provider"])
     base_url = normalize_base_url(config["base_url"] or "")
     model = pick_model(provider, normalize_model(provider, config["model_name"] or ""))
-    validate_config_fields("script", provider, model, base_url)
+    validate_config_fields(config["purpose"], provider, model, base_url)
     if not bool(config["is_verified"]):
         raise HTTPException(400, "config is not verified")
     api_key = decrypt(config["encrypted_key"]).strip()
     if not api_key:
         raise HTTPException(400, "config missing API key")
-    return {"provider": provider, "model": model, "apiKey": api_key, "baseUrl": base_url, "configId": config_id, "officialConfigId": None}
+    return {"provider": provider, "model": model, "apiKey": api_key, "baseUrl": base_url, "configId": config_id, "officialConfigId": official_config_id}
+
+
+def _active_chat_config(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
+    config = row(
+        conn,
+        """SELECT * FROM user_configs
+        WHERE user_id=? AND purpose IN ('script', 'general') AND is_active=1 AND is_enabled=1 AND deleted_at IS NULL
+        ORDER BY CASE purpose WHEN 'script' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1""",
+        (user_id,),
+    )
+    if config:
+        return _row_chat_config(config)
+
+    config = row(
+        conn,
+        """SELECT official_model_configs.*
+        FROM user_official_config_defaults
+        JOIN official_model_configs ON official_model_configs.id=user_official_config_defaults.official_config_id
+        WHERE user_official_config_defaults.user_id=?
+          AND user_official_config_defaults.purpose IN ('script', 'general')
+          AND official_model_configs.is_enabled=1
+          AND official_model_configs.is_verified=1
+          AND official_model_configs.deleted_at IS NULL
+        ORDER BY CASE user_official_config_defaults.purpose WHEN 'script' THEN 0 ELSE 1 END LIMIT 1""",
+        (user_id,),
+    )
+    if config:
+        return _row_chat_config(config, official_config_id=config["id"])
+
+    config = row(
+        conn,
+        """SELECT * FROM official_model_configs
+        WHERE purpose IN ('script', 'general') AND is_active=1 AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL
+        ORDER BY CASE purpose WHEN 'script' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1""",
+    )
+    return _row_chat_config(config, official_config_id=config["id"] if config else None)
+
+
+def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None, official_config_id: int | None = None) -> dict[str, Any]:
+    if official_config_id is not None:
+        config = row(conn, "SELECT * FROM official_model_configs WHERE id=? AND deleted_at IS NULL", (official_config_id,))
+        return _row_chat_config(config, official_config_id=official_config_id)
+
+    if config_id is None:
+        return _active_chat_config(conn, user_id)
+
+    config = row(conn, "SELECT * FROM user_configs WHERE id=? AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+    return _row_chat_config(config, config_id=config_id)
 
 
 def list_chat_sessions(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:

@@ -25,6 +25,10 @@ function selectedConfigPayload(config: UserConfig | undefined) {
   return config.source === "official" ? { officialConfigId: config.id } : { configId: config.id };
 }
 
+function isChatConfig(config: UserConfig) {
+  return ["general", "script"].includes(config.purpose) && config.isEnabled && config.isVerified && config.modelSeries.trim();
+}
+
 export function useChatController(configs: UserConfig[], officialConfigs: UserConfig[]) {
   const queryClient = useQueryClient();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -36,11 +40,11 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const [isStreaming, setIsStreaming] = useState(false);
 
   const userChatConfigs = useMemo(
-    () => configs.filter((config) => config.purpose === "script" && config.isVerified && config.modelSeries.trim()),
+    () => configs.filter(isChatConfig),
     [configs]
   );
   const officialChatConfigs = useMemo(
-    () => officialConfigs.filter((config) => config.purpose === "script" && config.isVerified && config.modelSeries.trim()),
+    () => officialConfigs.filter(isChatConfig),
     [officialConfigs]
   );
   const chatConfigs = useMemo(() => [...officialChatConfigs, ...userChatConfigs], [officialChatConfigs, userChatConfigs]);
@@ -49,8 +53,8 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
       const config =
         userChatConfigs.find((item) => item.isActive) ??
         officialChatConfigs.find((item) => item.isActive) ??
-        userChatConfigs[0] ??
-        officialChatConfigs[0];
+        officialChatConfigs[0] ??
+        userChatConfigs[0];
       return config ? configSelectValue(config) : "";
     },
     [officialChatConfigs, userChatConfigs]

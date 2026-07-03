@@ -50,6 +50,7 @@ def init_db() -> None:
                 provider text NOT NULL,
                 encrypted_key text NOT NULL,
                 is_active numeric DEFAULT false,
+                is_enabled numeric DEFAULT true,
                 purpose text DEFAULT "script",
                 model_name text,
                 is_verified numeric DEFAULT false,
@@ -69,6 +70,7 @@ def init_db() -> None:
                 provider text NOT NULL,
                 encrypted_key text NOT NULL,
                 is_active numeric DEFAULT false,
+                is_enabled numeric DEFAULT true,
                 purpose text DEFAULT "script",
                 model_name text,
                 is_verified numeric DEFAULT false,
@@ -78,6 +80,16 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_official_model_configs_purpose ON official_model_configs(purpose);
             CREATE INDEX IF NOT EXISTS idx_official_model_configs_deleted_at ON official_model_configs(deleted_at);
+            CREATE TABLE IF NOT EXISTS user_official_config_defaults (
+                user_id integer NOT NULL,
+                purpose text NOT NULL,
+                official_config_id integer NOT NULL,
+                created_at datetime,
+                updated_at datetime,
+                PRIMARY KEY(user_id, purpose),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(official_config_id) REFERENCES official_model_configs(id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS projects (
                 id text PRIMARY KEY,
                 created_at datetime,
@@ -154,9 +166,13 @@ def init_db() -> None:
         user_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(user_configs)").fetchall()}
         if "base_url" not in user_config_columns:
             conn.execute("ALTER TABLE user_configs ADD COLUMN base_url text")
+        if "is_enabled" not in user_config_columns:
+            conn.execute("ALTER TABLE user_configs ADD COLUMN is_enabled numeric DEFAULT true")
         official_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(official_model_configs)").fetchall()}
         if "base_url" not in official_config_columns:
             conn.execute("ALTER TABLE official_model_configs ADD COLUMN base_url text")
+        if "is_enabled" not in official_config_columns:
+            conn.execute("ALTER TABLE official_model_configs ADD COLUMN is_enabled numeric DEFAULT true")
         session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         if "official_config_id" not in session_columns:
             conn.execute("ALTER TABLE chat_sessions ADD COLUMN official_config_id integer")

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Star, Trash2, X } from "lucide-react";
+import { Pencil, Power, Star, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -34,7 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
-import { providerLabelMap, providerOption, providerOptions } from "@/lib/model-providers";
+import { allProviderOptions, providerLabelMap, providerOption, providerOptions } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import type { ConfigPurpose, CreateUserConfigInput, UpdateUserConfigInput, UserConfig } from "@/types/auth";
 
@@ -68,12 +68,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
   const [name, setName] = useState("通义千问");
-  const [description, setDescription] = useState("https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope");
+  const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
   const [provider, setProvider] = useState("qwen");
   const [baseUrl, setBaseUrl] = useState("https://dashscope.aliyuncs.com/compatible-mode/v1");
   const [modelSeries, setModelSeries] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [isEnabled, setIsEnabled] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [validationPassed, setValidationPassed] = useState(false);
 
@@ -91,7 +92,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const option = providerOptions.script[0];
     setEditingConfigId(null);
     setName(option.label);
-    setDescription(option.docsUrl ?? "");
+    setDescription("");
     setPurpose("script");
     setProvider(option.value);
     setBaseUrl(option.baseUrl ?? "");
@@ -162,7 +163,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     },
   });
 
-  const options = providerOptions[purpose];
+  const options = allProviderOptions;
   const isMutating =
     saveConfigMutation.isPending ||
     updateConfigMutation.isPending ||
@@ -174,14 +175,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const hasOfficialConfigs = (configsQuery.data?.officialConfigs?.length ?? 0) > 0;
 
   const orderedConfigs = useMemo(
-    () => [...(configsQuery.data?.configs ?? [])].sort((a, b) => Number(b.isActive) - Number(a.isActive)),
+    () =>
+      [...(configsQuery.data?.configs ?? [])].sort(
+        (a, b) => Number(b.isEnabled) - Number(a.isEnabled) || Number(b.isActive) - Number(a.isActive)
+      ),
     [configsQuery.data?.configs]
   );
 
   const activeUserConfigByPurpose = useMemo(
     () =>
       (configsQuery.data?.configs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
-        if (config.isActive && !acc[config.purpose]) {
+        if (config.isActive && config.isEnabled && !acc[config.purpose]) {
           acc[config.purpose] = config;
         }
         return acc;
@@ -192,7 +196,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const officialConfigByPurpose = useMemo(
     () =>
       (configsQuery.data?.officialConfigs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
-        if (config.isActive && config.isVerified && !acc[config.purpose]) {
+        if (config.isActive && config.isEnabled && config.isVerified && !acc[config.purpose]) {
           acc[config.purpose] = config;
         }
         return acc;
@@ -206,6 +210,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   );
 
   const purposeLabel: Record<ConfigPurpose, string> = {
+    general: t("settings.generalPurpose"),
     script: t("settings.scriptPurpose"),
     image: t("settings.imagePurpose"),
     video: t("settings.videoPurpose"),
@@ -216,14 +221,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setMessage(null);
     const value = (nextPurpose ?? "script") as ConfigPurpose;
     setPurpose(value);
-    const nextOption = providerOptions[value][0];
-    if (nextOption) {
-      setProvider(nextOption.value);
-      setName(nextOption.label);
-      setDescription(nextOption.docsUrl ?? "");
-      setBaseUrl(nextOption.baseUrl ?? "");
-      setModelSeries(nextOption.modelSeries);
-    }
   };
 
   const onProviderChange = (nextProvider: string | null) => {
@@ -234,7 +231,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const hit = options.find((item) => item.value === value);
     if (hit) {
       setName(hit.label);
-      setDescription(hit.docsUrl ?? "");
       setBaseUrl(hit.baseUrl ?? "");
       setModelSeries(hit.modelSeries);
     }
@@ -284,7 +280,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       baseUrl: baseUrl.trim(),
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim() || undefined,
-      isActive: true,
+      isActive: editingConfigId ? undefined : isEnabled,
+      isEnabled,
     };
 
     setMessage(null);
@@ -302,7 +299,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       baseUrl: baseUrl.trim(),
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim(),
-      isActive: true,
+      isActive: isEnabled,
+      isEnabled,
     };
 
     saveConfigMutation.mutate(createPayload);
@@ -317,13 +315,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setBaseUrl(config.baseUrl ?? "");
     setModelSeries(config.modelSeries);
     setApiKey("");
+    setIsEnabled(config.isEnabled);
     setValidationPassed(true);
     setMessage(t("settings.loadedEdit"));
   };
 
   const activateConfig = (config: UserConfig) => {
     if (config.isActive) {
-      setMessage(t("settings.currentDefaultHint"));
+      setMessage(null);
+      updateConfigMutation.mutate({ id: config.id, payload: { isActive: false } });
+      return;
+    }
+
+    if (!config.isEnabled) {
+      setMessage(t("settings.disabledDefaultHint"));
       return;
     }
 
@@ -331,6 +336,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     updateConfigMutation.mutate({
       id: config.id,
       payload: { isActive: true },
+    });
+  };
+
+  const toggleConfigEnabled = (config: UserConfig) => {
+    setMessage(null);
+    updateConfigMutation.mutate({
+      id: config.id,
+      payload: { isEnabled: !config.isEnabled },
     });
   };
 
@@ -367,6 +380,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="rounded-lg border border-border/80 bg-muted/40 p-3">
             <p className="text-sm font-medium">{t("settings.currentDefaults")}</p>
             <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <p>
+                {t("settings.generalPurpose")}：
+                {displayConfigName(activeConfigByPurpose.general, t("settings.unconfigured"), t("settings.officialConfig"), t("settings.customConfig"))}
+              </p>
               <p>
                 {t("settings.scriptPurpose")}：
                 {displayConfigName(activeConfigByPurpose.script, t("settings.unconfigured"), t("settings.officialConfig"), t("settings.customConfig"))}
@@ -451,7 +468,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               ) : null}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="configName">{t("settings.name")}</Label>
                 <Input
@@ -471,30 +488,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <Label htmlFor="purpose">{t("settings.purpose")}</Label>
                 <Select value={purpose} onValueChange={onPurposeChange}>
                   <SelectTrigger id="purpose">
-                    <SelectValue placeholder={t("settings.purpose")} />
+                    <SelectValue placeholder={t("settings.purpose")}>{purposeLabel[purpose]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="general">{t("settings.generalPurpose")}</SelectItem>
                     <SelectItem value="script">{t("settings.scriptPurpose")}</SelectItem>
                     <SelectItem value="image">{t("settings.imagePurpose")}</SelectItem>
                     <SelectItem value="video">{t("settings.videoPurpose")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="configDescription">{t("settings.descriptionLabel")}</Label>
-              <Textarea
-                id="configDescription"
-                value={description}
-                onChange={(event) => {
-                  setValidationPassed(editingConfigId !== null && !apiKey.trim());
-                  setMessage(null);
-                  setDescription(event.target.value);
-                }}
-                placeholder={t("settings.descriptionPlaceholder")}
-                className="min-h-20"
-              />
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -543,16 +546,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 placeholder={t("settings.baseUrlPlaceholder")}
                 autoComplete="off"
               />
-              {selectedProviderOption?.docsUrl ? (
-                <a
-                  href={selectedProviderOption.docsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex text-xs text-primary underline-offset-4 hover:underline"
-                >
-                  {t("settings.officialDocs")}
-                </a>
-              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -572,6 +565,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 autoComplete="off"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="configDescription">{t("settings.descriptionLabel")}</Label>
+              <Textarea
+                id="configDescription"
+                value={description}
+                onChange={(event) => {
+                  setValidationPassed(editingConfigId !== null && !apiKey.trim());
+                  setMessage(null);
+                  setDescription(event.target.value);
+                }}
+                placeholder={t("settings.descriptionPlaceholder")}
+                className="min-h-20"
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
+              {t("settings.enabledConfig")}
+            </label>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button type="button" variant="outline" onClick={validateConfig} disabled={isMutating}>
@@ -621,6 +634,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       </div>
 
                       <span className="shrink-0 text-xs text-muted-foreground">
+                        {config.isEnabled ? t("settings.enabled") : t("settings.disabled")} ·{" "}
                         {config.isActive ? t("settings.active") : t("settings.inactive")} ·{" "}
                         {config.isVerified ? t("settings.verified") : t("settings.unverified")}
                       </span>
@@ -639,7 +653,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         disabled={isMutating}
                       >
                         <Star className={cn("mr-1 size-3.5", config.isActive && "fill-current")} />
-                        {config.isActive ? t("settings.currentDefault") : t("settings.setDefault")}
+                        {config.isActive ? t("settings.cancelDefault") : t("settings.setDefault")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => toggleConfigEnabled(config)}
+                        disabled={isMutating}
+                      >
+                        <Power className="mr-1 size-3.5" />
+                        {config.isEnabled ? t("settings.disable") : t("settings.enable")}
                       </Button>
                       <Button
                         type="button"

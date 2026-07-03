@@ -1,4 +1,4 @@
-export type ConfigPurpose = "script" | "image" | "video";
+export type ConfigPurpose = "general" | "script" | "image" | "video";
 
 export interface AuthUser {
   id: number;
@@ -29,6 +29,7 @@ export interface UserConfig {
   modelSeries: string;
   model?: string;
   isActive: boolean;
+  isEnabled: boolean;
   isVerified: boolean;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +53,7 @@ export interface CreateUserConfigInput {
   modelSeries: string;
   apiKey: string;
   isActive: boolean;
+  isEnabled?: boolean;
 }
 
 export interface ValidateUserConfigInput {
@@ -73,6 +75,7 @@ export interface UpdateUserConfigInput {
   modelSeries?: string;
   apiKey?: string;
   isActive?: boolean;
+  isEnabled?: boolean;
 }
 
 export interface ValidateUserConfigResponse {

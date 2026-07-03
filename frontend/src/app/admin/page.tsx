@@ -24,12 +24,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
-import { providerLabelMap, providerOptions } from "@/lib/model-providers";
+import { allProviderOptions, providerLabelMap, providerOptions } from "@/lib/model-providers";
 import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig } from "@/types/auth";
 
 const purposeLabel: Record<ConfigPurpose, string> = {
-  script: "剧本/提示词",
+  general: "通用",
+  script: "文本",
   image: "图片生成",
   video: "视频生成",
 };
@@ -45,7 +46,7 @@ export default function AdminPage() {
   const [view, setView] = useState<"models" | "users">("models");
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
   const [name, setName] = useState(providerOptions.script[0].label);
-  const [description, setDescription] = useState(providerOptions.script[0].docsUrl ?? "");
+  const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
   const [provider, setProvider] = useState(providerOptions.script[0].value);
   const [baseUrl, setBaseUrl] = useState(providerOptions.script[0].baseUrl ?? "");
@@ -81,14 +82,14 @@ export default function AdminPage() {
     }
   }, [meQuery.data?.user, setUser]);
 
-  const options = providerOptions[purpose];
+  const options = allProviderOptions;
   const officialConfigs = useMemo(() => officialConfigsQuery.data?.configs ?? [], [officialConfigsQuery.data?.configs]);
 
   const resetForm = () => {
     const option = providerOptions.script[0];
     setEditingConfigId(null);
     setName(option.label);
-    setDescription(option.docsUrl ?? "");
+    setDescription("");
     setPurpose("script");
     setProvider(option.value);
     setBaseUrl(option.baseUrl ?? "");
@@ -173,12 +174,6 @@ export default function AdminPage() {
   const onPurposeChange = (nextPurpose: string | null) => {
     const value = (nextPurpose ?? "script") as ConfigPurpose;
     setPurpose(value);
-    const nextOption = providerOptions[value][0];
-    setProvider(nextOption.value);
-    setName(nextOption.label);
-    setDescription(nextOption.docsUrl ?? "");
-    setBaseUrl(nextOption.baseUrl ?? "");
-    setModelSeries(nextOption.modelSeries);
   };
 
   const onProviderChange = (nextProvider: string | null) => {
@@ -186,7 +181,6 @@ export default function AdminPage() {
     setProvider(value);
     const option = options.find((item) => item.value === value);
     setName(option?.label ?? "");
-    setDescription(option?.docsUrl ?? "");
     setBaseUrl(option?.baseUrl ?? "");
     setModelSeries(option?.modelSeries ?? "");
   };
@@ -332,35 +326,34 @@ export default function AdminPage() {
                   <Label htmlFor="officialName">名称</Label>
                   <Input id="officialName" value={name} onChange={(event) => setName(event.target.value)} />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="officialPurpose">用途</Label>
-                    <Select value={purpose} onValueChange={onPurposeChange}>
-                      <SelectTrigger id="officialPurpose" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="script">剧本/提示词</SelectItem>
-                        <SelectItem value="image">图片生成</SelectItem>
-                        <SelectItem value="video">视频生成</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="officialProvider">Provider</Label>
-                    <Select value={provider} onValueChange={onProviderChange}>
-                      <SelectTrigger id="officialProvider" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {options.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="officialPurpose">用途</Label>
+                  <Select value={purpose} onValueChange={onPurposeChange}>
+                    <SelectTrigger id="officialPurpose" className="w-full">
+                      <SelectValue>{purposeLabel[purpose]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="general">通用</SelectItem>
+                      <SelectItem value="script">文本</SelectItem>
+                      <SelectItem value="image">图片生成</SelectItem>
+                      <SelectItem value="video">视频生成</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="officialProvider">供应商</Label>
+                  <Select value={provider} onValueChange={onProviderChange}>
+                    <SelectTrigger id="officialProvider" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="officialModel">模型系列</Label>
@@ -379,16 +372,6 @@ export default function AdminPage() {
                     onChange={(event) => setBaseUrl(event.target.value)}
                     placeholder="https://api.example.com/v1"
                   />
-                  {options.find((item) => item.value === provider)?.docsUrl ? (
-                    <a
-                      href={options.find((item) => item.value === provider)?.docsUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex text-xs text-primary underline-offset-4 hover:underline"
-                    >
-                      官方文档
-                    </a>
-                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="officialKey">API Key</Label>

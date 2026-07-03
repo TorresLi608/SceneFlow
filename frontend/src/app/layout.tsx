@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "SceneFlow",
-  description: "AI 漫剧可视化工作台",
+  description: "Ai 生剧可视化工作台",
 };
 
 export default function RootLayout({

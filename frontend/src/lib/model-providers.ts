@@ -9,64 +9,67 @@ export interface ProviderOption {
   docsUrl?: string;
 }
 
+const chatProviderOptions: ProviderOption[] = [
+  {
+    value: "qwen",
+    label: "通义千问",
+    modelSeries: "",
+    modelPlaceholder: "qwen-max",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    docsUrl: "https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope",
+  },
+  {
+    value: "doubao",
+    label: "豆包",
+    modelSeries: "",
+    modelPlaceholder: "doubao-seed-2",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    docsUrl: "https://www.volcengine.com/docs/82379/1263482",
+  },
+  {
+    value: "deepseek",
+    label: "DeepSeek",
+    modelSeries: "",
+    modelPlaceholder: "deepseek-chat",
+    baseUrl: "https://api.deepseek.com",
+    docsUrl: "https://api-docs.deepseek.com/",
+  },
+  {
+    value: "anthropic",
+    label: "Claude Code",
+    modelSeries: "",
+    modelPlaceholder: "claude-3-5-sonnet-20240620",
+    baseUrl: "https://api.anthropic.com",
+    docsUrl: "https://docs.anthropic.com/en/api/messages",
+  },
+  {
+    value: "openai",
+    label: "ChatGPT",
+    modelSeries: "",
+    modelPlaceholder: "gpt-5.5",
+    baseUrl: "https://api.openai.com/v1",
+    docsUrl: "https://platform.openai.com/docs/api-reference/chat",
+  },
+  {
+    value: "gemini",
+    label: "Gemini",
+    modelSeries: "",
+    modelPlaceholder: "gemini-3.6-flash",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    docsUrl: "https://ai.google.dev/gemini-api/docs/openai",
+  },
+  {
+    value: "custom",
+    label: "自定义中转站",
+    modelSeries: "",
+    modelPlaceholder: "gpt-4o-mini",
+    baseUrl: "",
+  },
+];
+
 export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
-  script: [
-    {
-      value: "qwen",
-      label: "通义千问",
-      modelSeries: "",
-      modelPlaceholder: "qwen-max",
-      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      docsUrl: "https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope",
-    },
-    {
-      value: "doubao",
-      label: "豆包",
-      modelSeries: "",
-      modelPlaceholder: "doubao-seed-2",
-      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-      docsUrl: "https://www.volcengine.com/docs/82379/1263482",
-    },
-    {
-      value: "deepseek",
-      label: "DeepSeek",
-      modelSeries: "",
-      modelPlaceholder: "deepseek-chat",
-      baseUrl: "https://api.deepseek.com",
-      docsUrl: "https://api-docs.deepseek.com/",
-    },
-    {
-      value: "anthropic",
-      label: "Claude Code",
-      modelSeries: "",
-      modelPlaceholder: "claude-3-5-sonnet-20240620",
-      baseUrl: "https://api.anthropic.com",
-      docsUrl: "https://docs.anthropic.com/en/api/messages",
-    },
-    {
-      value: "openai",
-      label: "ChatGPT",
-      modelSeries: "",
-      modelPlaceholder: "gpt-5.5",
-      baseUrl: "https://api.openai.com/v1",
-      docsUrl: "https://platform.openai.com/docs/api-reference/chat",
-    },
-    {
-      value: "gemini",
-      label: "Gemini",
-      modelSeries: "",
-      modelPlaceholder: "gemini-3.6-flash",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-      docsUrl: "https://ai.google.dev/gemini-api/docs/openai",
-    },
-    {
-      value: "custom",
-      label: "自定义中转站",
-      modelSeries: "",
-      modelPlaceholder: "gpt-4o-mini",
-      baseUrl: "",
-    },
-  ],
+  general: chatProviderOptions,
+  script: chatProviderOptions,
   image: [
     {
       value: "openai",
@@ -88,6 +91,10 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
   ],
 };
 
+export const allProviderOptions = Array.from(
+  new Map(Object.values(providerOptions).flat().map((option) => [option.value, option])).values()
+);
+
 export const providerLabelMap = Object.fromEntries(
   Object.values(providerOptions)
     .flat()
@@ -95,5 +102,5 @@ export const providerLabelMap = Object.fromEntries(
 ) as Record<string, string>;
 
 export function providerOption(purpose: ConfigPurpose, provider: string) {
-  return providerOptions[purpose].find((option) => option.value === provider);
+  return providerOptions[purpose].find((option) => option.value === provider) ?? allProviderOptions.find((option) => option.value === provider);
 }

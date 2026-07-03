@@ -35,6 +35,8 @@ export function ChatSidebar({
   onCreateSession,
   onSelectSession,
 }: ChatSidebarProps) {
+  const selectedConfig = chatConfigs.find((config) => `${config.source}:${config.id}` === effectiveConfigId);
+
   return (
     <aside className="border-b border-border/60 bg-muted/20 p-4 md:min-h-[calc(100vh-65px)] md:border-r md:border-b-0">
       <div className="flex items-center justify-between">
@@ -47,9 +49,9 @@ export function ChatSidebar({
       <div className="mt-4 space-y-3">
         <Select value={effectiveConfigId} onValueChange={(value) => onConfigChange(value ?? "")}>
           <SelectTrigger>
-            <SelectValue placeholder="选择模型" />
+            <SelectValue placeholder="选择模型">{selectedConfig ? configName(selectedConfig) : undefined}</SelectValue>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent alignItemWithTrigger={false}>
             {chatConfigs.map((config) => (
               <SelectItem key={`${config.source}:${config.id}`} value={`${config.source}:${config.id}`}>
                 {configName(config)}
@@ -59,7 +61,7 @@ export function ChatSidebar({
         </Select>
 
         {chatConfigs.length === 0 ? (
-          <p className="text-sm text-amber-600">请先使用官方配置，或在设置里保存并校验一个剧本/提示词模型。</p>
+          <p className="text-sm text-amber-600">请先使用官方配置，或在设置里保存并校验一个文本模型。</p>
         ) : null}
 
         <div className="space-y-2">
