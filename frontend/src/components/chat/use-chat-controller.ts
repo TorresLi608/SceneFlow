@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import {
   createChatSessionAction,
+  deleteChatSessionAction,
   listChatMessagesAction,
   listChatSessionsAction,
   streamChatMessageAction,
@@ -86,7 +87,27 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const effectiveConfigId = selectedConfigId || defaultConfigId;
   const selectedConfig = chatConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
   const messages = messagesQuery.data?.messages ?? [];
-  const isBusy = createSessionMutation.isPending || isStreaming;
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: deleteChatSessionAction,
+    onSuccess: async (_, deletedId) => {
+      if (effectiveSessionId === deletedId) {
+        setSelectedSessionId(sessionsQuery.data?.sessions.find((session) => session.id !== deletedId)?.id ?? null);
+      }
+      setStreamMessages(null);
+      setAgentSteps([]);
+      setErrorMessage(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(deletedId) }),
+      ]);
+    },
+    onError: (error) => {
+      setErrorMessage(resolveRequestError(error, "删除对话失败"));
+    },
+  });
+
+  const isBusy = createSessionMutation.isPending || deleteSessionMutation.isPending || isStreaming;
 
   const createSession = () => {
     createSessionMutation.mutate({
@@ -99,6 +120,13 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     setSelectedSessionId(id);
     setStreamMessages(null);
     setAgentSteps([]);
+  };
+
+  const deleteSession = (id: string) => {
+    if (isStreaming) {
+      return;
+    }
+    deleteSessionMutation.mutate(id);
   };
 
   const streamToSession = async (sessionId: string, content: string) => {
@@ -214,6 +242,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     isBusy,
     createSession,
     selectSession,
+    deleteSession,
     sendMessage,
     setSelectedConfigId,
   };

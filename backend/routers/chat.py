@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from chat_service import begin_chat_turn, create_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
+from chat_service import begin_chat_turn, create_chat_session, delete_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
 from context_graph import stream_context_messages
 from database import db
 from model_registry import models
@@ -36,6 +36,13 @@ def post_session(payload: dict[str, Any], user_id: int = Depends(current_user_id
             int(official_config_id) if official_config_id else None,
         )
     return {"session": session}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: str, user_id: int = Depends(current_user_id)) -> dict[str, bool]:
+    with db() as conn:
+        delete_chat_session(conn, session_id, user_id)
+    return {"ok": True}
 
 
 @router.get("/sessions/{session_id}/messages")

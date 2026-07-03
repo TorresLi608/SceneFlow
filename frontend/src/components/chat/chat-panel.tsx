@@ -17,7 +17,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
   const chat = useChatController(configs, officialConfigs);
 
   return (
-    <div className="grid flex-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
       <ChatSidebar
         chatConfigs={chat.chatConfigs}
         effectiveConfigId={chat.effectiveConfigId}
@@ -28,10 +28,11 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
         formatDateTime={formatDateTime}
         onConfigChange={chat.setSelectedConfigId}
         onCreateSession={chat.createSession}
+        onDeleteSession={chat.deleteSession}
         onSelectSession={chat.selectSession}
       />
 
-      <section className="flex min-h-[calc(100vh-65px)] min-w-0 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-col">
         <div className="border-b border-border/60 px-5 py-4">
           <h2 className="truncate text-sm font-medium">
             {chat.selectedConfig ? configName(chat.selectedConfig) : "选择模型开始对话"}

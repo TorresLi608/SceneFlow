@@ -148,7 +148,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="flex min-h-screen bg-background text-foreground">
+    <main className="flex h-screen overflow-hidden bg-background text-foreground">
       <aside className="flex w-[248px] shrink-0 flex-col border-r border-border/70 bg-card/50">
         <div className="p-4">
           <p className="text-sm font-semibold">SceneFlow</p>
@@ -182,7 +182,7 @@ export default function HomePage() {
 
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="border-b border-border/70 bg-card/60">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
             <div>
@@ -230,7 +230,7 @@ export default function HomePage() {
             formatDateTime={formatDateTime}
           />
         ) : (
-          <div className="px-4 py-5 md:px-6">
+          <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight">{t("home.aiScript")}</h1>

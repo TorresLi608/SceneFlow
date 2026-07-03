@@ -121,6 +121,12 @@ def list_chat_messages(conn: sqlite3.Connection, session_id: str, user_id: int) 
     return [chat_message_json(message) for message in messages]
 
 
+def delete_chat_session(conn: sqlite3.Connection, session_id: str, user_id: int) -> None:
+    require_session(conn, session_id, user_id)
+    stamp = now()
+    conn.execute("UPDATE chat_sessions SET deleted_at=?, updated_at=? WHERE id=?", (stamp, stamp, session_id))
+
+
 def begin_chat_turn(
     conn: sqlite3.Connection,
     session_id: str,

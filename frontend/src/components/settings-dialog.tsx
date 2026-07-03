@@ -98,6 +98,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setBaseUrl(option.baseUrl ?? "");
     setModelSeries(option.modelSeries);
     setApiKey("");
+    setIsEnabled(true);
     setValidationPassed(false);
   };
 
@@ -581,10 +582,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               />
             </div>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
+            <Label htmlFor="configEnabled">
+              <input
+                id="configEnabled"
+                type="checkbox"
+                checked={isEnabled}
+                onChange={(event) => setIsEnabled(event.target.checked)}
+              />
               {t("settings.enabledConfig")}
-            </label>
+            </Label>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button type="button" variant="outline" onClick={validateConfig} disabled={isMutating}>

@@ -18,6 +18,11 @@ export async function createChatSessionAction(payload: { title?: string; configI
   return response.data;
 }
 
+export async function deleteChatSessionAction(sessionId: string) {
+  const response = await httpClient.delete<{ ok: boolean }>(`/api/bff/chat/sessions/${sessionId}`);
+  return response.data;
+}
+
 export async function listChatMessagesAction(sessionId: string) {
   const response = await httpClient.get<ChatMessageListResponse>(`/api/bff/chat/sessions/${sessionId}/messages`);
   return response.data;
