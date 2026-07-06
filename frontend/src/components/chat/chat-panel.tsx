@@ -43,6 +43,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
           messages={chat.messages}
           agentSteps={chat.agentSteps}
           isLoading={chat.messagesLoading}
+          isStreaming={chat.isStreaming}
         />
 
         <div className="mx-auto w-full max-w-3xl px-4 pb-5">

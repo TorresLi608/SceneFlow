@@ -315,6 +315,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     setInput,
     errorMessage,
     isBusy,
+    isStreaming,
     createSession,
     selectSession,
     deleteSession,
