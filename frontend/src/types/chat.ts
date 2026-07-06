@@ -66,11 +66,3 @@ export interface SendChatMessageInput {
   configId?: number;
   officialConfigId?: number;
 }
-
-export type ChatStreamEvent =
-  | { type: "userMessage"; message: ChatMessage }
-  | { type: "agent_step"; step: ChatAgentStep }
-  | { type: "reasoning_delta"; content: string }
-  | { type: "content_delta"; content: string }
-  | { type: "assistantMessage"; message: ChatMessage }
-  | { type: "error"; error: string };
