@@ -325,7 +325,6 @@ class ModelRouter:
                 size=size,
                 quality=quality,
                 output_format="png",
-                response_format="b64_json",
             )
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc

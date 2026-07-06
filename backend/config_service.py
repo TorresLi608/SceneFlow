@@ -77,7 +77,12 @@ def normalize_config_payload(payload: dict[str, Any], current: sqlite3.Row | Non
     base_url = normalize_base_url(str(payload.get("baseUrl", (current["base_url"] or "") if current else "")))
     model_value = payload.get("modelSeries") or payload.get("model") or ((current["model_name"] or "") if current else "")
     model = normalize_model(provider, str(model_value))
-    api_key = str(payload["apiKey"]).strip() if "apiKey" in payload else decrypt(current["encrypted_key"]) if current else str(payload.get("apiKey", "")).strip()
+    if "apiKey" in payload:
+        api_key = str(payload["apiKey"]).strip()
+    elif current:
+        api_key = decrypt(current["encrypted_key"])
+    else:
+        api_key = str(payload.get("apiKey", "")).strip()
     validate_config_fields(purpose, provider, model, base_url)
     return {
         "purpose": purpose,
