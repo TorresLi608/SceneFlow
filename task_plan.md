@@ -93,3 +93,58 @@ Complete
 - `cd frontend && npx tsc --noEmit`
 - `cd frontend && npm run lint`
 - `cd backend && .venv/bin/python -c "...attachment smoke test..."`
+
+## Session 2026-07-06: Chat Streaming, AI SDK, and Scroll UX
+
+### Goal
+- Make the intelligent chat message list behave correctly during streaming output.
+- Show a visible scrollbar and a ChatGPT-like "scroll to bottom" arrow when the user scrolls away from the latest response.
+- Let Vercel AI SDK handle frontend chat sending, stream parsing, and in-progress message state where it fits.
+- Keep Assistant UI responsible for rendering and composer primitives.
+
+### Phases
+
+#### Phase 1: Message list scrollbar
+- [x] Add a dedicated `chat-message-list-scrollbar` class to the message list scroller.
+- [x] Add scoped scrollbar CSS in `frontend/src/app/globals.css`.
+- **Status:** complete
+
+#### Phase 2: Streamdown package clarification
+- [x] Identify `streamdown` as the AI-streaming Markdown renderer.
+- [x] Identify `@streamdown/code` as Shiki syntax highlighting for code blocks.
+- [x] Identify `@streamdown/cjk` as CJK-friendly Markdown/text handling.
+- **Status:** complete
+
+#### Phase 3: AI SDK frontend integration
+- [x] Add `@ai-sdk/react` and `ai` dependencies.
+- [x] Convert BFF chat stream response from backend NDJSON into AI SDK UI stream chunks.
+- [x] Replace the frontend hand-written NDJSON reader with `useChat` and `DefaultChatTransport`.
+- [x] Preserve existing `agent_step` execution flow UI through transient `data-agent_step` chunks.
+- [x] Keep backend Python/LangChain/LangGraph model calls unchanged.
+- **Status:** complete
+
+#### Phase 4: Auto-scroll and bottom arrow
+- [x] Pass `isStreaming` from `use-chat-controller.ts` through `chat-panel.tsx` to `chat-message-list.tsx`.
+- [x] Auto-scroll only while the user remains near the bottom.
+- [x] Show a floating down-arrow button when the user scrolls away from the bottom.
+- [x] Clicking the arrow scrolls to the bottom and resumes auto-follow.
+- [x] Remove the first implementation's `ResizeObserver` because it caused visible jitter during token streaming.
+- [x] Cancel pending auto-scroll immediately when the user scrolls upward.
+- **Status:** complete
+
+### Verification
+- `cd frontend && npm run lint`
+- `cd frontend && npx tsc --noEmit`
+
+### Notes
+- `cd frontend && npm run build` was attempted after AI SDK integration but stayed in Next/Turbopack "Creating an optimized production build ..." for more than two minutes with no new output, then was interrupted to avoid leaving a hanging process.
+- `npm install @ai-sdk/react ai` reported 12 npm audit findings; they were not fixed in this task to avoid widening scope.
+- The AI SDK migration is intentionally frontend/BFF-scoped. Full backend migration to a Node/Vercel AI SDK runtime was skipped because the backend already owns Python LangChain/LangGraph orchestration and persistence.
+
+### Errors Encountered
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `zsh: no matches found: frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` | 1 | Quote bracketed Next.js dynamic route paths. |
+| ESLint parsing error in BFF stream route after adding `createUIMessageStreamResponse` | 1 | Fixed a missing closing parenthesis around `createUIMessageStream(...)`. |
+| React lint error: `setState` synchronously inside an effect | 1 | Moved initial scroll-state update into `requestAnimationFrame`. |
+| Streaming output caused scroll jitter, worse when user scrolled upward | 1 | Removed `ResizeObserver`, canceled pending auto-scroll on upward wheel, and only auto-follow when still near bottom. |

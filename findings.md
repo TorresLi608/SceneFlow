@@ -172,3 +172,58 @@
 - Backend `attachment_parser.py` parses text/code, PDF via `pypdf`, and Office OpenXML `.docx/.xlsx/.pptx` via stdlib zip/XML extraction.
 - Unsupported formats, old binary Office `.doc/.xls/.ppt`, scanned PDFs, malformed data, or missing parser dependencies degrade to an explicit Chinese "无法解析该文件" attachment note.
 - `pypdf` is now listed in `backend/requirements.txt` and was installed in the local backend venv during this session.
+
+## Chat Streaming and Scroll UX Findings
+- 2026-07-06 user asked why the frontend did not use Vercel AI SDK for chat processing.
+- Existing backend stream protocol before the migration was custom NDJSON from FastAPI:
+  - `userMessage`
+  - `agent_step`
+  - `reasoning_delta`
+  - `content_delta`
+  - `assistantMessage`
+  - `error`
+- Vercel AI SDK `useChat` cannot consume that custom NDJSON directly; it expects AI SDK UI stream/SSE chunks.
+- Minimal working split chosen:
+  - Keep Python backend model calls, LangChain/LangGraph orchestration, session creation, DB persistence, and context compression unchanged.
+  - Make the Next BFF stream route translate backend NDJSON into AI SDK UI stream chunks.
+  - Use `@ai-sdk/react` `useChat` and `ai` `DefaultChatTransport` in the frontend controller.
+  - Keep Assistant UI for composer/rendering primitives.
+- Added dependencies:
+  - `@ai-sdk/react`
+  - `ai`
+- Updated BFF stream route:
+  - File: `frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts`
+  - Reads backend NDJSON.
+  - Emits AI SDK chunks: `start`, `reasoning-start`, `reasoning-delta`, `reasoning-end`, `text-start`, `text-delta`, `text-end`, `message-metadata`, `finish`, and `error`.
+  - Emits `agent_step` as transient `data-agent_step` so execution-flow UI can update without polluting assistant message content.
+- Updated frontend chat controller:
+  - File: `frontend/src/components/chat/use-chat-controller.ts`
+  - Uses `useChat<SceneFlowUIMessage>()`.
+  - Uses `DefaultChatTransport` with `prepareSendMessagesRequest` to send the existing payload shape: `content`, `attachments`, `configId`, `officialConfigId`.
+  - Converts persisted `ChatMessage` records to AI SDK `UIMessage` for display and back to local `ChatMessage` shape for existing components.
+  - Exposes `isStreaming` separately from `messagesLoading`; `messagesLoading` means history fetch, not SSE output.
+- Removed old hand-written frontend stream reader:
+  - File: `frontend/src/actions/chat-actions.ts`
+  - Deleted `streamChatMessageAction`.
+  - Deleted now-unused `ChatStreamEvent` from `frontend/src/types/chat.ts`.
+- Streamdown package meanings:
+  - `streamdown`: AI-streaming-friendly Markdown renderer, roughly a streaming replacement for `react-markdown`.
+  - `@streamdown/code`: Streamdown code-block plugin using Shiki syntax highlighting; current UI enables copy and disables download.
+  - `@streamdown/cjk`: CJK-friendly Markdown/text handling for Chinese/Japanese/Korean content.
+- Chat message list scrollbar:
+  - File: `frontend/src/components/chat/chat-message-list.tsx`
+  - Root scroller uses dedicated `chat-message-list-scrollbar`.
+  - CSS lives in `frontend/src/app/globals.css`.
+  - Scrollbar styles are scoped to chat messages rather than all scroll containers.
+- Auto-scroll behavior:
+  - While the user is near the bottom, streaming output auto-scrolls to the newest content.
+  - If the user scrolls upward, auto-follow stops immediately and a floating down-arrow button appears.
+  - Clicking the down-arrow scrolls to the bottom and resumes auto-follow.
+  - The final implementation avoids `ResizeObserver`; the first implementation used it and caused jitter because token streaming repeatedly changed content height while programmatic scroll and user scroll fought over `scrollTop`.
+- Current verification for this work:
+  - `cd frontend && npm run lint`
+  - `cd frontend && npx tsc --noEmit`
+- Known caveats:
+  - `npm run build` was attempted after AI SDK integration but hung at Next/Turbopack production build startup for over two minutes; it was interrupted.
+  - `npm install @ai-sdk/react ai` reported 12 npm audit findings; not addressed in this pass.
+  - Full backend migration to Vercel AI SDK was explicitly skipped; current backend remains Python/FastAPI/LangChain/LangGraph.

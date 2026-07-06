@@ -22,6 +22,41 @@
   - `findings.md`
   - `progress.md`
 
+### Phase 5: Chat streaming architecture and scroll UX
+- **Status:** complete
+- Actions taken:
+  - Explained Streamdown package responsibilities:
+    - `streamdown` renders AI streaming Markdown.
+    - `@streamdown/code` adds Shiki-based code highlighting/copy controls.
+    - `@streamdown/cjk` improves CJK Markdown/text handling.
+  - Added scoped chat message-list scrollbar styling so the message area shows a scrollbar while scrolling.
+  - Investigated Vercel AI SDK fit against the existing backend protocol.
+  - Confirmed backend was returning custom NDJSON, not AI SDK UI stream.
+  - Added `@ai-sdk/react` and `ai`.
+  - Converted `frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` from transparent NDJSON passthrough into an AI SDK UI stream translator.
+  - Updated `frontend/src/components/chat/use-chat-controller.ts` to use `useChat` and `DefaultChatTransport`.
+  - Preserved existing execution-flow display by streaming `agent_step` as transient `data-agent_step`.
+  - Deleted old frontend `streamChatMessageAction` hand-written NDJSON reader.
+  - Deleted old `ChatStreamEvent` type.
+  - Added `isStreaming` to the chat controller return value.
+  - Passed `isStreaming` through `chat-panel.tsx` into `chat-message-list.tsx`.
+  - Added auto-scroll behavior while the user is near the bottom.
+  - Added a floating down-arrow button that appears when the user scrolls away from the bottom.
+  - Fixed scroll jitter by removing `ResizeObserver`, canceling pending auto-scroll when the user scrolls upward, and only auto-following while near bottom.
+- Files created/modified:
+  - `frontend/package.json`
+  - `frontend/package-lock.json`
+  - `frontend/src/actions/chat-actions.ts`
+  - `frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts`
+  - `frontend/src/app/globals.css`
+  - `frontend/src/components/chat/chat-message-list.tsx`
+  - `frontend/src/components/chat/chat-panel.tsx`
+  - `frontend/src/components/chat/use-chat-controller.ts`
+  - `frontend/src/types/chat.ts`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
 ### Phase 1: Create persistent notes
 - **Status:** complete
 - **Started:** 2026-07-06
@@ -82,6 +117,9 @@
 | Frontend type-check | `cd frontend && npx tsc --noEmit` | No TypeScript errors | Passed after moving className wrapper off `ComposerPrimitive.Attachments` | Pass |
 | Frontend lint | `cd frontend && npm run lint` | No lint errors | Passed | Pass |
 | Attachment parser smoke | `cd backend && .venv/bin/python -c "...attachment smoke test..."` | Text parses and binary reports unparseable | Printed `True` / `True` | Pass |
+| Chat scrollbar/AI SDK lint | `cd frontend && npm run lint` | No lint errors | Passed after fixing stream-route syntax and scroll effect lint | Pass |
+| Chat scrollbar/AI SDK type-check | `cd frontend && npx tsc --noEmit` | No TypeScript errors | Passed | Pass |
+| Next production build | `cd frontend && npm run build` | Finish production build | Stayed at `Creating an optimized production build ...` for over 2 minutes; interrupted | Incomplete |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -91,6 +129,11 @@
 | 2026-07-06 | `pip install pypdf` failed with DNS/network error in sandbox | 1 | Re-ran with approved escalated network permission; installed `pypdf-6.14.2`. |
 | 2026-07-06 | Attachment parser smoke test from repo root raised `ModuleNotFoundError: No module named 'attachment_parser'` | 1 | Re-ran from `backend/`, matching backend module import layout. |
 | 2026-07-06 | TypeScript rejected `className` on `ComposerPrimitive.Attachments` | 1 | Wrapped attachments in a styled `<div>` guarded by `AuiIf`. |
+| 2026-07-06 | `zsh: no matches found: frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` | 1 | Quoted the Next.js dynamic route path. |
+| 2026-07-06 | ESLint parsing error: `Argument expression expected` in the BFF stream route | 1 | Closed the `createUIMessageStream(...)` call correctly before passing it to `createUIMessageStreamResponse`. |
+| 2026-07-06 | `npm run build` hung in Next/Turbopack production build startup | 1 | Interrupted after more than two minutes with no new output; lint and type-check still passed. |
+| 2026-07-06 | React lint error: `Calling setState synchronously within an effect` in `chat-message-list.tsx` | 1 | Moved initial scroll state update into `requestAnimationFrame`. |
+| 2026-07-06 | Streaming output caused visible scroll jitter, worse after manual upward scrolling | 1 | Removed `ResizeObserver`, canceled queued auto-scroll on upward wheel, and only auto-followed while near bottom. |
 
 ## 5-Question Reboot Check
 | Question | Answer |
@@ -98,5 +141,5 @@
 | Where am I? | Complete. |
 | Where am I going? | Future AI should read `AI_HANDOFF.md`, `RUNNING.md`, then `findings.md`. |
 | What's the goal? | Summarize SceneFlow for future AI development. |
-| What have I learned? | Stack, commands, entry points, data model, limits, and checks are captured in `findings.md`. |
-| What have I done? | Created persistent planning files, updated `AI_HANDOFF.md`, and captured the project map. |
+| What have I learned? | Stack, commands, entry points, data model, chat attachment flow, AI SDK stream bridge, scroll UX decisions, limits, and checks are captured in `findings.md`. |
+| What have I done? | Created persistent planning files, updated `AI_HANDOFF.md`, captured the project map, improved chat attachments/composer UI, integrated AI SDK for frontend stream state, and fixed chat scroll UX. |
