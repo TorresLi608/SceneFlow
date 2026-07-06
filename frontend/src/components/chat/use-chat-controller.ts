@@ -13,7 +13,7 @@ import {
 import { queryKeys } from "@/actions/query-keys";
 import { resolveRequestError } from "@/lib/http/errors";
 import type { UserConfig } from "@/types/auth";
-import type { ChatAgentStep, ChatMessage } from "@/types/chat";
+import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
 
 function configSelectValue(config: UserConfig) {
   return `${config.source}:${config.id}`;
@@ -129,7 +129,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     deleteSessionMutation.mutate(id);
   };
 
-  const streamToSession = async (sessionId: string, content: string) => {
+  const streamToSession = async (sessionId: string, content: string, attachments: ChatAttachment[] = []) => {
     if (!selectedConfig) {
       return;
     }
@@ -139,7 +139,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     setAgentSteps([]);
     setStreamMessages(messages);
     try {
-      await streamChatMessageAction(sessionId, { content, ...selectedConfigPayload(selectedConfig) }, (event) => {
+      await streamChatMessageAction(sessionId, { content, attachments, ...selectedConfigPayload(selectedConfig) }, (event) => {
         if (event.type === "error") {
           throw new Error(event.error);
         }
@@ -174,6 +174,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
                 sessionId,
                 role: "assistant",
                 content: patch.content ?? "",
+                attachments: [],
                 reasoning: patch.reasoning ?? "",
                 provider: selectedConfig.provider,
                 model: selectedConfig.modelSeries,
@@ -204,26 +205,26 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     }
   };
 
-  const sendMessage = async (nextContent?: string) => {
+  const sendMessage = async (nextContent?: string, attachments: ChatAttachment[] = []) => {
     const content = (nextContent ?? input).trim();
-    if (!content || isBusy || !selectedConfig) {
+    if ((!content && attachments.length === 0) || isBusy || !selectedConfig) {
       return;
     }
     if (!effectiveSessionId) {
       try {
         const response = await createChatSessionAction({
-          title: content.slice(0, 40),
+          title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || "新对话",
           ...selectedConfigPayload(selectedConfig),
         });
         setSelectedSessionId(response.session.id);
         await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
-        await streamToSession(response.session.id, content);
+        await streamToSession(response.session.id, content, attachments);
       } catch (error) {
         setErrorMessage(resolveRequestError(error, "新建对话失败"));
       }
       return;
     }
-    await streamToSession(effectiveSessionId, content);
+    await streamToSession(effectiveSessionId, content, attachments);
   };
 
   return {

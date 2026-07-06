@@ -147,6 +147,7 @@ def init_db() -> None:
                 session_id text NOT NULL,
                 role text NOT NULL,
                 content text NOT NULL,
+                attachments text,
                 reasoning text,
                 provider text,
                 model_name text,
@@ -158,6 +159,8 @@ def init_db() -> None:
         columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
         if "reasoning" not in columns:
             conn.execute("ALTER TABLE chat_messages ADD COLUMN reasoning text")
+        if "attachments" not in columns:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN attachments text")
         user_columns = {item["name"] for item in conn.execute("PRAGMA table_info(users)").fetchall()}
         if "role" not in user_columns:
             conn.execute('ALTER TABLE users ADD COLUMN role text DEFAULT "user"')

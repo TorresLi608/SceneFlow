@@ -11,11 +11,25 @@ export interface ChatSession {
 
 export type ChatRole = "user" | "assistant" | "system";
 
+export type ChatAttachmentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; image: string; filename?: string }
+  | { type: "file"; data: string; mimeType: string; filename?: string };
+
+export interface ChatAttachment {
+  id: string;
+  type: string;
+  name: string;
+  contentType?: string;
+  content: ChatAttachmentPart[];
+}
+
 export interface ChatMessage {
   id: string;
   sessionId: string;
   role: ChatRole;
   content: string;
+  attachments: ChatAttachment[];
   reasoning: string;
   provider: string;
   model: string;
@@ -44,6 +58,13 @@ export interface ChatMessageListResponse {
 export interface SendChatMessageResponse {
   userMessage: ChatMessage;
   assistantMessage: ChatMessage;
+}
+
+export interface SendChatMessageInput {
+  content: string;
+  attachments?: ChatAttachment[];
+  configId?: number;
+  officialConfigId?: number;
 }
 
 export type ChatStreamEvent =

@@ -1,6 +1,7 @@
 import { backendClient } from "@/lib/http/backend-client";
 import type {
   ChatMessageListResponse,
+  SendChatMessageInput,
   ChatSessionItemResponse,
   ChatSessionListResponse,
   SendChatMessageResponse,
@@ -39,7 +40,7 @@ export async function listChatMessagesByBff(sessionId: string, authorization?: s
 
 export async function sendChatMessageByBff(
   sessionId: string,
-  payload: { content: string; configId?: number; officialConfigId?: number },
+  payload: SendChatMessageInput,
   authorization?: string
 ) {
   const response = await backendClient.post<SendChatMessageResponse>(

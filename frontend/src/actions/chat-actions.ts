@@ -2,6 +2,7 @@ import { httpClient } from "@/lib/http/client";
 import { useUserStore } from "@/store/user-store";
 import type {
   ChatStreamEvent,
+  SendChatMessageInput,
   ChatMessageListResponse,
   ChatSessionItemResponse,
   ChatSessionListResponse,
@@ -30,7 +31,7 @@ export async function listChatMessagesAction(sessionId: string) {
 
 export async function sendChatMessageAction(
   sessionId: string,
-  payload: { content: string; configId?: number; officialConfigId?: number }
+  payload: SendChatMessageInput
 ) {
   const response = await httpClient.post<SendChatMessageResponse>(
     `/api/bff/chat/sessions/${sessionId}/messages`,
@@ -41,7 +42,7 @@ export async function sendChatMessageAction(
 
 export async function streamChatMessageAction(
   sessionId: string,
-  payload: { content: string; configId?: number; officialConfigId?: number },
+  payload: SendChatMessageInput,
   onEvent: (event: ChatStreamEvent) => void
 ) {
   const token = useUserStore.getState().token;

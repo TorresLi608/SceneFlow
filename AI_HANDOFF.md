@@ -1,6 +1,15 @@
 # SceneFlow AI 接手摘要
 
-更新时间：2026-07-02
+更新时间：2026-07-06
+
+## 2026-07-06 续接入口
+
+- 本轮新增持续开发笔记：`task_plan.md`、`findings.md`、`progress.md`。
+- 后续 AI 接手时先读：`AI_HANDOFF.md` → `RUNNING.md` → `findings.md`。
+- 当前注意：`backend/sceneflow.db` 是本地 SQLite 数据且 git 已显示修改，除非用户明确要求，不要重置或覆盖。
+- 当前测试面：未发现 test/spec 文件；优先跑后端 compileall、前端 lint/typecheck/build。
+- 当前生成能力边界：图片生成仅支持 OpenAI；音频/视频生成仍是模拟进度和示例 URL。
+- 智能问答已接入 assistant-ui 官方附件 primitives/adapters：前端可添加所有文件；图片走 image part，文本/代码文件直接读文本，PDF 通过 `pypdf` 后端解析，`.docx/.xlsx/.pptx` 通过后端 OpenXML 抽文本；解析不了的文件会生成明确的“无法解析该文件”说明。
 
 ## 用户核心要求
 
@@ -52,6 +61,10 @@
 前端新增：
 
 - `@assistant-ui/react`
+
+后端新增：
+
+- `pypdf`：用于 PDF 附件文本抽取。Office OpenXML 目前用 Python 标准库解析。
 
 ## 数据持久化约定
 

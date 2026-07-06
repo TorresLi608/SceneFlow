@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
@@ -81,11 +82,18 @@ def chat_session_json(session: sqlite3.Row) -> dict[str, Any]:
 
 
 def chat_message_json(message: sqlite3.Row) -> dict[str, Any]:
+    attachments = []
+    if "attachments" in message.keys() and message["attachments"]:
+        try:
+            attachments = json.loads(message["attachments"])
+        except json.JSONDecodeError:
+            attachments = []
     return {
         "id": message["id"],
         "sessionId": message["session_id"],
         "role": message["role"],
         "content": message["content"],
+        "attachments": attachments,
         "reasoning": message["reasoning"] or "",
         "provider": message["provider"] or "",
         "model": message["model_name"] or "",

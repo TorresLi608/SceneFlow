@@ -54,6 +54,7 @@ def get_messages(session_id: str, user_id: int = Depends(current_user_id)) -> di
 @router.post("/sessions/{session_id}/messages")
 async def post_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     content = str(payload.get("content", "")).strip()
+    attachments = payload.get("attachments")
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
     with db() as conn:
@@ -62,6 +63,7 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
             session_id,
             user_id,
             content,
+            attachments,
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )
@@ -83,6 +85,7 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
 @router.post("/sessions/{session_id}/messages/stream")
 async def stream_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> StreamingResponse:
     content = str(payload.get("content", "")).strip()
+    attachments = payload.get("attachments")
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
     with db() as conn:
@@ -91,6 +94,7 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
             session_id,
             user_id,
             content,
+            attachments,
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict
@@ -26,7 +27,7 @@ class ContextRuntime:
 class ContextState(TypedDict, total=False):
     summary: str
     history: list[sqlite3.Row]
-    messages: list[dict[str, str]]
+    messages: list[dict[str, Any]]
 
 
 def estimate_tokens(text: str) -> int:
@@ -40,25 +41,85 @@ def estimate_tokens(text: str) -> int:
     return cjk_chars + max(1, ascii_chars // 4)
 
 
-def estimate_messages(messages: list[dict[str, str]]) -> int:
-    return sum(estimate_tokens(message["role"]) + estimate_tokens(message["content"]) for message in messages)
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if item.get("type") == "text":
+                    parts.append(str(item.get("text") or ""))
+                elif item.get("type") in {"image", "image_url"}:
+                    parts.append("[image attachment]")
+                elif item.get("type") == "file":
+                    parts.append("[file attachment]")
+        return "\n".join(parts)
+    return str(content or "")
+
+
+def estimate_messages(messages: list[dict[str, Any]]) -> int:
+    return sum(estimate_tokens(message["role"]) + estimate_tokens(_content_text(message["content"])) for message in messages)
 
 
 def _message_rows_after(conn: sqlite3.Connection, session_id: str, created_after: str) -> list[sqlite3.Row]:
     if created_after:
         return rows(
             conn,
-            "SELECT role, content, created_at FROM chat_messages WHERE session_id=? AND created_at>? ORDER BY created_at ASC",
+            "SELECT role, content, attachments, created_at FROM chat_messages WHERE session_id=? AND created_at>? ORDER BY created_at ASC",
             (session_id, created_after),
         )
     return rows(
         conn,
-        "SELECT role, content, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at ASC",
+        "SELECT role, content, attachments, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at ASC",
         (session_id,),
     )
 
 
-def _as_messages(summary: str, history: list[sqlite3.Row]) -> list[dict[str, str]]:
+def _attachment_parts(item: sqlite3.Row) -> list[dict[str, Any]]:
+    if item["role"] != "user" or not item["attachments"]:
+        return []
+    try:
+        attachments = json.loads(item["attachments"])
+    except json.JSONDecodeError:
+        return []
+    parts: list[dict[str, Any]] = []
+    for attachment in attachments if isinstance(attachments, list) else []:
+        if not isinstance(attachment, dict):
+            continue
+        for part in attachment.get("content") or []:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "text":
+                text = str(part.get("text") or "")
+                if text:
+                    parts.append({"type": "text", "text": text})
+            elif part.get("type") == "image":
+                image = str(part.get("image") or "")
+                if image:
+                    parts.append({"type": "image_url", "image_url": {"url": image}})
+            elif part.get("type") == "file":
+                name = str(part.get("filename") or attachment.get("name") or "file")
+                mime_type = str(part.get("mimeType") or attachment.get("contentType") or "application/octet-stream")
+                parts.append({"type": "text", "text": f"[Uploaded file: {name}, {mime_type}]"})
+    return parts
+
+
+def _message_content(item: sqlite3.Row) -> Any:
+    content = item["content"] or ""
+    parts = _attachment_parts(item)
+    if not parts:
+        return content
+    result: list[dict[str, Any]] = []
+    if content.strip():
+        result.append({"type": "text", "text": content})
+    result.extend(parts)
+    return result
+
+
+def _as_messages(summary: str, history: list[sqlite3.Row]) -> list[dict[str, Any]]:
     messages = [{"role": "system", "content": "You are SceneFlow Assistant. Answer clearly and concisely."}]
     if summary.strip():
         messages.append(
@@ -68,7 +129,7 @@ def _as_messages(summary: str, history: list[sqlite3.Row]) -> list[dict[str, str
                 + summary.strip(),
             }
         )
-    messages.extend({"role": item["role"], "content": item["content"]} for item in history)
+    messages.extend({"role": item["role"], "content": _message_content(item)} for item in history)
     return messages
 
 
@@ -76,7 +137,7 @@ def _format_history(summary: str, history: list[sqlite3.Row]) -> str:
     parts = []
     if summary.strip():
         parts.append("Existing summary:\n" + summary.strip())
-    parts.extend(f"{item['role']}: {item['content']}" for item in history)
+    parts.extend(f"{item['role']}: {_content_text(_message_content(item))}" for item in history)
     return "\n\n".join(parts)
 
 
@@ -159,7 +220,7 @@ async def build_context_messages(
     conn: sqlite3.Connection,
     session_id: str,
     config: dict[str, Any],
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     state = await _CONTEXT_GRAPH.ainvoke({}, context=ContextRuntime(conn, session_id, config))
     return state["messages"]
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
 from fastapi import HTTPException
 
+from attachment_parser import attachment_text_part
 from config_service import normalize_base_url, normalize_model, normalize_provider, validate_config_fields
 from context_graph import build_context_messages
 from database import row, rows
@@ -14,6 +16,8 @@ from serializers import chat_message_json, chat_session_json
 from utils import new_id, now
 
 CHAT_PURPOSES = ("script", "general")
+MAX_CHAT_ATTACHMENTS = 5
+MAX_CHAT_ATTACHMENT_CHARS = 8_000_000
 
 
 def _row_chat_config(config: sqlite3.Row | None, config_id: int | None = None, official_config_id: int | None = None) -> dict[str, Any]:
@@ -121,6 +125,55 @@ def list_chat_messages(conn: sqlite3.Connection, session_id: str, user_id: int) 
     return [chat_message_json(message) for message in messages]
 
 
+def normalize_chat_attachments(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise HTTPException(400, "attachments must be an array")
+    if len(value) > MAX_CHAT_ATTACHMENTS:
+        raise HTTPException(400, f"最多只能上传 {MAX_CHAT_ATTACHMENTS} 个附件")
+
+    total_chars = 0
+    attachments: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise HTTPException(400, "invalid attachment")
+        content = []
+        for part in item.get("content") or []:
+            if not isinstance(part, dict):
+                continue
+            part_type = str(part.get("type", "")).strip()
+            if part_type == "text":
+                text = str(part.get("text", ""))
+                total_chars += len(text)
+                content.append({"type": "text", "text": text})
+            elif part_type == "image":
+                image = str(part.get("image", ""))
+                if not image.startswith("data:image/"):
+                    raise HTTPException(400, "image attachments must be data URLs")
+                total_chars += len(image)
+                content.append({"type": "image", "image": image, "filename": str(part.get("filename") or item.get("name") or "image")[:160]})
+            elif part_type == "file":
+                data = str(part.get("data", ""))
+                mime_type = str(part.get("mimeType", "application/octet-stream"))[:120]
+                total_chars += len(data)
+                filename = str(part.get("filename") or item.get("name") or "file")[:160]
+                content.append({"type": "text", "text": attachment_text_part(data, mime_type, filename)})
+            if total_chars > MAX_CHAT_ATTACHMENT_CHARS:
+                raise HTTPException(400, "attachments are too large")
+        if content:
+            attachments.append(
+                {
+                    "id": str(item.get("id") or new_id("att"))[:120],
+                    "type": str(item.get("type") or "file")[:40],
+                    "name": str(item.get("name") or "attachment")[:160],
+                    "contentType": str(item.get("contentType") or "")[:120],
+                    "content": content,
+                }
+            )
+    return attachments
+
+
 def delete_chat_session(conn: sqlite3.Connection, session_id: str, user_id: int) -> None:
     require_session(conn, session_id, user_id)
     stamp = now()
@@ -132,11 +185,13 @@ def begin_chat_turn(
     session_id: str,
     user_id: int,
     content: str,
+    attachments: Any,
     config_id: int | None,
     official_config_id: int | None = None,
 ) -> tuple[dict[str, Any], sqlite3.Row]:
     content = content.strip()
-    if not content:
+    normalized_attachments = normalize_chat_attachments(attachments)
+    if not content and not normalized_attachments:
         raise HTTPException(400, "content is required")
     if len(content) > 12000:
         raise HTTPException(400, "content is too long")
@@ -148,7 +203,7 @@ def begin_chat_turn(
         config_id if config_id else session["config_id"],
         official_config_id if official_config_id else session["official_config_id"],
     )
-    user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"])
+    user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"], attachments=normalized_attachments)
     return config, user_message
 
 
@@ -157,10 +212,11 @@ async def prepare_chat_turn(
     session_id: str,
     user_id: int,
     content: str,
+    attachments: Any,
     config_id: int | None,
     official_config_id: int | None = None,
-) -> tuple[dict[str, Any], sqlite3.Row, list[dict[str, str]]]:
-    config, user_message = begin_chat_turn(conn, session_id, user_id, content, config_id, official_config_id)
+) -> tuple[dict[str, Any], sqlite3.Row, list[dict[str, Any]]]:
+    config, user_message = begin_chat_turn(conn, session_id, user_id, content, attachments, config_id, official_config_id)
     messages = await build_context_messages(conn, session_id, config)
     return config, user_message, messages
 
@@ -173,12 +229,27 @@ def save_chat_message(
     provider: str = "",
     model: str = "",
     reasoning: str = "",
+    attachments: list[dict[str, Any]] | None = None,
 ) -> sqlite3.Row:
     message_id = new_id("msg")
     stamp = now()
     conn.execute(
-        "INSERT INTO chat_messages (id, created_at, session_id, role, content, reasoning, provider, model_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (message_id, stamp, session_id, role, content, reasoning, provider, model),
+        "INSERT INTO chat_messages (id, created_at, session_id, role, content, attachments, reasoning, provider, model_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (message_id, stamp, session_id, role, content, json.dumps(attachments or [], ensure_ascii=False), reasoning, provider, model),
     )
     conn.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (stamp, session_id))
     return row(conn, "SELECT * FROM chat_messages WHERE id=?", (message_id,))
+
+
+if __name__ == "__main__":
+    sample = normalize_chat_attachments([{"name": "note.txt", "content": [{"type": "text", "text": "hello"}]}])
+    assert sample[0]["content"][0]["text"] == "hello"
+    file_sample = normalize_chat_attachments(
+        [
+            {
+                "name": "code.py",
+                "content": [{"type": "file", "data": "data:text/x-python;base64,cHJpbnQoJ2hpJyk=", "mimeType": "text/x-python", "filename": "code.py"}],
+            }
+        ]
+    )
+    assert "print('hi')" in file_sample[0]["content"][0]["text"]

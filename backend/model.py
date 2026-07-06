@@ -86,11 +86,54 @@ def _trim_prompt(value: str) -> str:
     return value[:100] if len(value) > 100 else value
 
 
-def _lc_messages(messages: list[dict[str, str]]) -> list[BaseMessage]:
+def _anthropic_image_part(url: str) -> dict[str, Any]:
+    if url.startswith("data:") and ";base64," in url:
+        header, data = url.split(",", 1)
+        media_type = header.removeprefix("data:").split(";", 1)[0] or "image/png"
+        return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
+    return {"type": "text", "text": f"[Image attachment: {url}]"}
+
+
+def _lc_content(content: Any, provider: str) -> Any:
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return str(content or "").strip()
+
+    parts = []
+    for item in content:
+        if isinstance(item, str):
+            if item.strip():
+                parts.append({"type": "text", "text": item.strip()})
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text":
+            text = str(item.get("text") or "").strip()
+            if text:
+                parts.append({"type": "text", "text": text})
+        elif item.get("type") in {"image", "image_url"}:
+            image_url = item.get("image_url")
+            url = str(
+                item.get("image")
+                or (image_url.get("url") if isinstance(image_url, dict) else image_url)
+                or ""
+            )
+            if not url:
+                continue
+            if provider == "anthropic":
+                parts.append(_anthropic_image_part(url))
+            else:
+                parts.append({"type": "image_url", "image_url": {"url": url}})
+    return parts
+
+
+def _lc_messages(messages: list[dict[str, Any]], provider: str = "") -> list[BaseMessage]:
     result: list[BaseMessage] = []
+    provider = provider.strip().lower()
     for message in messages:
         role = (message.get("role") or "user").strip().lower()
-        content = (message.get("content") or "").strip()
+        content = _lc_content(message.get("content"), provider)
         if not content:
             continue
         if role == "system":
@@ -220,7 +263,7 @@ class ModelRouter:
             tips=tips or ["补充镜头情绪变化", "每段保持单一动作焦点", "减少重复描述，增加视觉细节"],
         )
 
-    async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]], base_url: str = "") -> str:
+    async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, Any]], base_url: str = "") -> str:
         content = ""
         async for chunk in self.chat_stream(provider, api_key, model, messages, base_url):
             if chunk["type"] == "content_delta":
@@ -230,9 +273,9 @@ class ModelRouter:
             raise ValueError("empty content from provider")
         return content
 
-    async def chat_stream(self, provider: str, api_key: str, model: str, messages: list[dict[str, str]], base_url: str = ""):
+    async def chat_stream(self, provider: str, api_key: str, model: str, messages: list[dict[str, Any]], base_url: str = ""):
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.4, max_tokens=2048)
-        async for chunk in llm.astream(_lc_messages(messages)):
+        async for chunk in llm.astream(_lc_messages(messages, provider)):
             reasoning = str(chunk.additional_kwargs.get("reasoning_content") or chunk.additional_kwargs.get("reasoning") or "")
             content = _content_text(chunk.content)
             if reasoning:
