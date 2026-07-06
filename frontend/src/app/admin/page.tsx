@@ -24,7 +24,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
-import { allProviderOptions, providerLabelMap, providerOptions } from "@/lib/model-providers";
+import {
+  allProviderOptions,
+  configsByPurpose,
+  defaultProviderOption,
+  providerLabelMap,
+  providerOption,
+} from "@/lib/model-providers";
 import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig } from "@/types/auth";
 
@@ -34,6 +40,8 @@ const purposeLabel: Record<ConfigPurpose, string> = {
   image: "图片生成",
   video: "视频生成",
 };
+
+const defaultConfigProvider = defaultProviderOption();
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
@@ -45,12 +53,12 @@ export default function AdminPage() {
 
   const [view, setView] = useState<"models" | "users">("models");
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
-  const [name, setName] = useState(providerOptions.script[0].label);
+  const [name, setName] = useState(defaultConfigProvider.label);
   const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
-  const [provider, setProvider] = useState(providerOptions.script[0].value);
-  const [baseUrl, setBaseUrl] = useState(providerOptions.script[0].baseUrl ?? "");
-  const [modelSeries, setModelSeries] = useState(providerOptions.script[0].modelSeries);
+  const [provider, setProvider] = useState(defaultConfigProvider.value);
+  const [baseUrl, setBaseUrl] = useState(defaultConfigProvider.baseUrl ?? "");
+  const [modelSeries, setModelSeries] = useState(defaultConfigProvider.modelSeries);
   const [apiKey, setApiKey] = useState("");
   const [isActive, setIsActive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -86,7 +94,7 @@ export default function AdminPage() {
   const officialConfigs = useMemo(() => officialConfigsQuery.data?.configs ?? [], [officialConfigsQuery.data?.configs]);
 
   const resetForm = () => {
-    const option = providerOptions.script[0];
+    const option = defaultProviderOption();
     setEditingConfigId(null);
     setName(option.label);
     setDescription("");
@@ -161,13 +169,7 @@ export default function AdminPage() {
     deleteUserMutation.isPending;
 
   const currentOfficialByPurpose = useMemo(
-    () =>
-      officialConfigs.reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
-        if (config.isActive && !acc[config.purpose]) {
-          acc[config.purpose] = config;
-        }
-        return acc;
-      }, {}),
+    () => configsByPurpose(officialConfigs, (config) => config.isActive),
     [officialConfigs]
   );
 
@@ -179,7 +181,7 @@ export default function AdminPage() {
   const onProviderChange = (nextProvider: string | null) => {
     const value = nextProvider ?? options[0]?.value ?? "qwen";
     setProvider(value);
-    const option = options.find((item) => item.value === value);
+    const option = providerOption(purpose, value);
     setName(option?.label ?? "");
     setBaseUrl(option?.baseUrl ?? "");
     setModelSeries(option?.modelSeries ?? "");
@@ -361,7 +363,7 @@ export default function AdminPage() {
                     id="officialModel"
                     value={modelSeries}
                     onChange={(event) => setModelSeries(event.target.value)}
-                    placeholder={options.find((item) => item.value === provider)?.modelPlaceholder}
+                    placeholder={providerOption(purpose, provider)?.modelPlaceholder}
                   />
                 </div>
                 <div className="space-y-2">

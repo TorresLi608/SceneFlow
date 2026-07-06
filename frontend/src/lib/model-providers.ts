@@ -1,4 +1,4 @@
-import type { ConfigPurpose } from "@/types/auth";
+import type { ConfigPurpose, UserConfig } from "@/types/auth";
 
 export interface ProviderOption {
   value: string;
@@ -101,6 +101,26 @@ export const providerLabelMap = Object.fromEntries(
     .map((option) => [option.value, option.label])
 ) as Record<string, string>;
 
+export function defaultProviderOption(purpose: ConfigPurpose = "script") {
+  return providerOptions[purpose][0] ?? chatProviderOptions[0]!;
+}
+
 export function providerOption(purpose: ConfigPurpose, provider: string) {
-  return providerOptions[purpose].find((option) => option.value === provider) ?? allProviderOptions.find((option) => option.value === provider);
+  return providerOptions[purpose].find((option) => option.value === provider) ?? providerOptionByValue(provider);
+}
+
+export function providerOptionByValue(provider: string) {
+  return allProviderOptions.find((option) => option.value === provider);
+}
+
+export function configsByPurpose(
+  configs: readonly UserConfig[],
+  isMatch: (config: UserConfig) => boolean
+) {
+  return configs.reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
+    if (isMatch(config) && !acc[config.purpose]) {
+      acc[config.purpose] = config;
+    }
+    return acc;
+  }, {});
 }

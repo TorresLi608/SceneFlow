@@ -1,12 +1,8 @@
 import type { UserMeResponse } from "@/types/auth";
-import { backendClient } from "@/lib/http/backend-client";
+import { authConfig, backendClient } from "@/lib/http/backend-client";
 
 export async function getMeByBff(authorization?: string) {
-  const response = await backendClient.get<UserMeResponse>("/api/users/me", {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.get<UserMeResponse>("/api/users/me", authConfig(authorization));
 
   return response.data;
 }

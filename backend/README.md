@@ -21,7 +21,7 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 
 ## Super admin
 
-- Startup seeds `superAdmin` / `superAdmin@123` with role `superAdmin`.
+- Startup creates `superAdmin` / `superAdmin@123` only if it is missing, then keeps it enabled with role `superAdmin`.
 - Disabled users cannot log in or use existing tokens.
 
 ## Model routing

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { arrayMove } from "@dnd-kit/sortable";
 
 import { normalizeOrder, nowISO } from "@/lib/project-factory";
 import type { Project, Scene, SceneUpdatePayload } from "@/types/project";
@@ -66,10 +67,7 @@ const reorder = (items: Scene[], activeId: string, overId: string) => {
     return items;
   }
 
-  const cloned = [...items];
-  const [moved] = cloned.splice(oldIndex, 1);
-  cloned.splice(newIndex, 0, moved);
-  return normalizeOrder(cloned);
+  return normalizeOrder(arrayMove(items, oldIndex, newIndex));
 };
 
 export const useProjectStore = create<ProjectStoreState>()((set) => ({

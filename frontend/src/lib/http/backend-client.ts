@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { AxiosRequestConfig } from "axios";
 
 export const backendBaseURL =
   process.env.BACKEND_API_BASE_URL?.trim() ||
@@ -9,3 +10,7 @@ export const backendClient = axios.create({
   baseURL: backendBaseURL,
   timeout: 90000,
 });
+
+export function authConfig(authorization?: string): AxiosRequestConfig | undefined {
+  return authorization ? { headers: { Authorization: authorization } } : undefined;
+}

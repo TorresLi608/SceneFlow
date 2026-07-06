@@ -5,10 +5,10 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from openai import APIStatusError, AsyncOpenAI
 
 
 CHAT_BASE_URLS = {
@@ -317,23 +317,21 @@ class ModelRouter:
         quality: str = "medium",
         base_url: str = "",
     ) -> ImageResult:
-        async with httpx.AsyncClient(timeout=90) as client:
-            response = await client.post(
-                f"{base_url_for('openai', base_url)}/images/generations",
-                headers={"Authorization": f"Bearer {api_key.strip()}"},
-                json={
-                    "model": model.strip(),
-                    "prompt": prompt.strip(),
-                    "size": size,
-                    "quality": quality,
-                    "output_format": "png",
-                },
+        client = AsyncOpenAI(api_key=api_key.strip(), base_url=base_url_for("openai", base_url), timeout=90)
+        try:
+            response = await client.images.generate(
+                model=model.strip(),
+                prompt=prompt.strip(),
+                size=size,
+                quality=quality,
+                output_format="png",
+                response_format="b64_json",
             )
-        if response.status_code >= 300:
-            raise ValueError(f"provider status {response.status_code}: {response.text.strip()[:220]}")
+        except APIStatusError as exc:
+            raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        payload = response.json()
-        b64_json = (payload.get("data") or [{}])[0].get("b64_json", "")
+        image = response.data[0] if response.data else None
+        b64_json = image.b64_json if image else ""
         if not b64_json:
             raise ValueError("empty image response")
-        return ImageResult(data=base64.b64decode(b64_json), format=payload.get("output_format") or "png")
+        return ImageResult(data=base64.b64decode(b64_json), format="png")

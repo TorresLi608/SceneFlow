@@ -193,14 +193,14 @@ def init_db() -> None:
 
 def seed_super_admin(conn: sqlite3.Connection) -> None:
     stamp = now()
-    password = bcrypt.hashpw(SUPER_ADMIN_PASSWORD.encode(), bcrypt.gensalt()).decode()
     user = row(conn, "SELECT * FROM users WHERE username=?", (SUPER_ADMIN_USERNAME,))
     if user:
         conn.execute(
-            "UPDATE users SET password=?, role='superAdmin', is_disabled=0, deleted_at=NULL, updated_at=? WHERE id=?",
-            (password, stamp, user["id"]),
+            "UPDATE users SET role='superAdmin', is_disabled=0, deleted_at=NULL, updated_at=? WHERE id=?",
+            (stamp, user["id"]),
         )
         return
+    password = bcrypt.hashpw(SUPER_ADMIN_PASSWORD.encode(), bcrypt.gensalt()).decode()
     conn.execute(
         "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled) VALUES (?, ?, ?, ?, 'superAdmin', 0)",
         (stamp, stamp, SUPER_ADMIN_USERNAME, password),

@@ -34,7 +34,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
-import { allProviderOptions, providerLabelMap, providerOption, providerOptions } from "@/lib/model-providers";
+import {
+  allProviderOptions,
+  configsByPurpose,
+  defaultProviderOption,
+  providerLabelMap,
+  providerOption,
+} from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import type { ConfigPurpose, CreateUserConfigInput, UpdateUserConfigInput, UserConfig } from "@/types/auth";
 
@@ -42,6 +48,8 @@ interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }
+
+const defaultConfigProvider = defaultProviderOption();
 
 function displayConfigName(
   config: UserConfig | undefined,
@@ -67,11 +75,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const queryClient = useQueryClient();
 
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
-  const [name, setName] = useState("通义千问");
+  const [name, setName] = useState(defaultConfigProvider.label);
   const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
-  const [provider, setProvider] = useState("qwen");
-  const [baseUrl, setBaseUrl] = useState("https://dashscope.aliyuncs.com/compatible-mode/v1");
+  const [provider, setProvider] = useState(defaultConfigProvider.value);
+  const [baseUrl, setBaseUrl] = useState(defaultConfigProvider.baseUrl ?? "");
   const [modelSeries, setModelSeries] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
@@ -89,7 +97,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const resetForm = () => {
-    const option = providerOptions.script[0];
+    const option = defaultProviderOption();
     setEditingConfigId(null);
     setName(option.label);
     setDescription("");
@@ -185,23 +193,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const activeUserConfigByPurpose = useMemo(
     () =>
-      (configsQuery.data?.configs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
-        if (config.isActive && config.isEnabled && !acc[config.purpose]) {
-          acc[config.purpose] = config;
-        }
-        return acc;
-      }, {}),
+      configsByPurpose(
+        configsQuery.data?.configs ?? [],
+        (config) => config.isActive && config.isEnabled
+      ),
     [configsQuery.data?.configs]
   );
 
   const officialConfigByPurpose = useMemo(
     () =>
-      (configsQuery.data?.officialConfigs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
-        if (config.isActive && config.isEnabled && config.isVerified && !acc[config.purpose]) {
-          acc[config.purpose] = config;
-        }
-        return acc;
-      }, {}),
+      configsByPurpose(
+        configsQuery.data?.officialConfigs ?? [],
+        (config) => config.isActive && config.isEnabled && config.isVerified
+      ),
     [configsQuery.data?.officialConfigs]
   );
 
@@ -229,7 +233,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setMessage(null);
     const value = nextProvider ?? options[0]?.value ?? "qwen";
     setProvider(value);
-    const hit = options.find((item) => item.value === value);
+    const hit = providerOption(purpose, value);
     if (hit) {
       setName(hit.label);
       setBaseUrl(hit.baseUrl ?? "");

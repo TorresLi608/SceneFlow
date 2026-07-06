@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
@@ -8,7 +9,10 @@ from fastapi import HTTPException
 from database import row
 from model import pick_model
 from model_registry import models
-from security import decrypt
+from security import decrypt, encrypt
+
+
+CONFIG_VALIDATION_KEYS = ("apiKey", "provider", "baseUrl", "modelSeries", "model", "purpose")
 
 
 def normalize_purpose(value: str) -> str:
@@ -65,6 +69,73 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
         raise HTTPException(400, "provider must be one of qwen/deepseek/doubao/openai/gemini/anthropic/custom")
     elif not model.strip():
         raise HTTPException(400, "general/script purpose requires modelSeries")
+
+
+def normalize_config_payload(payload: dict[str, Any], current: sqlite3.Row | None = None) -> dict[str, Any]:
+    purpose = normalize_purpose(str(payload.get("purpose", current["purpose"] if current else "")))
+    provider = normalize_provider(str(payload.get("provider", current["provider"] if current else "")))
+    base_url = normalize_base_url(str(payload.get("baseUrl", (current["base_url"] or "") if current else "")))
+    model_value = payload.get("modelSeries") or payload.get("model") or ((current["model_name"] or "") if current else "")
+    model = normalize_model(provider, str(model_value))
+    api_key = str(payload["apiKey"]).strip() if "apiKey" in payload else decrypt(current["encrypted_key"]) if current else str(payload.get("apiKey", "")).strip()
+    validate_config_fields(purpose, provider, model, base_url)
+    return {
+        "purpose": purpose,
+        "provider": provider,
+        "base_url": base_url,
+        "model": model,
+        "api_key": api_key,
+        "needs_validation": any(key in payload for key in CONFIG_VALIDATION_KEYS) or bool(payload.get("isActive")),
+    }
+
+
+def config_create_fields(payload: dict[str, Any], normalized: dict[str, Any], is_verified: int) -> dict[str, Any]:
+    is_enabled = 1 if payload.get("isEnabled", True) else 0
+    if payload.get("isActive") and not is_enabled:
+        raise HTTPException(400, "disabled config cannot be default")
+    return {
+        "name": str(payload.get("name", "")).strip()[:64],
+        "description": str(payload.get("description", "")).strip()[:255],
+        "purpose": normalized["purpose"],
+        "provider": normalized["provider"],
+        "base_url": normalized["base_url"],
+        "model_name": normalized["model"],
+        "encrypted_key": encrypt(normalized["api_key"]),
+        "is_active": 1 if payload.get("isActive") else 0,
+        "is_enabled": is_enabled,
+        "is_verified": is_verified,
+    }
+
+
+def config_update_fields(payload: dict[str, Any], current: sqlite3.Row, normalized: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if "name" in payload:
+        updates["name"] = str(payload["name"]).strip()[:64]
+    if "description" in payload:
+        updates["description"] = str(payload["description"]).strip()[:255]
+    if "purpose" in payload:
+        updates["purpose"] = normalized["purpose"]
+    if "provider" in payload:
+        updates["provider"] = normalized["provider"]
+    if "baseUrl" in payload:
+        updates["base_url"] = normalized["base_url"]
+    if any(key in payload for key in ("modelSeries", "model")):
+        updates["model_name"] = normalized["model"]
+    if "apiKey" in payload:
+        updates["encrypted_key"] = encrypt(normalized["api_key"])
+    if normalized["needs_validation"]:
+        updates["is_verified"] = 1
+    if "isActive" in payload:
+        if payload["isActive"] and not bool(payload.get("isEnabled", current["is_enabled"])):
+            raise HTTPException(400, "disabled config cannot be default")
+        updates["is_active"] = 1 if payload["isActive"] else 0
+    if "isEnabled" in payload:
+        updates["is_enabled"] = 1 if payload["isEnabled"] else 0
+        if not payload["isEnabled"]:
+            updates["is_active"] = 0
+    if not updates:
+        raise HTTPException(400, "no fields to update")
+    return updates
 
 
 async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:

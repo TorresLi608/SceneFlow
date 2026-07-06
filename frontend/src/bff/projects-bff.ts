@@ -14,34 +14,22 @@ import type {
   UpdateProjectInput,
   UpdateSceneInput,
 } from "@/types/project";
-import { backendClient } from "@/lib/http/backend-client";
+import { authConfig, backendClient } from "@/lib/http/backend-client";
 
 export async function getProjectsByBff(authorization?: string) {
-  const response = await backendClient.get<ProjectListResponse>("/api/projects", {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.get<ProjectListResponse>("/api/projects", authConfig(authorization));
 
   return response.data;
 }
 
 export async function createProjectByBff(payload: CreateProjectInput, authorization?: string) {
-  const response = await backendClient.post<ProjectItemResponse>("/api/projects", payload, {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.post<ProjectItemResponse>("/api/projects", payload, authConfig(authorization));
 
   return response.data;
 }
 
 export async function updateProjectByBff(projectID: string, payload: UpdateProjectInput, authorization?: string) {
-  const response = await backendClient.patch<ProjectItemResponse>(`/api/projects/${projectID}`, payload, {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.patch<ProjectItemResponse>(`/api/projects/${projectID}`, payload, authConfig(authorization));
 
   return response.data;
 }
@@ -52,11 +40,7 @@ export async function updateProjectSceneByBff(
   payload: UpdateSceneInput,
   authorization?: string
 ) {
-  const response = await backendClient.patch(`/api/projects/${projectID}/scenes/${sceneID}`, payload, {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.patch(`/api/projects/${projectID}/scenes/${sceneID}`, payload, authConfig(authorization));
 
   return response.data;
 }
@@ -66,11 +50,11 @@ export async function reorderProjectScenesByBff(
   payload: ReorderScenesInput,
   authorization?: string
 ) {
-  const response = await backendClient.patch<ProjectItemResponse>(`/api/projects/${projectID}/scenes/reorder`, payload, {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.patch<ProjectItemResponse>(
+    `/api/projects/${projectID}/scenes/reorder`,
+    payload,
+    authConfig(authorization)
+  );
 
   return response.data;
 }
@@ -80,11 +64,7 @@ export async function parseProjectByBff(
   payload: ParseProjectInput,
   authorization?: string
 ) {
-  const response = await backendClient.post<ParseProjectResponse>(`/api/projects/${projectID}/parse`, payload, {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  const response = await backendClient.post<ParseProjectResponse>(`/api/projects/${projectID}/parse`, payload, authConfig(authorization));
 
   return response.data;
 }
@@ -97,11 +77,7 @@ export async function generateProjectByBff(
   const response = await backendClient.post<GenerateProjectResponse>(
     `/api/projects/${projectID}/generate`,
     payload,
-    {
-      headers: {
-        Authorization: authorization,
-      },
-    }
+    authConfig(authorization)
   );
 
   return response.data;
@@ -115,11 +91,7 @@ export async function optimizeProjectByBff(
   const response = await backendClient.post<OptimizeProjectResponse>(
     `/api/projects/${projectID}/optimize`,
     payload,
-    {
-      headers: {
-        Authorization: authorization,
-      },
-    }
+    authConfig(authorization)
   );
 
   return response.data;
@@ -133,22 +105,14 @@ export async function generateVideoByBff(
   const response = await backendClient.post<GenerateVideoResponse>(
     `/api/projects/${projectID}/generate-video`,
     payload,
-    {
-      headers: {
-        Authorization: authorization,
-      },
-    }
+    authConfig(authorization)
   );
 
   return response.data;
 }
 
 export async function deleteProjectByBff(projectID: string, authorization?: string) {
-  await backendClient.delete(`/api/projects/${projectID}`, {
-    headers: {
-      Authorization: authorization,
-    },
-  });
+  await backendClient.delete(`/api/projects/${projectID}`, authConfig(authorization));
 
   return {
     projectId: projectID,

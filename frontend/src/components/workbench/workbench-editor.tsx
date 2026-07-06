@@ -51,11 +51,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { SceneCard } from "@/components/workbench/scene-card";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
-import { providerLabelMap } from "@/lib/model-providers";
+import { configsByPurpose, providerLabelMap } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
-import type { ConfigPurpose, UserConfig } from "@/types/auth";
+import type { UserConfig } from "@/types/auth";
 import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
 
 const wsBaseURL =
@@ -144,30 +144,20 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   const activeUserConfigByPurpose = useMemo(
     () =>
-      (userConfigsQuery.data?.configs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
+      configsByPurpose(userConfigsQuery.data?.configs ?? [], (config) => {
         const isUsableActiveConfig =
           config.isActive && config.isVerified && config.modelSeries.trim().length > 0;
-
-        if (isUsableActiveConfig && !acc[config.purpose]) {
-          acc[config.purpose] = config;
-        }
-
-        return acc;
-      }, {}),
+        return isUsableActiveConfig;
+      }),
     [userConfigsQuery.data?.configs]
   );
   const officialConfigByPurpose = useMemo(
     () =>
-      (userConfigsQuery.data?.officialConfigs ?? []).reduce<Partial<Record<ConfigPurpose, UserConfig>>>((acc, config) => {
+      configsByPurpose(userConfigsQuery.data?.officialConfigs ?? [], (config) => {
         const isUsableActiveConfig =
           config.isActive && config.isVerified && config.modelSeries.trim().length > 0;
-
-        if (isUsableActiveConfig && !acc[config.purpose]) {
-          acc[config.purpose] = config;
-        }
-
-        return acc;
-      }, {}),
+        return isUsableActiveConfig;
+      }),
     [userConfigsQuery.data?.officialConfigs]
   );
   const activeConfigByPurpose = useMemo(
