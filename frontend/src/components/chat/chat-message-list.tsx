@@ -116,7 +116,7 @@ function MessageAttachments({ attachments }: { attachments: ChatAttachment[] }) 
 
 export function ChatMessageList({ messages, agentSteps, isLoading }: ChatMessageListProps) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="chat-message-list-scrollbar min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
         {isLoading ? (
           <div className="space-y-3">

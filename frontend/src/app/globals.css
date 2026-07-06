@@ -133,3 +133,26 @@
     @apply font-sans;
   }
 }
+
+@layer components {
+  .chat-message-list-scrollbar {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent) transparent;
+  }
+
+  .chat-message-list-scrollbar::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .chat-message-list-scrollbar::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+    background-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
+  }
+
+  .chat-message-list-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
