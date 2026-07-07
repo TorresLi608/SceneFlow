@@ -42,7 +42,8 @@
   - Passed `isStreaming` through `chat-panel.tsx` into `chat-message-list.tsx`.
   - Added auto-scroll behavior while the user is near the bottom.
   - Added a floating down-arrow button that appears when the user scrolls away from the bottom.
-  - Fixed scroll jitter by removing `ResizeObserver`, canceling pending auto-scroll when the user scrolls upward, and only auto-following while near bottom.
+  - Fixed scroll jitter by canceling pending auto-scroll when the user scrolls upward and only auto-following while near bottom.
+  - Later initial-history fix reintroduced `ResizeObserver` only for content growth while follow mode is active, plus `autoScrollKey` and short forced retries for code blocks/lists that finish layout after first paint.
 - Files created/modified:
   - `frontend/package.json`
   - `frontend/package-lock.json`
@@ -56,6 +57,19 @@
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
+
+### Phase 6: Chat scroll documentation sync
+- **Status:** complete
+- Actions taken:
+  - Read `planning-with-files` instructions and existing root planning files.
+  - Searched project markdown for chat scroll, bottom, `autoScrollKey`, and `ResizeObserver` references.
+  - Updated stale docs that said the final scroll implementation avoided `ResizeObserver`.
+  - Documented the current behavior: `autoScrollKey`, delayed forced scroll retries, and gated `ResizeObserver` follow-up scrolling.
+- Files created/modified:
+  - `AI_HANDOFF.md`
+  - `findings.md`
+  - `progress.md`
+  - `task_plan.md`
 
 ### Phase 1: Create persistent notes
 - **Status:** complete
@@ -120,6 +134,8 @@
 | Chat scrollbar/AI SDK lint | `cd frontend && npm run lint` | No lint errors | Passed after fixing stream-route syntax and scroll effect lint | Pass |
 | Chat scrollbar/AI SDK type-check | `cd frontend && npx tsc --noEmit` | No TypeScript errors | Passed | Pass |
 | Next production build | `cd frontend && npm run build` | Finish production build | Stayed at `Creating an optimized production build ...` for over 2 minutes; interrupted | Incomplete |
+| Chat scroll doc stale scan | `rg` scan for stale chat-scroll/ResizeObserver phrases in markdown | No stale docs remain | No matches | Pass |
+| Markdown diff whitespace check | `git diff --check` | No whitespace errors | Passed | Pass |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -133,7 +149,8 @@
 | 2026-07-06 | ESLint parsing error: `Argument expression expected` in the BFF stream route | 1 | Closed the `createUIMessageStream(...)` call correctly before passing it to `createUIMessageStreamResponse`. |
 | 2026-07-06 | `npm run build` hung in Next/Turbopack production build startup | 1 | Interrupted after more than two minutes with no new output; lint and type-check still passed. |
 | 2026-07-06 | React lint error: `Calling setState synchronously within an effect` in `chat-message-list.tsx` | 1 | Moved initial scroll state update into `requestAnimationFrame`. |
-| 2026-07-06 | Streaming output caused visible scroll jitter, worse after manual upward scrolling | 1 | Removed `ResizeObserver`, canceled queued auto-scroll on upward wheel, and only auto-followed while near bottom. |
+| 2026-07-06 | Streaming output caused visible scroll jitter, worse after manual upward scrolling | 1 | Canceled queued auto-scroll on upward wheel and only auto-follow while near bottom; later `ResizeObserver` use is gated by follow state. |
+| 2026-07-06 | `zsh: command not found: ResizeObserver` while scanning markdown | 1 | Re-ran `rg` with the pattern in single quotes so backticks were literal text. |
 
 ## 5-Question Reboot Check
 | Question | Answer |
@@ -141,5 +158,5 @@
 | Where am I? | Complete. |
 | Where am I going? | Future AI should read `AI_HANDOFF.md`, `RUNNING.md`, then `findings.md`. |
 | What's the goal? | Summarize SceneFlow for future AI development. |
-| What have I learned? | Stack, commands, entry points, data model, chat attachment flow, AI SDK stream bridge, scroll UX decisions, limits, and checks are captured in `findings.md`. |
-| What have I done? | Created persistent planning files, updated `AI_HANDOFF.md`, captured the project map, improved chat attachments/composer UI, integrated AI SDK for frontend stream state, and fixed chat scroll UX. |
+| What have I learned? | Stack, commands, entry points, data model, chat attachment flow, AI SDK stream bridge, current scroll behavior, limits, and checks are captured in `findings.md`. |
+| What have I done? | Created persistent planning files, updated `AI_HANDOFF.md`, captured the project map, improved chat attachments/composer UI, integrated AI SDK for frontend stream state, fixed chat scroll UX, and synced scroll docs. |

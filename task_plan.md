@@ -128,7 +128,7 @@ Complete
 - [x] Auto-scroll only while the user remains near the bottom.
 - [x] Show a floating down-arrow button when the user scrolls away from the bottom.
 - [x] Clicking the arrow scrolls to the bottom and resumes auto-follow.
-- [x] Remove the first implementation's `ResizeObserver` because it caused visible jitter during token streaming.
+- [x] Gate `ResizeObserver` follow-up scrolling so async content growth can settle without fighting manual upward scroll.
 - [x] Cancel pending auto-scroll immediately when the user scrolls upward.
 - **Status:** complete
 
@@ -147,4 +147,35 @@ Complete
 | `zsh: no matches found: frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` | 1 | Quote bracketed Next.js dynamic route paths. |
 | ESLint parsing error in BFF stream route after adding `createUIMessageStreamResponse` | 1 | Fixed a missing closing parenthesis around `createUIMessageStream(...)`. |
 | React lint error: `setState` synchronously inside an effect | 1 | Moved initial scroll-state update into `requestAnimationFrame`. |
-| Streaming output caused scroll jitter, worse when user scrolled upward | 1 | Removed `ResizeObserver`, canceled pending auto-scroll on upward wheel, and only auto-follow when still near bottom. |
+| Streaming output caused scroll jitter, worse when user scrolled upward | 1 | Gated `ResizeObserver`, canceled pending auto-scroll on upward wheel, and only auto-follow when still near bottom. |
+
+## Session 2026-07-06: Chat Scroll Documentation Sync
+
+### Goal
+- Check whether the latest chat initial-scroll fix is reflected in project docs, and update only stale documentation.
+
+### Phases
+
+#### Phase 1: Inspect docs
+- [x] Read existing planning files.
+- [x] Search project docs for chat scroll behavior.
+- **Status:** complete
+
+#### Phase 2: Sync stale docs
+- [x] Update any stale docs found.
+- [x] Keep documentation scoped to current behavior.
+- **Status:** complete
+
+#### Phase 3: Verify
+- [x] Run lightweight documentation/diff checks.
+- [x] Update `findings.md` and `progress.md`.
+- **Status:** complete
+
+### Verification
+- `rg` scan for stale chat-scroll/ResizeObserver phrases in markdown
+- `git diff --check`
+
+### Errors Encountered
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `zsh: command not found: ResizeObserver` while searching docs | 1 | Re-ran the `rg` search with the pattern in single quotes so backticks were not treated as shell command substitution. |

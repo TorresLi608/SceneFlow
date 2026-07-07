@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
 
 interface ChatMessageListProps {
+  autoScrollKey: string;
   messages: ChatMessage[];
   agentSteps: ChatAgentStep[];
   isLoading: boolean;
@@ -31,9 +32,14 @@ function StepIcon({ status }: { status: ChatAgentStep["status"] }) {
 const streamdownPlugins = { code, cjk };
 const streamdownControls = { code: { copy: true, download: false }, table: false, mermaid: false } as unknown as ControlsConfig;
 const BOTTOM_THRESHOLD = 80;
+const INITIAL_SCROLL_RETRY_DELAYS = [50, 150, 350];
 
 function isNearBottom(element: HTMLDivElement) {
   return element.scrollHeight - element.scrollTop - element.clientHeight < BOTTOM_THRESHOLD;
+}
+
+function hasScrollableOverflow(element: HTMLDivElement) {
+  return element.scrollHeight > element.clientHeight + BOTTOM_THRESHOLD;
 }
 
 function legacyCopy(text: string) {
@@ -120,22 +126,33 @@ function MessageAttachments({ attachments }: { attachments: ChatAttachment[] }) 
   );
 }
 
-export function ChatMessageList({ messages, agentSteps, isLoading, isStreaming }: ChatMessageListProps) {
+export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading, isStreaming }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastForcedScrollKeyRef = useRef("");
   const shouldFollowRef = useRef(true);
   const scrollFrameRef = useRef<number | null>(null);
+  const forceTimerRefs = useRef<number[]>([]);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
   const setScrollButton = useCallback((next: boolean) => {
     setShowScrollButton((current) => current === next ? current : next);
   }, []);
 
-  const cancelAutoScroll = useCallback(() => {
+  const cancelScrollFrame = useCallback(() => {
     if (scrollFrameRef.current !== null) {
       cancelAnimationFrame(scrollFrameRef.current);
       scrollFrameRef.current = null;
     }
   }, []);
+
+  const cancelAutoScroll = useCallback(() => {
+    cancelScrollFrame();
+    for (const timer of forceTimerRefs.current) {
+      window.clearTimeout(timer);
+    }
+    forceTimerRefs.current = [];
+  }, [cancelScrollFrame]);
 
   const updateScrollState = useCallback(() => {
     const element = scrollRef.current;
@@ -144,43 +161,60 @@ export function ChatMessageList({ messages, agentSteps, isLoading, isStreaming }
     }
 
     const atBottom = isNearBottom(element);
-    shouldFollowRef.current = atBottom;
-    if (!atBottom) {
-      cancelAutoScroll();
+    if (atBottom) {
+      shouldFollowRef.current = true;
     }
-    setScrollButton(!atBottom && element.scrollHeight > element.clientHeight + BOTTOM_THRESHOLD);
-  }, [cancelAutoScroll, setScrollButton]);
+    setScrollButton(!atBottom && hasScrollableOverflow(element));
+  }, [setScrollButton]);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth", force = true) => {
-    cancelAutoScroll();
+  const scrollToBottomNow = useCallback((behavior: ScrollBehavior = "smooth", force = true) => {
     const element = scrollRef.current;
     if (!element) {
       return;
     }
 
-    element.scrollTo({ top: element.scrollHeight, behavior });
+    if (behavior === "smooth") {
+      element.scrollTo({ top: element.scrollHeight, behavior });
+    } else {
+      element.scrollTop = element.scrollHeight;
+    }
     if (force) {
       shouldFollowRef.current = true;
     }
     setScrollButton(false);
-  }, [cancelAutoScroll, setScrollButton]);
+  }, [setScrollButton]);
 
-  const scheduleScrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth", force = true) => {
     cancelAutoScroll();
+    scrollToBottomNow(behavior, force);
+  }, [cancelAutoScroll, scrollToBottomNow]);
+
+  const scheduleScrollToBottom = useCallback((force = false) => {
+    cancelScrollFrame();
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
-      if (shouldFollowRef.current) {
-        scrollToBottom("auto", false);
+      if (force || shouldFollowRef.current) {
+        scrollToBottomNow("auto", force);
       }
     });
-  }, [cancelAutoScroll, scrollToBottom]);
+  }, [cancelScrollFrame, scrollToBottomNow]);
+
+  const forceScrollToBottom = useCallback(() => {
+    cancelAutoScroll();
+    shouldFollowRef.current = true;
+    scrollToBottomNow("auto", true);
+    scheduleScrollToBottom(true);
+    forceTimerRefs.current = INITIAL_SCROLL_RETRY_DELAYS.map((delay) =>
+      window.setTimeout(() => scrollToBottomNow("auto", true), delay)
+    );
+  }, [cancelAutoScroll, scheduleScrollToBottom, scrollToBottomNow]);
 
   const handleWheelCapture = useCallback((event: WheelEvent<HTMLDivElement>) => {
     if (event.deltaY < 0) {
       const element = scrollRef.current;
       shouldFollowRef.current = false;
       cancelAutoScroll();
-      setScrollButton(Boolean(element && element.scrollHeight > element.clientHeight + BOTTOM_THRESHOLD));
+      setScrollButton(Boolean(element && hasScrollableOverflow(element)));
     }
   }, [cancelAutoScroll, setScrollButton]);
 
@@ -190,13 +224,26 @@ export function ChatMessageList({ messages, agentSteps, isLoading, isStreaming }
       return;
     }
 
-    const frame = requestAnimationFrame(updateScrollState);
     element.addEventListener("scroll", updateScrollState, { passive: true });
     return () => {
-      cancelAnimationFrame(frame);
       element.removeEventListener("scroll", updateScrollState);
     };
   }, [updateScrollState]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (shouldFollowRef.current) {
+        scheduleScrollToBottom();
+      }
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scheduleScrollToBottom]);
 
   useEffect(() => {
     if (shouldFollowRef.current) {
@@ -206,13 +253,23 @@ export function ChatMessageList({ messages, agentSteps, isLoading, isStreaming }
   }, [agentSteps, cancelAutoScroll, isLoading, isStreaming, messages, scheduleScrollToBottom]);
 
   useEffect(() => {
+    if (isLoading || messages.length === 0 || lastForcedScrollKeyRef.current === autoScrollKey) {
+      return;
+    }
+
+    lastForcedScrollKeyRef.current = autoScrollKey;
+    const frame = requestAnimationFrame(forceScrollToBottom);
+    return () => cancelAnimationFrame(frame);
+  }, [autoScrollKey, forceScrollToBottom, isLoading, messages.length]);
+
+  useEffect(() => {
     return cancelAutoScroll;
   }, [cancelAutoScroll]);
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onWheelCapture={handleWheelCapture} className="chat-message-list-scrollbar h-full overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+      <div ref={scrollRef} onWheelCapture={handleWheelCapture} className="chat-message-list-scrollbar h-full overflow-y-auto [overflow-anchor:none]">
+        <div ref={contentRef} className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
           {isLoading ? (
             <div className="space-y-3">
               <Skeleton className="h-12 w-4/5 rounded-2xl" />

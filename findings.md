@@ -219,7 +219,8 @@
   - While the user is near the bottom, streaming output auto-scrolls to the newest content.
   - If the user scrolls upward, auto-follow stops immediately and a floating down-arrow button appears.
   - Clicking the down-arrow scrolls to the bottom and resumes auto-follow.
-  - The final implementation avoids `ResizeObserver`; the first implementation used it and caused jitter because token streaming repeatedly changed content height while programmatic scroll and user scroll fought over `scrollTop`.
+  - History initialization/session switches use `autoScrollKey` and short forced scroll retries so code blocks, Shiki highlighting, and ordered lists that grow after first paint still end at the true bottom.
+  - `ResizeObserver` is used only while `shouldFollowRef` is true; upward wheel input cancels follow and pending forced retries to avoid fighting manual scroll.
 - Current verification for this work:
   - `cd frontend && npm run lint`
   - `cd frontend && npx tsc --noEmit`
@@ -227,3 +228,8 @@
   - `npm run build` was attempted after AI SDK integration but hung at Next/Turbopack production build startup for over two minutes; it was interrupted.
   - `npm install @ai-sdk/react ai` reported 12 npm audit findings; not addressed in this pass.
   - Full backend migration to Vercel AI SDK was explicitly skipped; current backend remains Python/FastAPI/LangChain/LangGraph.
+
+## Chat Initial Scroll Fix Documentation Sync
+- 2026-07-06 latest chat scroll code uses an `autoScrollKey` derived from session id, message count, and last message id.
+- `ChatMessageList` force-scrolls on initial history load/session message-key changes and retries shortly after layout (`50ms`, `150ms`, `350ms`) so Streamdown code blocks, Shiki highlighting, and ordered lists that grow after first paint do not leave history views mid-scroll.
+- `ResizeObserver` is now used only to keep following when content height changes and `shouldFollowRef` is still true; upward wheel input cancels follow and pending retries. Older docs that said the final implementation avoided `ResizeObserver` were updated in this sync.

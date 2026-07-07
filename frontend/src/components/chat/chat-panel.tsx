@@ -15,6 +15,8 @@ interface ChatPanelProps {
 
 export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPanelProps) {
   const chat = useChatController(configs, officialConfigs);
+  const lastMessage = chat.messages.at(-1);
+  const autoScrollKey = `${chat.effectiveSessionId ?? "new-chat"}:${chat.messages.length}:${lastMessage?.id ?? ""}`;
 
   return (
     <div className="grid min-h-0 flex-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
@@ -40,6 +42,8 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
         </div>
 
         <ChatMessageList
+          key={chat.effectiveSessionId ?? "new-chat"}
+          autoScrollKey={autoScrollKey}
           messages={chat.messages}
           agentSteps={chat.agentSteps}
           isLoading={chat.messagesLoading}

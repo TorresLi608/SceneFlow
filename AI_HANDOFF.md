@@ -11,7 +11,7 @@
 - 当前生成能力边界：图片生成仅支持 OpenAI；音频/视频生成仍是模拟进度和示例 URL。
 - 智能问答已接入 assistant-ui 官方附件 primitives/adapters：前端可添加所有文件；图片走 image part，文本/代码文件直接读文本，PDF 通过 `pypdf` 后端解析，`.docx/.xlsx/.pptx` 通过后端 OpenXML 抽文本；解析不了的文件会生成明确的“无法解析该文件”说明。
 - 智能问答前端流式状态已接入 Vercel AI SDK：`useChat` + `DefaultChatTransport` 负责发送、流式解析和进行中消息状态；Next BFF 将后端 FastAPI NDJSON 转成 AI SDK UI stream；Assistant UI 继续负责 composer/rendering。
-- 聊天消息列表已补滚动体验：显示 scoped 滚动条，用户贴底时 SSE 输出自动跟随；用户向上滚动时停止跟随并显示向下箭头，点击后回到底部并恢复跟随。不要重新引入 `ResizeObserver` 做流式自动滚动，之前会造成明显抖动。
+- 聊天消息列表已补滚动体验：显示 scoped 滚动条，用户贴底时 SSE 输出自动跟随；用户向上滚动时停止跟随并显示向下箭头，点击后回到底部并恢复跟随。历史对话初始化/切换会话时用 `autoScrollKey` 强制滚到底部，并补几次短延迟滚动，覆盖 Streamdown 代码块、Shiki 高亮、有序列表等异步撑高内容；`ResizeObserver` 只在仍处于 follow 状态时补滚动，用户向上滚动会取消跟随和待执行滚动。
 
 ## 用户核心要求
 
@@ -52,6 +52,7 @@
 - 聊天滚动体验：
   - `frontend/src/app/globals.css` 增加 scoped `chat-message-list-scrollbar` 样式。
   - `frontend/src/components/chat/chat-message-list.tsx` 增加自动贴底、手动上滚停止跟随、浮动向下箭头。
+  - `frontend/src/components/chat/chat-panel.tsx` 传入 `autoScrollKey`，用于历史消息初次加载和会话切换后的强制滚到底部。
 - 项目 CRUD 已走后端 SQLite：
   - 后端：`backend/routers/projects.py`
   - 前端 BFF：`frontend/src/app/api/bff/projects/**`
