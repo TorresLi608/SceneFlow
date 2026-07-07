@@ -15,12 +15,13 @@ import {
   type PendingAttachment,
 } from "@assistant-ui/react";
 import { Paperclip, Send, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { ChatAttachment, ChatAttachmentPart, ChatMessage } from "@/types/chat";
 
 interface AssistantComposerProps {
+  sessionId: string | null;
   messages: ChatMessage[];
   disabled: boolean;
   isRunning: boolean;
@@ -283,8 +284,9 @@ function AttachmentError({ onError }: { onError: (message: string) => void }) {
   return null;
 }
 
-export function AssistantComposer({ messages, disabled, isRunning, onSend }: AssistantComposerProps) {
+export function AssistantComposer({ sessionId, messages, disabled, isRunning, onSend }: AssistantComposerProps) {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const attachmentAdapter = useMemo<AttachmentAdapter>(
     () => new ChatAttachmentAdapter(),
     []
@@ -303,11 +305,19 @@ export function AssistantComposer({ messages, disabled, isRunning, onSend }: Ass
       const attachments = toChatAttachments(message.attachments);
       if (content || attachments.length) {
         setAttachmentError(null);
-        await onSend(content, attachments);
+        try {
+          await onSend(content, attachments);
+        } finally {
+          requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+        }
       }
     },
     [onSend]
   );
+
+  useEffect(() => {
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  }, [sessionId]);
 
   const runtime = useExternalStoreRuntime({
     messages: assistantMessages,
@@ -340,6 +350,8 @@ export function AssistantComposer({ messages, disabled, isRunning, onSend }: Ass
                 <Paperclip className="size-4" />
               </ComposerPrimitive.AddAttachment>
               <ComposerPrimitive.Input
+                ref={inputRef}
+                autoFocus
                 submitMode="enter"
                 disabled={disabled}
                 placeholder="输入问题..."

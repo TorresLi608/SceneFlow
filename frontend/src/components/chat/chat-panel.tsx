@@ -54,6 +54,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
           {chat.errorMessage ? <p className="text-sm text-amber-600">{chat.errorMessage}</p> : null}
 
           <AssistantComposer
+            sessionId={chat.effectiveSessionId}
             messages={chat.messages}
             disabled={!chat.selectedConfig || chat.isBusy}
             isRunning={chat.isBusy}
