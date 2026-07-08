@@ -36,7 +36,7 @@ const chatProviderOptions: ProviderOption[] = [
   },
   {
     value: "anthropic",
-    label: "Claude Code",
+    label: "Claude",
     modelSeries: "",
     modelPlaceholder: "claude-3-5-sonnet-20240620",
     baseUrl: "https://api.anthropic.com",
@@ -44,7 +44,7 @@ const chatProviderOptions: ProviderOption[] = [
   },
   {
     value: "openai",
-    label: "ChatGPT",
+    label: "OpenAI",
     modelSeries: "",
     modelPlaceholder: "gpt-5.5",
     baseUrl: "https://api.openai.com/v1",
@@ -60,7 +60,7 @@ const chatProviderOptions: ProviderOption[] = [
   },
   {
     value: "custom",
-    label: "自定义中转站",
+    label: "其他",
     modelSeries: "",
     modelPlaceholder: "gpt-4o-mini",
     baseUrl: "",
@@ -73,7 +73,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
   image: [
     {
       value: "openai",
-      label: "ChatGPT",
+      label: "OpenAI",
       modelSeries: "",
       modelPlaceholder: "gpt-image-2",
       baseUrl: "https://api.openai.com/v1",
@@ -82,8 +82,8 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
   ],
   video: [
     {
-      value: "seedance2.0",
-      label: "Seedance 2.0",
+      value: "doubao",
+      label: "豆包",
       modelSeries: "seedance-2.0",
       modelPlaceholder: "seedance-2.0",
       docsUrl: "https://www.volcengine.com/docs/82379",

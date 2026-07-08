@@ -5,10 +5,10 @@ import { MessageSquarePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { configName } from "@/lib/config-format";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
 import type { ChatSession } from "@/types/chat";
-import { configName } from "./chat-format";
 
 interface ChatSidebarProps {
   chatConfigs: UserConfig[];

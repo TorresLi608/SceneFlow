@@ -48,7 +48,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { SceneCard } from "@/components/workbench/scene-card";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
 import { configsByPurpose, providerLabelMap } from "@/lib/model-providers";
@@ -57,6 +56,7 @@ import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { UserConfig } from "@/types/auth";
 import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
+import { SceneCard } from "./scene-card";
 
 const wsBaseURL =
   (process.env.NEXT_PUBLIC_WS_BASE_URL?.trim() || "ws://127.0.0.1:8080").replace(/\/$/, "");

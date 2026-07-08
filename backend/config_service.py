@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
@@ -26,6 +26,8 @@ def normalize_provider(value: str) -> str:
         "claude": "anthropic",
         "claude-code": "anthropic",
         "claude code": "anthropic",
+        "seedance2.0": "doubao",
+        "seedance-2.0": "doubao",
     }.get(provider, provider)
 
 
@@ -56,8 +58,8 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
             raise HTTPException(400, "custom provider requires baseUrl")
         return
     if purpose == "video":
-        if provider != "seedance2.0":
-            raise HTTPException(400, "video purpose only supports provider seedance2.0")
+        if provider != "doubao":
+            raise HTTPException(400, "video purpose only supports provider doubao")
         if not model.strip():
             raise HTTPException(400, "video purpose requires modelSeries")
     elif purpose == "image":
@@ -181,6 +183,35 @@ def official_model_config(conn: sqlite3.Connection, config_id: int, purpose: str
         (config_id, purpose),
     )
     return _model_config(config, purpose, stage, "official")
+
+
+def user_model_config(conn: sqlite3.Connection, user_id: int, config_id: int, purpose: str, stage: str) -> dict[str, str]:
+    config = row(
+        conn,
+        "SELECT * FROM user_configs WHERE id=? AND user_id=? AND purpose=? AND is_enabled=1 AND deleted_at IS NULL",
+        (config_id, user_id, purpose),
+    )
+    return _model_config(config, purpose, stage, "user")
+
+
+def official_model_config_any(conn: sqlite3.Connection, config_id: int, purposes: Sequence[str], stage: str) -> dict[str, str]:
+    placeholders = ",".join("?" for _ in purposes)
+    config = row(
+        conn,
+        f"SELECT * FROM official_model_configs WHERE id=? AND purpose IN ({placeholders}) AND is_enabled=1 AND deleted_at IS NULL",
+        (config_id, *purposes),
+    )
+    return _model_config(config, config["purpose"] if config else "", stage, "official")
+
+
+def user_model_config_any(conn: sqlite3.Connection, user_id: int, config_id: int, purposes: Sequence[str], stage: str) -> dict[str, str]:
+    placeholders = ",".join("?" for _ in purposes)
+    config = row(
+        conn,
+        f"SELECT * FROM user_configs WHERE id=? AND user_id=? AND purpose IN ({placeholders}) AND is_enabled=1 AND deleted_at IS NULL",
+        (config_id, user_id, *purposes),
+    )
+    return _model_config(config, config["purpose"] if config else "", stage, "user")
 
 
 def active_model_config(conn: sqlite3.Connection, user_id: int, purpose: str, stage: str) -> dict[str, str]:

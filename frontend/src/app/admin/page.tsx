@@ -42,6 +42,11 @@ const purposeLabel: Record<ConfigPurpose, string> = {
 };
 
 const defaultConfigProvider = defaultProviderOption();
+type ConnectionMode = "direct" | "relay";
+
+function connectionModeLabel(isRelay: boolean) {
+  return isRelay ? "自定义中转站" : "官方直连";
+}
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
@@ -57,6 +62,7 @@ export default function AdminPage() {
   const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
   const [provider, setProvider] = useState(defaultConfigProvider.value);
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>("direct");
   const [baseUrl, setBaseUrl] = useState(defaultConfigProvider.baseUrl ?? "");
   const [modelSeries, setModelSeries] = useState(defaultConfigProvider.modelSeries);
   const [apiKey, setApiKey] = useState("");
@@ -100,6 +106,7 @@ export default function AdminPage() {
     setDescription("");
     setPurpose("script");
     setProvider(option.value);
+    setConnectionMode("direct");
     setBaseUrl(option.baseUrl ?? "");
     setModelSeries(option.modelSeries);
     setApiKey("");
@@ -176,6 +183,9 @@ export default function AdminPage() {
   const onPurposeChange = (nextPurpose: string | null) => {
     const value = (nextPurpose ?? "script") as ConfigPurpose;
     setPurpose(value);
+    if (connectionMode === "direct") {
+      setBaseUrl(providerOption(value, provider)?.baseUrl ?? "");
+    }
   };
 
   const onProviderChange = (nextProvider: string | null) => {
@@ -183,8 +193,17 @@ export default function AdminPage() {
     setProvider(value);
     const option = providerOption(purpose, value);
     setName(option?.label ?? "");
-    setBaseUrl(option?.baseUrl ?? "");
+    setConnectionMode(value === "custom" ? "relay" : "direct");
+    setBaseUrl(value === "custom" ? "" : option?.baseUrl ?? "");
     setModelSeries(option?.modelSeries ?? "");
+  };
+
+  const isRelay = connectionMode === "relay" || provider === "custom";
+
+  const onConnectionModeChange = (value: string | null) => {
+    const next = provider === "custom" ? "relay" : (value as ConnectionMode | null) ?? "direct";
+    setConnectionMode(next);
+    setBaseUrl(next === "direct" ? providerOption(purpose, provider)?.baseUrl ?? "" : "");
   };
 
   const startEdit = (config: UserConfig) => {
@@ -193,7 +212,8 @@ export default function AdminPage() {
     setDescription(config.description);
     setPurpose(config.purpose);
     setProvider(config.provider);
-    setBaseUrl(config.baseUrl ?? "");
+    setConnectionMode(config.baseUrl || config.provider === "custom" ? "relay" : "direct");
+    setBaseUrl(config.baseUrl || providerOption(config.purpose, config.provider)?.baseUrl || "");
     setModelSeries(config.modelSeries);
     setApiKey("");
     setIsActive(config.isActive);
@@ -203,6 +223,11 @@ export default function AdminPage() {
   const saveConfig = () => {
     if (!modelSeries.trim()) {
       setMessage("请输入模型系列。");
+      return;
+    }
+
+    if (isRelay && !baseUrl.trim()) {
+      setMessage("请输入自定义中转 Base URL。");
       return;
     }
 
@@ -346,7 +371,7 @@ export default function AdminPage() {
                   <Label htmlFor="officialProvider">供应商</Label>
                   <Select value={provider} onValueChange={onProviderChange}>
                     <SelectTrigger id="officialProvider" className="w-full">
-                      <SelectValue />
+                      <SelectValue>{providerLabelMap[provider] ?? provider}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {options.map((option) => (
@@ -354,6 +379,18 @@ export default function AdminPage() {
                           {option.label}
                         </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="officialConnection">接入方式</Label>
+                  <Select value={isRelay ? "relay" : "direct"} onValueChange={onConnectionModeChange}>
+                    <SelectTrigger id="officialConnection" className="w-full">
+                      <SelectValue>{connectionModeLabel(isRelay)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {provider !== "custom" ? <SelectItem value="direct">官方直连</SelectItem> : null}
+                      <SelectItem value="relay">自定义中转站</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -367,12 +404,13 @@ export default function AdminPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="officialBaseUrl">中转站 Base URL</Label>
+                  <Label htmlFor="officialBaseUrl">Base URL</Label>
                   <Input
                     id="officialBaseUrl"
                     value={baseUrl}
                     onChange={(event) => setBaseUrl(event.target.value)}
                     placeholder="https://api.example.com/v1"
+                    disabled={!isRelay}
                   />
                 </div>
                 <div className="space-y-2">

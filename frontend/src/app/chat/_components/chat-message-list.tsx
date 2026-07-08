@@ -6,6 +6,7 @@ import { StreamdownTextPrimitive, type ControlsConfig } from "@assistant-ui/reac
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, XCircle } from "lucide-react";
+import Image from "next/image";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -111,8 +112,7 @@ function MessageAttachments({ attachments }: { attachments: ChatAttachment[] }) 
         return (
           <div key={attachment.id} className="flex max-w-64 items-center gap-2 rounded-lg border border-border/70 bg-background/80 p-1.5 text-xs">
             {image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt="" className="size-10 shrink-0 rounded-md object-cover" />
+              <Image src={image} alt="" width={40} height={40} unoptimized className="size-10 shrink-0 rounded-md object-cover" />
             ) : (
               <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                 {attachment.type === "image" ? <ImageIcon className="size-4" /> : <FileText className="size-4" />}

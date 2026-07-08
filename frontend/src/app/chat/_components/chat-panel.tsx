@@ -2,10 +2,10 @@
 
 import type { UserConfig } from "@/types/auth";
 import { AssistantComposer } from "./assistant-composer";
-import { configName } from "./chat-format";
 import { ChatMessageList } from "./chat-message-list";
 import { ChatSidebar } from "./chat-sidebar";
 import { useChatController } from "./use-chat-controller";
+import { configName } from "@/lib/config-format";
 
 interface ChatPanelProps {
   configs: UserConfig[];

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -321,6 +322,40 @@ class ModelRouter:
         try:
             response = await client.images.generate(
                 model=model.strip(),
+                prompt=prompt.strip(),
+                size=size,
+                quality=quality,
+                output_format="png",
+            )
+        except APIStatusError as exc:
+            raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
+
+        image = response.data[0] if response.data else None
+        b64_json = image.b64_json if image else ""
+        if not b64_json:
+            raise ValueError("empty image response")
+        return ImageResult(data=base64.b64decode(b64_json), format="png")
+
+    async def edit_image(
+        self,
+        api_key: str,
+        model: str,
+        prompt: str,
+        images: list[tuple[str, bytes, str]],
+        size: str = "auto",
+        quality: str = "medium",
+        base_url: str = "",
+    ) -> ImageResult:
+        client = AsyncOpenAI(api_key=api_key.strip(), base_url=base_url_for("openai", base_url), timeout=90)
+        files = []
+        for name, data, mime_type in images:
+            file = BytesIO(data)
+            file.name = name
+            files.append((name, file, mime_type))
+        try:
+            response = await client.images.edit(
+                model=model.strip(),
+                image=files,
                 prompt=prompt.strip(),
                 size=size,
                 quality=quality,

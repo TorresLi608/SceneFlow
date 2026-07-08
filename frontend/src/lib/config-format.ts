@@ -1,5 +1,5 @@
-import type { UserConfig } from "@/types/auth";
 import { providerLabelMap } from "@/lib/model-providers";
+import type { UserConfig } from "@/types/auth";
 
 export function configName(config: UserConfig) {
   const source = config.source === "official" ? "官方" : "自定义";

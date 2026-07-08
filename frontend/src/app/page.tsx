@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Clapperboard,
   FolderPlus,
+  ImageIcon,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -12,6 +13,7 @@ import {
   Shield,
   SlidersHorizontal,
 } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -19,7 +21,8 @@ import { createProjectAction, listProjectsAction } from "@/actions/projects-acti
 import { queryKeys } from "@/actions/query-keys";
 import { getMeAction } from "@/actions/user-actions";
 import { listUserConfigsAction } from "@/actions/settings-actions";
-import { ChatPanel } from "@/components/chat/chat-panel";
+import { ChatPanel } from "@/app/chat/_components/chat-panel";
+import { ImageGenerationPanel } from "@/app/images/_components/image-generation-panel";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
@@ -40,15 +43,26 @@ const statusLabels: Record<ProjectStatus, string> = {
   done: "已完成",
 };
 
+export type HomeMenu = "chat" | "images" | "ai-script";
+
+const menuRoutes: Record<HomeMenu, string> = {
+  chat: "/chat",
+  images: "/images",
+  "ai-script": "/ai-script",
+};
+
 function projectCover(project: Project) {
   return project.scenes.find((scene) => scene.image.url)?.image.url ?? null;
 }
 
-export default function HomePage() {
+interface HomePageProps {
+  activeMenu?: HomeMenu;
+}
+
+export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
   const router = useRouter();
   const { t, formatDateTime } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeMenu, setActiveMenu] = useState<"chat" | "ai-script">("chat");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProjectStatus>("all");
   const [message, setMessage] = useState<string | null>(null);
@@ -158,7 +172,7 @@ export default function HomePage() {
         <nav className="space-y-1 px-3">
           <button
             type="button"
-            onClick={() => setActiveMenu("chat")}
+            onClick={() => router.push(menuRoutes.chat)}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
               activeMenu === "chat" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
@@ -169,7 +183,18 @@ export default function HomePage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveMenu("ai-script")}
+            onClick={() => router.push(menuRoutes.images)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
+              activeMenu === "images" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+            )}
+          >
+            <ImageIcon className="size-4" />
+            图片生成
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(menuRoutes["ai-script"])}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
               activeMenu === "ai-script" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
@@ -187,7 +212,7 @@ export default function HomePage() {
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
             <div>
               <p className="text-base font-semibold">
-                {activeMenu === "chat" ? t("home.chat") : t("home.aiScript")}
+                {activeMenu === "chat" ? t("home.chat") : activeMenu === "images" ? "图片生成" : t("home.aiScript")}
               </p>
               <p className="text-xs text-muted-foreground">
                 {t("common.currentUser", {
@@ -228,6 +253,11 @@ export default function HomePage() {
             configs={userConfigsQuery.data?.configs ?? []}
             officialConfigs={userConfigsQuery.data?.officialConfigs ?? []}
             formatDateTime={formatDateTime}
+          />
+        ) : activeMenu === "images" ? (
+          <ImageGenerationPanel
+            configs={userConfigsQuery.data?.configs ?? []}
+            officialConfigs={userConfigsQuery.data?.officialConfigs ?? []}
           />
         ) : (
           <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
@@ -309,10 +339,9 @@ export default function HomePage() {
                       </span>
                     </span>
 
-                    <span className="flex size-[72px] items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted">
+                    <span className="relative flex size-[72px] items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted">
                       {cover ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={cover} alt="" className="size-full object-cover" />
+                        <Image src={cover} alt="" fill unoptimized sizes="72px" className="object-cover" />
                       ) : (
                         <Clapperboard className="size-7 text-muted-foreground transition group-hover:text-primary" />
                       )}
@@ -330,4 +359,8 @@ export default function HomePage() {
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
+}
+
+export default function RootPage() {
+  return <HomePage activeMenu="chat" />;
 }

@@ -49,7 +49,11 @@ interface SettingsDialogProps {
   onOpenChange: (next: boolean) => void;
 }
 
-const defaultConfigProvider = defaultProviderOption();
+type ConnectionMode = "direct" | "relay";
+
+function connectionModeLabel(isRelay: boolean, direct: string, relay: string) {
+  return isRelay ? relay : direct;
+}
 
 function displayConfigName(
   config: UserConfig | undefined,
@@ -75,11 +79,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const queryClient = useQueryClient();
 
   const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
-  const [name, setName] = useState(defaultConfigProvider.label);
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [purpose, setPurpose] = useState<ConfigPurpose>("script");
-  const [provider, setProvider] = useState(defaultConfigProvider.value);
-  const [baseUrl, setBaseUrl] = useState(defaultConfigProvider.baseUrl ?? "");
+  const [provider, setProvider] = useState("");
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>("direct");
+  const [baseUrl, setBaseUrl] = useState("");
   const [modelSeries, setModelSeries] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
@@ -99,11 +104,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const resetForm = () => {
     const option = defaultProviderOption();
     setEditingConfigId(null);
-    setName(option.label);
+    setName("");
     setDescription("");
     setPurpose("script");
-    setProvider(option.value);
-    setBaseUrl(option.baseUrl ?? "");
+    setProvider("");
+    setConnectionMode("direct");
+    setBaseUrl("");
     setModelSeries(option.modelSeries);
     setApiKey("");
     setIsEnabled(true);
@@ -226,25 +232,57 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setMessage(null);
     const value = (nextPurpose ?? "script") as ConfigPurpose;
     setPurpose(value);
+    const hit = providerOption(value, provider);
+    if (!isRelay) {
+      setBaseUrl(hit?.baseUrl ?? "");
+    }
   };
 
   const onProviderChange = (nextProvider: string | null) => {
     setValidationPassed(false);
     setMessage(null);
-    const value = nextProvider ?? options[0]?.value ?? "qwen";
+    const value = nextProvider ?? "";
     setProvider(value);
     const hit = providerOption(purpose, value);
     if (hit) {
       setName(hit.label);
-      setBaseUrl(hit.baseUrl ?? "");
       setModelSeries(hit.modelSeries);
+    }
+    setConnectionMode(value === "custom" ? "relay" : "direct");
+    setBaseUrl(value === "custom" ? "" : hit?.baseUrl ?? "");
+  };
+
+  const onConnectionModeChange = (value: string | null) => {
+    setValidationPassed(false);
+    setMessage(null);
+    const next = provider === "custom" ? "relay" : (value as ConnectionMode | null) ?? "direct";
+    setConnectionMode(next);
+    if (next === "direct") {
+      setBaseUrl(providerOption(purpose, provider)?.baseUrl ?? "");
+    } else {
+      setBaseUrl("");
     }
   };
 
+  const isRelay = connectionMode === "relay" || provider === "custom";
+  const submitBaseUrl = baseUrl.trim();
+
   const validateConfig = () => {
+    if (!provider) {
+      setValidationPassed(false);
+      setMessage(t("settings.enterProvider"));
+      return;
+    }
+
     if (!modelSeries.trim()) {
       setValidationPassed(false);
       setMessage(t("settings.enterModelSeries"));
+      return;
+    }
+
+    if (isRelay && !baseUrl.trim()) {
+      setValidationPassed(false);
+      setMessage(t("settings.enterBaseUrl"));
       return;
     }
 
@@ -260,15 +298,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description: description.trim(),
       purpose,
       provider,
-      baseUrl: baseUrl.trim(),
+      baseUrl: submitBaseUrl,
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim(),
     });
   };
 
   const saveConfig = () => {
+    if (!provider) {
+      setMessage(t("settings.enterProvider"));
+      return;
+    }
+
     if (!modelSeries.trim()) {
       setMessage(t("settings.enterModelSeries"));
+      return;
+    }
+
+    if (isRelay && !baseUrl.trim()) {
+      setMessage(t("settings.enterBaseUrl"));
       return;
     }
 
@@ -282,7 +330,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description: description.trim(),
       purpose,
       provider,
-      baseUrl: baseUrl.trim(),
+      baseUrl: submitBaseUrl,
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim() || undefined,
       isActive: editingConfigId ? undefined : isEnabled,
@@ -301,7 +349,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description: description.trim(),
       purpose,
       provider,
-      baseUrl: baseUrl.trim(),
+      baseUrl: submitBaseUrl,
       modelSeries: modelSeries.trim(),
       apiKey: apiKey.trim(),
       isActive: isEnabled,
@@ -317,7 +365,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setDescription(config.description ?? "");
     setPurpose(config.purpose);
     setProvider(config.provider);
-    setBaseUrl(config.baseUrl ?? "");
+    setConnectionMode(config.baseUrl || config.provider === "custom" ? "relay" : "direct");
+    setBaseUrl(config.baseUrl || providerOption(config.purpose, config.provider)?.baseUrl || "");
     setModelSeries(config.modelSeries);
     setApiKey("");
     setIsEnabled(config.isEnabled);
@@ -473,6 +522,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               ) : null}
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="provider">{t("settings.provider")}</Label>
+              <Select value={provider} onValueChange={onProviderChange}>
+                <SelectTrigger id="provider">
+                  <SelectValue placeholder={t("settings.providerPlaceholder")}>
+                    {provider ? providerLabelMap[provider] ?? provider : undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {provider ? (
+              <>
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="configName">{t("settings.name")}</Label>
@@ -507,17 +576,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="provider">{t("settings.provider")}</Label>
-                <Select value={provider} onValueChange={onProviderChange}>
-                  <SelectTrigger id="provider">
-                    <SelectValue placeholder={t("settings.provider")} />
+                <Label htmlFor="connectionMode">{t("settings.connectionMode")}</Label>
+                  <Select value={isRelay ? "relay" : "direct"} onValueChange={onConnectionModeChange}>
+                  <SelectTrigger id="connectionMode">
+                    <SelectValue>{connectionModeLabel(isRelay, t("settings.officialDirect"), t("settings.customRelay"))}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {options.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                    {provider !== "custom" ? <SelectItem value="direct">{t("settings.officialDirect")}</SelectItem> : null}
+                    <SelectItem value="relay">{t("settings.customRelay")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -550,6 +616,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 }}
                 placeholder={t("settings.baseUrlPlaceholder")}
                 autoComplete="off"
+                disabled={!isRelay}
               />
             </div>
 
@@ -606,6 +673,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   : t("settings.saveAndActivate")}
               </Button>
             </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("settings.chooseProviderFirst")}</p>
+            )}
           </div>
 
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
