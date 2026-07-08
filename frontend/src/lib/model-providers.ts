@@ -9,6 +9,8 @@ export interface ProviderOption {
   docsUrl?: string;
 }
 
+export type ConnectionMode = "direct" | "relay";
+
 const chatProviderOptions: ProviderOption[] = [
   {
     value: "qwen",
@@ -86,14 +88,11 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       label: "豆包",
       modelSeries: "seedance-2.0",
       modelPlaceholder: "seedance-2.0",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
       docsUrl: "https://www.volcengine.com/docs/82379",
     },
   ],
 };
-
-export const allProviderOptions = Array.from(
-  new Map(Object.values(providerOptions).flat().map((option) => [option.value, option])).values()
-);
 
 export const providerLabelMap = Object.fromEntries(
   Object.values(providerOptions)
@@ -106,11 +105,26 @@ export function defaultProviderOption(purpose: ConfigPurpose = "script") {
 }
 
 export function providerOption(purpose: ConfigPurpose, provider: string) {
-  return providerOptions[purpose].find((option) => option.value === provider) ?? providerOptionByValue(provider);
+  return providerOptions[purpose].find((option) => option.value === provider);
 }
 
-export function providerOptionByValue(provider: string) {
-  return allProviderOptions.find((option) => option.value === provider);
+export function isRelayConnection(provider: string, mode: ConnectionMode) {
+  return provider === "custom" || mode === "relay";
+}
+
+export function providerBaseUrl(purpose: ConfigPurpose, provider: string) {
+  return providerOption(purpose, provider)?.baseUrl ?? "";
+}
+
+export function connectionModeFromConfig(config: UserConfig): ConnectionMode {
+  if (config.provider === "custom") {
+    return "relay";
+  }
+  return config.baseUrl && config.baseUrl !== providerBaseUrl(config.purpose, config.provider) ? "relay" : "direct";
+}
+
+export function baseUrlForConnection(purpose: ConfigPurpose, provider: string, mode: ConnectionMode) {
+  return isRelayConnection(provider, mode) ? "" : providerBaseUrl(purpose, provider);
 }
 
 export function configsByPurpose(

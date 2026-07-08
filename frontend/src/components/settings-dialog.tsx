@@ -35,11 +35,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
 import {
-  allProviderOptions,
+  baseUrlForConnection,
+  connectionModeFromConfig,
   configsByPurpose,
+  type ConnectionMode,
   defaultProviderOption,
+  isRelayConnection,
   providerLabelMap,
   providerOption,
+  providerOptions,
 } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import type { ConfigPurpose, CreateUserConfigInput, UpdateUserConfigInput, UserConfig } from "@/types/auth";
@@ -48,8 +52,6 @@ interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }
-
-type ConnectionMode = "direct" | "relay";
 
 function connectionModeLabel(isRelay: boolean, direct: string, relay: string) {
   return isRelay ? relay : direct;
@@ -102,7 +104,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   const resetForm = () => {
-    const option = defaultProviderOption();
     setEditingConfigId(null);
     setName("");
     setDescription("");
@@ -110,7 +111,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setProvider("");
     setConnectionMode("direct");
     setBaseUrl("");
-    setModelSeries(option.modelSeries);
+    setModelSeries("");
     setApiKey("");
     setIsEnabled(true);
     setValidationPassed(false);
@@ -178,7 +179,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     },
   });
 
-  const options = allProviderOptions;
+  const options = providerOptions[purpose];
   const isMutating =
     saveConfigMutation.isPending ||
     updateConfigMutation.isPending ||
@@ -231,10 +232,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setValidationPassed(false);
     setMessage(null);
     const value = (nextPurpose ?? "script") as ConfigPurpose;
+    const option = provider ? providerOption(value, provider) ?? defaultProviderOption(value) : null;
+    const nextMode = option?.value === "custom" ? "relay" : connectionMode;
     setPurpose(value);
-    const hit = providerOption(value, provider);
-    if (!isRelay) {
-      setBaseUrl(hit?.baseUrl ?? "");
+    if (option) {
+      setProvider(option.value);
+      setName(option.label);
+      setConnectionMode(nextMode);
+      setBaseUrl(baseUrlForConnection(value, option.value, nextMode));
+      setModelSeries(option.modelSeries);
     }
   };
 
@@ -243,13 +249,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setMessage(null);
     const value = nextProvider ?? "";
     setProvider(value);
-    const hit = providerOption(purpose, value);
-    if (hit) {
-      setName(hit.label);
-      setModelSeries(hit.modelSeries);
-    }
-    setConnectionMode(value === "custom" ? "relay" : "direct");
-    setBaseUrl(value === "custom" ? "" : hit?.baseUrl ?? "");
+    const hit = value ? providerOption(purpose, value) ?? defaultProviderOption(purpose) : null;
+    setName(hit?.label ?? "");
+    setModelSeries(hit?.modelSeries ?? "");
+    const nextMode = value === "custom" ? "relay" : "direct";
+    setConnectionMode(nextMode);
+    setBaseUrl(baseUrlForConnection(purpose, value, nextMode));
   };
 
   const onConnectionModeChange = (value: string | null) => {
@@ -257,14 +262,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setMessage(null);
     const next = provider === "custom" ? "relay" : (value as ConnectionMode | null) ?? "direct";
     setConnectionMode(next);
-    if (next === "direct") {
-      setBaseUrl(providerOption(purpose, provider)?.baseUrl ?? "");
-    } else {
-      setBaseUrl("");
-    }
+    setBaseUrl(baseUrlForConnection(purpose, provider, next));
   };
 
-  const isRelay = connectionMode === "relay" || provider === "custom";
+  const isRelay = isRelayConnection(provider, connectionMode);
   const submitBaseUrl = baseUrl.trim();
 
   const validateConfig = () => {
@@ -365,8 +366,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     setDescription(config.description ?? "");
     setPurpose(config.purpose);
     setProvider(config.provider);
-    setConnectionMode(config.baseUrl || config.provider === "custom" ? "relay" : "direct");
-    setBaseUrl(config.baseUrl || providerOption(config.purpose, config.provider)?.baseUrl || "");
+    const nextMode = connectionModeFromConfig(config);
+    setConnectionMode(nextMode);
+    setBaseUrl(config.baseUrl || baseUrlForConnection(config.purpose, config.provider, nextMode));
     setModelSeries(config.modelSeries);
     setApiKey("");
     setIsEnabled(config.isEnabled);

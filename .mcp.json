@@ -2,7 +2,13 @@
   "mcpServers": {
     "assistant-ui": {
       "command": "npx",
-      "args": ["-y", "@assistant-ui/mcp-docs-server"]
+      "args": [
+        "-y",
+        "@assistant-ui/mcp-docs-server"
+      ]
+    },
+    "registries": {
+      "@acme": "https://acme.com/r/{name}.json"
     }
   }
 }

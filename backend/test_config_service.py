@@ -65,6 +65,24 @@ def test_config_update_fields_disables_active_config() -> None:
     assert "is_verified" not in updates
 
 
+def test_image_openai_relay_config_is_valid() -> None:
+    normalized = normalize_config_payload(
+        {
+            "purpose": "image",
+            "provider": "openai",
+            "modelSeries": "gpt-image-1",
+            "baseUrl": "https://relay.example.com/v1",
+            "apiKey": "new-secret-key",
+        }
+    )
+
+    assert normalized["purpose"] == "image"
+    assert normalized["provider"] == "openai"
+    assert normalized["model"] == "gpt-image-1"
+    assert normalized["base_url"] == "https://relay.example.com/v1"
+
+
 if __name__ == "__main__":
     test_config_create_fields_rejects_disabled_default()
     test_config_update_fields_disables_active_config()
+    test_image_openai_relay_config_is_valid()

@@ -4,5 +4,8 @@
   "scripts": {
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && .venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8080"
+  },
+  "devDependencies": {
+    "shadcn": "^4.13.0"
   }
 }
