@@ -3,7 +3,8 @@
 import { useChat } from "@ai-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createChatSessionAction,
@@ -108,13 +109,27 @@ function chatRequestBody(message: SceneFlowUIMessage | undefined, body: Record<s
 }
 
 export function useChatController(configs: UserConfig[], officialConfigs: UserConfig[]) {
+  const pathname = usePathname();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const token = useUserStore((state) => state.token);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("chat")
+  );
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [input, setInput] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [agentSteps, setAgentSteps] = useState<ChatAgentStep[]>([]);
+  const setRouteSessionId = useCallback((sessionId: string | null) => {
+    const params = new URLSearchParams(window.location.search);
+    if (sessionId) {
+      params.set("chat", sessionId);
+    } else {
+      params.delete("chat");
+    }
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, { scroll: false });
+  }, [pathname, router]);
 
   const userChatConfigs = useMemo(
     () => configs.filter(isChatConfig),
@@ -189,6 +204,13 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   } = chat;
   const isStreaming = chatStatus === "submitted" || chatStatus === "streaming";
   const chatMessageKey = useMemo(() => messageKey(aiMessages), [aiMessages]);
+
+  useEffect(() => {
+    if (!selectedSessionId && !sessionsQuery.data) {
+      return;
+    }
+    setRouteSessionId(effectiveSessionId);
+  }, [effectiveSessionId, selectedSessionId, sessionsQuery.data, setRouteSessionId]);
 
   useEffect(() => {
     if (chatStatus === "ready" && serverMessageKey !== chatMessageKey && serverMessages.length >= aiMessages.length) {
