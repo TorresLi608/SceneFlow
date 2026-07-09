@@ -9,11 +9,12 @@ import { generateImageAction } from "@/actions/image-generation-actions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
 import type { GenerateImageInput, ImageReferenceInput } from "@/types/image-generation";
-import { configName } from "@/lib/config-format";
 
 const resolutions: GenerateImageInput["resolution"][] = ["1K", "2K", "4K"];
 const ratios: GenerateImageInput["ratio"][] = ["auto", "1:1", "2:3", "3:2", "3:4", "4:3", "16:9", "9:16", "21:9", "9:21"];
@@ -53,6 +54,7 @@ interface ImageGenerationPanelProps {
 }
 
 export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerationPanelProps) {
+  const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<GenerateImageInput["resolution"]>("1K");
@@ -80,7 +82,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
       setErrorMessage(null);
     },
     onError: (error) => {
-      setErrorMessage(resolveRequestError(error, "图片生成失败"));
+      setErrorMessage(resolveRequestError(error, t("images.generateFailed")));
     },
   });
 
@@ -92,7 +94,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
     const next = [...references];
     for (const file of Array.from(files).slice(0, 4 - next.length)) {
       if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
-        setErrorMessage("参考图只支持 10MB 内的图片文件");
+        setErrorMessage(t("images.referenceLimit"));
         continue;
       }
       next.push({ name: file.name, data: await readFileAsDataUrl(file) });
@@ -119,29 +121,29 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
       <aside className="flex min-h-0 flex-col border-b border-border/60 bg-muted/20 p-4 md:border-r md:border-b-0">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4" />
-          <h2 className="text-sm font-semibold">图片生成</h2>
+          <h2 className="text-sm font-semibold">{t("home.images")}</h2>
         </div>
 
         <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">模型</label>
+            <label className="text-sm font-medium">{t("images.model")}</label>
             <Select value={effectiveConfigId} onValueChange={(value) => setSelectedConfigId(value ?? "")}>
               <SelectTrigger>
-                <SelectValue placeholder="选择图片模型">{selectedConfig ? configName(selectedConfig) : undefined}</SelectValue>
+                <SelectValue placeholder={t("images.selectModel")}>{selectedConfig ? configName(selectedConfig, t) : undefined}</SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 {imageConfigs.map((config) => (
                   <SelectItem key={configSelectValue(config)} value={configSelectValue(config)}>
-                    {configName(config)}
+                    {configName(config, t)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {imageConfigs.length === 0 ? <p className="text-xs text-amber-600">请先在设置里启用图片生成模型，或 OpenAI 通用模型。</p> : null}
+            {imageConfigs.length === 0 ? <p className="text-xs text-amber-600">{t("images.noModel")}</p> : null}
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">目标清晰度</label>
+            <label className="text-sm font-medium">{t("images.resolution")}</label>
             <Select value={resolution} onValueChange={(value) => setResolution(value as GenerateImageInput["resolution"])}>
               <SelectTrigger>
                 <SelectValue>{resolution}</SelectValue>
@@ -157,44 +159,44 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">目标比例</label>
+            <label className="text-sm font-medium">{t("images.ratio")}</label>
             <Select value={ratio} onValueChange={(value) => setRatio(value as GenerateImageInput["ratio"])}>
               <SelectTrigger>
-                <SelectValue>{ratio === "auto" ? "自动" : ratio}</SelectValue>
+                <SelectValue>{ratio === "auto" ? t("images.auto") : ratio}</SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false} className="max-h-64">
                 {ratios.map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item === "auto" ? "自动" : item}
+                    {item === "auto" ? t("images.auto") : item}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs leading-5 text-muted-foreground">自动表示由模型决定输出尺寸。</p>
+            <p className="text-xs leading-5 text-muted-foreground">{t("images.autoHint")}</p>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">提示词</label>
+            <label className="text-sm font-medium">{t("images.prompt")}</label>
             <Textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="描述你要生成的画面，例如：赛博朋克城市夜景，霓虹灯，电影感，超清细节"
+              placeholder={t("images.promptPlaceholder")}
               className="min-h-28 resize-none"
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm font-medium">参考图（可选，最多 4 张）</label>
-              <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{references.length ? "图生图" : "文生图"}</span>
+              <label className="text-sm font-medium">{t("images.references")}</label>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{references.length ? t("images.imageToImage") : t("images.textToImage")}</span>
             </div>
             <div className="flex gap-2">
               <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={references.length >= 4}>
                 <Upload className="size-4" />
-                上传参考图
+                {t("images.uploadReference")}
               </Button>
               <Button type="button" variant="ghost" onClick={() => setReferences([])} disabled={references.length === 0}>
-                清空参考图
+                {t("images.clearReferences")}
               </Button>
             </div>
             <input
@@ -226,13 +228,13 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
                           type="button"
                           onClick={() => setReferences((current) => current.filter((_, itemIndex) => itemIndex !== index))}
                           className="absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded-md bg-background/85 text-foreground"
-                          aria-label="移除参考图"
+                          aria-label={t("images.removeReference")}
                         >
                           <X className="size-3.5" />
                         </button>
                       </>
                     ) : (
-                      `空位 ${index + 1}`
+                      t("images.emptySlot", { index: index + 1 })
                     )}
                   </div>
                 );
@@ -244,28 +246,28 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
         <div className="mt-4 border-t border-border/70 pt-4">
           <Button className="w-full" onClick={generate} disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}>
             <Sparkles className="size-4" />
-            {generateMutation.isPending ? "生成中..." : "立即生成"}
+            {generateMutation.isPending ? t("images.generating") : t("images.generateNow")}
           </Button>
         </div>
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-col p-4 md:p-6">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">图片预览</h2>
+          <h2 className="text-sm font-semibold">{t("images.preview")}</h2>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={generate} disabled={!imageUrl || generateMutation.isPending}>
               <RotateCcw className="size-4" />
-              重新生成
+              {t("images.regenerate")}
             </Button>
             {imageUrl ? (
               <a href={imageUrl} download className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}>
                 <Download className="size-4" />
-                下载
+                {t("images.download")}
               </a>
             ) : (
               <Button variant="secondary" size="sm" disabled>
                 <Download className="size-4" />
-                下载
+                {t("images.download")}
               </Button>
             )}
           </div>
@@ -275,16 +277,16 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
           {generateMutation.isPending ? (
             <div className="text-center text-sm text-muted-foreground">
               <Sparkles className="mx-auto mb-3 size-5 animate-pulse" />
-              正在生成图片
+              {t("images.generatingImage")}
             </div>
           ) : imageUrl ? (
             <div className="relative h-full w-full">
-              <Image src={imageUrl} alt="生成结果" fill unoptimized sizes="(min-width: 768px) calc(100vw - 720px), 100vw" className="object-contain" />
+              <Image src={imageUrl} alt={t("images.resultAlt")} fill unoptimized sizes="(min-width: 768px) calc(100vw - 720px), 100vw" className="object-contain" />
             </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground">
               <ImageIcon className="mx-auto mb-3 size-5" />
-              这里会显示生成结果
+              {t("images.emptyPreview")}
             </div>
           )}
         </div>

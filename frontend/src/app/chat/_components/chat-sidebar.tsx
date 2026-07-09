@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { configName } from "@/lib/config-format";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
 import type { ChatSession } from "@/types/chat";
@@ -37,12 +38,13 @@ export function ChatSidebar({
   onDeleteSession,
   onSelectSession,
 }: ChatSidebarProps) {
+  const { t } = useI18n();
   const selectedConfig = chatConfigs.find((config) => `${config.source}:${config.id}` === effectiveConfigId);
 
   return (
     <aside className="min-h-0 overflow-y-auto border-b border-border/60 bg-muted/20 p-4 md:border-r md:border-b-0">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">智能问答</h2>
+        <h2 className="text-sm font-semibold">{t("home.chat")}</h2>
         <Button size="icon" variant="outline" onClick={onCreateSession} disabled={isBusy || chatConfigs.length === 0}>
           <MessageSquarePlus className="size-4" />
         </Button>
@@ -51,19 +53,19 @@ export function ChatSidebar({
       <div className="mt-4 space-y-3">
         <Select value={effectiveConfigId} onValueChange={(value) => onConfigChange(value ?? "")}>
           <SelectTrigger>
-            <SelectValue placeholder="选择模型">{selectedConfig ? configName(selectedConfig) : undefined}</SelectValue>
+            <SelectValue placeholder={t("chat.selectModel")}>{selectedConfig ? configName(selectedConfig, t) : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false}>
             {chatConfigs.map((config) => (
               <SelectItem key={`${config.source}:${config.id}`} value={`${config.source}:${config.id}`}>
-                {configName(config)}
+                {configName(config, t)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
         {chatConfigs.length === 0 ? (
-          <p className="text-sm text-amber-600">请先使用官方配置，或在设置里保存并校验一个文本模型。</p>
+          <p className="text-sm text-amber-600">{t("chat.noTextModel")}</p>
         ) : null}
 
         <div className="space-y-2">
@@ -87,7 +89,7 @@ export function ChatSidebar({
                   onDeleteSession(session.id);
                 }}
                 className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
-                aria-label="删除对话"
+                aria-label={t("chat.deleteSession")}
               >
                 <Trash2 className="size-3.5" />
               </button>

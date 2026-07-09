@@ -6,6 +6,40 @@ Summarize the current SceneFlow project so future AI sessions can resume develop
 ## Current Phase
 Complete
 
+## Session 2026-07-09: Recent Updates + Development Rules Docs
+
+### Goal
+- Record the recent dependency cleanup and i18n migration.
+- Make the open-source-first rule explicit for future human/AI development.
+- Document that `@base-ui/react` + shadcn-style components are the preferred frontend component foundation.
+
+### Phases
+
+#### Phase 1: Inspect current planning docs
+- [x] Read `planning-with-files` instructions.
+- [x] Read `task_plan.md`, `findings.md`, `progress.md`, `AI_HANDOFF.md`, and `RUNNING.md`.
+- **Status:** complete
+
+#### Phase 2: Capture recent decisions
+- [x] Document open-source-first, avoid-hand-rolled-generic-code guidance.
+- [x] Document `react-i18next`/`i18next` replacing custom i18n interpolation.
+- [x] Document `google-genai` vs `langchain-google-genai` decision.
+- [x] Document `@base-ui/react` + shadcn-style UI direction.
+- **Status:** complete
+
+#### Phase 3: Verify docs
+- [x] Run lightweight doc/status checks.
+- [x] Update `progress.md` with completed actions.
+- **Status:** complete
+
+### Decisions Made
+| Decision | Rationale |
+|----------|-----------|
+| Use open-source libraries before hand-written generic infrastructure | Keeps code maintainable and easier for humans/AI to extend. |
+| Keep `useI18n()` as a local facade over `react-i18next` | Low churn at call sites while replacing the hand-rolled interpolation engine. |
+| Keep `google-genai` for Gemini native image generation | Direct SDK is simpler for current image workflow; LangChain wrapper only matters for native Gemini chat. |
+| Keep `@base-ui/react` + shadcn-style components | Matches current frontend stack and avoids custom primitive behavior. |
+
 ## Phases
 
 ### Phase 1: Create persistent notes

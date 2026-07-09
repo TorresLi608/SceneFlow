@@ -35,14 +35,6 @@ import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { Project, ProjectStatus } from "@/types/project";
 
-const statusLabels: Record<ProjectStatus, string> = {
-  idle: "草稿",
-  parsing: "分镜中",
-  generating: "生成中",
-  video_generating: "视频中",
-  done: "已完成",
-};
-
 export type HomeMenu = "chat" | "images" | "ai-script";
 export type HomeView = HomeMenu | "admin-configs" | "admin-users";
 
@@ -65,6 +57,13 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
   const initialView = requestedView ?? activeMenu;
   const router = useRouter();
   const { t, formatDateTime } = useI18n();
+  const statusLabels: Record<ProjectStatus, string> = {
+    idle: t("home.projectStatus.idle"),
+    parsing: t("home.projectStatus.parsing"),
+    generating: t("home.projectStatus.generating"),
+    video_generating: t("home.projectStatus.video_generating"),
+    done: t("home.projectStatus.done"),
+  };
   const [activeView, setActiveView] = useState<HomeView>(initialView);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProjectStatus>("all");
@@ -103,13 +102,13 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
   });
 
   const createProjectMutation = useMutation({
-    mutationFn: () => createProjectAction({ title: `新项目 ${projects.length + 1}` }),
+    mutationFn: () => createProjectAction({ title: `${t("home.newProject")} ${projects.length + 1}` }),
     onSuccess: (response) => {
       createProject(response.project);
       router.push(`/projects/${response.project.id}`);
     },
     onError: (error) => {
-      setMessage(resolveRequestError(error, "新建项目失败，请稍后重试"));
+      setMessage(resolveRequestError(error, t("home.createProjectFailed")));
     },
   });
 
@@ -164,12 +163,12 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
     activeView === "chat"
       ? t("home.chat")
       : activeView === "images"
-        ? "图片生成"
+        ? t("home.images")
         : activeView === "ai-script"
           ? t("home.aiScript")
           : activeView === "admin-configs"
-            ? "模型管理"
-            : "用户管理";
+            ? t("home.modelManagement")
+            : t("home.userManagement");
 
   if (!hydrated) {
     return <main className="flex min-h-screen items-center justify-center">{t("common.initializing")}</main>;
@@ -188,7 +187,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
         </div>
 
         <nav className="space-y-1 px-3">
-          <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">业务中心</p>
+          <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.businessCenter")}</p>
           <button
             type="button"
             onClick={() => {
@@ -215,7 +214,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
             )}
           >
             <ImageIcon className="size-4" />
-            图片生成
+            {t("home.images")}
           </button>
           <button
             type="button"
@@ -233,7 +232,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
           </button>
 
           <div className="pt-4">
-            <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">管理中心</p>
+            <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.adminCenter")}</p>
             <button
               type="button"
               onClick={() => {
@@ -246,7 +245,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
               )}
             >
               <SlidersHorizontal className="size-4" />
-              模型管理
+              {t("home.modelManagement")}
             </button>
             {user?.role === "superAdmin" ? (
               <button
@@ -261,7 +260,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
                 )}
               >
                 <Shield className="size-4" />
-                用户管理
+                {t("home.userManagement")}
               </button>
             ) : null}
           </div>
@@ -317,7 +316,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
           </div>
         ) : activeView === "admin-users" ? (
           <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
-            {user?.role === "superAdmin" ? <AdminUsersManager /> : <p className="text-sm text-muted-foreground">当前账号无权限访问用户管理。</p>}
+            {user?.role === "superAdmin" ? <AdminUsersManager /> : <p className="text-sm text-muted-foreground">{t("home.noUserManagementPermission")}</p>}
           </div>
         ) : (
           <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
@@ -325,7 +324,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight">{t("home.aiScript")}</h1>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {filteredProjects.length} / {projects.length} 个项目
+                  {t("home.projectsCount", { filtered: filteredProjects.length, total: projects.length })}
                 </p>
               </div>
 
@@ -335,7 +334,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
                   <Input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜索项目"
+                    placeholder={t("home.searchProjects")}
                     className="pl-8"
                   />
                 </div>
@@ -344,7 +343,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
                   onChange={(event) => setStatusFilter(event.target.value as "all" | ProjectStatus)}
                   className="h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  <option value="all">项目状态 全部</option>
+                  <option value="all">{t("home.projectStatusAll")}</option>
                   {Object.entries(statusLabels).map(([value, label]) => (
                     <option key={value} value={value}>
                       {label}
@@ -353,11 +352,11 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
                 </select>
                 <Button variant="outline">
                   <SlidersHorizontal className="mr-2 size-4" />
-                  高级筛选
+                  {t("home.advancedFilters")}
                 </Button>
                 <Button onClick={() => createProjectMutation.mutate()} disabled={createProjectMutation.isPending}>
                   <FolderPlus className="mr-2 size-4" />
-                  {createProjectMutation.isPending ? "创建中..." : t("home.newProject")}
+                  {createProjectMutation.isPending ? t("home.creatingProject") : t("home.newProject")}
                 </Button>
               </div>
             </div>
@@ -369,7 +368,7 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
 
               {!projectsQuery.isLoading && filteredProjects.length === 0 ? (
                 <div className="col-span-full flex min-h-56 items-center justify-center rounded-lg border border-dashed border-border/70 text-sm text-muted-foreground">
-                  暂无项目，先新建一个 AI 生剧项目。
+                  {t("home.emptyProjects")}
                 </div>
               ) : null}
 
@@ -390,11 +389,11 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate text-sm font-semibold">{project.title}</span>
                       <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                        {project.originalScript || "还没有写入剧本内容。"}
+                        {project.originalScript || t("home.emptyProjectScript")}
                       </span>
                       <span className="mt-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="rounded-md bg-muted px-2 py-1">{statusLabels[project.status]}</span>
-                        <span>{project.scenes.length} 个分镜</span>
+                        <span>{t("home.sceneCount", { count: project.scenes.length })}</span>
                         <span>{formatDateTime(project.updatedAt)}</span>
                       </span>
                     </span>

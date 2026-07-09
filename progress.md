@@ -1,5 +1,37 @@
 # Progress Log
 
+## Session: 2026-07-09
+
+### Phase 7: Dependency cleanup and open-source-first rules
+- **Status:** complete
+- Actions taken:
+  - Audited current frontend/backend dependencies and code paths for hand-rolled or unused pieces.
+  - Kept provider/model orchestration on the existing LangChain/LangGraph path.
+  - Documented that `google-genai` remains the direct SDK for Gemini native image generation.
+  - Confirmed `langchain-google-genai` should only be added if Gemini chat needs a native LangChain provider.
+  - Confirmed frontend UI direction: `@base-ui/react` + shadcn-style components is acceptable and should remain the default.
+- Files created/modified:
+  - `AI_HANDOFF.md`
+  - `findings.md`
+  - `progress.md`
+  - `task_plan.md`
+
+### Phase 8: React i18next migration documentation
+- **Status:** complete
+- Actions taken:
+  - Added `i18next` and `react-i18next` to the frontend.
+  - Replaced the custom interpolation code in `frontend/src/lib/i18n.ts` with `i18next` + `initReactI18next` + `useTranslation`.
+  - Preserved the existing `useI18n()` facade to avoid touching every page/component.
+  - Documented the new localization rule: use open-source i18n plumbing instead of custom string interpolation.
+- Files created/modified:
+  - `frontend/package.json`
+  - `frontend/package-lock.json`
+  - `frontend/src/lib/i18n.ts`
+  - `AI_HANDOFF.md`
+  - `findings.md`
+  - `progress.md`
+  - `task_plan.md`
+
 ## Session: 2026-07-06
 
 ### Phase 4: Chat attachments and composer UI
@@ -136,6 +168,9 @@
 | Next production build | `cd frontend && npm run build` | Finish production build | Stayed at `Creating an optimized production build ...` for over 2 minutes; interrupted | Incomplete |
 | Chat scroll doc stale scan | `rg` scan for stale chat-scroll/ResizeObserver phrases in markdown | No stale docs remain | No matches | Pass |
 | Markdown diff whitespace check | `git diff --check` | No whitespace errors | Passed | Pass |
+| i18n lint | `cd frontend && npm run lint` | No lint errors | Passed | Pass |
+| i18n type-check | `cd frontend && npx tsc --noEmit` | No TypeScript errors | Passed | Pass |
+| i18n dependency tree | `cd frontend && npm ls react-i18next i18next` | Installed and deduped | `react-i18next@17.0.8`, `i18next@26.3.5` | Pass |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |

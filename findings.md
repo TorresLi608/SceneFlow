@@ -10,8 +10,8 @@
 - Root has existing continuity docs: `AI_HANDOFF.md` and `RUNNING.md`.
 - Project is split into `backend/` and `frontend/`.
 - Git worktree already has a modified `backend/sceneflow.db`; leave it untouched unless explicitly asked.
-- Backend stack: Python 3.11, FastAPI, uvicorn, SQLite, bcrypt, PyJWT, cryptography, httpx, LangChain, LangGraph.
-- Frontend stack: Next.js 16.2.3, React 19.2.4, TypeScript, Tailwind CSS 4, shadcn/ui-style components, `@assistant-ui/react`, React Query, Zustand, axios.
+- Backend stack: Python 3.11, FastAPI, uvicorn, SQLite, bcrypt, PyJWT, cryptography, `google-genai`, OpenAI SDK, LangChain, LangGraph.
+- Frontend stack: Next.js 16.2.3, React 19.2.4, TypeScript, Tailwind CSS 4, `@base-ui/react`, shadcn-style components, `@assistant-ui/react`, Vercel AI SDK, React Query, Zustand, axios, `i18next`/`react-i18next`.
 - Core user constraints from existing handoff:
   - Use `@assistant-ui/react` for mature chat UI capabilities.
   - Backend core should use LangChain and LangGraph instead of custom orchestration where possible.
@@ -142,6 +142,17 @@
 | Treat frontend docs as partly stale | `frontend/README.md` says project data uses session store, but newer handoff says project/scene CRUD now persists in backend SQLite. |
 | Before changing Next.js code, read local Next docs under `node_modules/next/dist/docs/` | `frontend/AGENTS.md` warns this Next version has breaking changes versus older training data. |
 | Before changing assistant-ui patterns, use assistant-ui docs/MCP if available | `frontend/CLAUDE.md` explicitly calls out assistant-ui project patterns. |
+| Open-source/library first | Before building a general-purpose feature, check project dependencies, platform APIs, and mature open-source packages. Use the right library directly instead of hand-rolling. |
+| Keep `@base-ui/react` + shadcn-style UI | Base UI primitives are acceptable for interaction/accessibility foundations; keep shadcn-style composition for readable local UI components. |
+| Keep `google-genai` for Gemini native image generation | It is the direct SDK path currently used by the app. Add `langchain-google-genai` only if Gemini chat needs native LangChain provider behavior. |
+| Use `react-i18next` for UI localization | Replaces hand-written interpolation in `frontend/src/lib/i18n.ts` while keeping the local `useI18n()` facade for low-churn call sites. |
+
+## Development Principles
+- Before coding, ask: is this already in the codebase, stdlib/platform, or an installed/mature open-source library?
+- Prefer installing and using a suitable open-source library over writing custom generic infrastructure.
+- Do not add abstractions for future possibilities. Keep modules small, named clearly, and aligned with existing frontend actions/BFF/backend service boundaries.
+- Code should be easy for a human or AI to continue: explicit file ownership, simple data flow, small diffs, and no hidden side effects.
+- Keep validation, auth, persistence, and user-data safety explicit; do not simplify away safety boundaries.
 
 ## Issues Encountered
 | Issue | Resolution |
@@ -233,3 +244,12 @@
 - 2026-07-06 latest chat scroll code uses an `autoScrollKey` derived from session id, message count, and last message id.
 - `ChatMessageList` force-scrolls on initial history load/session message-key changes and retries shortly after layout (`50ms`, `150ms`, `350ms`) so Streamdown code blocks, Shiki highlighting, and ordered lists that grow after first paint do not leave history views mid-scroll.
 - `ResizeObserver` is now used only to keep following when content height changes and `shouldFollowRef` is still true; upward wheel input cancels follow and pending retries. Older docs that said the final implementation avoided `ResizeObserver` were updated in this sync.
+
+## Recent Cleanup and i18n Findings
+- 2026-07-09 cleanup pass favored existing/open-source tools over custom code.
+- Removed the old hand-written i18n interpolation path from `frontend/src/lib/i18n.ts`.
+- Added `i18next` and `react-i18next`; current `useI18n()` wraps `useTranslation()` and syncs language from `preferences-store`.
+- `frontend/src/lib/i18n.ts` still keeps translations in one file because there are only two locales and the existing call surface is small enough; split locale JSON files when translation volume grows.
+- Frontend `shadcn` CLI should not be a runtime dependency. Root-level shadcn CLI is enough for component generation.
+- `@base-ui/react` remains the preferred primitive layer for local shadcn-style UI components.
+- `google-genai` remains appropriate for Gemini image generation; `langchain-google-genai` is not needed unless Gemini chat moves to native LangChain provider integration.

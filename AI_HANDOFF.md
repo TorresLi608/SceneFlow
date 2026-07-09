@@ -1,6 +1,15 @@
 # SceneFlow AI 接手摘要
 
-更新时间：2026-07-06
+更新时间：2026-07-09
+
+## 2026-07-09 续接入口
+
+- 后续开发前先做依赖/平台能力检查：能用成熟开源库、现有依赖、平台原生能力解决的，不要手搓。只有确认没有合适库或库会明显放大复杂度时，才写自定义实现。
+- 代码目标：结构清晰、可读、可持续维护，方便人和 AI 继续迭代。少做一次性抽象，复用现有模块边界和组件风格。
+- 前端 UI 基础方向：`@base-ui/react` 没问题继续用，配合 shadcn 风格组件组织；成熟 UI primitive 优先于自写交互控件。
+- i18n 已从手写 `frontend/src/lib/i18n.ts` 插值函数迁移到 `i18next` + `react-i18next`，但保留 `useI18n()` 现有调用形状，页面组件无需大改。
+- Gemini 相关决策：当前保留 `google-genai` 用于 Gemini 原生能力，尤其图片生成；`langchain-google-genai` 只有在要把 Gemini chat 作为原生 LangChain provider 接入时再加，不为了“看起来统一”硬套。
+- 依赖清理方向：前端运行时依赖里不放未使用的 CLI/脚手架包；根目录保留 shadcn CLI 用于后续组件生成即可。
 
 ## 2026-07-06 续接入口
 
@@ -17,6 +26,8 @@
 
 - 前端智能问答 UI 参考 ChatGPT 网页版风格，明确使用 `@assistant-ui/react`，不要手搓成熟组件已有能力。
 - 后端核心必须使用 LangChain 和 LangGraph；能用热门开源库就用，不要重复造轮子。
+- 所有开发都要先判断是否有合适开源库或项目既有依赖可用；对的库直接安装使用，避免手搓通用能力。
+- 前端基础组件继续采用 `@base-ui/react` + shadcn 风格组织，保持组件边界清楚、可读、可维护。
 - 对话必须支持追问、上下文记忆，最大上下文按 1M token 预算处理，超过后摘要压缩。
 - 需要 Agent Runtime，把执行事件实时推给前端，前端显示执行流程。
 - 支持通义千问、豆包、DeepSeek、Claude Code、ChatGPT、Gemini、自定义中转站；选择供应商时自动填名称、Base URL、官方文档链接，API Key 和模型由用户填写。
@@ -74,10 +85,13 @@
 - `@assistant-ui/react`
 - `@ai-sdk/react`
 - `ai`
+- `i18next`
+- `react-i18next`
 
 后端新增：
 
 - `pypdf`：用于 PDF 附件文本抽取。Office OpenXML 目前用 Python 标准库解析。
+- `google-genai`：用于 Gemini 原生能力，当前主要服务图片生成；不要随意替换成 `langchain-google-genai`，除非 Gemini chat 需要原生 LangChain provider。
 
 ## 数据持久化约定
 
@@ -103,6 +117,12 @@
 - `cd frontend && npm run lint`
 - `cd frontend && npx tsc --noEmit`
 - 注意：AI SDK 集成后曾尝试 `cd frontend && npm run build`，Next/Turbopack 停在 `Creating an optimized production build ...` 超过两分钟无新输出，已中断；不要把它记作通过。
+
+2026-07-09 i18n 迁移验证：
+
+- `cd frontend && npm run lint`
+- `cd frontend && npx tsc --noEmit`
+- `cd frontend && npm ls react-i18next i18next`
 
 注意：真实 LLM 调用仍需要用户配置有效 API Key 和模型名。
 

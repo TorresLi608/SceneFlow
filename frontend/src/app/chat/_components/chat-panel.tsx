@@ -6,6 +6,7 @@ import { ChatMessageList } from "./chat-message-list";
 import { ChatSidebar } from "./chat-sidebar";
 import { useChatController } from "./use-chat-controller";
 import { configName } from "@/lib/config-format";
+import { useI18n } from "@/lib/i18n";
 
 interface ChatPanelProps {
   configs: UserConfig[];
@@ -14,6 +15,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPanelProps) {
+  const { t } = useI18n();
   const chat = useChatController(configs, officialConfigs);
   const lastMessage = chat.messages.at(-1);
   const autoScrollKey = `${chat.effectiveSessionId ?? "new-chat"}:${chat.messages.length}:${lastMessage?.id ?? ""}`;
@@ -37,7 +39,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
       <section className="flex min-h-0 min-w-0 flex-col">
         <div className="border-b border-border/60 px-5 py-4">
           <h2 className="truncate text-sm font-medium">
-            {chat.selectedConfig ? configName(chat.selectedConfig) : "选择模型开始对话"}
+            {chat.selectedConfig ? configName(chat.selectedConfig, t) : t("chat.selectModelToStart")}
           </h2>
         </div>
 
