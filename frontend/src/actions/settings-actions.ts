@@ -2,8 +2,6 @@ import { httpClient } from "@/lib/http/client";
 import type {
   CreateUserConfigInput,
   UpdateUserConfigInput,
-  ValidateUserConfigInput,
-  ValidateUserConfigResponse,
   UserConfigItemResponse,
   UserConfigListResponse,
 } from "@/types/auth";
@@ -29,13 +27,5 @@ export async function deleteUserConfigAction(id: number) {
 
 export async function activateOfficialConfigAction(id: number) {
   const response = await httpClient.post<UserConfigItemResponse>(`/api/bff/settings/official/${id}/activate`);
-  return response.data;
-}
-
-export async function validateUserConfigAction(payload: ValidateUserConfigInput) {
-  const response = await httpClient.post<ValidateUserConfigResponse>(
-    "/api/bff/settings/keys/validate",
-    payload
-  );
   return response.data;
 }

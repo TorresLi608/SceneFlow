@@ -21,9 +21,9 @@ async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: 
             try:
                 prompt = build_image_prompt(scene)
                 await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"imageStatus": "generating", "imageProgress": 20, "errorMsg": ""}})
-                if config["provider"] != "openai":
-                    raise ValueError("image generation currently only supports provider openai")
-                image = await models.generate_image(config["apiKey"], config["model"], prompt, base_url=config.get("baseUrl", ""))
+                if config["provider"] not in {"openai", "gemini"}:
+                    raise ValueError("image generation currently only supports provider openai/gemini")
+                image = await models.generate_image(config["apiKey"], config["model"], prompt, base_url=config.get("baseUrl", ""), provider=config["provider"])
                 image_url = persist_scene_image(project_id, scene["id"], image.data, image.format)
                 with db() as conn:
                     conn.execute("UPDATE scenes SET image_status='success', image_url=?, updated_at=? WHERE id=?", (image_url, now(), scene["id"]))

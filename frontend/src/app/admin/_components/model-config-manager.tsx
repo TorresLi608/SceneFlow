@@ -12,6 +12,7 @@ import {
 } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
 import {
+  activateOfficialConfigAction,
   createUserConfigAction,
   deleteUserConfigAction,
   listUserConfigsAction,
@@ -43,6 +44,7 @@ import {
   providerOption,
   providerOptions,
 } from "@/lib/model-providers";
+import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig } from "@/types/auth";
 
 const pageSize = 10;
@@ -55,6 +57,8 @@ const purposeLabel: Record<ConfigPurpose, string> = {
 };
 
 type SourceFilter = "all" | "official" | "user";
+type DefaultFilter = "all" | "default" | "not-default";
+type EnabledFilter = "all" | "enabled" | "disabled";
 
 function configTitle(config: UserConfig) {
   return config.name || `${purposeLabel[config.purpose]} · ${providerLabelMap[config.provider] ?? config.provider}`;
@@ -74,11 +78,15 @@ function isDefaultConfig(config: UserConfig, activeUserByPurpose: Partial<Record
 export function ModelConfigManager() {
   const queryClient = useQueryClient();
   const defaultOption = defaultProviderOption();
+  const user = useUserStore((state) => state.user);
+  const isSuperAdmin = user?.role === "superAdmin";
 
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [purposeFilter, setPurposeFilter] = useState<"all" | ConfigPurpose>("all");
   const [providerFilter, setProviderFilter] = useState("all");
+  const [defaultFilter, setDefaultFilter] = useState<DefaultFilter>("all");
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
   const [page, setPage] = useState(1);
   const [message, setMessage] = useState<string | null>(null);
   const [viewingConfig, setViewingConfig] = useState<UserConfig | null>(null);
@@ -100,14 +108,15 @@ export function ModelConfigManager() {
   const officialQuery = useQuery({
     queryKey: queryKeys.officialConfigs,
     queryFn: listOfficialConfigsAction,
+    enabled: isSuperAdmin,
   });
   const userQuery = useQuery({
     queryKey: queryKeys.userConfigs,
     queryFn: listUserConfigsAction,
   });
 
-  const officialConfigs = officialQuery.data?.configs ?? emptyConfigs;
   const userConfigs = userQuery.data?.configs ?? emptyConfigs;
+  const officialConfigs = isSuperAdmin ? officialQuery.data?.configs ?? emptyConfigs : userQuery.data?.officialConfigs ?? emptyConfigs;
   const activeUserByPurpose = useMemo(
     () => configsByPurpose(userConfigs, (config) => config.isActive && config.isEnabled),
     [userConfigs]
@@ -115,12 +124,13 @@ export function ModelConfigManager() {
 
   const rows = useMemo(() => [...officialConfigs, ...userConfigs], [officialConfigs, userConfigs]);
   const providerFilters = useMemo(
-    () => Array.from(new Set(rows.map((config) => config.provider))).filter(Boolean),
-    [rows]
+    () => Array.from(new Set(Object.values(providerOptions).flat().map((option) => option.value))).filter(Boolean),
+    []
   );
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((config) => {
+      const checked = isDefaultConfig(config, activeUserByPurpose);
       if (sourceFilter !== "all" && config.source !== sourceFilter) {
         return false;
       }
@@ -130,12 +140,24 @@ export function ModelConfigManager() {
       if (providerFilter !== "all" && config.provider !== providerFilter) {
         return false;
       }
+      if (defaultFilter === "default" && !checked) {
+        return false;
+      }
+      if (defaultFilter === "not-default" && checked) {
+        return false;
+      }
+      if (enabledFilter === "enabled" && !config.isEnabled) {
+        return false;
+      }
+      if (enabledFilter === "disabled" && config.isEnabled) {
+        return false;
+      }
       if (!q) {
         return true;
       }
       return `${config.name} ${config.description}`.toLowerCase().includes(q);
     });
-  }, [providerFilter, purposeFilter, rows, search, sourceFilter]);
+  }, [activeUserByPurpose, defaultFilter, enabledFilter, providerFilter, purposeFilter, rows, search, sourceFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -143,7 +165,7 @@ export function ModelConfigManager() {
   const options = providerOptions[purpose];
   const isRelay = isRelayConnection(provider, connectionMode);
   const selectedProviderOption = providerOption(purpose, provider);
-  const isMutating = officialQuery.isLoading || userQuery.isLoading;
+  const isMutating = (isSuperAdmin && officialQuery.isLoading) || userQuery.isLoading;
 
   const refreshConfigs = async () => {
     await Promise.all([
@@ -230,10 +252,14 @@ export function ModelConfigManager() {
       if (isDefault && !isEnabled) {
         throw new Error("禁用配置不能设为默认。");
       }
-      if (!editingConfig && !isOfficial && !apiKey.trim()) {
+      const saveAsOfficial = isSuperAdmin && isOfficial;
+      if (editingConfig?.source === "official" && !isSuperAdmin) {
+        throw new Error("无权限编辑官方配置。");
+      }
+      if (!editingConfig && !saveAsOfficial && !apiKey.trim()) {
         throw new Error("用户配置需要 API Key。");
       }
-      if (!editingConfig && isOfficial && isDefault && !apiKey.trim()) {
+      if (!editingConfig && saveAsOfficial && isDefault && !apiKey.trim()) {
         throw new Error("设为官方默认前请输入 API Key。");
       }
       if (editingConfig && isDefaultConfig(editingConfig, activeUserByPurpose) && !isDefault) {
@@ -260,7 +286,7 @@ export function ModelConfigManager() {
         }
         return;
       }
-      if (isOfficial) {
+      if (saveAsOfficial) {
         await createOfficialConfigAction({ ...payload, apiKey: apiKey.trim() });
       } else {
         await createUserConfigAction({ ...payload, apiKey: apiKey.trim() });
@@ -284,6 +310,10 @@ export function ModelConfigManager() {
         throw new Error("禁用配置不能设为默认。");
       }
       if (config.source === "official") {
+        if (!isSuperAdmin) {
+          await activateOfficialConfigAction(config.id);
+          return;
+        }
         await Promise.all(
           userConfigs
             .filter((item) => item.purpose === config.purpose && item.isActive)
@@ -306,6 +336,9 @@ export function ModelConfigManager() {
       if (config.isEnabled && isDefaultConfig(config, activeUserByPurpose)) {
         throw new Error("默认配置不能直接禁用，请先设置同类型的其他默认。");
       }
+      if (config.source === "official" && !isSuperAdmin) {
+        throw new Error("无权限修改官方配置状态。");
+      }
       return config.source === "official"
         ? updateOfficialConfigAction(config.id, { isEnabled: !config.isEnabled })
         : updateUserConfigAction(config.id, { isEnabled: !config.isEnabled });
@@ -318,8 +351,12 @@ export function ModelConfigManager() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (config: UserConfig) =>
-      config.source === "official" ? deleteOfficialConfigAction(config.id) : deleteUserConfigAction(config.id),
+    mutationFn: (config: UserConfig) => {
+      if (config.source === "official" && !isSuperAdmin) {
+        throw new Error("无权限删除官方配置。");
+      }
+      return config.source === "official" ? deleteOfficialConfigAction(config.id) : deleteUserConfigAction(config.id);
+    },
     onSuccess: async () => {
       setMessage("配置已删除。");
       await refreshConfigs();
@@ -342,7 +379,7 @@ export function ModelConfigManager() {
         </Button>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-[minmax(180px,1fr)_160px_160px_180px]">
+      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_150px_150px_150px_150px_150px]">
         <Input
           value={search}
           onChange={(event) => {
@@ -392,6 +429,32 @@ export function ModelConfigManager() {
             <SelectItem value="user">用户配置</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={defaultFilter} onValueChange={(value) => {
+          setDefaultFilter((value ?? "all") as DefaultFilter);
+          setPage(1);
+        }}>
+          <SelectTrigger>
+            <SelectValue>{defaultFilter === "all" ? "全部默认" : defaultFilter === "default" ? "默认" : "非默认"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部默认</SelectItem>
+            <SelectItem value="default">默认</SelectItem>
+            <SelectItem value="not-default">非默认</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={enabledFilter} onValueChange={(value) => {
+          setEnabledFilter((value ?? "all") as EnabledFilter);
+          setPage(1);
+        }}>
+          <SelectTrigger>
+            <SelectValue>{enabledFilter === "all" ? "全部状态" : enabledFilter === "enabled" ? "启用" : "禁用"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="enabled">启用</SelectItem>
+            <SelectItem value="disabled">禁用</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border/70">
@@ -410,6 +473,7 @@ export function ModelConfigManager() {
           <tbody>
             {pageRows.map((config) => {
               const checked = isDefaultConfig(config, activeUserByPurpose);
+              const canManageConfig = config.source === "user" || isSuperAdmin;
               return (
                 <tr key={rowKey(config)} className="border-t border-border/70">
                   <td className="max-w-64 px-3 py-3">
@@ -444,19 +508,19 @@ export function ModelConfigManager() {
                       <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title="查看">
                         <Eye className="size-4" />
                       </Button>
-                      <Button size="icon-sm" variant="ghost" onClick={() => openEdit(config)} title="编辑">
+                      <Button size="icon-sm" variant="ghost" disabled={!canManageConfig} onClick={() => openEdit(config)} title="编辑">
                         <Pencil className="size-4" />
                       </Button>
                       <Switch
                         checked={config.isEnabled}
-                        disabled={busy}
+                        disabled={busy || !canManageConfig}
                         onCheckedChange={() => enabledMutation.mutate(config)}
                         className="mx-1 self-center"
                       />
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        disabled={busy}
+                        disabled={busy || !canManageConfig}
                         onClick={() => {
                           if (window.confirm(`确认删除「${configTitle(config)}」吗？`)) {
                             deleteMutation.mutate(config);
@@ -497,10 +561,12 @@ export function ModelConfigManager() {
             <DialogDescription>API Key 留空时，编辑会沿用原 Key。</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
-            <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-              <span>作为官方配置</span>
-              <Switch checked={isOfficial} disabled={Boolean(editingConfig)} onCheckedChange={setIsOfficial} />
-            </label>
+            {isSuperAdmin ? (
+              <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
+                <span>作为官方配置</span>
+                <Switch checked={isOfficial} disabled={Boolean(editingConfig)} onCheckedChange={setIsOfficial} />
+              </label>
+            ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">

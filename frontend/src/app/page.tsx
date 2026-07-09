@@ -9,7 +9,6 @@ import {
   LogOut,
   MessageSquare,
   Search,
-  Settings2,
   Shield,
   SlidersHorizontal,
 } from "lucide-react";
@@ -21,10 +20,11 @@ import { createProjectAction, listProjectsAction } from "@/actions/projects-acti
 import { queryKeys } from "@/actions/query-keys";
 import { getMeAction } from "@/actions/user-actions";
 import { listUserConfigsAction } from "@/actions/settings-actions";
+import { AdminUsersManager } from "@/app/admin/_components/admin-users-manager";
+import { ModelConfigManager } from "@/app/admin/_components/model-config-manager";
 import { ChatPanel } from "@/app/chat/_components/chat-panel";
 import { ImageGenerationPanel } from "@/app/images/_components/image-generation-panel";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
-import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,6 +44,7 @@ const statusLabels: Record<ProjectStatus, string> = {
 };
 
 export type HomeMenu = "chat" | "images" | "ai-script";
+export type HomeView = HomeMenu | "admin-configs" | "admin-users";
 
 const menuRoutes: Record<HomeMenu, string> = {
   chat: "/chat",
@@ -57,12 +58,14 @@ function projectCover(project: Project) {
 
 interface HomePageProps {
   activeMenu?: HomeMenu;
+  activeView?: HomeView;
 }
 
-export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
+export function HomePage({ activeMenu = "chat", activeView: requestedView }: HomePageProps = {}) {
+  const initialView = requestedView ?? activeMenu;
   const router = useRouter();
   const { t, formatDateTime } = useI18n();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeView, setActiveView] = useState<HomeView>(initialView);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProjectStatus>("all");
   const [message, setMessage] = useState<string | null>(null);
@@ -111,6 +114,10 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
   });
 
   useEffect(() => {
+    setActiveView(initialView);
+  }, [initialView]);
+
+  useEffect(() => {
     if (meQuery.data?.user) {
       setUser(meQuery.data.user);
     }
@@ -153,6 +160,17 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
     router.push(`/projects/${project.id}`);
   };
 
+  const pageTitle =
+    activeView === "chat"
+      ? t("home.chat")
+      : activeView === "images"
+        ? "图片生成"
+        : activeView === "ai-script"
+          ? t("home.aiScript")
+          : activeView === "admin-configs"
+            ? "模型管理"
+            : "用户管理";
+
   if (!hydrated) {
     return <main className="flex min-h-screen items-center justify-center">{t("common.initializing")}</main>;
   }
@@ -170,12 +188,16 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
         </div>
 
         <nav className="space-y-1 px-3">
+          <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">业务中心</p>
           <button
             type="button"
-            onClick={() => router.push(menuRoutes.chat)}
+            onClick={() => {
+              setActiveView("chat");
+              router.push(menuRoutes.chat);
+            }}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
-              activeMenu === "chat" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+              activeView === "chat" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
             )}
           >
             <MessageSquare className="size-4" />
@@ -183,10 +205,13 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
           </button>
           <button
             type="button"
-            onClick={() => router.push(menuRoutes.images)}
+            onClick={() => {
+              setActiveView("images");
+              router.push(menuRoutes.images);
+            }}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
-              activeMenu === "images" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+              activeView === "images" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
             )}
           >
             <ImageIcon className="size-4" />
@@ -194,15 +219,52 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
           </button>
           <button
             type="button"
-            onClick={() => router.push(menuRoutes["ai-script"])}
+            onClick={() => {
+              setActiveView("ai-script");
+              router.push(menuRoutes["ai-script"]);
+            }}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
-              activeMenu === "ai-script" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+              activeView === "ai-script" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
             )}
           >
             <LayoutDashboard className="size-4" />
             {t("home.aiScript")}
           </button>
+
+          <div className="pt-4">
+            <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">管理中心</p>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveView("admin-configs");
+                router.push("/admin/models");
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
+                activeView === "admin-configs" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+              )}
+            >
+              <SlidersHorizontal className="size-4" />
+              模型管理
+            </button>
+            {user?.role === "superAdmin" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView("admin-users");
+                  router.push("/admin/users");
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm",
+                  activeView === "admin-users" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+                )}
+              >
+                <Shield className="size-4" />
+                用户管理
+              </button>
+            ) : null}
+          </div>
         </nav>
 
       </aside>
@@ -212,7 +274,7 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
             <div>
               <p className="text-base font-semibold">
-                {activeMenu === "chat" ? t("home.chat") : activeMenu === "images" ? "图片生成" : t("home.aiScript")}
+                {pageTitle}
               </p>
               <p className="text-xs text-muted-foreground">
                 {t("common.currentUser", {
@@ -223,16 +285,6 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
 
             <div className="flex items-center gap-2">
               <PreferencesSwitcher />
-
-              {user?.role === "superAdmin" ? (
-                <Button variant="outline" size="icon" onClick={() => router.push("/admin")}>
-                  <Shield className="size-4" />
-                </Button>
-              ) : null}
-
-              <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}>
-                <Settings2 className="size-4" />
-              </Button>
 
               <Button
                 variant="secondary"
@@ -248,17 +300,25 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
           </div>
         </header>
 
-        {activeMenu === "chat" ? (
+        {activeView === "chat" ? (
           <ChatPanel
             configs={userConfigsQuery.data?.configs ?? []}
             officialConfigs={userConfigsQuery.data?.officialConfigs ?? []}
             formatDateTime={formatDateTime}
           />
-        ) : activeMenu === "images" ? (
+        ) : activeView === "images" ? (
           <ImageGenerationPanel
             configs={userConfigsQuery.data?.configs ?? []}
             officialConfigs={userConfigsQuery.data?.officialConfigs ?? []}
           />
+        ) : activeView === "admin-configs" ? (
+          <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
+            <ModelConfigManager />
+          </div>
+        ) : activeView === "admin-users" ? (
+          <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
+            {user?.role === "superAdmin" ? <AdminUsersManager /> : <p className="text-sm text-muted-foreground">当前账号无权限访问用户管理。</p>}
+          </div>
         ) : (
           <div className="min-h-0 overflow-y-auto px-4 py-5 md:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -355,8 +415,6 @@ export function HomePage({ activeMenu = "chat" }: HomePageProps = {}) {
           </div>
         )}
       </section>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
 }

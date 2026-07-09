@@ -63,8 +63,8 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
         if not model.strip():
             raise HTTPException(400, "video purpose requires modelSeries")
     elif purpose == "image":
-        if provider != "openai":
-            raise HTTPException(400, "image purpose currently only supports provider openai")
+        if provider not in {"openai", "gemini"}:
+            raise HTTPException(400, "image purpose currently only supports provider openai/gemini")
         if not model.strip():
             raise HTTPException(400, "image purpose requires modelSeries")
     elif provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"}:

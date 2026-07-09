@@ -1,8 +1,6 @@
 import type {
   CreateUserConfigInput,
   UpdateUserConfigInput,
-  ValidateUserConfigInput,
-  ValidateUserConfigResponse,
   UserConfigItemResponse,
   UserConfigListResponse,
 } from "@/types/auth";
@@ -19,19 +17,6 @@ export async function createUserConfigByBff(
   authorization?: string
 ) {
   const response = await backendClient.post<UserConfigItemResponse>("/api/settings/keys", payload, authConfig(authorization));
-
-  return response.data;
-}
-
-export async function validateUserConfigByBff(
-  payload: ValidateUserConfigInput,
-  authorization?: string
-) {
-  const response = await backendClient.post<ValidateUserConfigResponse>(
-    "/api/settings/keys/validate",
-    payload,
-    authConfig(authorization)
-  );
 
   return response.data;
 }

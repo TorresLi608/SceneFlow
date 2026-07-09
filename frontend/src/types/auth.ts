@@ -56,16 +56,6 @@ export interface CreateUserConfigInput {
   isEnabled?: boolean;
 }
 
-export interface ValidateUserConfigInput {
-  name?: string;
-  description?: string;
-  purpose: ConfigPurpose;
-  provider: string;
-  baseUrl?: string;
-  modelSeries: string;
-  apiKey: string;
-}
-
 export interface UpdateUserConfigInput {
   name?: string;
   description?: string;
@@ -76,13 +66,4 @@ export interface UpdateUserConfigInput {
   apiKey?: string;
   isActive?: boolean;
   isEnabled?: boolean;
-}
-
-export interface ValidateUserConfigResponse {
-  valid: boolean;
-  purpose: ConfigPurpose;
-  provider: string;
-  baseUrl?: string;
-  modelSeries: string;
-  model?: string;
 }

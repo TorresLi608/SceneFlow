@@ -75,17 +75,19 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
         else:
             config = active_model_config(conn, user_id, "image", "图片生成")
 
-    if config["provider"] != "openai":
-        raise HTTPException(400, "image generation currently only supports provider openai")
+    if config["provider"] not in {"openai", "gemini"}:
+        raise HTTPException(400, "image generation currently only supports provider openai/gemini")
 
-    size = RATIO.get(str(payload.get("ratio") or "auto"), "auto")
-    quality = QUALITY.get(str(payload.get("resolution") or "2K"), "medium")
+    ratio = str(payload.get("ratio") or "auto")
+    resolution = str(payload.get("resolution") or "2K")
+    size = ratio if config["provider"] == "gemini" else RATIO.get(ratio, "auto")
+    quality = resolution if config["provider"] == "gemini" else QUALITY.get(resolution, "medium")
     try:
         if references:
             images = [parse_reference(item, index + 1) for index, item in enumerate(references)]
-            result = await models.edit_image(config["apiKey"], config["model"], prompt, images, size, quality, config.get("baseUrl", ""))
+            result = await models.edit_image(config["apiKey"], config["model"], prompt, images, size, quality, config.get("baseUrl", ""), config["provider"])
         else:
-            result = await models.generate_image(config["apiKey"], config["model"], prompt, size, quality, config.get("baseUrl", ""))
+            result = await models.generate_image(config["apiKey"], config["model"], prompt, size, quality, config.get("baseUrl", ""), config["provider"])
     except Exception as exc:
         raise HTTPException(502, "AI 图片生成失败：" + str(exc)[:220]) from exc
 

@@ -5,7 +5,9 @@ from io import BytesIO
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
+from google import genai
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -20,6 +22,8 @@ CHAT_BASE_URLS = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "anthropic": "https://api.anthropic.com",
 }
+GEMINI_IMAGE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+IMAGE_PROVIDERS = {"openai", "gemini"}
 
 
 @dataclass
@@ -70,6 +74,20 @@ def base_url_for(provider: str, base_url: str = "") -> str:
     if provider in CHAT_BASE_URLS:
         return CHAT_BASE_URLS[provider]
     raise ValueError(f"unsupported provider: {provider}")
+
+
+def image_base_url_for(provider: str, base_url: str = "") -> str:
+    provider = provider.strip().lower()
+    if provider == "openai":
+        return base_url_for("openai", base_url)
+    if provider == "gemini":
+        base = base_url.strip().rstrip("/") if base_url else GEMINI_IMAGE_BASE_URL
+        return base.removesuffix("/openai")
+    raise ValueError(f"unsupported image provider: {provider}")
+
+
+def _is_native_gemini_image_url(base_url: str = "") -> bool:
+    return urlparse(image_base_url_for("gemini", base_url)).netloc == "generativelanguage.googleapis.com"
 
 
 def _json_object(text: str) -> dict[str, Any]:
@@ -160,6 +178,32 @@ def _content_text(content: Any) -> str:
                 parts.append(str(item.get("text") or item.get("thinking") or ""))
         return "".join(parts)
     return str(content or "")
+
+
+def _image_format_from_mime(mime_type: str) -> str:
+    return {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}.get(mime_type, "png")
+
+
+def _gemini_image_size(value: str) -> str:
+    return {"low": "1K", "medium": "2K", "high": "4K"}.get(value, value if value in {"1K", "2K", "4K"} else "2K")
+
+
+def _openai_image_size(value: str) -> str:
+    return {
+        "1:1": "1024x1024",
+        "2:3": "1024x1536",
+        "3:2": "1536x1024",
+        "3:4": "1024x1536",
+        "4:3": "1536x1024",
+        "16:9": "1536x1024",
+        "9:16": "1024x1536",
+        "21:9": "1536x1024",
+        "9:21": "1024x1536",
+    }.get(value, value)
+
+
+def _openai_image_quality(value: str) -> str:
+    return {"1K": "low", "2K": "medium", "4K": "high"}.get(value, value)
 
 
 class ModelRouter:
@@ -303,11 +347,11 @@ class ModelRouter:
         return summary
 
     async def validate_image_model(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
-        if provider.strip().lower() != "openai":
-            raise ValueError("image generation currently only supports provider openai")
+        if provider.strip().lower() not in IMAGE_PROVIDERS:
+            raise ValueError("image generation currently only supports provider openai/gemini")
         if not model.strip():
             raise ValueError("image purpose requires modelSeries")
-        await self.generate_image(api_key, model, "Generate a simple gray square with soft light.", "1024x1024", "low", base_url)
+        await self.generate_image(api_key, model, "Generate a simple gray square with soft light.", "1:1", "1K", base_url, provider)
 
     async def generate_image(
         self,
@@ -317,14 +361,19 @@ class ModelRouter:
         size: str = "1536x1024",
         quality: str = "medium",
         base_url: str = "",
+        provider: str = "openai",
     ) -> ImageResult:
-        client = AsyncOpenAI(api_key=api_key.strip(), base_url=base_url_for("openai", base_url), timeout=90)
+        provider = provider.strip().lower()
+        if provider == "gemini" and _is_native_gemini_image_url(base_url):
+            return await self._generate_gemini_image(api_key, model, prompt, [], size, quality, base_url)
+
+        client = AsyncOpenAI(api_key=api_key.strip(), base_url=image_base_url_for("openai", base_url), timeout=90)
         try:
             response = await client.images.generate(
                 model=model.strip(),
                 prompt=prompt.strip(),
-                size=size,
-                quality=quality,
+                size=_openai_image_size(size),
+                quality=_openai_image_quality(quality),
                 output_format="png",
             )
         except APIStatusError as exc:
@@ -345,8 +394,13 @@ class ModelRouter:
         size: str = "auto",
         quality: str = "medium",
         base_url: str = "",
+        provider: str = "openai",
     ) -> ImageResult:
-        client = AsyncOpenAI(api_key=api_key.strip(), base_url=base_url_for("openai", base_url), timeout=90)
+        provider = provider.strip().lower()
+        if provider == "gemini" and _is_native_gemini_image_url(base_url):
+            return await self._generate_gemini_image(api_key, model, prompt, images, size, quality, base_url)
+
+        client = AsyncOpenAI(api_key=api_key.strip(), base_url=image_base_url_for("openai", base_url), timeout=90)
         files = []
         for name, data, mime_type in images:
             file = BytesIO(data)
@@ -357,8 +411,8 @@ class ModelRouter:
                 model=model.strip(),
                 image=files,
                 prompt=prompt.strip(),
-                size=size,
-                quality=quality,
+                size=_openai_image_size(size),
+                quality=_openai_image_quality(quality),
                 output_format="png",
             )
         except APIStatusError as exc:
@@ -369,3 +423,42 @@ class ModelRouter:
         if not b64_json:
             raise ValueError("empty image response")
         return ImageResult(data=base64.b64decode(b64_json), format="png")
+
+    async def _generate_gemini_image(
+        self,
+        api_key: str,
+        model: str,
+        prompt: str,
+        images: list[tuple[str, bytes, str]],
+        aspect_ratio: str,
+        image_size: str,
+        base_url: str = "",
+    ) -> ImageResult:
+        input_parts: list[dict[str, str]] = [{"type": "text", "text": prompt.strip()}]
+        input_parts.extend(
+            {
+                "type": "image",
+                "mime_type": mime_type,
+                "data": base64.b64encode(data).decode("ascii"),
+            }
+            for _, data, mime_type in images
+        )
+        response_format: dict[str, str] = {"type": "image", "image_size": _gemini_image_size(image_size)}
+        if ":" in aspect_ratio:
+            response_format["aspect_ratio"] = aspect_ratio
+
+        client = genai.Client(api_key=api_key.strip(), http_options={"base_url": image_base_url_for("gemini", base_url), "timeout": 90_000})
+        try:
+            interaction = await client.aio.interactions.create(
+                model=model.strip(),
+                input=input_parts,
+                response_format=response_format,
+            )
+        finally:
+            await client.aio.aclose()
+
+        image = interaction.output_image
+        b64_data = image.data if image else ""
+        if not b64_data:
+            raise ValueError("empty image response")
+        return ImageResult(data=base64.b64decode(b64_data), format=_image_format_from_mime(str(image.mime_type or "image/png")))

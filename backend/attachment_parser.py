@@ -7,6 +7,7 @@ import mimetypes
 import re
 import zipfile
 from dataclasses import dataclass
+from pathlib import PurePath
 from urllib.parse import unquote_to_bytes
 from xml.etree import ElementTree as ET
 
@@ -145,8 +146,7 @@ def _mime_type(mime_type: str, filename: str) -> str:
 
 
 def _extension(filename: str) -> str:
-    name = filename.lower().rsplit("/", 1)[-1]
-    return "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    return PurePath(filename).suffix.lower()
 
 
 def _is_text_file(mime_type: str, ext: str) -> bool:

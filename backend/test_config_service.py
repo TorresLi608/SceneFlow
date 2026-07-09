@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from config_service import config_create_fields, config_update_fields, normalize_config_payload
 from database import row
+from model import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
 from security import encrypt
 
 
@@ -82,7 +83,33 @@ def test_image_openai_relay_config_is_valid() -> None:
     assert normalized["base_url"] == "https://relay.example.com/v1"
 
 
+def test_image_gemini_config_is_valid() -> None:
+    normalized = normalize_config_payload(
+        {
+            "purpose": "image",
+            "provider": "gemini",
+            "modelSeries": "gemini-3.1-flash-image",
+            "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+            "apiKey": "new-secret-key",
+        }
+    )
+
+    assert normalized["purpose"] == "image"
+    assert normalized["provider"] == "gemini"
+    assert normalized["model"] == "gemini-3.1-flash-image"
+
+
+def test_gemini_image_helpers() -> None:
+    assert image_base_url_for("gemini", "https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com/v1beta"
+    assert _is_native_gemini_image_url("https://generativelanguage.googleapis.com/v1beta/openai")
+    assert not _is_native_gemini_image_url("https://relay.example.com/v1")
+    assert _openai_image_size("16:9") == "1536x1024"
+    assert _openai_image_quality("2K") == "medium"
+
+
 if __name__ == "__main__":
     test_config_create_fields_rejects_disabled_default()
     test_config_update_fields_disables_active_config()
     test_image_openai_relay_config_is_valid()
+    test_image_gemini_config_is_valid()
+    test_gemini_image_helpers()

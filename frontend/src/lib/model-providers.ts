@@ -81,6 +81,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       baseUrl: "https://api.openai.com/v1",
       docsUrl: "https://platform.openai.com/docs/api-reference/images",
     },
+    {
+      value: "gemini",
+      label: "Gemini",
+      modelSeries: "",
+      modelPlaceholder: "gemini-3.1-flash-image",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      docsUrl: "https://ai.google.dev/gemini-api/docs/image-generation",
+    },
   ],
   video: [
     {

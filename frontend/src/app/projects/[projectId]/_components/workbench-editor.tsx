@@ -9,8 +9,8 @@ import {
   LayoutDashboard,
   LogOut,
   Plus,
-  Settings2,
   Shield,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   WandSparkles,
@@ -41,7 +41,6 @@ import { queryKeys } from "@/actions/query-keys";
 import { listUserConfigsAction } from "@/actions/settings-actions";
 import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
-import { SettingsDialog } from "@/components/settings-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,7 +92,6 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const scriptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const hydrated = useUserStore((state) => state.hydrated);
@@ -588,7 +586,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
 
           <div className="space-y-1 px-3 pb-3">
-            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.menu")}</p>
+            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">业务中心</p>
             <button
               type="button"
               onClick={() => router.push("/")}
@@ -597,6 +595,28 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
               <LayoutDashboard className="size-4" />
               返回项目列表
             </button>
+
+            <div className="pt-3">
+              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">管理中心</p>
+              <button
+                type="button"
+                onClick={() => router.push("/admin/models")}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
+              >
+                <SlidersHorizontal className="size-4" />
+                模型管理
+              </button>
+              {user?.role === "superAdmin" ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/admin/users")}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
+                >
+                  <Shield className="size-4" />
+                  用户管理
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <Separator />
@@ -658,16 +678,6 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
               <div className="flex items-center gap-2">
                 <PreferencesSwitcher />
-
-                {user?.role === "superAdmin" ? (
-                  <Button variant="outline" size="icon" onClick={() => router.push("/admin")}>
-                    <Shield className="size-4" />
-                  </Button>
-                ) : null}
-
-                <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}>
-                  <Settings2 className="size-4" />
-                </Button>
 
                 <Button
                   variant="secondary"
@@ -926,8 +936,6 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
         </section>
       </div>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
 }

@@ -30,7 +30,12 @@ function selectedConfigPayload(config: UserConfig | undefined) {
 }
 
 function isImageConfig(config: UserConfig) {
-  return (config.purpose === "image" || (config.purpose === "general" && config.provider === "openai")) && config.isEnabled && config.isVerified && config.modelSeries.trim();
+  return (
+    (config.purpose === "image" || (config.purpose === "general" && ["openai", "gemini"].includes(config.provider))) &&
+    config.isEnabled &&
+    config.isVerified &&
+    config.modelSeries.trim()
+  );
 }
 
 function readFileAsDataUrl(file: File) {
