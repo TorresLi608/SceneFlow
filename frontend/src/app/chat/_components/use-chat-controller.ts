@@ -14,6 +14,7 @@ import {
 } from "@/actions/chat-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { resolveRequestError } from "@/lib/http/errors";
+import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
 import type { UserConfig } from "@/types/auth";
 import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
@@ -109,6 +110,7 @@ function chatRequestBody(message: SceneFlowUIMessage | undefined, body: Record<s
 }
 
 export function useChatController(configs: UserConfig[], officialConfigs: UserConfig[]) {
+  const { t } = useI18n();
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -193,7 +195,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
       }
     },
     onError: (error) => {
-      setErrorMessage(resolveRequestError(error, "发送失败，请检查模型配置"));
+      setErrorMessage(resolveRequestError(error, t("chat.sendFailed")));
     },
   });
   const {
@@ -226,7 +228,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
       await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
     },
     onError: (error) => {
-      setErrorMessage(resolveRequestError(error, "新建对话失败"));
+      setErrorMessage(resolveRequestError(error, t("chat.createSessionFailed")));
     },
   });
 
@@ -244,7 +246,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
       ]);
     },
     onError: (error) => {
-      setErrorMessage(resolveRequestError(error, "删除对话失败"));
+      setErrorMessage(resolveRequestError(error, t("chat.deleteSessionFailed")));
     },
   });
 
@@ -252,7 +254,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
 
   const createSession = () => {
     createSessionMutation.mutate({
-      title: input.trim().slice(0, 40) || "新对话",
+      title: input.trim().slice(0, 40) || t("chat.newSession"),
       ...selectedConfigPayload(selectedConfig),
     });
   };
@@ -304,14 +306,14 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     if (!effectiveSessionId) {
       try {
         const response = await createChatSessionAction({
-          title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || "新对话",
+          title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || t("chat.newSession"),
           ...selectedConfigPayload(selectedConfig),
         });
         await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
         await streamToSession(response.session.id, content, attachments);
         setSelectedSessionId(response.session.id);
       } catch (error) {
-        setErrorMessage(resolveRequestError(error, "新建对话失败"));
+        setErrorMessage(resolveRequestError(error, t("chat.createSessionFailed")));
       }
       return;
     }
@@ -319,7 +321,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     try {
       await streamToSession(effectiveSessionId, content, attachments);
     } catch (error) {
-      setErrorMessage(resolveRequestError(error, "发送失败，请检查模型配置"));
+      setErrorMessage(resolveRequestError(error, t("chat.sendFailed")));
     }
   };
 

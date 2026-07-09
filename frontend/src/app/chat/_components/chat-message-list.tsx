@@ -9,6 +9,7 @@ import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, XCircle } from "
 import Image from "next/image";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
 
@@ -127,6 +128,7 @@ function MessageAttachments({ attachments }: { attachments: ChatAttachment[] }) 
 }
 
 export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading, isStreaming }: ChatMessageListProps) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const lastForcedScrollKeyRef = useRef("");
@@ -279,7 +281,7 @@ export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading
 
           {!isLoading && messages.length === 0 ? (
             <div className="flex flex-1 items-center justify-center py-20 text-center">
-              <p className="text-sm text-muted-foreground">暂无消息，直接提问即可。</p>
+              <p className="text-sm text-muted-foreground">{t("chat.empty")}</p>
             </div>
           ) : null}
 
@@ -295,7 +297,7 @@ export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading
             >
               {message.reasoning ? (
                 <details className="mb-3 rounded-xl bg-muted/60 px-3 py-2 text-xs">
-                  <summary className="cursor-pointer opacity-80">模型思考</summary>
+                  <summary className="cursor-pointer opacity-80">{t("chat.reasoning")}</summary>
                   <div className="mt-1 opacity-80">{message.reasoning}</div>
                 </details>
               ) : null}
@@ -306,7 +308,7 @@ export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading
 
           {agentSteps.length > 0 ? (
             <div className="mr-auto w-full max-w-full rounded-xl border border-border/70 bg-muted/30 px-3 py-2 text-xs">
-              <p className="mb-2 font-medium text-foreground">执行流程</p>
+              <p className="mb-2 font-medium text-foreground">{t("chat.agentSteps")}</p>
               <div className="space-y-1.5">
                 {agentSteps.map((step) => (
                   <div key={step.id} className="flex items-start gap-2 text-muted-foreground">
@@ -328,7 +330,7 @@ export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading
         <button
           type="button"
           onClick={() => scrollToBottom()}
-          aria-label="滚动到底部"
+          aria-label={t("chat.scrollToBottom")}
           className="absolute bottom-4 left-1/2 inline-flex size-10 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background/95 text-foreground shadow-lg backdrop-blur transition hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           <ArrowDown className="size-5" />

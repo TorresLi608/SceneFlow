@@ -10,11 +10,12 @@ export interface ProviderOption {
 }
 
 export type ConnectionMode = "direct" | "relay";
+type Translate = (key: string) => string;
 
 const chatProviderOptions: ProviderOption[] = [
   {
     value: "qwen",
-    label: "通义千问",
+    label: "Qwen",
     modelSeries: "",
     modelPlaceholder: "qwen-max",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -22,7 +23,7 @@ const chatProviderOptions: ProviderOption[] = [
   },
   {
     value: "doubao",
-    label: "豆包",
+    label: "Doubao",
     modelSeries: "",
     modelPlaceholder: "doubao-seed-2",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
@@ -62,7 +63,7 @@ const chatProviderOptions: ProviderOption[] = [
   },
   {
     value: "custom",
-    label: "其他",
+    label: "Other",
     modelSeries: "",
     modelPlaceholder: "gpt-4o-mini",
     baseUrl: "",
@@ -93,7 +94,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
   video: [
     {
       value: "doubao",
-      label: "豆包",
+      label: "Doubao",
       modelSeries: "seedance-2.0",
       modelPlaceholder: "seedance-2.0",
       baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
@@ -107,6 +108,21 @@ export const providerLabelMap = Object.fromEntries(
     .flat()
     .map((option) => [option.value, option.label])
 ) as Record<string, string>;
+
+const providerLabelKeyMap: Record<string, string> = {
+  anthropic: "provider.anthropic",
+  custom: "provider.custom",
+  deepseek: "provider.deepseek",
+  doubao: "provider.doubao",
+  gemini: "provider.gemini",
+  openai: "provider.openai",
+  qwen: "provider.qwen",
+};
+
+export function providerLabel(provider: string, t?: Translate) {
+  const key = providerLabelKeyMap[provider];
+  return key && t ? t(key) : providerLabelMap[provider] ?? provider;
+}
 
 export function defaultProviderOption(purpose: ConfigPurpose = "script") {
   return providerOptions[purpose][0] ?? chatProviderOptions[0]!;

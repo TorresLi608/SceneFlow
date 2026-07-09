@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
+import { useI18n } from "@/lib/i18n";
 import {
   baseUrlForConnection,
   connectionModeFromConfig,
@@ -40,7 +41,7 @@ import {
   type ConnectionMode,
   defaultProviderOption,
   isRelayConnection,
-  providerLabelMap,
+  providerLabel,
   providerOption,
   providerOptions,
 } from "@/lib/model-providers";
@@ -49,19 +50,17 @@ import type { ConfigPurpose, UserConfig } from "@/types/auth";
 
 const pageSize = 10;
 const emptyConfigs: UserConfig[] = [];
-const purposeLabel: Record<ConfigPurpose, string> = {
-  general: "通用",
-  script: "文本",
-  image: "图片生成",
-  video: "视频生成",
-};
 
 type SourceFilter = "all" | "official" | "user";
 type DefaultFilter = "all" | "default" | "not-default";
 type EnabledFilter = "all" | "enabled" | "disabled";
 
-function configTitle(config: UserConfig) {
-  return config.name || `${purposeLabel[config.purpose]} · ${providerLabelMap[config.provider] ?? config.provider}`;
+function configTitle(
+  config: UserConfig,
+  purposeLabel: Record<ConfigPurpose, string>,
+  t: (key: string) => string
+) {
+  return config.name || `${purposeLabel[config.purpose]} · ${providerLabel(config.provider, t)}`;
 }
 
 function rowKey(config: UserConfig) {
@@ -76,6 +75,7 @@ function isDefaultConfig(config: UserConfig, activeUserByPurpose: Partial<Record
 }
 
 export function ModelConfigManager() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const defaultOption = defaultProviderOption();
   const user = useUserStore((state) => state.user);
@@ -104,6 +104,12 @@ export function ModelConfigManager() {
   const [apiKey, setApiKey] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [isDefault, setIsDefault] = useState(false);
+  const purposeLabel: Record<ConfigPurpose, string> = {
+    general: t("settings.generalPurpose"),
+    script: t("settings.scriptPurpose"),
+    image: t("settings.imagePurpose"),
+    video: t("settings.videoPurpose"),
+  };
 
   const officialQuery = useQuery({
     queryKey: queryKeys.officialConfigs,
@@ -218,7 +224,7 @@ export function ModelConfigManager() {
     const mode = option.value === "custom" ? "relay" : connectionMode;
     setPurpose(value);
     setProvider(option.value);
-    setName(option.label);
+    setName(providerLabel(option.value, t));
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
     setModelSeries(option.modelSeries);
@@ -229,7 +235,7 @@ export function ModelConfigManager() {
     const option = providerOption(purpose, value) ?? defaultProviderOption(purpose);
     const mode = value === "custom" ? "relay" : "direct";
     setProvider(value);
-    setName(option.label);
+    setName(providerLabel(option.value, t));
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, value, mode));
     setModelSeries(option.modelSeries);
@@ -244,26 +250,26 @@ export function ModelConfigManager() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!modelSeries.trim()) {
-        throw new Error("请输入模型系列。");
+        throw new Error(t("admin.enterModelSeries"));
       }
       if (isRelay && !baseUrl.trim()) {
-        throw new Error("请输入自定义中转 Base URL。");
+        throw new Error(t("admin.enterRelayBaseUrl"));
       }
       if (isDefault && !isEnabled) {
-        throw new Error("禁用配置不能设为默认。");
+        throw new Error(t("admin.disabledCannotBeDefault"));
       }
       const saveAsOfficial = isSuperAdmin && isOfficial;
       if (editingConfig?.source === "official" && !isSuperAdmin) {
-        throw new Error("无权限编辑官方配置。");
+        throw new Error(t("admin.noEditOfficialPermission"));
       }
       if (!editingConfig && !saveAsOfficial && !apiKey.trim()) {
-        throw new Error("用户配置需要 API Key。");
+        throw new Error(t("admin.userConfigNeedsApiKey"));
       }
       if (!editingConfig && saveAsOfficial && isDefault && !apiKey.trim()) {
-        throw new Error("设为官方默认前请输入 API Key。");
+        throw new Error(t("admin.officialDefaultNeedsApiKey"));
       }
       if (editingConfig && isDefaultConfig(editingConfig, activeUserByPurpose) && !isDefault) {
-        throw new Error("每个类型至少保留一个默认配置，请先设置同类型的其他默认。");
+        throw new Error(t("admin.keepOneDefault"));
       }
 
       const payload = {
@@ -295,19 +301,19 @@ export function ModelConfigManager() {
     onSuccess: async () => {
       setFormOpen(false);
       resetForm();
-      setMessage("配置已保存。");
+      setMessage(t("admin.saveConfigSuccess"));
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, error instanceof Error ? error.message : "保存配置失败")),
+    onError: (error) => setMessage(resolveRequestError(error, error instanceof Error ? error.message : t("admin.saveConfigFailed"))),
   });
 
   const defaultMutation = useMutation({
     mutationFn: async ({ config, checked }: { config: UserConfig; checked: boolean }) => {
       if (!checked) {
-        throw new Error("每个类型至少保留一个默认配置，请选择同类型的其他配置作为默认。");
+        throw new Error(t("admin.chooseOtherDefault"));
       }
       if (checked && !config.isEnabled) {
-        throw new Error("禁用配置不能设为默认。");
+        throw new Error(t("admin.disabledCannotBeDefault"));
       }
       if (config.source === "official") {
         if (!isSuperAdmin) {
@@ -325,43 +331,43 @@ export function ModelConfigManager() {
       }
     },
     onSuccess: async () => {
-      setMessage("默认配置已更新。");
+      setMessage(t("admin.defaultUpdated"));
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, error instanceof Error ? error.message : "更新默认失败")),
+    onError: (error) => setMessage(resolveRequestError(error, error instanceof Error ? error.message : t("admin.updateDefaultFailed"))),
   });
 
   const enabledMutation = useMutation({
     mutationFn: (config: UserConfig) => {
       if (config.isEnabled && isDefaultConfig(config, activeUserByPurpose)) {
-        throw new Error("默认配置不能直接禁用，请先设置同类型的其他默认。");
+        throw new Error(t("admin.defaultCannotDisable"));
       }
       if (config.source === "official" && !isSuperAdmin) {
-        throw new Error("无权限修改官方配置状态。");
+        throw new Error(t("admin.noModifyOfficialPermission"));
       }
       return config.source === "official"
         ? updateOfficialConfigAction(config.id, { isEnabled: !config.isEnabled })
         : updateUserConfigAction(config.id, { isEnabled: !config.isEnabled });
     },
     onSuccess: async () => {
-      setMessage("启用状态已更新。");
+      setMessage(t("admin.enabledUpdated"));
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, "更新启用状态失败")),
+    onError: (error) => setMessage(resolveRequestError(error, t("admin.updateEnabledFailed"))),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (config: UserConfig) => {
       if (config.source === "official" && !isSuperAdmin) {
-        throw new Error("无权限删除官方配置。");
+        throw new Error(t("admin.noDeleteOfficialPermission"));
       }
       return config.source === "official" ? deleteOfficialConfigAction(config.id) : deleteUserConfigAction(config.id);
     },
     onSuccess: async () => {
-      setMessage("配置已删除。");
+      setMessage(t("admin.configDeleted"));
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, "删除配置失败")),
+    onError: (error) => setMessage(resolveRequestError(error, t("admin.deleteConfigFailed"))),
   });
 
   const busy = saveMutation.isPending || defaultMutation.isPending || enabledMutation.isPending || deleteMutation.isPending || isMutating;
@@ -370,12 +376,12 @@ export function ModelConfigManager() {
     <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">模型配置</h2>
-          <p className="mt-1 text-sm text-muted-foreground">统一管理官方配置和当前账号配置。</p>
+          <h2 className="text-base font-semibold">{t("admin.configTitle")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("admin.configDescription")}</p>
         </div>
         <Button onClick={openCreate}>
           <Plus className="size-4" />
-          新增配置
+          {t("settings.newConfig")}
         </Button>
       </div>
 
@@ -386,17 +392,17 @@ export function ModelConfigManager() {
             setSearch(event.target.value);
             setPage(1);
           }}
-          placeholder="搜索名称 / 描述"
+          placeholder={t("admin.searchConfig")}
         />
         <Select value={purposeFilter} onValueChange={(value) => {
           setPurposeFilter((value ?? "all") as "all" | ConfigPurpose);
           setPage(1);
         }}>
           <SelectTrigger>
-            <SelectValue>{purposeFilter === "all" ? "全部类型" : purposeLabel[purposeFilter]}</SelectValue>
+            <SelectValue>{purposeFilter === "all" ? t("admin.allPurposes") : purposeLabel[purposeFilter]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部类型</SelectItem>
+            <SelectItem value="all">{t("admin.allPurposes")}</SelectItem>
             {Object.entries(purposeLabel).map(([value, label]) => (
               <SelectItem key={value} value={value}>{label}</SelectItem>
             ))}
@@ -407,12 +413,12 @@ export function ModelConfigManager() {
           setPage(1);
         }}>
           <SelectTrigger>
-            <SelectValue>{providerFilter === "all" ? "全部运营商" : providerLabelMap[providerFilter] ?? providerFilter}</SelectValue>
+            <SelectValue>{providerFilter === "all" ? t("admin.allProviders") : providerLabel(providerFilter, t)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部运营商</SelectItem>
+            <SelectItem value="all">{t("admin.allProviders")}</SelectItem>
             {providerFilters.map((value) => (
-              <SelectItem key={value} value={value}>{providerLabelMap[value] ?? value}</SelectItem>
+              <SelectItem key={value} value={value}>{providerLabel(value, t)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -421,12 +427,12 @@ export function ModelConfigManager() {
           setPage(1);
         }}>
           <SelectTrigger>
-            <SelectValue>{sourceFilter === "all" ? "全部来源" : sourceFilter === "official" ? "官方配置" : "用户配置"}</SelectValue>
+            <SelectValue>{sourceFilter === "all" ? t("admin.allSources") : sourceFilter === "official" ? t("settings.officialConfig") : t("admin.userConfig")}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部来源</SelectItem>
-            <SelectItem value="official">官方配置</SelectItem>
-            <SelectItem value="user">用户配置</SelectItem>
+            <SelectItem value="all">{t("admin.allSources")}</SelectItem>
+            <SelectItem value="official">{t("settings.officialConfig")}</SelectItem>
+            <SelectItem value="user">{t("admin.userConfig")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={defaultFilter} onValueChange={(value) => {
@@ -434,12 +440,12 @@ export function ModelConfigManager() {
           setPage(1);
         }}>
           <SelectTrigger>
-            <SelectValue>{defaultFilter === "all" ? "全部默认" : defaultFilter === "default" ? "默认" : "非默认"}</SelectValue>
+            <SelectValue>{defaultFilter === "all" ? t("admin.allDefaults") : defaultFilter === "default" ? t("admin.default") : t("admin.notDefault")}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部默认</SelectItem>
-            <SelectItem value="default">默认</SelectItem>
-            <SelectItem value="not-default">非默认</SelectItem>
+            <SelectItem value="all">{t("admin.allDefaults")}</SelectItem>
+            <SelectItem value="default">{t("admin.default")}</SelectItem>
+            <SelectItem value="not-default">{t("admin.notDefault")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={enabledFilter} onValueChange={(value) => {
@@ -447,12 +453,12 @@ export function ModelConfigManager() {
           setPage(1);
         }}>
           <SelectTrigger>
-            <SelectValue>{enabledFilter === "all" ? "全部状态" : enabledFilter === "enabled" ? "启用" : "禁用"}</SelectValue>
+            <SelectValue>{enabledFilter === "all" ? t("admin.allStatuses") : enabledFilter === "enabled" ? t("settings.enable") : t("settings.disable")}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="enabled">启用</SelectItem>
-            <SelectItem value="disabled">禁用</SelectItem>
+            <SelectItem value="all">{t("admin.allStatuses")}</SelectItem>
+            <SelectItem value="enabled">{t("settings.enable")}</SelectItem>
+            <SelectItem value="disabled">{t("settings.disable")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -461,13 +467,13 @@ export function ModelConfigManager() {
         <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-muted/40 text-xs text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">名称</th>
-              <th className="px-3 py-2 text-left font-medium">类型</th>
-              <th className="px-3 py-2 text-left font-medium">运营商</th>
-              <th className="px-3 py-2 text-left font-medium">模型</th>
-              <th className="px-3 py-2 text-left font-medium">状态</th>
-              <th className="px-3 py-2 text-left font-medium">默认</th>
-              <th className="px-3 py-2 text-right font-medium">操作</th>
+              <th className="px-3 py-2 text-left font-medium">{t("settings.name")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("settings.purpose")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("settings.provider")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("admin.tableModel")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("admin.status")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("admin.tableDefault")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("admin.tableActions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -477,22 +483,22 @@ export function ModelConfigManager() {
               return (
                 <tr key={rowKey(config)} className="border-t border-border/70">
                   <td className="max-w-64 px-3 py-3">
-                    <p className="truncate font-medium">{configTitle(config)}</p>
+                    <p className="truncate font-medium">{configTitle(config, purposeLabel, t)}</p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">{config.description || config.baseUrl || "-"}</p>
                   </td>
                   <td className="px-3 py-3">{purposeLabel[config.purpose]}</td>
-                  <td className="px-3 py-3">{providerLabelMap[config.provider] ?? config.provider}</td>
+                  <td className="px-3 py-3">{providerLabel(config.provider, t)}</td>
                   <td className="max-w-44 truncate px-3 py-3">{config.modelSeries}</td>
                   <td className="px-3 py-3">
                     <div className="flex flex-wrap gap-1">
                       <Badge variant={config.source === "official" ? "default" : "secondary"}>
-                        {config.source === "official" ? "官方" : "用户"}
+                        {config.source === "official" ? t("config.source.official") : t("config.source.user")}
                       </Badge>
                       <Badge variant={config.isEnabled ? "outline" : "destructive"}>
-                        {config.isEnabled ? "启用" : "禁用"}
+                        {config.isEnabled ? t("settings.enable") : t("settings.disable")}
                       </Badge>
                       <Badge variant={config.isVerified ? "outline" : "destructive"}>
-                        {config.isVerified ? "已校验" : "未校验"}
+                        {config.isVerified ? t("settings.verified") : t("settings.unverified")}
                       </Badge>
                     </div>
                   </td>
@@ -505,10 +511,10 @@ export function ModelConfigManager() {
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex justify-end gap-1">
-                      <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title="查看">
+                      <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title={t("admin.view")}>
                         <Eye className="size-4" />
                       </Button>
-                      <Button size="icon-sm" variant="ghost" disabled={!canManageConfig} onClick={() => openEdit(config)} title="编辑">
+                      <Button size="icon-sm" variant="ghost" disabled={!canManageConfig} onClick={() => openEdit(config)} title={t("common.edit")}>
                         <Pencil className="size-4" />
                       </Button>
                       <Switch
@@ -522,11 +528,11 @@ export function ModelConfigManager() {
                         variant="ghost"
                         disabled={busy || !canManageConfig}
                         onClick={() => {
-                          if (window.confirm(`确认删除「${configTitle(config)}」吗？`)) {
+                          if (window.confirm(t("admin.confirmDeleteConfig", { name: configTitle(config, purposeLabel, t) }))) {
                             deleteMutation.mutate(config);
                           }
                         }}
-                        title="删除"
+                        title={t("common.delete")}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -537,7 +543,7 @@ export function ModelConfigManager() {
             })}
             {!busy && pageRows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">暂无匹配配置。</td>
+                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">{t("admin.noMatchingConfigs")}</td>
               </tr>
             ) : null}
           </tbody>
@@ -545,10 +551,10 @@ export function ModelConfigManager() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-        <span>共 {filteredRows.length} 条，第 {currentPage} / {pageCount} 页</span>
+        <span>{t("admin.pagination", { total: filteredRows.length, page: currentPage, pageCount })}</span>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>上一页</Button>
-          <Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>下一页</Button>
+          <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("common.previous")}</Button>
+          <Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>{t("common.next")}</Button>
         </div>
       </div>
 
@@ -557,20 +563,20 @@ export function ModelConfigManager() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingConfig ? "编辑配置" : "新增配置"}</DialogTitle>
-            <DialogDescription>API Key 留空时，编辑会沿用原 Key。</DialogDescription>
+            <DialogTitle>{editingConfig ? t("settings.editConfig") : t("settings.newConfig")}</DialogTitle>
+            <DialogDescription>{t("admin.emptyApiKeyKeepsCurrent")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
             {isSuperAdmin ? (
               <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-                <span>作为官方配置</span>
+                <span>{t("admin.asOfficialConfig")}</span>
                 <Switch checked={isOfficial} disabled={Boolean(editingConfig)} onCheckedChange={setIsOfficial} />
               </label>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="adminConfigPurpose">类型</Label>
+                <Label htmlFor="adminConfigPurpose">{t("settings.purpose")}</Label>
                 <Select value={purpose} onValueChange={onPurposeChange}>
                   <SelectTrigger id="adminConfigPurpose"><SelectValue>{purposeLabel[purpose]}</SelectValue></SelectTrigger>
                   <SelectContent>
@@ -581,12 +587,12 @@ export function ModelConfigManager() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="adminConfigProvider">运营商</Label>
+                <Label htmlFor="adminConfigProvider">{t("settings.provider")}</Label>
                 <Select value={provider} onValueChange={onProviderChange}>
-                  <SelectTrigger id="adminConfigProvider"><SelectValue>{providerLabelMap[provider] ?? provider}</SelectValue></SelectTrigger>
+                  <SelectTrigger id="adminConfigProvider"><SelectValue>{providerLabel(provider, t)}</SelectValue></SelectTrigger>
                   <SelectContent>
                     {options.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      <SelectItem key={option.value} value={option.value}>{providerLabel(option.value, t)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -595,16 +601,16 @@ export function ModelConfigManager() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="adminConfigName">名称</Label>
+                <Label htmlFor="adminConfigName">{t("settings.name")}</Label>
                 <Input id="adminConfigName" value={name} onChange={(event) => setName(event.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="adminConfigConnection">接入方式</Label>
+                <Label htmlFor="adminConfigConnection">{t("settings.connectionMode")}</Label>
                 <Select value={isRelay ? "relay" : "direct"} onValueChange={onConnectionModeChange}>
-                  <SelectTrigger id="adminConfigConnection"><SelectValue>{isRelay ? "自定义中转站" : "官方直连"}</SelectValue></SelectTrigger>
+                  <SelectTrigger id="adminConfigConnection"><SelectValue>{isRelay ? t("admin.connectionRelay") : t("settings.officialDirect")}</SelectValue></SelectTrigger>
                   <SelectContent>
-                    {provider !== "custom" ? <SelectItem value="direct">官方直连</SelectItem> : null}
-                    <SelectItem value="relay">自定义中转站</SelectItem>
+                    {provider !== "custom" ? <SelectItem value="direct">{t("settings.officialDirect")}</SelectItem> : null}
+                    <SelectItem value="relay">{t("admin.connectionRelay")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -612,7 +618,7 @@ export function ModelConfigManager() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="adminConfigModel">模型系列</Label>
+                <Label htmlFor="adminConfigModel">{t("settings.modelSeries")}</Label>
                 <Input
                   id="adminConfigModel"
                   value={modelSeries}
@@ -639,22 +645,22 @@ export function ModelConfigManager() {
                 type="password"
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
-                placeholder={editingConfig ? "留空则沿用原 Key" : "输入 API Key"}
+                placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="adminConfigDescription">描述</Label>
+              <Label htmlFor="adminConfigDescription">{t("settings.descriptionLabel")}</Label>
               <Textarea id="adminConfigDescription" value={description} onChange={(event) => setDescription(event.target.value)} />
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-                <span>启用状态</span>
+                <span>{t("admin.enabledStatus")}</span>
                 <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
               </label>
               <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-                <span>设为默认</span>
+                <span>{t("admin.setDefault")}</span>
                 <Switch checked={isDefault} onCheckedChange={setIsDefault} />
               </label>
             </div>
@@ -662,10 +668,10 @@ export function ModelConfigManager() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setFormOpen(false)}>
                 <X className="size-4" />
-                取消
+                {t("common.cancel")}
               </Button>
               <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "保存中..." : "保存"}
+                {saveMutation.isPending ? t("settings.saving") : t("common.save")}
               </Button>
             </div>
           </div>
@@ -675,17 +681,17 @@ export function ModelConfigManager() {
       <Dialog open={Boolean(viewingConfig)} onOpenChange={(open) => !open && setViewingConfig(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{viewingConfig ? configTitle(viewingConfig) : "配置详情"}</DialogTitle>
-            <DialogDescription>{viewingConfig?.description || "暂无描述"}</DialogDescription>
+            <DialogTitle>{viewingConfig ? configTitle(viewingConfig, purposeLabel, t) : t("admin.configDetails")}</DialogTitle>
+            <DialogDescription>{viewingConfig?.description || t("common.noDescription")}</DialogDescription>
           </DialogHeader>
           {viewingConfig ? (
             <div className="grid gap-2 text-sm">
-              <p>来源：{viewingConfig.source === "official" ? "官方配置" : "用户配置"}</p>
-              <p>类型：{purposeLabel[viewingConfig.purpose]}</p>
-              <p>运营商：{providerLabelMap[viewingConfig.provider] ?? viewingConfig.provider}</p>
-              <p>模型：{viewingConfig.modelSeries}</p>
+              <p>{t("admin.source")}: {viewingConfig.source === "official" ? t("settings.officialConfig") : t("admin.userConfig")}</p>
+              <p>{t("settings.purpose")}: {purposeLabel[viewingConfig.purpose]}</p>
+              <p>{t("settings.provider")}: {providerLabel(viewingConfig.provider, t)}</p>
+              <p>{t("admin.tableModel")}: {viewingConfig.modelSeries}</p>
               <p className="break-all">Base URL：{viewingConfig.baseUrl || "-"}</p>
-              <p>状态：{viewingConfig.isEnabled ? "启用" : "禁用"} / {viewingConfig.isVerified ? "已校验" : "未校验"}</p>
+              <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")} / {viewingConfig.isVerified ? t("settings.verified") : t("settings.unverified")}</p>
             </div>
           ) : null}
         </DialogContent>

@@ -49,13 +49,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
-import { configsByPurpose, providerLabelMap } from "@/lib/model-providers";
+import { configsByPurpose, providerLabel } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { UserConfig } from "@/types/auth";
 import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
 import { SceneCard } from "./scene-card";
+
+type Translate = (key: string, params?: Record<string, string | number>) => string;
 
 const wsBaseURL =
   (process.env.NEXT_PUBLIC_WS_BASE_URL?.trim() || "ws://127.0.0.1:8080").replace(/\/$/, "");
@@ -70,14 +72,14 @@ function summarizeActiveConfig(
   config: UserConfig | undefined,
   unconfiguredLabel: string,
   officialLabel: string,
-  customLabel: string
+  customLabel: string,
+  t: Translate
 ) {
   if (!config) {
     return unconfiguredLabel;
   }
 
-  const providerLabel = providerLabelMap[config.provider] ?? config.provider;
-  return `${config.source === "official" ? officialLabel : customLabel} · ${providerLabel} · ${config.modelSeries}`;
+  return `${config.source === "official" ? officialLabel : customLabel} · ${providerLabel(config.provider, t)} · ${config.modelSeries}`;
 }
 
 interface WorkbenchEditorProps {
@@ -201,14 +203,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const createProjectMutation = useMutation({
-    mutationFn: () => createProjectAction({ title: `新项目 ${projects.length + 1}` }),
+    mutationFn: () => createProjectAction({ title: `${t("home.newProject")} ${projects.length + 1}` }),
     onSuccess: (response) => {
       createProject(response.project);
       router.push(`/projects/${response.project.id}`);
       setStatusMessage(null);
     },
     onError: (error) => {
-      setStatusMessage(resolveRequestError(error, "新建项目失败，请稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.createProjectFailed")));
     },
   });
 
@@ -216,7 +218,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     mutationFn: (params: { projectId: string; originalScript: string }) =>
       updateProjectAction(params.projectId, { originalScript: params.originalScript }),
     onError: (error) => {
-      setStatusMessage(resolveRequestError(error, "保存项目失败，请稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.saveProjectFailed")));
     },
   });
 
@@ -224,7 +226,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     mutationFn: (params: { projectId: string; sceneId: string; patch: Partial<Pick<SceneUpdatePayload, "narration" | "visualPrompt">> }) =>
       updateProjectSceneAction(params.projectId, params.sceneId, params.patch),
     onError: (error) => {
-      setStatusMessage(resolveRequestError(error, "保存分镜失败，请稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.saveSceneFailed")));
     },
   });
 
@@ -232,7 +234,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     mutationFn: (params: { projectId: string; sceneIds: string[] }) =>
       reorderProjectScenesAction(params.projectId, { sceneIds: params.sceneIds }),
     onError: (error) => {
-      setStatusMessage(resolveRequestError(error, "保存分镜排序失败，请稍后重试"));
+      setStatusMessage(resolveRequestError(error, t("home.reorderScenesFailed")));
     },
   });
 
@@ -586,25 +588,25 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
 
           <div className="space-y-1 px-3 pb-3">
-            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">业务中心</p>
+            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.businessCenter")}</p>
             <button
               type="button"
               onClick={() => router.push("/")}
               className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
             >
               <LayoutDashboard className="size-4" />
-              返回项目列表
+              {t("home.backToProjectList")}
             </button>
 
             <div className="pt-3">
-              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">管理中心</p>
+              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.adminCenter")}</p>
               <button
                 type="button"
                 onClick={() => router.push("/admin/models")}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
               >
                 <SlidersHorizontal className="size-4" />
-                模型管理
+                {t("home.modelManagement")}
               </button>
               {user?.role === "superAdmin" ? (
                 <button
@@ -613,7 +615,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
                 >
                   <Shield className="size-4" />
-                  用户管理
+                  {t("home.userManagement")}
                 </button>
               ) : null}
             </div>
@@ -706,7 +708,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                         activeScriptConfig,
                         t("settings.unconfigured"),
                         t("settings.officialConfig"),
-                        t("settings.customConfig")
+                        t("settings.customConfig"),
+                        t
                       ),
                     })}
                   </p>
@@ -716,7 +719,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                         activeImageConfig,
                         t("settings.unconfigured"),
                         t("settings.officialConfig"),
-                        t("settings.customConfig")
+                        t("settings.customConfig"),
+                        t
                       ),
                     })}
                   </p>
@@ -726,7 +730,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                         activeVideoConfig,
                         t("settings.unconfigured"),
                         t("settings.officialConfig"),
-                        t("settings.customConfig")
+                        t("settings.customConfig"),
+                        t
                       ),
                     })}
                   </p>

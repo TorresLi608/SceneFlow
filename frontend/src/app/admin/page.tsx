@@ -11,9 +11,11 @@ import { AdminUsersManager } from "@/app/admin/_components/admin-users-manager";
 import { ModelConfigManager } from "@/app/admin/_components/model-config-manager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
 
 export default function AdminPage() {
+  const { t } = useI18n();
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
   const user = useUserStore((state) => state.user);
@@ -38,7 +40,7 @@ export default function AdminPage() {
   }, [meQuery.data?.user, setUser]);
 
   if (!hydrated || meQuery.isLoading) {
-    return <main className="min-h-screen bg-background p-6 text-sm text-muted-foreground">加载中...</main>;
+    return <main className="min-h-screen bg-background p-6 text-sm text-muted-foreground">{t("admin.loading")}</main>;
   }
 
   if (!token) {
@@ -46,11 +48,11 @@ export default function AdminPage() {
       <main className="flex min-h-screen items-center justify-center bg-background p-6">
         <Card className="w-full max-w-sm">
           <CardHeader>
-            <CardTitle>需要登录</CardTitle>
+            <CardTitle>{t("admin.loginRequired")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>请使用 superAdmin 账号登录后进入管理后台。</p>
-            <Button render={<Link href="/login" />}>去登录</Button>
+            <p>{t("admin.loginRequiredDescription")}</p>
+            <Button render={<Link href="/login" />}>{t("admin.goLogin")}</Button>
           </CardContent>
         </Card>
       </main>
@@ -62,12 +64,12 @@ export default function AdminPage() {
       <main className="flex min-h-screen items-center justify-center bg-background p-6">
         <Card className="w-full max-w-sm">
           <CardHeader>
-            <CardTitle>无权限</CardTitle>
+            <CardTitle>{t("admin.forbidden")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>当前账号不是 superAdmin。</p>
+            <p>{t("admin.forbiddenDescription")}</p>
             <div className="flex gap-2">
-              <Button variant="outline" render={<Link href="/" />}>返回工作台</Button>
+              <Button variant="outline" render={<Link href="/" />}>{t("admin.backToWorkspace")}</Button>
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -75,7 +77,7 @@ export default function AdminPage() {
                   window.location.href = "/login";
                 }}
               >
-                退出登录
+                {t("common.logout")}
               </Button>
             </div>
           </CardContent>
@@ -91,11 +93,11 @@ export default function AdminPage() {
           <div>
             <Link href="/" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
               <ArrowLeft className="size-3.5" />
-              返回工作台
+              {t("admin.backToWorkspace")}
             </Link>
             <h1 className="mt-2 flex items-center gap-2 text-xl font-semibold">
               <Shield className="size-5" />
-              SceneFlow 管理后台
+              {t("admin.title")}
             </h1>
           </div>
         </div>
@@ -104,10 +106,10 @@ export default function AdminPage() {
       <div className="mx-auto grid max-w-7xl gap-4 p-4 md:grid-cols-[220px_minmax(0,1fr)] md:p-6">
         <aside className="h-fit rounded-lg border border-border/70 bg-muted/20 p-2">
           <Button className="w-full justify-start" variant={view === "models" ? "default" : "ghost"} onClick={() => setView("models")}>
-            模型管理
+            {t("home.modelManagement")}
           </Button>
           <Button className="mt-1 w-full justify-start" variant={view === "users" ? "default" : "ghost"} onClick={() => setView("users")}>
-            用户管理
+            {t("home.userManagement")}
           </Button>
         </aside>
 

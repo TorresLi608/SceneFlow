@@ -17,6 +17,7 @@ import {
 import { Paperclip, Send, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ChatAttachment, ChatAttachmentPart, ChatMessage } from "@/types/chat";
 
@@ -78,9 +79,9 @@ const TEXT_FILE_EXTENSIONS = new Set([
   ".log",
 ]);
 
-function assertAttachmentSize(file: File) {
+function assertAttachmentSize(file: File, message: string) {
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error("附件不能超过 5MB");
+    throw new Error(message);
   }
 }
 
@@ -106,29 +107,31 @@ function attachmentType(file: File) {
     : "file";
 }
 
-function readFileAsDataUrl(file: File) {
+function readFileAsDataUrl(file: File, errorMessage: string) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("读取附件失败"));
+    reader.onerror = () => reject(reader.error ?? new Error(errorMessage));
     reader.readAsDataURL(file);
   });
 }
 
-function readFileText(file: File) {
+function readFileText(file: File, errorMessage: string) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("读取附件失败"));
+    reader.onerror = () => reject(reader.error ?? new Error(errorMessage));
     reader.readAsText(file);
   });
 }
 
 class ChatAttachmentAdapter implements AttachmentAdapter {
+  constructor(private readonly messages: { tooLarge: string; readFailed: string }) {}
+
   accept = "*";
 
   async add(state: { file: File }): Promise<PendingAttachment> {
-    assertAttachmentSize(state.file);
+    assertAttachmentSize(state.file, this.messages.tooLarge);
     return {
       id: attachmentId(),
       type: attachmentType(state.file),
@@ -145,12 +148,12 @@ class ChatAttachmentAdapter implements AttachmentAdapter {
       return {
         ...attachment,
         status: { type: "complete" },
-        content: [{ type: "image", image: await readFileAsDataUrl(file), filename: file.name }],
+        content: [{ type: "image", image: await readFileAsDataUrl(file, this.messages.readFailed), filename: file.name }],
       };
     }
 
     if (isTextFile(file)) {
-      const text = await readFileText(file);
+      const text = await readFileText(file, this.messages.readFailed);
       return {
         ...attachment,
         status: { type: "complete" },
@@ -164,7 +167,7 @@ class ChatAttachmentAdapter implements AttachmentAdapter {
       content: [
         {
           type: "file",
-          data: await readFileAsDataUrl(file),
+          data: await readFileAsDataUrl(file, this.messages.readFailed),
           mimeType: file.type || "application/octet-stream",
           filename: file.name,
         },
@@ -264,13 +267,15 @@ function toAssistantMessage(message: ChatMessage, isLastRunning: boolean): Exter
 }
 
 function ComposerAttachment() {
+  const { t } = useI18n();
+
   return (
     <AttachmentPrimitive.Root className="group inline-flex h-10 max-w-[220px] min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-muted/45 p-1 pr-1.5 text-xs">
       <AttachmentPrimitive.unstable_Thumb className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background text-[10px] text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">
         <AttachmentPrimitive.Name />
       </span>
-      <AttachmentPrimitive.Remove className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground" aria-label="移除附件">
+      <AttachmentPrimitive.Remove className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground" aria-label={t("chat.removeAttachment")}>
         <X className="size-3.5" />
       </AttachmentPrimitive.Remove>
     </AttachmentPrimitive.Root>
@@ -278,18 +283,21 @@ function ComposerAttachment() {
 }
 
 function AttachmentError({ onError }: { onError: (message: string) => void }) {
+  const { t } = useI18n();
+
   useAuiEvent("composer.attachmentAddError", ({ reason, message }) => {
-    onError(reason === "not-accepted" ? "当前文件无法添加" : message || "附件上传失败");
+    onError(reason === "not-accepted" ? t("chat.attachmentNotAccepted") : message || t("chat.attachmentUploadFailed"));
   });
   return null;
 }
 
 export function AssistantComposer({ sessionId, messages, disabled, isRunning, onSend }: AssistantComposerProps) {
+  const { t } = useI18n();
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const attachmentAdapter = useMemo<AttachmentAdapter>(
-    () => new ChatAttachmentAdapter(),
-    []
+    () => new ChatAttachmentAdapter({ tooLarge: t("chat.attachmentTooLarge"), readFailed: t("chat.readAttachmentFailed") }),
+    [t]
   );
   const assistantMessages = useMemo(
     () =>
@@ -345,7 +353,7 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
                 multiple
                 disabled={disabled}
                 className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:text-muted-foreground/50"
-                aria-label="添加附件"
+                aria-label={t("chat.addAttachment")}
               >
                 <Paperclip className="size-4" />
               </ComposerPrimitive.AddAttachment>
@@ -354,14 +362,14 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
                 autoFocus
                 submitMode="enter"
                 disabled={disabled}
-                placeholder="输入问题..."
+                placeholder={t("chat.inputPlaceholder")}
                 className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground"
               />
               <ComposerPrimitive.Send
                 className={cn(
                   "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground"
                 )}
-                aria-label="发送"
+                aria-label={t("chat.send")}
               >
                 <Send className="size-4" />
               </ComposerPrimitive.Send>
