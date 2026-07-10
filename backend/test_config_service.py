@@ -99,6 +99,22 @@ def test_image_gemini_config_is_valid() -> None:
     assert normalized["model"] == "gemini-3.1-flash-image"
 
 
+def test_video_gemini_config_is_valid() -> None:
+    normalized = normalize_config_payload(
+        {
+            "purpose": "video",
+            "provider": "gemini",
+            "modelSeries": "veo-3.1-generate-preview",
+            "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+            "apiKey": "new-secret-key",
+        }
+    )
+
+    assert normalized["purpose"] == "video"
+    assert normalized["provider"] == "gemini"
+    assert normalized["model"] == "veo-3.1-generate-preview"
+
+
 def test_gemini_image_helpers() -> None:
     assert image_base_url_for("gemini", "https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com/v1beta"
     assert _is_native_gemini_image_url("https://generativelanguage.googleapis.com/v1beta/openai")
@@ -112,4 +128,5 @@ if __name__ == "__main__":
     test_config_update_fields_disables_active_config()
     test_image_openai_relay_config_is_valid()
     test_image_gemini_config_is_valid()
+    test_video_gemini_config_is_valid()
     test_gemini_image_helpers()

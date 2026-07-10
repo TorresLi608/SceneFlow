@@ -16,6 +16,7 @@ import { AppSidebar } from "./app-sidebar";
 
 function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/images")) return "home.images";
+  if (pathname.startsWith("/videos")) return "home.videos";
   if (pathname.startsWith("/ai-script")) return "home.aiScript";
   if (pathname.startsWith("/admin/models")) return "home.modelManagement";
   if (pathname.startsWith("/admin/users")) return "home.userManagement";

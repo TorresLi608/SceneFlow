@@ -95,10 +95,18 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "doubao",
       label: "Doubao",
-      modelSeries: "seedance-2.0",
-      modelPlaceholder: "seedance-2.0",
+      modelSeries: "doubao-seedance-2-0-260128",
+      modelPlaceholder: "doubao-seedance-2-0-260128",
       baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
       docsUrl: "https://www.volcengine.com/docs/82379",
+    },
+    {
+      value: "gemini",
+      label: "Gemini",
+      modelSeries: "veo-3.1",
+      modelPlaceholder: "veo-3.1-generate-preview",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      docsUrl: "https://ai.google.dev/gemini-api/docs/video",
     },
   ],
 };

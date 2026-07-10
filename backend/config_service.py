@@ -58,8 +58,8 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
             raise HTTPException(400, "custom provider requires baseUrl")
         return
     if purpose == "video":
-        if provider != "doubao":
-            raise HTTPException(400, "video purpose only supports provider doubao")
+        if provider not in {"doubao", "gemini"}:
+            raise HTTPException(400, "video purpose only supports provider doubao/gemini")
         if not model.strip():
             raise HTTPException(400, "video purpose requires modelSeries")
     elif purpose == "image":
