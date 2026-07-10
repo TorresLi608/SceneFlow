@@ -3,10 +3,10 @@
 import { useMutation } from "@tanstack/react-query";
 import { Download, ImageIcon, RotateCcw, Sparkles, Upload, X } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { generateImageAction } from "@/actions/image-generation-actions";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { configName } from "@/lib/config-format";
@@ -18,6 +18,14 @@ import type { GenerateImageInput, ImageReferenceInput } from "@/types/image-gene
 
 const resolutions: GenerateImageInput["resolution"][] = ["1K", "2K", "4K"];
 const ratios: GenerateImageInput["ratio"][] = ["auto", "1:1", "2:3", "3:2", "3:4", "4:3", "16:9", "9:16", "21:9", "9:21"];
+const historyStorageKey = "sceneflow-image-generation-history";
+
+interface ImageHistoryItem {
+  id: string;
+  imageUrl: string;
+  prompt: string;
+  createdAt: string;
+}
 
 function configSelectValue(config: UserConfig) {
   return `${config.source}:${config.id}`;
@@ -48,13 +56,42 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function imageExtension(blob: Blob, url: string) {
+  const fromType = blob.type.split("/")[1]?.split(";")[0];
+  if (fromType) {
+    return fromType === "jpeg" ? "jpg" : fromType;
+  }
+  try {
+    return new URL(url, window.location.href).pathname.split(".").pop() || "png";
+  } catch {
+    return "png";
+  }
+}
+
+function readImageHistory() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(historyStorageKey) || "[]");
+    return Array.isArray(parsed) ? (parsed as ImageHistoryItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveImageHistory(items: ImageHistoryItem[]) {
+  window.localStorage.setItem(historyStorageKey, JSON.stringify(items.slice(0, 20)));
+}
+
 interface ImageGenerationPanelProps {
   configs: UserConfig[];
   officialConfigs: UserConfig[];
 }
 
 export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerationPanelProps) {
-  const { t } = useI18n();
+  const { t, formatDateTime } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<GenerateImageInput["resolution"]>("1K");
@@ -63,6 +100,9 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   const [references, setReferences] = useState<ImageReferenceInput[]>([]);
   const [imageUrl, setImageUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [history, setHistory] = useState<ImageHistoryItem[]>(readImageHistory);
 
   const imageConfigs = useMemo(
     () => [...officialConfigs.filter(isImageConfig), ...configs.filter(isImageConfig)],
@@ -77,14 +117,36 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
 
   const generateMutation = useMutation({
     mutationFn: generateImageAction,
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => {
+      const item = {
+        id: `${Date.now()}`,
+        imageUrl: response.image.url,
+        prompt: variables.prompt,
+        createdAt: new Date().toISOString(),
+      };
+      const nextHistory = [item, ...history].slice(0, 20);
       setImageUrl(response.image.url);
+      setHistory(nextHistory);
+      saveImageHistory(nextHistory);
       setErrorMessage(null);
     },
     onError: (error) => {
       setErrorMessage(resolveRequestError(error, t("images.generateFailed")));
     },
   });
+
+  useEffect(() => {
+    if (!generateMutation.isPending) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [generateMutation.isPending]);
 
   const addReferences = async (files: FileList | null) => {
     if (!files) {
@@ -107,6 +169,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
     if (!content || !selectedConfig || generateMutation.isPending) {
       return;
     }
+    setElapsedSeconds(0);
     generateMutation.mutate({
       prompt: content,
       resolution,
@@ -115,6 +178,38 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
       ...selectedConfigPayload(selectedConfig),
     });
   };
+
+  const downloadImage = async () => {
+    if (!imageUrl || isDownloading) {
+      return;
+    }
+
+    setIsDownloading(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `sceneflow-image-${Date.now()}.${imageExtension(blob, imageUrl)}`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch {
+      setErrorMessage(t("images.downloadFailed"));
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const generatingLabel = t("images.generatingImageWithSeconds", { seconds: elapsedSeconds });
 
   return (
     <div className="grid min-h-0 flex-1 bg-background md:grid-cols-[360px_minmax(0,1fr)]">
@@ -244,9 +339,39 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
         </div>
 
         <div className="mt-4 border-t border-border/70 pt-4">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">{t("images.history")}</h3>
+            <span className="text-xs text-muted-foreground">{history.length}</span>
+          </div>
+          {history.length ? (
+            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+              {history.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setImageUrl(item.imageUrl)}
+                  className="flex w-full gap-2 rounded-md border border-border/70 bg-background/60 p-2 text-left transition-colors hover:bg-muted/60"
+                  aria-label={t("images.viewHistoryItem")}
+                >
+                  <span className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
+                    <Image src={item.imageUrl} alt="" fill unoptimized sizes="56px" className="object-cover" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium">{item.prompt}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("images.historyEmpty")}</p>
+          )}
+        </div>
+
+        <div className="mt-4 border-t border-border/70 pt-4">
           <Button className="w-full" onClick={generate} disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}>
             <Sparkles className="size-4" />
-            {generateMutation.isPending ? t("images.generating") : t("images.generateNow")}
+            {generateMutation.isPending ? generatingLabel : t("images.generateNow")}
           </Button>
         </div>
       </aside>
@@ -260,10 +385,10 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
               {t("images.regenerate")}
             </Button>
             {imageUrl ? (
-              <a href={imageUrl} download className={cn(buttonVariants({ variant: "secondary", size: "sm" }))}>
+              <Button variant="secondary" size="sm" onClick={downloadImage} disabled={isDownloading}>
                 <Download className="size-4" />
                 {t("images.download")}
-              </a>
+              </Button>
             ) : (
               <Button variant="secondary" size="sm" disabled>
                 <Download className="size-4" />
@@ -277,7 +402,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
           {generateMutation.isPending ? (
             <div className="text-center text-sm text-muted-foreground">
               <Sparkles className="mx-auto mb-3 size-5 animate-pulse" />
-              {t("images.generatingImage")}
+              {generatingLabel}
             </div>
           ) : imageUrl ? (
             <div className="relative h-full w-full">

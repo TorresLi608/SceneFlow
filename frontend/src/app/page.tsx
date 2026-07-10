@@ -113,10 +113,6 @@ export function HomePage({ activeMenu = "chat", activeView: requestedView }: Hom
   });
 
   useEffect(() => {
-    setActiveView(initialView);
-  }, [initialView]);
-
-  useEffect(() => {
     if (meQuery.data?.user) {
       setUser(meQuery.data.user);
     }
