@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageIcon, LayoutDashboard, MessageSquare, Shield, SlidersHorizontal, Video } from "lucide-react";
+import { Activity, ImageIcon, LayoutDashboard, MessageSquare, Shield, SlidersHorizontal, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -53,6 +53,14 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
           <LayoutDashboard className="size-4" />
           {t("home.aiScript")}
         </SidebarLink>
+
+        <div className="pt-4">
+          <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.personalCenter")}</p>
+          <SidebarLink href="/usage" active={isActive("/usage")}>
+            <Activity className="size-4" />
+            {t("home.usageLogs")}
+          </SidebarLink>
+        </div>
 
         <div className="pt-4">
           <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.adminCenter")}</p>

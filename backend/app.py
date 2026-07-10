@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import GENERATED_DIR
 from database import init_db
-from routers import admin, auth, chat, images, projects, settings, users, videos, websocket
+from routers import admin, auth, chat, images, projects, settings, usage, users, videos, websocket
 
 
 app = FastAPI(title="SceneFlow Backend")
@@ -32,6 +32,7 @@ app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(images.router)
 app.include_router(videos.router)
+app.include_router(usage.router)
 app.include_router(projects.router)
 app.include_router(websocket.router)
 

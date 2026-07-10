@@ -76,7 +76,14 @@ def init_db() -> None:
                 is_verified numeric DEFAULT false,
                 name text,
                 description text,
-                base_url text
+                base_url text,
+                pricing_multiplier real DEFAULT 1,
+                input_price_per_million real DEFAULT 0,
+                output_price_per_million real DEFAULT 0,
+                cache_read_price_per_million real DEFAULT 0,
+                cache_write_price_per_million real DEFAULT 0,
+                unit_price real DEFAULT 0,
+                unit_name text DEFAULT "token"
             );
             CREATE INDEX IF NOT EXISTS idx_official_model_configs_purpose ON official_model_configs(purpose);
             CREATE INDEX IF NOT EXISTS idx_official_model_configs_deleted_at ON official_model_configs(deleted_at);
@@ -154,6 +161,32 @@ def init_db() -> None:
                 FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id text PRIMARY KEY,
+                created_at datetime NOT NULL,
+                user_id integer NOT NULL,
+                feature text NOT NULL,
+                config_source text NOT NULL,
+                config_id integer,
+                provider text,
+                model_name text,
+                duration_ms integer DEFAULT 0,
+                input_tokens integer DEFAULT 0,
+                output_tokens integer DEFAULT 0,
+                cache_read_tokens integer DEFAULT 0,
+                cache_write_tokens integer DEFAULT 0,
+                quantity real DEFAULT 0,
+                cost_micros integer DEFAULT 0,
+                pricing_multiplier real DEFAULT 1,
+                input_price_per_million real DEFAULT 0,
+                output_price_per_million real DEFAULT 0,
+                cache_read_price_per_million real DEFAULT 0,
+                cache_write_price_per_million real DEFAULT 0,
+                unit_price real DEFAULT 0,
+                unit_name text DEFAULT "token",
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_user_created ON usage_logs(user_id, created_at DESC);
             """
         )
         columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_messages)").fetchall()}
@@ -176,6 +209,17 @@ def init_db() -> None:
             conn.execute("ALTER TABLE official_model_configs ADD COLUMN base_url text")
         if "is_enabled" not in official_config_columns:
             conn.execute("ALTER TABLE official_model_configs ADD COLUMN is_enabled numeric DEFAULT true")
+        for name, definition in (
+            ("pricing_multiplier", "real DEFAULT 1"),
+            ("input_price_per_million", "real DEFAULT 0"),
+            ("output_price_per_million", "real DEFAULT 0"),
+            ("cache_read_price_per_million", "real DEFAULT 0"),
+            ("cache_write_price_per_million", "real DEFAULT 0"),
+            ("unit_price", "real DEFAULT 0"),
+            ("unit_name", 'text DEFAULT "token"'),
+        ):
+            if name not in official_config_columns:
+                conn.execute(f"ALTER TABLE official_model_configs ADD COLUMN {name} {definition}")
         session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         if "official_config_id" not in session_columns:
             conn.execute("ALTER TABLE chat_sessions ADD COLUMN official_config_id integer")

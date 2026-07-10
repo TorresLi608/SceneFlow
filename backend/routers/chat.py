@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +15,7 @@ from context_graph import stream_context_messages
 from database import db
 from security import current_user_id
 from serializers import chat_message_json
+from usage_service import record_usage
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -93,13 +95,15 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
         )
         image_config = _image_config(conn, user_id)
 
+    started_at = time.monotonic()
     try:
-        answer = await run_chat_agent(config, session_id, messages, image_config)
+        result = await run_chat_agent(config, session_id, messages, image_config, user_id)
     except Exception as exc:
         raise HTTPException(502, "failed to chat: " + str(exc)) from exc
 
     with db() as conn:
-        assistant_message = save_chat_message(conn, session_id, "assistant", answer, config["provider"], config["model"])
+        assistant_message = save_chat_message(conn, session_id, "assistant", result.content, config["provider"], config["model"])
+    record_usage(user_id, config, "chat", started_at, result.usage)
 
     return {
         "userMessage": chat_message_json(user_message),
@@ -126,10 +130,12 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
         image_config = _image_config(conn, user_id)
 
     async def events():
+        started_at = time.monotonic()
         yield json.dumps({"type": "userMessage", "message": chat_message_json(user_message)}, ensure_ascii=False) + "\n"
         answer = ""
         reasoning = ""
         messages: list[dict[str, str]] = []
+        usage: dict[str, int] = {}
         try:
             with db() as conn:
                 async for event in stream_context_messages(conn, session_id, config):
@@ -141,9 +147,10 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
                 {"type": "agent_step", "step": {"id": "agent_run", "label": "运行智能助手", "status": "running", "detail": config["model"]}},
                 ensure_ascii=False,
             ) + "\n"
-            async for chunk in stream_chat_agent(config, session_id, messages, image_config):
+            async for chunk in stream_chat_agent(config, session_id, messages, image_config, user_id):
                 if chunk["type"] == "agent_complete":
                     answer = chunk["content"] or answer
+                    usage = chunk.get("usage") or {}
                     continue
                 if chunk["type"] == "reasoning_delta":
                     reasoning += chunk["content"]
@@ -166,6 +173,7 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
                     config["model"],
                     reasoning.strip(),
                 )
+            record_usage(user_id, config, "chat", started_at, usage)
             yield json.dumps(
                 {"type": "agent_step", "step": {"id": "save_message", "label": "保存回复", "status": "done", "detail": "已写入 SQLite"}},
                 ensure_ascii=False,

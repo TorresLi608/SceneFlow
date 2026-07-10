@@ -17,6 +17,7 @@ def user_json(user: sqlite3.Row) -> dict[str, Any]:
 
 
 def config_json(config: sqlite3.Row) -> dict[str, Any]:
+    keys = config.keys()
     return {
         "id": config["id"],
         "source": "user",
@@ -32,6 +33,13 @@ def config_json(config: sqlite3.Row) -> dict[str, Any]:
         "isVerified": bool(config["is_verified"]),
         "createdAt": config["created_at"],
         "updatedAt": config["updated_at"],
+        "pricingMultiplier": config["pricing_multiplier"] if "pricing_multiplier" in keys else 1,
+        "inputPricePerMillion": config["input_price_per_million"] if "input_price_per_million" in keys else 0,
+        "outputPricePerMillion": config["output_price_per_million"] if "output_price_per_million" in keys else 0,
+        "cacheReadPricePerMillion": config["cache_read_price_per_million"] if "cache_read_price_per_million" in keys else 0,
+        "cacheWritePricePerMillion": config["cache_write_price_per_million"] if "cache_write_price_per_million" in keys else 0,
+        "unitPrice": config["unit_price"] if "unit_price" in keys else 0,
+        "unitName": config["unit_name"] if "unit_name" in keys else "token",
     }
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from config import GENERATED_DIR, PUBLIC_BASE_URL
@@ -8,9 +9,10 @@ from database import db
 from model_registry import models
 from realtime import broadcast
 from utils import now
+from usage_service import record_usage
 
 
-async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: dict[str, str]) -> None:
+async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: dict[str, Any], user_id: int) -> None:
     semaphore = asyncio.Semaphore(3)
 
     async def one(scene: dict[str, Any]) -> None:
@@ -19,11 +21,13 @@ async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: 
             with db() as conn:
                 conn.execute("UPDATE scenes SET image_status='generating', updated_at=? WHERE id=?", (now(), scene["id"]))
             try:
+                started_at = time.monotonic()
                 prompt = build_image_prompt(scene)
                 await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"imageStatus": "generating", "imageProgress": 20, "errorMsg": ""}})
                 if config["provider"] not in {"openai", "gemini"}:
                     raise ValueError("image generation currently only supports provider openai/gemini")
                 image = await models.generate_image(config["apiKey"], config["model"], prompt, base_url=config.get("baseUrl", ""), provider=config["provider"])
+                record_usage(user_id, config, "storyboard_image", started_at, quantity=1)
                 image_url = persist_scene_image(project_id, scene["id"], image.data, image.format)
                 with db() as conn:
                     conn.execute("UPDATE scenes SET image_status='success', image_url=?, updated_at=? WHERE id=?", (image_url, now(), scene["id"]))

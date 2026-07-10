@@ -1,4 +1,15 @@
 export type ConfigPurpose = "general" | "script" | "image" | "video";
+export type PricingUnit = "token" | "request" | "image" | "second";
+
+export interface ModelPricing {
+  pricingMultiplier: number;
+  inputPricePerMillion: number;
+  outputPricePerMillion: number;
+  cacheReadPricePerMillion: number;
+  cacheWritePricePerMillion: number;
+  unitPrice: number;
+  unitName: PricingUnit;
+}
 
 export interface AuthUser {
   id: number;
@@ -18,7 +29,7 @@ export interface UserMeResponse {
   user: AuthUser;
 }
 
-export interface UserConfig {
+export interface UserConfig extends ModelPricing {
   id: number;
   source: "user" | "official";
   name: string;
@@ -44,7 +55,7 @@ export interface UserConfigItemResponse {
   config: UserConfig;
 }
 
-export interface CreateUserConfigInput {
+export interface CreateUserConfigInput extends Partial<ModelPricing> {
   name?: string;
   description?: string;
   purpose: ConfigPurpose;
@@ -56,7 +67,7 @@ export interface CreateUserConfigInput {
   isEnabled?: boolean;
 }
 
-export interface UpdateUserConfigInput {
+export interface UpdateUserConfigInput extends Partial<ModelPricing> {
   name?: string;
   description?: string;
   purpose?: ConfigPurpose;

@@ -173,7 +173,15 @@ def _model_config(config: sqlite3.Row, purpose: str, stage: str, source: str) ->
     api_key = decrypt(config["encrypted_key"]).strip()
     if not api_key:
         raise HTTPException(400, f"{stage}当前默认模型缺少 API Key。")
-    return {"provider": provider, "model": model, "apiKey": api_key, "baseUrl": base_url, "source": source}
+    return {
+        "provider": provider,
+        "model": model,
+        "apiKey": api_key,
+        "baseUrl": base_url,
+        "source": source,
+        "configId": config["id"] if source == "user" else None,
+        "officialConfigId": config["id"] if source == "official" else None,
+    }
 
 
 def official_model_config(conn: sqlite3.Connection, config_id: int, purpose: str, stage: str) -> dict[str, str]:

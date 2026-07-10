@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from database import db
 from model_registry import models
 from security import current_user_id
 from utils import new_id
+from usage_service import record_usage
 
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -36,6 +38,7 @@ def parse_reference(value: dict[str, Any], index: int) -> tuple[str, bytes, str]
     if not match:
         raise HTTPException(400, "reference images must be png/jpeg/webp data URLs")
     mime_type, encoded = match.groups()
+    started_at = time.monotonic()
     try:
         data = base64.b64decode(encoded, validate=True)
     except Exception as exc:
@@ -90,6 +93,7 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
             result = await models.generate_image(config["apiKey"], config["model"], prompt, size, quality, config.get("baseUrl", ""), config["provider"])
     except Exception as exc:
         raise HTTPException(502, "AI 图片生成失败：" + str(exc)[:220]) from exc
+    record_usage(user_id, config, "image", started_at, quantity=1)
 
     return {
         "image": {

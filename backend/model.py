@@ -3,15 +3,18 @@ from __future__ import annotations
 import base64
 from io import BytesIO
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
 from google import genai
 from langchain_anthropic import ChatAnthropic
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from openai import APIStatusError, AsyncOpenAI
+
+from usage_service import aggregate_token_usage
 
 
 CHAT_BASE_URLS = {
@@ -37,6 +40,7 @@ class ParseResult:
     scenes: list[SceneDraft]
     source: str = "llm"
     warning: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -45,6 +49,7 @@ class OptimizeResult:
     tips: list[str]
     source: str = "llm"
     warning: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -242,21 +247,22 @@ class ModelRouter:
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.2)
         if provider.strip().lower() != "anthropic":
             llm = llm.bind(response_format={"type": "json_object"})
-        response = await llm.ainvoke(
-            _lc_messages(
-                [
-                    {
-                        "role": "system",
-                        "content": 'You convert screenplay text into storyboard scenes. Return strict JSON only with schema: {"scenes":[{"narration":"...","visualPrompt":"..."}]}',
-                    },
-                    {
-                        "role": "user",
-                        "content": "Parse the script into 4-12 scenes. Keep narration concise and generate a cinematic anime visual prompt for each scene. Script:\n"
-                        + script,
-                    },
-                ]
+        with get_usage_metadata_callback() as usage_callback:
+            response = await llm.ainvoke(
+                _lc_messages(
+                    [
+                        {
+                            "role": "system",
+                            "content": 'You convert screenplay text into storyboard scenes. Return strict JSON only with schema: {"scenes":[{"narration":"...","visualPrompt":"..."}]}',
+                        },
+                        {
+                            "role": "user",
+                            "content": "Parse the script into 4-12 scenes. Keep narration concise and generate a cinematic anime visual prompt for each scene. Script:\n"
+                            + script,
+                        },
+                    ]
+                )
             )
-        )
 
         scenes = []
         for item in _json_object(_content_text(response.content)).get("scenes", [])[:20]:
@@ -273,7 +279,10 @@ class ModelRouter:
             )
         if not scenes:
             raise ValueError("no scenes in parsed output")
-        return ParseResult(scenes=scenes)
+        usage = aggregate_token_usage(usage_callback.usage_metadata)
+        if not any(usage.values()):
+            usage = aggregate_token_usage(response.usage_metadata)
+        return ParseResult(scenes=scenes, usage=usage)
 
     async def optimize_script(self, provider: str, api_key: str, model: str, script: str, base_url: str = "") -> OptimizeResult:
         script = script.strip()
@@ -283,29 +292,34 @@ class ModelRouter:
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3)
         if provider.strip().lower() != "anthropic":
             llm = llm.bind(response_format={"type": "json_object"})
-        response = await llm.ainvoke(
-            _lc_messages(
-                [
-                    {
-                        "role": "system",
-                        "content": "You are a screenplay doctor. Return strict JSON with fields optimizedScript (string) and tips (string array).",
-                    },
-                    {
-                        "role": "user",
-                        "content": "Polish and optimize this script for short anime video production. Keep style concise and cinematic. Script:\n"
-                        + script,
-                    },
-                ]
+        with get_usage_metadata_callback() as usage_callback:
+            response = await llm.ainvoke(
+                _lc_messages(
+                    [
+                        {
+                            "role": "system",
+                            "content": "You are a screenplay doctor. Return strict JSON with fields optimizedScript (string) and tips (string array).",
+                        },
+                        {
+                            "role": "user",
+                            "content": "Polish and optimize this script for short anime video production. Keep style concise and cinematic. Script:\n"
+                            + script,
+                        },
+                    ]
+                )
             )
-        )
         payload = _json_object(_content_text(response.content))
         optimized = str(payload.get("optimizedScript", "")).strip()
         if not optimized:
             raise ValueError("optimizedScript is empty")
         tips = [str(tip).strip() for tip in payload.get("tips", []) if str(tip).strip()]
+        usage = aggregate_token_usage(usage_callback.usage_metadata)
+        if not any(usage.values()):
+            usage = aggregate_token_usage(response.usage_metadata)
         return OptimizeResult(
             optimizedScript=optimized,
             tips=tips or ["补充镜头情绪变化", "每段保持单一动作焦点", "减少重复描述，增加视觉细节"],
+            usage=usage,
         )
 
     async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, Any]], base_url: str = "") -> str:

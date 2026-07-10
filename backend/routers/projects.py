@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +15,7 @@ from realtime import broadcast
 from security import current_user_id
 from serializers import project_json, scene_json
 from utils import new_id, now
+from usage_service import record_usage
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -130,6 +132,7 @@ async def parse_project(project_id: str, payload: dict[str, Any], user_id: int =
 
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "parsing"}})
     config = data["config"]
+    started_at = time.monotonic()
     try:
         result = await models.parse_script(
             config["provider"],
@@ -142,6 +145,7 @@ async def parse_project(project_id: str, payload: dict[str, Any], user_id: int =
         with db() as conn:
             conn.execute("UPDATE projects SET status='idle', updated_at=? WHERE id=?", (now(), project_id))
         raise HTTPException(502, "failed to parse script: " + str(exc)) from exc
+    record_usage(user_id, config, "script_parse", started_at, result.usage)
 
     stamp = now()
     with db() as conn:
@@ -175,6 +179,7 @@ async def optimize_project(project_id: str, payload: dict[str, Any], user_id: in
         if not script:
             raise HTTPException(400, "script is required")
         config = active_model_config(conn, user_id, "script", "故事生成/剧本优化")
+    started_at = time.monotonic()
     try:
         result = await models.optimize_script(
             config["provider"],
@@ -185,6 +190,7 @@ async def optimize_project(project_id: str, payload: dict[str, Any], user_id: in
         )
     except Exception as exc:
         raise HTTPException(502, "failed to optimize script: " + str(exc)) from exc
+    record_usage(user_id, config, "script_optimize", started_at, result.usage)
     with db() as conn:
         conn.execute("UPDATE projects SET original_script=?, status='idle', updated_at=? WHERE id=?", (result.optimizedScript, now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "optimizedScript": result.optimizedScript, "warning": result.warning}})
@@ -206,7 +212,7 @@ async def generate_project(project_id: str, payload: dict[str, Any], user_id: in
             warning = "图片生成默认模型当前不可用，已回退到剧本/提示词默认模型。原始原因：" + str(image_error.detail)
         conn.execute("UPDATE projects SET status='generating', updated_at=? WHERE id=?", (now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating"}})
-    asyncio.create_task(run_generation(project_id, [dict(scene) for scene in scenes], config))
+    asyncio.create_task(run_generation(project_id, [dict(scene) for scene in scenes], config, user_id))
     return {"projectId": project_id, "status": "generating", "model": str(payload.get("model") or config["model"]), "provider": config["provider"], "imageModel": config["model"], "warning": warning, "sceneCount": len(scenes)}
 
 

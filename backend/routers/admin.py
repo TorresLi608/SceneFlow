@@ -8,6 +8,7 @@ from config_service import config_create_fields, config_update_fields, normalize
 from database import db, row, rows
 from security import current_super_admin_id
 from serializers import official_config_json, user_json
+from usage_service import normalize_pricing, pricing_updates
 from utils import now
 
 
@@ -71,14 +72,20 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
         )
         is_verified = 1
     fields = config_create_fields(payload, normalized, is_verified)
+    try:
+        pricing = normalize_pricing(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     stamp = now()
     with db() as conn:
         if bool(payload.get("isActive")):
             conn.execute("UPDATE official_model_configs SET is_active=0, updated_at=? WHERE purpose=? AND deleted_at IS NULL", (stamp, fields["purpose"]))
         cur = conn.execute(
             """INSERT INTO official_model_configs
-            (created_at, updated_at, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (created_at, updated_at, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
+             pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
+             cache_write_price_per_million, unit_price, unit_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 stamp,
                 stamp,
@@ -92,6 +99,13 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
                 fields["is_active"],
                 fields["is_enabled"],
                 fields["is_verified"],
+                pricing["pricing_multiplier"],
+                pricing["input_price_per_million"],
+                pricing["output_price_per_million"],
+                pricing["cache_read_price_per_million"],
+                pricing["cache_write_price_per_million"],
+                pricing["unit_price"],
+                pricing["unit_name"],
             ),
         )
         config = row(conn, "SELECT * FROM official_model_configs WHERE id=?", (cur.lastrowid,))
@@ -115,6 +129,10 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
             normalized["base_url"],
         )
     updates = config_update_fields(payload, config, normalized)
+    try:
+        updates.update(pricing_updates(payload, config))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     stamp = now()
     with db() as conn:

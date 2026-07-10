@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -10,6 +11,7 @@ from database import db
 from security import current_user_id
 from utils import new_id
 from video_service import generate_video, parse_reference, resolve_video_settings
+from usage_service import record_usage
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -44,6 +46,7 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
             config = active_model_config(conn, user_id, "video", "视频生成")
 
     resolution = str(payload.get("resolution") or "1280x720")
+    started_at = time.monotonic()
     try:
         fps = int(payload.get("fps") or 24)
         duration = int(payload.get("duration") or 4)
@@ -67,6 +70,7 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
         )
     except Exception as exc:
         raise HTTPException(502, "AI 视频生成失败：" + str(exc)[:220]) from exc
+    record_usage(user_id, config, "video", started_at, quantity=duration)
 
     return {
         "video": {
