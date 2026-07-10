@@ -1,5 +1,73 @@
 # Progress Log
 
+## Session: 2026-07-10
+
+### Phase 9: Workspace route/layout refactor
+- **Status:** complete
+- Actions taken:
+  - Replaced the large client-side `HomePage` shell/router with a native Next.js `(workspace)` route group and shared layout.
+  - Added `WorkspaceShell` for auth/current-user/header/logout responsibilities.
+  - Added a concrete `AppSidebar` using `Link` and `usePathname()`.
+  - Changed `/` to redirect to `/chat`.
+  - Moved project fetching into `/ai-script` and model-config fetching into `/chat` and `/images` only.
+  - Removed `activeMenu`, `activeView`, and duplicated route/local navigation state.
+- Files created/modified:
+  - `frontend/src/app/page.tsx`
+  - `frontend/src/app/(workspace)/layout.tsx`
+  - `frontend/src/app/(workspace)/_components/app-sidebar.tsx`
+  - `frontend/src/app/(workspace)/_components/workspace-shell.tsx`
+  - `frontend/src/app/(workspace)/chat/page.tsx`
+  - `frontend/src/app/(workspace)/images/page.tsx`
+  - `frontend/src/app/(workspace)/ai-script/page.tsx`
+
+### Phase 10: Route-private component colocation and admin consolidation
+- **Status:** complete
+- Actions taken:
+  - Moved all chat-only components under `(workspace)/chat/_components`.
+  - Moved the image generation panel under `(workspace)/images/_components`.
+  - Removed the duplicate standalone `app/admin` page and shell.
+  - Added workspace `/admin` redirect to `/admin/models`.
+  - Moved model/user managers into their corresponding admin page `_components` directories.
+  - Removed old standalone-admin-only translation keys.
+- Files created/modified:
+  - `frontend/src/app/(workspace)/chat/_components/*`
+  - `frontend/src/app/(workspace)/images/_components/image-generation-panel.tsx`
+  - `frontend/src/app/(workspace)/admin/page.tsx`
+  - `frontend/src/app/(workspace)/admin/models/page.tsx`
+  - `frontend/src/app/(workspace)/admin/models/_components/model-config-manager.tsx`
+  - `frontend/src/app/(workspace)/admin/users/page.tsx`
+  - `frontend/src/app/(workspace)/admin/users/_components/admin-users-manager.tsx`
+  - `frontend/src/lib/i18n.ts`
+  - Removed the corresponding old files under `frontend/src/app/chat`, `images`, `ai-script`, and `admin`.
+
+### Phase 11: User management table and admin alignment
+- **Status:** complete
+- Actions taken:
+  - Replaced user cards with a model-management-style table.
+  - Added username/ID search, role filter, status filter, and 10-row pagination.
+  - Added role/status badges and created/updated timestamps.
+  - Kept superAdmin disable/delete controls protected.
+  - Added a generic-preserving `filterUsers` helper and Node test.
+  - Added Chinese/English user-list translations.
+  - Centered actions headers and controls in both user and model management tables.
+- Files created/modified:
+  - `frontend/src/app/(workspace)/admin/users/_components/admin-users-manager.tsx`
+  - `frontend/src/app/(workspace)/admin/users/_components/user-list.ts`
+  - `frontend/src/app/(workspace)/admin/users/_components/user-list.test.mts`
+  - `frontend/src/app/(workspace)/admin/models/_components/model-config-manager.tsx`
+  - `frontend/src/lib/i18n.ts`
+
+### Phase 12: Persistent documentation sync
+- **Status:** complete
+- Actions taken:
+  - Read the `planning-with-files` skill and all three existing project planning files.
+  - Updated stale frontend paths and route descriptions in `findings.md`.
+  - Recorded workspace/admin decisions, validation results, and all encountered errors.
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
 ## Session: 2026-07-09
 
 ### Phase 7: Dependency cleanup and open-source-first rules
@@ -155,7 +223,7 @@
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | N/A | Documentation task | No runtime test needed | Final docs reviewed | Pass |
-| Test file scan | `rg --files -g '*test*' -g '*spec*'` | Identify tests if present | No test/spec files found | Pass |
+| Test file scan | `rg --files -g '*test*' -g '*spec*'` | Identify tests if present | Initial scan found none; `user-list.test.mts` was added on 2026-07-10 | Pass |
 | Env file scan | `rg --files -g '.env*'` | Identify env examples without reading secrets | Found `frontend/.env.example` and ignored `frontend/.env.local` | Pass |
 | Final doc review | Read `task_plan.md`, `findings.md`, `progress.md`, `AI_HANDOFF.md` top | Planning docs should be coherent | Needed final status cleanup, then updated | Pass |
 | Backend compile | `backend/.venv/bin/python -m compileall -q backend` | Python files compile | Passed | Pass |
@@ -171,6 +239,12 @@
 | i18n lint | `cd frontend && npm run lint` | No lint errors | Passed | Pass |
 | i18n type-check | `cd frontend && npx tsc --noEmit` | No TypeScript errors | Passed | Pass |
 | i18n dependency tree | `cd frontend && npm ls react-i18next i18next` | Installed and deduped | `react-i18next@17.0.8`, `i18next@26.3.5` | Pass |
+| Workspace/admin lint | `cd frontend && npm run lint` | No lint errors after route moves and table changes | Passed repeatedly, including final action-column alignment | Pass |
+| Workspace/admin type-check | `cd frontend && npx tsc --noEmit` | No TypeScript errors | Passed after regenerating stale Next route types and preserving full filtered-user types | Pass |
+| User filter logic | `cd frontend && node --no-warnings --experimental-strip-types --test 'src/app/(workspace)/admin/users/_components/user-list.test.mts'` | Combined search/role/status filters select correct users | 1 test passed | Pass |
+| Workspace webpack production build | `cd frontend && npm run build -- --webpack` | Routes compile and page data generates | Passed after route split, component colocation, and admin consolidation | Pass |
+| Final user-list production build retry | Same webpack command with required network approval | Revalidate after final list change | Could not start because the automatic approval reviewer returned a service-side `404` | Blocked by tooling |
+| 2026-07-10 Markdown diff check | `git diff --check` | No whitespace errors | Passed | Pass |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -186,12 +260,22 @@
 | 2026-07-06 | React lint error: `Calling setState synchronously within an effect` in `chat-message-list.tsx` | 1 | Moved initial scroll state update into `requestAnimationFrame`. |
 | 2026-07-06 | Streaming output caused visible scroll jitter, worse after manual upward scrolling | 1 | Canceled queued auto-scroll on upward wheel and only auto-follow while near bottom; later `ResizeObserver` use is gated by follow state. |
 | 2026-07-06 | `zsh: command not found: ResizeObserver` while scanning markdown | 1 | Re-ran `rg` with the pattern in single quotes so backticks were literal text. |
+| 2026-07-10 | `apply_patch verification failed: Update file hunk ... is empty` while moving route-private files | 1 | Re-ran moves with small real import/formatting changes so each move had a valid hunk. |
+| 2026-07-10 | Next/Turbopack build hung at `Creating an optimized production build ...` | 1 | Interrupted the hung process and switched verification to `next build --webpack`. |
+| 2026-07-10 | Webpack build failed with `getaddrinfo ENOTFOUND fonts.googleapis.com` in sandbox | 1 | Re-ran with approved network permission; production build passed. |
+| 2026-07-10 | `ps`/`pgrep` process inspection was blocked by sandbox permissions | 1 | Stopped inspecting processes and polled the existing command session directly. |
+| 2026-07-10 | `rmdir` reported `src/app/ai-script: No such file or directory` after other empty directories were removed | 1 | Confirmed the directory was already gone; no further action needed. |
+| 2026-07-10 | `.next/types` still imported deleted `src/app/admin/page.js` | 1 | Ran a fresh successful Next build to regenerate route types; `tsc` then passed. |
+| 2026-07-10 | TypeScript reported `createdAt`/`updatedAt` missing after `filterUsers` | 1 | Made `filterUsers<T extends UserListItem>` generic so the returned rows retain the full `AuthUser` shape. |
+| 2026-07-10 | TypeScript rejected `.ts` extension in the Node test import | 1 | Added a scoped `@ts-expect-error` documenting Node type-stripping behavior. |
+| 2026-07-10 | Node rejected `--experimental-default-type=module` | 1 | Removed that flag and ran with `--no-warnings --experimental-strip-types`. |
+| 2026-07-10 | Automatic approval reviewer returned `404` for its review model when starting the final build | 1 | Did not bypass approval; reported the tooling block and retained lint/type/test plus earlier successful builds. |
 
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
 | Where am I? | Complete. |
 | Where am I going? | Future AI should read `AI_HANDOFF.md`, `RUNNING.md`, then `findings.md`. |
-| What's the goal? | Summarize SceneFlow for future AI development. |
-| What have I learned? | Stack, commands, entry points, data model, chat attachment flow, AI SDK stream bridge, current scroll behavior, limits, and checks are captured in `findings.md`. |
-| What have I done? | Created persistent planning files, updated `AI_HANDOFF.md`, captured the project map, improved chat attachments/composer UI, integrated AI SDK for frontend stream state, fixed chat scroll UX, and synced scroll docs. |
+| What's the goal? | Keep SceneFlow easy to resume while maintaining a simple route-owned frontend architecture. |
+| What have I learned? | Stack, commands, entry points, workspace route layout, route-private component ownership, admin list behavior, chat flow, limits, and checks are captured in `findings.md`. |
+| What have I done? | Created persistent planning files, captured the project map, improved chat attachments/streaming/scroll UX, replaced `HomePage` with a workspace layout, colocated private components, consolidated admin routes, and upgraded user management to a filtered table. |

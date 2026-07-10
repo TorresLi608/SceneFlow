@@ -3,7 +3,13 @@
 import { MessageSquarePlus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { configName } from "@/lib/config-format";
 import { useI18n } from "@/lib/i18n";

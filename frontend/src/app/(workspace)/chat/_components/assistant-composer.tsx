@@ -1,6 +1,11 @@
 "use client";
 
 import {
+  type AppendMessage,
+  type AttachmentAdapter,
+  type CompleteAttachment,
+  type ExternalThreadMessage,
+  type PendingAttachment,
   AssistantRuntimeProvider,
   AttachmentPrimitive,
   AuiIf,
@@ -8,11 +13,6 @@ import {
   ThreadPrimitive,
   useAuiEvent,
   useExternalStoreRuntime,
-  type AppendMessage,
-  type AttachmentAdapter,
-  type CompleteAttachment,
-  type ExternalThreadMessage,
-  type PendingAttachment,
 } from "@assistant-ui/react";
 import { Paperclip, Send, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

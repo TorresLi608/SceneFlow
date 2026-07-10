@@ -43,12 +43,22 @@
   - `backend/sceneflow.db`: local SQLite database, currently modified.
 - Frontend notable files:
   - `frontend/src/app/layout.tsx`: root layout, Chinese locale, app preferences provider, React Query provider.
-  - `frontend/src/app/page.tsx`: logged-in home shell. Left nav toggles Chat and AI Script project list. Uses user/project stores plus React Query actions.
+  - `frontend/src/app/page.tsx`: minimal root route that redirects `/` to `/chat`.
+  - `frontend/src/app/(workspace)/layout.tsx`: shared authenticated workspace layout for chat, images, AI script, and admin routes.
+  - `frontend/src/app/(workspace)/_components/workspace-shell.tsx`: owns auth hydration, current-user query, top header, logout, and shared workspace frame.
+  - `frontend/src/app/(workspace)/_components/app-sidebar.tsx`: concrete application navigation using `Link` + `usePathname()`; no duplicated local active-view state.
+  - `frontend/src/app/(workspace)/chat/page.tsx`: fetches model configs only for chat and renders the chat panel.
+  - `frontend/src/app/(workspace)/images/page.tsx`: fetches model configs only for image generation and renders the image panel.
+  - `frontend/src/app/(workspace)/ai-script/page.tsx`: owns project list fetching, filtering, creation, and navigation.
+  - `frontend/src/app/(workspace)/admin/page.tsx`: redirects `/admin` to `/admin/models` inside the workspace shell.
   - `frontend/src/app/projects/[projectId]/page.tsx`: project page entry; read with shell quoting because brackets are glob syntax.
-  - `frontend/src/components/`: UI, chat, workbench, settings components.
-  - `frontend/src/components/chat/use-chat-controller.ts`: chat state machine. Picks usable configs, handles sessions, consumes NDJSON streaming events, accumulates reasoning/content deltas, stores agent steps.
-  - `frontend/src/components/chat/chat-panel.tsx`: chat layout with sidebar, message list, assistant composer.
-  - `frontend/src/components/workbench/workbench-editor.tsx`: main project editor. Handles project CRUD actions, scene editing/reordering, parse/optimize/generate/video mutations, auth redirects, and WebSocket state updates.
+  - `frontend/src/app/(workspace)/chat/_components/use-chat-controller.ts`: chat state machine using Vercel AI SDK `useChat`, session queries, message conversion, and streamed agent-step state.
+  - `frontend/src/app/(workspace)/chat/_components/chat-panel.tsx`: route-private chat layout with sidebar, message list, and assistant composer.
+  - `frontend/src/app/(workspace)/images/_components/image-generation-panel.tsx`: route-private image generation form, preview, download, and current local history UI.
+  - `frontend/src/app/projects/[projectId]/_components/workbench-editor.tsx`: main project editor. Handles project CRUD actions, scene editing/reordering, parse/optimize/generate/video mutations, auth redirects, and WebSocket state updates.
+  - `frontend/src/app/(workspace)/admin/models/_components/model-config-manager.tsx`: model config table, filters, edit/view dialogs, default/enabled switches, and actions.
+  - `frontend/src/app/(workspace)/admin/users/_components/admin-users-manager.tsx`: user table with search, role/status filters, pagination, status switch, and delete action.
+  - `frontend/src/components/`: shared UI primitives and cross-route components only; route-private feature components should stay under their owning app route `_components` folder.
   - `frontend/src/actions/`, `frontend/src/bff/`, `frontend/src/lib/`: client actions, BFF helpers, HTTP/API utilities.
 - Frontend action pattern:
   - Components call `src/actions/*`.
@@ -56,7 +66,7 @@
   - Next BFF routes forward to FastAPI backend.
   - `frontend/src/lib/http/client.ts` injects Bearer token from `user-store`; 401 logs out locally.
   - `frontend/src/lib/http/backend-client.ts` points server-side BFF calls at `BACKEND_API_BASE_URL` or `http://127.0.0.1:8080`.
-  - Streaming BFF route `frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` passes the backend response body through unchanged.
+  - Streaming BFF route `frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` translates backend NDJSON into AI SDK UI stream chunks.
 - Frontend state pattern:
   - `frontend/src/store/user-store.ts` persists only auth token/user in localStorage.
   - `frontend/src/store/project-store.ts` is an in-memory normalized project/scene cache fed by backend data and WebSocket events.
@@ -101,7 +111,7 @@
 - `backend/*.db` is ignored, so DB changes usually represent local dev state, not source edits.
 - Generated files go under `backend/generated` by default and are served from `/generated`.
 - WebSocket registry is process-local memory; multi-process deployment would need a shared pub/sub layer.
-- Image generation supports OpenAI provider only.
+- Image generation supports OpenAI and Gemini providers; generated files are persisted under the configured generated directory.
 - Audio generation and video generation currently simulate output URLs/progress.
 - Next.js dynamic route paths contain brackets; quote them in shell commands.
 
@@ -131,8 +141,8 @@
   - `npm run dev:frontend`
 
 ## Tests / Checks
-- No test/spec files were found by `rg --files -g '*test*' -g '*spec*'`.
-- Existing validation surface is mostly compile/lint/type/build commands listed above.
+- Most validation remains compile/lint/type/build based.
+- `frontend/src/app/(workspace)/admin/users/_components/user-list.test.mts` is a small Node test for combined user search/role/status filtering.
 
 ## Technical Decisions
 | Decision | Rationale |
@@ -146,6 +156,11 @@
 | Keep `@base-ui/react` + shadcn-style UI | Base UI primitives are acceptable for interaction/accessibility foundations; keep shadcn-style composition for readable local UI components. |
 | Keep `google-genai` for Gemini native image generation | It is the direct SDK path currently used by the app. Add `langchain-google-genai` only if Gemini chat needs native LangChain provider behavior. |
 | Use `react-i18next` for UI localization | Replaces hand-written interpolation in `frontend/src/lib/i18n.ts` while keeping the local `useI18n()` facade for low-churn call sites. |
+| Use a `(workspace)` route group and shared layout | Native Next.js layout composition keeps URLs unchanged while sharing auth, sidebar, and header. |
+| Derive sidebar active state from `usePathname()` | URL is the source of truth; removes `HomePage`/`activeView` state synchronization. |
+| Keep route-private components beside their pages | Chat, image, model-admin, and user-admin components now live under their owning `_components` folders. |
+| Keep `/admin` as a redirect rather than a second admin UI | Preserves old links without maintaining duplicate auth/navigation/management code. |
+| Keep user list filtering and pagination client-side for now | The current admin API returns the complete small user set; page size 10 bounds rendered rows. |
 
 ## Development Principles
 - Before coding, ask: is this already in the codebase, stdlib/platform, or an installed/mature open-source library?
@@ -159,6 +174,11 @@
 |-------|------------|
 | Shell failed to read `frontend/src/app/projects/[projectId]/page.tsx` because zsh expanded brackets | Quote bracketed paths, e.g. `sed -n '1,160p' 'frontend/src/app/projects/[projectId]/page.tsx'`. |
 | Same shell glob issue repeated on a BFF stream route | Quote all Next dynamic route paths before running shell commands. |
+| Move-only `apply_patch` hunks were rejected as empty | Include a small real import/formatting edit in the same move patch. |
+| Turbopack production build hung without progress | Interrupt the hung session and use `next build --webpack` for deterministic verification. |
+| Webpack build could not fetch Google Fonts in the sandbox | Use approved network access for the existing `next/font` download; the build then passed. |
+| `.next/types` retained the removed standalone admin route | Rebuild Next output before rerunning standalone `tsc`. |
+| Final build approval review returned a service-side `404` | Do not bypass approval; report that the build could not start and rely on successful lint/type/test plus earlier builds. |
 
 ## Resources
 - `/Users/torresli/Documents/other/SceneFlow`
@@ -174,6 +194,24 @@
 ## Visual/Browser Findings
 - 2026-07-06 chat composer screenshots: current attachment preview appears as a wide full-row input-like bar, making the bottom composer feel visually heavy and confusing.
 - Desired composer direction: closer to ChatGPT, with compact attachment chips inside the composer, a simple paperclip/input/send row, and no visible explanatory helper text.
+
+## Workspace Routing and Admin UI Findings
+- 2026-07-10 the previous `HomePage` was both a client router and a page shell: it statically imported chat, images, project list, and admin managers, duplicated URL state in `activeView`, and ran unrelated queries on every route.
+- Current workspace routes are grouped under `frontend/src/app/(workspace)`; the group name does not appear in URLs.
+- The shared workspace layout covers `/chat`, `/images`, `/ai-script`, `/admin`, `/admin/models`, and `/admin/users`; login/register and the project workbench remain outside this shell.
+- The application sidebar is intentionally concrete rather than configurable. Add a generic sidebar abstraction only if a second independent app shell appears.
+- Project list data is fetched only by `/ai-script`; user model configs are fetched only by `/chat` and `/images`.
+- Standalone `frontend/src/app/admin` was removed because it duplicated model/user managers and had no unique entry or capability.
+- User management now matches the model-management table pattern:
+  - username/ID search;
+  - role and enabled/disabled filters;
+  - 10-row client pagination;
+  - role/status badges;
+  - created/updated timestamps;
+  - inline enabled switch and delete action;
+  - superAdmin rows are protected from disable/delete.
+- User filtering lives in `user-list.ts` and preserves the full row type through a generic helper; `user-list.test.mts` checks combined search/role/status behavior.
+- The actions headers and inline controls in both user and model tables are horizontally centered.
 
 ## Chat Attachment Findings
 - User wants uploads to accept all files, including code files such as `.py`.
@@ -208,7 +246,7 @@
   - Emits AI SDK chunks: `start`, `reasoning-start`, `reasoning-delta`, `reasoning-end`, `text-start`, `text-delta`, `text-end`, `message-metadata`, `finish`, and `error`.
   - Emits `agent_step` as transient `data-agent_step` so execution-flow UI can update without polluting assistant message content.
 - Updated frontend chat controller:
-  - File: `frontend/src/components/chat/use-chat-controller.ts`
+  - Current file: `frontend/src/app/(workspace)/chat/_components/use-chat-controller.ts` (moved from the earlier shared-components path on 2026-07-10).
   - Uses `useChat<SceneFlowUIMessage>()`.
   - Uses `DefaultChatTransport` with `prepareSendMessagesRequest` to send the existing payload shape: `content`, `attachments`, `configId`, `officialConfigId`.
   - Converts persisted `ChatMessage` records to AI SDK `UIMessage` for display and back to local `ChatMessage` shape for existing components.
@@ -222,7 +260,7 @@
   - `@streamdown/code`: Streamdown code-block plugin using Shiki syntax highlighting; current UI enables copy and disables download.
   - `@streamdown/cjk`: CJK-friendly Markdown/text handling for Chinese/Japanese/Korean content.
 - Chat message list scrollbar:
-  - File: `frontend/src/components/chat/chat-message-list.tsx`
+  - Current file: `frontend/src/app/(workspace)/chat/_components/chat-message-list.tsx` (moved on 2026-07-10).
   - Root scroller uses dedicated `chat-message-list-scrollbar`.
   - CSS lives in `frontend/src/app/globals.css`.
   - Scrollbar styles are scoped to chat messages rather than all scroll containers.

@@ -1,12 +1,13 @@
 "use client";
 
+import { configName } from "@/lib/config-format";
+import { useI18n } from "@/lib/i18n";
 import type { UserConfig } from "@/types/auth";
+
 import { AssistantComposer } from "./assistant-composer";
 import { ChatMessageList } from "./chat-message-list";
 import { ChatSidebar } from "./chat-sidebar";
 import { useChatController } from "./use-chat-controller";
-import { configName } from "@/lib/config-format";
-import { useI18n } from "@/lib/i18n";
 
 interface ChatPanelProps {
   configs: UserConfig[];

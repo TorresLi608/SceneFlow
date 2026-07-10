@@ -6,6 +6,78 @@ Summarize the current SceneFlow project so future AI sessions can resume develop
 ## Current Phase
 Complete
 
+## Session 2026-07-10: Workspace Layout + Admin Lists
+
+### Goal
+- Replace the oversized client-side `HomePage` router/shell with native Next.js route composition.
+- Colocate route-private components under their owning `(workspace)` pages.
+- Consolidate admin routes into the workspace and align user/model management list UI.
+
+### Phases
+
+#### Phase 1: Split the workspace shell from page content
+- [x] Add `app/(workspace)/layout.tsx`.
+- [x] Extract `WorkspaceShell` and `AppSidebar`.
+- [x] Use `Link` + `usePathname()` for navigation state.
+- [x] Make `/` redirect to `/chat`.
+- [x] Move project/config queries to only the pages that use them.
+- **Status:** complete
+
+#### Phase 2: Colocate private route components
+- [x] Move chat components to `(workspace)/chat/_components`.
+- [x] Move image generation UI to `(workspace)/images/_components`.
+- [x] Remove the duplicate standalone `/admin` UI.
+- [x] Move model/user managers into their corresponding admin page `_components` folders.
+- [x] Keep `/admin` as a workspace redirect to `/admin/models`.
+- **Status:** complete
+
+#### Phase 3: Improve admin list UI
+- [x] Replace user cards with a table matching model management.
+- [x] Add username/ID search, role/status filters, and 10-row pagination.
+- [x] Keep superAdmin accounts protected from disable/delete actions.
+- [x] Center the actions header and controls in both user and model tables.
+- [x] Add Chinese/English list labels.
+- **Status:** complete
+
+#### Phase 4: Verify and persist the update
+- [x] Run frontend ESLint.
+- [x] Run TypeScript checking.
+- [x] Run the user-filter Node test.
+- [x] Run successful webpack production builds after the route/admin consolidation.
+- [x] Record the final build approval-service failure separately from code validation.
+- [x] Update `task_plan.md`, `findings.md`, and `progress.md`.
+- **Status:** complete
+
+### Decisions Made
+| Decision | Rationale |
+|----------|-----------|
+| Use a `(workspace)` route group with a shared layout | Native Next.js composition removes fake route wrappers without changing URLs. |
+| Keep `AppSidebar` concrete instead of building a generic navigation framework | There is only one application sidebar; a configurable abstraction is not needed. |
+| Derive active navigation from `usePathname()` | Removes duplicated URL/local `activeView` state. |
+| Fetch projects only on `/ai-script` and model configs only on `/chat` or `/images` | Avoids loading unrelated data and client modules on every route. |
+| Colocate private components under the owning page | Makes route ownership explicit and keeps feature-only code out of shared folders. |
+| Redirect `/admin` to `/admin/models` | Preserves the old address while removing the duplicate admin shell. |
+| Keep user filtering/pagination client-side with page size 10 | Current API returns a small complete user list; server pagination can wait until data size requires it. |
+
+### Verification
+- `cd frontend && npm run lint`
+- `cd frontend && npx tsc --noEmit`
+- `cd frontend && node --no-warnings --experimental-strip-types --test 'src/app/(workspace)/admin/users/_components/user-list.test.mts'`
+- `cd frontend && npm run build -- --webpack` passed after workspace route/component/admin consolidation.
+- Final build retry after the user-list change could not start because the automatic approval reviewer returned `404` for its own review model; lint, type-check, and logic test still passed.
+
+### Errors Encountered
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `apply_patch` rejected move-only hunks as empty | 1 | Re-ran moves with small legitimate import/formatting edits in the same patch. |
+| Next/Turbopack build stayed at `Creating an optimized production build ...` | 1 | Interrupted the hung process and used Next's webpack build path. |
+| Webpack build failed to fetch Google Fonts in the sandbox | 1 | Re-ran with approved network permission; build passed. |
+| `.next/types` referenced the deleted standalone `app/admin/page.tsx` | 1 | Rebuilt Next output, which regenerated route types; TypeScript then passed. |
+| `filterUsers` narrowed returned rows and hid `createdAt`/`updatedAt` | 1 | Made the helper generic so it preserves the full `AuthUser` shape. |
+| TypeScript rejected the direct `.ts` extension in the Node test import | 1 | Added a scoped `@ts-expect-error` explaining Node's type-stripping execution. |
+| Node rejected `--experimental-default-type=module` | 1 | Removed the unsupported flag and used `--no-warnings --experimental-strip-types`. |
+| Final production-build escalation could not be reviewed because the approval service returned `404` | 1 | Did not bypass approval; retained successful lint, type-check, logic test, and earlier production builds as verification. |
+
 ## Session 2026-07-09: Recent Updates + Development Rules Docs
 
 ### Goal

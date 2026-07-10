@@ -35,10 +35,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import {
+  type ConnectionMode,
   baseUrlForConnection,
   connectionModeFromConfig,
   configsByPurpose,
-  type ConnectionMode,
   defaultProviderOption,
   isRelayConnection,
   providerLabel,
@@ -473,7 +473,7 @@ export function ModelConfigManager() {
               <th className="px-3 py-2 text-left font-medium">{t("admin.tableModel")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("admin.status")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("admin.tableDefault")}</th>
-              <th className="px-3 py-2 text-right font-medium">{t("admin.tableActions")}</th>
+              <th className="px-3 py-2 text-center font-medium">{t("admin.tableActions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -510,7 +510,7 @@ export function ModelConfigManager() {
                     />
                   </td>
                   <td className="px-3 py-3">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-center gap-1">
                       <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title={t("admin.view")}>
                         <Eye className="size-4" />
                       </Button>

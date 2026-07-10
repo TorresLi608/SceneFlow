@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 import { TextMessagePartProvider } from "@assistant-ui/react";
 import { StreamdownTextPrimitive, type ControlsConfig } from "@assistant-ui/react-streamdown";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, XCircle } from "lucide-react";
 import Image from "next/image";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/lib/i18n";
