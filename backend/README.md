@@ -18,6 +18,9 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 - `SCENEFLOW_AES_KEY` (default `dev-aes-key-change-me`, internally SHA-256 -> 32 bytes)
 - `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
 - `SCENEFLOW_GENERATED_DIR` (default `./generated`)
+- `SCENEFLOW_PRIVATE_GENERATED_DIR` (default `./private_generated`)
+- `SCENEFLOW_CJK_FONT_PATH` (optional PDF Chinese TTF/TTC path; common macOS/Linux paths are auto-detected)
+- `SCENEFLOW_CJK_FONT_NAME` (default `Arial Unicode MS`, used by generated Word documents)
 
 ## Super admin
 
@@ -29,6 +32,7 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 - `model.py` owns LLM provider switching.
 - Chat models use LangChain adapters. OpenAI-compatible providers share `ChatOpenAI(base_url=...)`; Anthropic uses `ChatAnthropic`.
 - Chat context assembly uses LangGraph: SQLite history -> 1M-token budget check -> old-context summary compression -> model messages.
+- Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.
 - Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
 - Image generation currently supports OpenAI Images.
 

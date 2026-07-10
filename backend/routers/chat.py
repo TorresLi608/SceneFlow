@@ -4,17 +4,41 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
+from agent_service import run_chat_agent, stream_chat_agent
+from artifact_service import artifact_from_token
 from chat_service import begin_chat_turn, create_chat_session, delete_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
+from config_service import active_model_config
 from context_graph import stream_context_messages
 from database import db
-from model_registry import models
 from security import current_user_id
 from serializers import chat_message_json
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+
+def _image_config(conn, user_id: int) -> dict[str, Any] | None:
+    try:
+        return active_model_config(conn, user_id, "image", "Agent 图片生成")
+    except HTTPException:
+        return None
+
+
+@router.get("/artifacts/{token}")
+def get_artifact(token: str) -> FileResponse:
+    try:
+        path, filename, media_type, inline = artifact_from_token(token)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=filename,
+        content_disposition_type="inline" if inline else "attachment",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.get("/sessions")
@@ -67,9 +91,10 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )
+        image_config = _image_config(conn, user_id)
 
     try:
-        answer = await models.chat(config["provider"], config["apiKey"], config["model"], messages, config.get("baseUrl", ""))
+        answer = await run_chat_agent(config, session_id, messages, image_config)
     except Exception as exc:
         raise HTTPException(502, "failed to chat: " + str(exc)) from exc
 
@@ -98,6 +123,7 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )
+        image_config = _image_config(conn, user_id)
 
     async def events():
         yield json.dumps({"type": "userMessage", "message": chat_message_json(user_message)}, ensure_ascii=False) + "\n"
@@ -112,19 +138,24 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
                         continue
                     yield json.dumps(event, ensure_ascii=False) + "\n"
             yield json.dumps(
-                {"type": "agent_step", "step": {"id": "model_call", "label": "调用模型", "status": "running", "detail": config["model"]}},
+                {"type": "agent_step", "step": {"id": "agent_run", "label": "运行智能助手", "status": "running", "detail": config["model"]}},
                 ensure_ascii=False,
             ) + "\n"
-            async for chunk in models.chat_stream(config["provider"], config["apiKey"], config["model"], messages, config.get("baseUrl", "")):
+            async for chunk in stream_chat_agent(config, session_id, messages, image_config):
+                if chunk["type"] == "agent_complete":
+                    answer = chunk["content"] or answer
+                    continue
                 if chunk["type"] == "reasoning_delta":
                     reasoning += chunk["content"]
                 elif chunk["type"] == "content_delta":
                     answer += chunk["content"]
                 yield json.dumps(chunk, ensure_ascii=False) + "\n"
             yield json.dumps(
-                {"type": "agent_step", "step": {"id": "model_call", "label": "调用模型", "status": "done", "detail": "回复生成完成"}},
+                {"type": "agent_step", "step": {"id": "agent_run", "label": "运行智能助手", "status": "done", "detail": "回复生成完成"}},
                 ensure_ascii=False,
             ) + "\n"
+            if not answer.strip():
+                raise ValueError("empty content from agent")
             with db() as conn:
                 assistant_message = save_chat_message(
                     conn,
