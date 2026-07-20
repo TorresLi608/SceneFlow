@@ -1,4 +1,4 @@
-import type { AuthResponse } from "@/types/auth";
+import type { AuthResponse, RegisterInput } from "@/types/auth";
 import { backendClient } from "@/lib/http/backend-client";
 
 interface AuthPayload {
@@ -11,7 +11,7 @@ export async function loginByBff(payload: AuthPayload) {
   return response.data;
 }
 
-export async function registerByBff(payload: AuthPayload) {
+export async function registerByBff(payload: RegisterInput) {
   const response = await backendClient.post<AuthResponse>("/api/auth/register", payload);
   return response.data;
 }

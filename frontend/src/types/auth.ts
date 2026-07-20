@@ -25,6 +25,12 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+export interface RegisterInput {
+  username: string;
+  password: string;
+  invitationCode: string;
+}
+
 export interface UserMeResponse {
   user: AuthUser;
 }

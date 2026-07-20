@@ -41,6 +41,16 @@ def init_db() -> None:
                 is_disabled numeric DEFAULT false
             );
             CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
+            CREATE TABLE IF NOT EXISTS invitation_codes (
+                id integer PRIMARY KEY AUTOINCREMENT,
+                created_at datetime NOT NULL,
+                expires_at datetime NOT NULL,
+                code text NOT NULL UNIQUE,
+                used_at datetime,
+                used_by_user_id integer,
+                FOREIGN KEY(used_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_invitation_codes_created_at ON invitation_codes(created_at DESC);
             CREATE TABLE IF NOT EXISTS user_configs (
                 id integer PRIMARY KEY AUTOINCREMENT,
                 created_at datetime,

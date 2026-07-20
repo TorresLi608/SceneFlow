@@ -3,6 +3,7 @@ export const queryKeys = {
   userConfigs: ["user-configs"] as const,
   projects: ["projects"] as const,
   adminUsers: ["admin-users"] as const,
+  invitationCodes: ["invitation-codes"] as const,
   officialConfigs: ["official-configs"] as const,
   usageLogs: ["usage-logs"] as const,
   chatSessions: ["chat-sessions"] as const,

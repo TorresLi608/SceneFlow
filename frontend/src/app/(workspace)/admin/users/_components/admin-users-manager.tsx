@@ -1,14 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { KeyRound, Plus, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { deleteAdminUserAction, listAdminUsersAction, updateAdminUserAction } from "@/actions/admin-actions";
+import {
+  createAdminUserAction,
+  deleteAdminUserAction,
+  listAdminUsersAction,
+  resetAdminUserPasswordAction,
+  updateAdminUserAction,
+} from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { resolveRequestError } from "@/lib/http/errors";
@@ -28,6 +36,10 @@ export function AdminUsersManager() {
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
   const [page, setPage] = useState(1);
   const [message, setMessage] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [resetResult, setResetResult] = useState<{ username: string; password: string } | null>(null);
 
   const usersQuery = useQuery({
     queryKey: queryKeys.adminUsers,
@@ -41,6 +53,24 @@ export function AdminUsersManager() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
     },
     onError: (error) => setMessage(resolveRequestError(error, t("admin.updateUserFailed"))),
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: createAdminUserAction,
+    onSuccess: async () => {
+      setCreateOpen(false);
+      setUsername("");
+      setPassword("");
+      setMessage(t("admin.userCreated"));
+      await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
+    },
+    onError: (error) => setMessage(resolveRequestError(error, t("admin.createUserFailed"))),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ id }: { id: number; username: string }) => resetAdminUserPasswordAction(id),
+    onSuccess: (data, user) => setResetResult({ username: user.username, password: data.password }),
+    onError: (error) => setMessage(resolveRequestError(error, t("admin.resetPasswordFailed"))),
   });
 
   const deleteUserMutation = useMutation({
@@ -60,17 +90,27 @@ export function AdminUsersManager() {
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const isMutating = updateUserMutation.isPending || deleteUserMutation.isPending;
+  const isMutating = updateUserMutation.isPending || deleteUserMutation.isPending || resetPasswordMutation.isPending;
 
   const deleteUser = (id: number, username: string) => {
     if (window.confirm(t("admin.confirmDeleteUser", { username }))) deleteUserMutation.mutate(id);
   };
 
+  const resetPassword = (id: number, username: string) => {
+    if (window.confirm(t("admin.confirmResetPassword", { username }))) resetPasswordMutation.mutate({ id, username });
+  };
+
   return (
     <div className="min-w-0 space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">{t("admin.registeredUsers")}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{t("admin.usersDescription")}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">{t("admin.registeredUsers")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t("admin.usersDescription")}</p>
+        </div>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus className="size-4" />
+          {t("admin.createUser")}
+        </Button>
       </div>
 
       <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-3 xl:grid-cols-[minmax(220px,1fr)_180px_180px]">
@@ -163,6 +203,16 @@ export function AdminUsersManager() {
                   <td className="px-3 py-3 text-muted-foreground">{formatDateTime(item.updatedAt)}</td>
                   <td className="px-3 py-3">
                     <div className="flex justify-center items-center gap-2">
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled={isProtected || isMutating}
+                        onClick={() => resetPassword(item.id, item.username)}
+                        aria-label={t("admin.resetPassword")}
+                        title={t("admin.resetPassword")}
+                      >
+                        <KeyRound className="size-4" />
+                      </Button>
                       <Switch
                         checked={!item.isDisabled}
                         disabled={isProtected || isMutating}
@@ -212,6 +262,65 @@ export function AdminUsersManager() {
       </div>
 
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("admin.createUser")}</DialogTitle>
+            <DialogDescription>{t("admin.createUserDescription")}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createUserMutation.mutate({ username: username.trim(), password });
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="adminCreateUsername">{t("auth.username")}</Label>
+              <Input
+                id="adminCreateUsername"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                minLength={3}
+                maxLength={64}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="adminCreatePassword">{t("auth.password")}</Label>
+              <Input
+                id="adminCreatePassword"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={6}
+                maxLength={128}
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                <X className="size-4" />
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={createUserMutation.isPending}>
+                {createUserMutation.isPending ? t("common.loading") : t("admin.createUser")}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(resetResult)} onOpenChange={(open) => !open && setResetResult(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("admin.passwordReset")}</DialogTitle>
+            <DialogDescription>{t("admin.passwordResetDescription", { username: resetResult?.username ?? "" })}</DialogDescription>
+          </DialogHeader>
+          <Input value={resetResult?.password ?? ""} readOnly onFocus={(event) => event.currentTarget.select()} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

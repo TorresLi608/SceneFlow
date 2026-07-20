@@ -23,6 +23,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [invitationCode, setInvitationCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const registerMutation = useMutation({
@@ -49,6 +50,7 @@ export default function RegisterPage() {
     registerMutation.mutate({
       username,
       password,
+      invitationCode,
     });
   };
 
@@ -87,6 +89,15 @@ export default function RegisterPage() {
                 type="password"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invitationCode">{t("auth.invitationCode")}</Label>
+              <Input
+                id="invitationCode"
+                value={invitationCode}
+                onChange={(event) => setInvitationCode(event.target.value.toUpperCase())}
                 required
               />
             </div>

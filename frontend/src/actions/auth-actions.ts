@@ -1,5 +1,5 @@
 import { httpClient } from "@/lib/http/client";
-import type { AuthResponse } from "@/types/auth";
+import type { AuthResponse, RegisterInput } from "@/types/auth";
 
 interface AuthPayload {
   username: string;
@@ -11,7 +11,7 @@ export async function loginAction(payload: AuthPayload) {
   return response.data;
 }
 
-export async function registerAction(payload: AuthPayload) {
+export async function registerAction(payload: RegisterInput) {
   const response = await httpClient.post<AuthResponse>("/api/bff/auth/register", payload);
   return response.data;
 }

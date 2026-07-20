@@ -21,6 +21,7 @@ function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/ai-script")) return "home.aiScript";
   if (pathname.startsWith("/admin/models")) return "home.modelManagement";
   if (pathname.startsWith("/admin/users")) return "home.userManagement";
+  if (pathname.startsWith("/admin/invitation-codes")) return "home.invitationCodeManagement";
   return "home.chat";
 }
 

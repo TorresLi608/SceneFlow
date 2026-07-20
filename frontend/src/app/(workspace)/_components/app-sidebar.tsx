@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ImageIcon, LayoutDashboard, MessageSquare, Shield, SlidersHorizontal, Video } from "lucide-react";
+import { Activity, ImageIcon, KeyRound, LayoutDashboard, MessageSquare, Shield, SlidersHorizontal, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -69,10 +69,16 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
             {t("home.modelManagement")}
           </SidebarLink>
           {showUserManagement ? (
-            <SidebarLink href="/admin/users" active={isActive("/admin/users")}>
-              <Shield className="size-4" />
-              {t("home.userManagement")}
-            </SidebarLink>
+            <>
+              <SidebarLink href="/admin/users" active={isActive("/admin/users")}>
+                <Shield className="size-4" />
+                {t("home.userManagement")}
+              </SidebarLink>
+              <SidebarLink href="/admin/invitation-codes" active={isActive("/admin/invitation-codes")}>
+                <KeyRound className="size-4" />
+                {t("home.invitationCodeManagement")}
+              </SidebarLink>
+            </>
           ) : null}
         </div>
       </nav>
