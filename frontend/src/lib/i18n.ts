@@ -52,7 +52,7 @@ const translations: Record<AppLocale, TranslationDict> = {
     "auth.loginFailed": "登录失败，请稍后重试",
     "auth.registerFailed": "注册失败，请稍后重试",
     "auth.passwordMismatch": "两次输入的密码不一致",
-    "home.brandSubtitle": "Ai 生剧可视化工作台",
+    "home.brandSubtitle": "AI 视频生成工作台",
     "home.aiScript": "AI 生剧",
     "home.images": "图片生成",
     "home.videos": "视频生成",
