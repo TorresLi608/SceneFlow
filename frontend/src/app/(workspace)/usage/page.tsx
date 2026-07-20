@@ -13,7 +13,7 @@ import type { UsageLogItem } from "@/types/usage";
 const featureValues = ["all", "chat", "image", "video", "agent_image", "script_parse", "script_optimize", "storyboard_image"];
 
 function money(micros: number) {
-  return `¥${(micros / 1_000_000).toFixed(6)}`;
+  return `$${(micros / 1_000_000).toFixed(6)}`;
 }
 
 function number(value: number) {
@@ -118,11 +118,11 @@ function UsageRow({
           <summary className="cursor-pointer text-foreground">{t("usage.viewDetails")}</summary>
           <div className="mt-2 min-w-48 space-y-1">
             <p>{t("usage.multiplier")}: {item.pricingMultiplier}x</p>
-            <p>{t("usage.inputPrice")}: ¥{item.inputPricePerMillion} / 1M</p>
-            <p>{t("usage.outputPrice")}: ¥{item.outputPricePerMillion} / 1M</p>
-            <p>{t("usage.cacheReadPrice")}: ¥{item.cacheReadPricePerMillion} / 1M</p>
-            <p>{t("usage.cacheWritePrice")}: ¥{item.cacheWritePricePerMillion} / 1M</p>
-            {item.unitPrice ? <p>{t("usage.unitPrice")}: ¥{item.unitPrice} / {t(`usage.unit.${item.unitName}`)} × {item.quantity}</p> : null}
+            <p>{t("usage.inputPrice")}: ${item.inputPricePerMillion} / 1M</p>
+            <p>{t("usage.outputPrice")}: ${item.outputPricePerMillion} / 1M</p>
+            <p>{t("usage.cacheReadPrice")}: ${item.cacheReadPricePerMillion} / 1M</p>
+            <p>{t("usage.cacheWritePrice")}: ${item.cacheWritePricePerMillion} / 1M</p>
+            {item.unitPrice ? <p>{t("usage.unitPrice")}: ${item.unitPrice} / {t(`usage.unit.${item.unitName}`)} × {item.quantity}</p> : null}
           </div>
         </details>
       </td>

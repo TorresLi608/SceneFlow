@@ -760,7 +760,7 @@ export function ModelConfigManager() {
               <p className="break-all">Base URL：{viewingConfig.baseUrl || "-"}</p>
               <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")} / {viewingConfig.isVerified ? t("settings.verified") : t("settings.unverified")}</p>
               {viewingConfig.source === "official" ? (
-                <p>{t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {t("admin.inputPrice")}: ¥{viewingConfig.inputPricePerMillion} · {t("admin.outputPrice")}: ¥{viewingConfig.outputPricePerMillion}</p>
+                <p>{t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {t("admin.inputPrice")}: ${viewingConfig.inputPricePerMillion} · {t("admin.outputPrice")}: ${viewingConfig.outputPricePerMillion}</p>
               ) : null}
             </div>
           ) : null}
