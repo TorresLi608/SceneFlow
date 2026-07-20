@@ -6,6 +6,49 @@ Summarize the current SceneFlow project so future AI sessions can resume develop
 ## Current Phase
 Complete
 
+## Session 2026-07-20: 用户与邀请码管理记录
+
+### Goal
+
+- 将今天未提交的用户管理、邀请码注册/管理和本地化修改持久化记录，便于后续提交或交接。
+
+### Phases
+
+#### Phase 1: 盘点工作区变更
+
+- [x] 读取 Git 状态、已修改文件、未跟踪文件和相关代码差异。
+- [x] 确认修改覆盖用户管理、邀请码注册/管理、本地化、测试和本地 SQLite 数据库。
+- [x] 创建 `UNCOMMITTED_CHANGES.md`，按功能列出涉及文件、验证记录与提交注意事项。
+- **Status:** complete
+
+#### Phase 2: 同步规划记录
+
+- [x] 将今天的实现、验证结果和构建锁问题写入本计划与进度日志。
+- [x] 保留 `findings.md` 的现有删除状态，避免覆盖工作区中已存在的删除操作。
+- **Status:** complete
+
+### Today's Changes
+
+- 用户管理：创建普通用户、重置密码、对应后端 API、BFF 和管理页操作。
+- 邀请码：`invitation_codes` 数据表、1/7/30 天生成、列表状态与使用用户、注册时强制校验并消耗邀请码。
+- 前端：邀请码管理页面/导航、注册表单邀请码字段、类型与 React Query/BFF 路由。
+- 本地化：补齐邀请码和用户管理新增操作的中英文文案。
+- 测试：新增管理员创建/重置密码及邀请码注册/消费自测。
+
+### Verification
+
+- 后端所有 `test_*.py`：通过。
+- 前端 `npm run lint`、`npx tsc --noEmit`：通过。
+- 用户管理本地化键检查：通过。
+- `npm run build` 未完成：工作区已有 `.next/lock`，未清理或中断可能由用户运行的进程。
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| Next 构建被 `.next/lock` 占用 | 1 | 未删除锁或中断进程；保留为待运行环境释放后验证。 |
+| `findings.md` 已处于删除状态 | 1 | 未恢复或覆盖；今天的发现记录在 `UNCOMMITTED_CHANGES.md`、本计划与 `progress.md`。 |
+
 ## Session 2026-07-10: Workspace Layout + Admin Lists
 
 ### Goal

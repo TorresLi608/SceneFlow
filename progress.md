@@ -1,5 +1,33 @@
 # Progress Log
 
+## Session: 2026-07-20
+
+### Phase 13: 用户与邀请码管理
+- **Status:** complete
+- Actions taken:
+  - 为管理员新增创建普通用户与重置密码能力，前后端均通过现有 BFF/React Query 模式接入。
+  - 新增邀请码数据表、生成与列表 API；邀请码有效期限定为 1、7、30 天。
+  - 注册流程改为必须提交有效邀请码，并在成功注册后标记邀请码及使用用户。
+  - 新增管理中心邀请码页面、导航和注册页邀请码输入。
+  - 补齐用户管理与邀请码功能的中英文文案；修复用户管理新增操作显示翻译键的问题。
+- Files created/modified:
+  - `backend/database.py`
+  - `backend/routers/admin.py`
+  - `backend/routers/auth.py`
+  - `frontend/src/app/(workspace)/admin/invitation-codes/**`
+  - `frontend/src/app/api/bff/admin/invitation-codes/route.ts`
+  - `frontend/src/app/register/page.tsx`
+  - `frontend/src/lib/i18n.ts`
+  - 用户管理、BFF、actions、types 与测试相关文件；完整清单见 `UNCOMMITTED_CHANGES.md`。
+
+### Phase 14: 未提交变更文档化
+- **Status:** complete
+- Actions taken:
+  - 新增 `UNCOMMITTED_CHANGES.md`，完整记录今天的未提交源码、测试、本地化和数据库变更。
+  - 记录已通过的后端测试、前端 lint、TypeScript 和本地化键检查。
+  - 记录 Next 生产构建受现有 `.next/lock` 占用，未采取破坏性清理操作。
+  - 发现 `findings.md` 已处于删除状态，未恢复或覆盖该已有工作区操作。
+
 ## Session: 2026-07-10
 
 ### Phase 9: Workspace route/layout refactor
