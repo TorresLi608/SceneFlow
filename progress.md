@@ -307,3 +307,84 @@
 | What's the goal? | Keep SceneFlow easy to resume while maintaining a simple route-owned frontend architecture. |
 | What have I learned? | Stack, commands, entry points, workspace route layout, route-private component ownership, admin list behavior, chat flow, limits, and checks are captured in `findings.md`. |
 | What have I done? | Created persistent planning files, captured the project map, improved chat attachments/streaming/scroll UX, replaced `HomePage` with a workspace layout, colocated private components, consolidated admin routes, and upgraded user management to a filtered table. |
+
+## Session: 2026-07-21 — Balance Enforcement and Usage Audit
+
+### Phase 1: Discovery and business-flow audit
+
+- **Status:** complete
+- Actions taken:
+  - Read the `planning-with-files` skill and templates.
+  - Preserved existing planning history and created the missing `findings.md`.
+  - Captured the requested balance, model-source accounting, refresh, default-level, filter-reset, testing, and logging requirements.
+  - Traced all `record_usage` callers and both official-model resolution paths.
+  - Confirmed the current defect: official calls are billed only after completion, with no zero-balance preflight.
+  - Confirmed personal configurations are already usage-counted without balance deduction; no pricing exists for honest monetary estimation.
+  - Confirmed redemption already refreshes both global Zustand state and React Query `me`; a new state machine is unnecessary.
+  - Found shared FastAPI error-detail handling missing in `resolveRequestError`.
+  - Audited usage source filtering, user-create default level, and list filter reset behavior.
+  - Chose a shared backend balance-policy function called at provider boundaries, with chat validation before message persistence.
+  - Identified the existing usage tests as the smallest place to cover official zero-balance rejection, super-admin bypass, personal-config allowance, and source filtering.
+  - Added the requested backend architecture audit.
+  - Chose a focused `tests/` + `services/` reorganization and skipped an empty speculative `plugins/` layer.
+  - Moved eight business service modules to `backend/services/`, shared parser/time-ID helpers to `backend/lib/`, and all ten self-checks to `backend/tests/`.
+  - Added `backend/tests/run_all.py` and documented the new layout in `backend/README.md`.
+  - Updated imports across routers, services, tests, model code, database, and helpers.
+  - Ran the new backend test runner, Python compile check, frontend lint, and TypeScript check successfully.
+  - Rechecked the custom backend error envelope and corrected the audit note: it uses `error`; the frontend now supports both `error` and standard `detail`.
+  - Visually reviewed the modified filter and create-user form composition in source.
+  - Audited all remaining status-filter list pages and found model management plus AI project list still lacked reset controls.
+  - Identified and scheduled removal of the AI project page's nonfunctional advanced-filter button.
+  - Added reset controls to model management and the AI project list; replaced the dead advanced-filter action.
+  - Added chat, image, usage-source, balance-message, personal-config, super-admin, redemption, and default-level regression coverage.
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### Test Results
+
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Pending audit baseline | Backend/frontend targeted checks | Establish current behavior before edits | Pending | Pending |
+| Backend reorganized self-checks | `.venv/bin/python tests/run_all.py` | All ten tests pass from `tests/` | Passed | Pass |
+| Backend compile | `.venv/bin/python -m compileall -q .` | No import/syntax errors after moves | Passed | Pass |
+| Frontend lint/type-check | `pnpm lint && pnpm exec tsc --noEmit` | New filters/forms compile cleanly | Passed | Pass |
+| Official chat zero balance | `tests/test_chat_balance.py` | Reject before saving user message | HTTP 402; message count remains 0 | Pass |
+| Personal chat zero balance | `tests/test_chat_balance.py` | Allow and save message | Message saved | Pass |
+| Official image zero balance | `tests/test_images.py` | Provider is not called | HTTP 402; await count 0 | Pass |
+| Official image after credit | `tests/test_images.py` | Provider call proceeds | Image response returned | Pass |
+| Usage source filters | `tests/test_usage_service.py` | Official/user summaries isolate records | One call in each filtered result | Pass |
+| New user default level | `tests/test_admin_users.py` | Level defaults to 1 | Level is 1 | Pass |
+| Final backend suite | `.venv/bin/python tests/run_all.py` | All executable self-checks pass | Passed | Pass |
+| Backend app import | `.venv/bin/python -c 'from app import app; ...'` | Reorganized imports load app | Passed | Pass |
+| Final Python compile | `.venv/bin/python -m compileall -q .` | No syntax/import compilation failures | Passed | Pass |
+| Final frontend lint | `pnpm lint` | No lint errors | Passed | Pass |
+| Final frontend type-check | `pnpm exec tsc --noEmit` | No type errors | Passed | Pass |
+| Final diff/import scan | `git diff --check` + stale flat import `rg` | Clean diff and no old service paths | Passed | Pass |
+
+### Final Files and Behavior
+
+- Backend:
+  - `services/`: business services and balance/usage policy.
+  - `lib/`: attachment parser and small shared utilities.
+  - `tests/`: eleven executable regression files plus `run_all.py`.
+  - Official model calls now require positive balance for ordinary users; personal configs and super admins bypass the balance gate.
+  - Usage logs support `all`, `official`, and `user` source filtering.
+- Frontend:
+  - Usage log source filter and reset control.
+  - Reset controls for user, invitation, redemption, model, and AI-project lists.
+  - User creation visibly defaults level to 1 and submits it.
+  - Redemption continues updating global Zustand + React Query account state immediately.
+  - Nonfunctional advanced-filter UI was removed.
+- Documentation:
+  - `backend/README.md`, `task_plan.md`, `findings.md`, and `progress.md` updated.
+
+### Error Log
+
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-07-21 | `findings.md` was missing | 1 | Recreated the required planning file and preserved the existing plan/progress files. |
+| 2026-07-21 | `apply_patch` could not find the expected findings section | 1 | Re-read `findings.md` and patched against the actual section order. |
+| 2026-07-21 | Architecture findings patch used the wrong section position | 1 | Patched the current file structure directly and stopped assuming section order. |
+| 2026-07-21 | TypeScript rejected string arrays passed to Base UI Select `items` | 1 | Replaced them with `{ value, label }` arrays. |

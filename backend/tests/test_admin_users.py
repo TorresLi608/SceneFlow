@@ -18,6 +18,7 @@ def test_admin_create_and_reset_user() -> None:
             init_db()
             created = create_user({"username": "alice", "password": "initial-password"}, 1)["user"]
             assert created["role"] == "user"
+            assert created["level"] == 1
             updated = update_user(created["id"], {"level": 3}, 1)["user"]
             assert updated["level"] == 3
 

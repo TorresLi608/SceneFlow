@@ -7,15 +7,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from agent_service import run_chat_agent, stream_chat_agent
-from artifact_service import artifact_from_token
-from chat_service import begin_chat_turn, create_chat_session, delete_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
-from config_service import active_model_config
+from services.agent_service import run_chat_agent, stream_chat_agent
+from services.artifact_service import artifact_from_token
+from services.chat_service import begin_chat_turn, create_chat_session, delete_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
+from services.config_service import active_model_config
 from context_graph import stream_context_messages
 from database import db
 from security import current_user_id
 from serializers import chat_message_json
-from usage_service import record_usage
+from services.usage_service import record_usage
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])

@@ -328,3 +328,68 @@ Complete
 | Error | Attempt | Resolution |
 |-------|---------|------------|
 | `zsh: command not found: ResizeObserver` while searching docs | 1 | Re-ran the `rg` search with the pattern in single quotes so backticks were not treated as shell command substitution. |
+
+## Session 2026-07-21: Balance Enforcement and Usage Audit
+
+### Goal
+
+Audit today's account/level/invitation/redemption changes, enforce ordinary-user official-model balance rules, preserve personal-model usage accounting, add source/reset filters, organize backend tests/services, verify the full flow, and leave a concise implementation log.
+
+### Current Phase
+
+Complete — implementation, verification, and documentation finished.
+
+### Phases
+
+#### Phase 1: Discovery and business-flow audit
+- [x] Trace every official/personal model execution path and usage write.
+- [x] Trace balance cache/store refresh after redemption and model use.
+- [x] Audit user creation defaults and list filters/reset behavior.
+- **Status:** complete
+
+#### Phase 2: Minimal implementation
+- [x] Add backend insufficient-balance enforcement at the shared trust boundary.
+- [x] Keep personal configuration usable while recording usage cost.
+- [x] Add usage source filter and missing filter reset controls.
+- [x] Ensure new-user level defaults to 1 in UI and backend.
+- [x] Move backend tests to `tests/` and service modules to `services/`, updating imports and run instructions.
+- **Status:** complete
+
+#### Phase 3: Verification
+- [x] Add focused backend regression checks for official/personal balance behavior.
+- [x] Run all backend tests, frontend lint/type-check, and feasible build checks.
+- [x] Exercise filter/reset and redemption refresh flows.
+- **Status:** complete
+
+#### Phase 4: Documentation and handoff
+- [x] Record findings, changed files, decisions, errors, and test results.
+- [x] Review diff and requirement coverage.
+- **Status:** complete
+
+### Verification Summary
+
+- `cd backend && .venv/bin/python tests/run_all.py`
+- `cd backend && .venv/bin/python -c 'from app import app; assert app.title == "SceneFlow Backend"'`
+- `cd backend && .venv/bin/python -m compileall -q .`
+- `cd frontend && pnpm lint`
+- `cd frontend && pnpm exec tsc --noEmit`
+- `git diff --check`
+- Stale flat backend import scan: no matches.
+- Production build was not repeated because this workspace already has a documented external Google Fonts/network blocker; repeating the same failed network action would not add code confidence.
+
+### Key Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Do not add a state machine by default | Existing Zustand + React Query already represent global user/account state. |
+| Put the balance gate in shared backend model-resolution/execution flow | One trusted guard is smaller and safer than UI-only checks in every page. |
+| Limit backend reorganization to real categories | `tests/` and `services/` improve navigation; empty `plugins/` and a full package rewrite are YAGNI. |
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `findings.md` absent although older logs referenced it | 1 | Recreated it for this audit without touching existing plan/progress history. |
+| `apply_patch` findings hunk mismatch | 1 | Re-read the file and used its actual section order. |
+| Second `apply_patch` findings hunk mismatch | 1 | Patched the actual sections independently and logged the repeated assumption error. |
+| Base UI Select rejected primitive `items` arrays | 1 | Converted usage feature/day options to `{ value, label }` items. |

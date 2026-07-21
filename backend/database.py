@@ -7,7 +7,7 @@ from typing import Any
 import bcrypt
 
 from config import DB_PATH, SUPER_ADMIN_PASSWORD
-from utils import now
+from lib.utils import now
 
 
 SUPER_ADMIN_USERNAME = "superAdmin"

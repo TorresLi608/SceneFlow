@@ -5,9 +5,10 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from config_service import active_model_config
+from services.config_service import active_model_config
 from database import row, rows
-from utils import now
+from services.usage_service import require_model_balance
+from lib.utils import now
 
 
 async def parse_project_model(conn: sqlite3.Connection, user_id: int, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -18,6 +19,8 @@ async def parse_project_model(conn: sqlite3.Connection, user_id: int, project_id
     stamp = now()
     if existing and existing["user_id"] != user_id:
         raise HTTPException(403, "project does not belong to current user")
+    config = active_model_config(conn, user_id, "script", "故事生成/分镜拆分")
+    require_model_balance(conn, user_id, config)
     if existing:
         conn.execute("UPDATE projects SET original_script=?, status='parsing', updated_at=? WHERE id=?", (script, stamp, project_id))
     else:
@@ -26,7 +29,6 @@ async def parse_project_model(conn: sqlite3.Connection, user_id: int, project_id
             "INSERT INTO projects (id, created_at, updated_at, user_id, title, original_script, status, video_status, video_progress) VALUES (?, ?, ?, ?, ?, ?, 'parsing', 'idle', 0)",
             (project_id, stamp, stamp, user_id, title, script),
         )
-    config = active_model_config(conn, user_id, "script", "故事生成/分镜拆分")
     return {"script": script, "config": config}
 
 

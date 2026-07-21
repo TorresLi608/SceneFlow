@@ -6,7 +6,7 @@ import tempfile
 from docx import Document
 from pypdf import PdfReader
 
-from artifact_service import create_docx, create_pdf, parse_markdown_blocks
+from services.artifact_service import create_docx, create_pdf, parse_markdown_blocks
 
 
 SAMPLE = """# 摘要

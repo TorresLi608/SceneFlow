@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, X } from "lucide-react";
+import { Loader2, Plus, RotateCcw, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { createInvitationCodeAction, listInvitationCodesAction } from "@/actions/admin-actions";
@@ -61,6 +61,7 @@ export function InvitationCodeManager() {
     onError: (error) => setMessage(resolveRequestError(error, t("admin.createInvitationCodeFailed"))),
   });
   const pagination = codesQuery.data?.pagination ?? { total: 0, page, pageSize, pageCount: 1 };
+  const filtersActive = status !== "all" || Boolean(search.trim());
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -75,7 +76,7 @@ export function InvitationCodeManager() {
         </Button>
       </div>
 
-      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-[minmax(220px,1fr)_180px]">
+      <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:grid-cols-[minmax(220px,1fr)_180px_auto]">
         <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder={t("admin.searchInvitationUser")} />
         <Select items={statusItems} value={status} onValueChange={(value) => { setStatus((value ?? "all") as InvitationCodeStatus | "all"); setPage(1); }}>
           <SelectTrigger><SelectValue /></SelectTrigger>
@@ -83,6 +84,12 @@ export function InvitationCodeManager() {
             <SelectGroup>{statusItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
           </SelectContent>
         </Select>
+        {filtersActive ? (
+          <Button variant="outline" onClick={() => { setSearch(""); setStatus("all"); setPage(1); }}>
+            <RotateCcw data-icon="inline-start" />
+            {t("common.clearFilters")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="overflow-hidden rounded-lg border">

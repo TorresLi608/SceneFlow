@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Eye, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -413,6 +413,7 @@ export function ModelConfigManager() {
   });
 
   const busy = saveMutation.isPending || defaultMutation.isPending || enabledMutation.isPending || deleteMutation.isPending || isMutating;
+  const filtersActive = Boolean(search.trim()) || purposeFilter !== "all" || providerFilter !== "all" || sourceFilter !== "all" || defaultFilter !== "all" || enabledFilter !== "all";
 
   return (
     <div className="min-w-0 space-y-4">
@@ -427,7 +428,7 @@ export function ModelConfigManager() {
         </Button>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_150px_150px_150px_150px_150px]">
+      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_150px_150px_150px_150px_150px_auto]">
         <Input
           value={search}
           onChange={(event) => {
@@ -503,6 +504,20 @@ export function ModelConfigManager() {
             <SelectItem value="disabled">{t("settings.disable")}</SelectItem>
           </SelectContent>
         </Select>
+        {filtersActive ? (
+          <Button variant="outline" onClick={() => {
+            setSearch("");
+            setPurposeFilter("all");
+            setProviderFilter("all");
+            setSourceFilter("all");
+            setDefaultFilter("all");
+            setEnabledFilter("all");
+            setPage(1);
+          }}>
+            <RotateCcw data-icon="inline-start" />
+            {t("common.clearFilters")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border/70">

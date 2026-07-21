@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_openai import ChatOpenAI
 from openai import APIStatusError, AsyncOpenAI
 
-from usage_service import aggregate_token_usage
+from services.usage_service import aggregate_token_usage
 
 
 CHAT_BASE_URLS = {

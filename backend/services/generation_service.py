@@ -8,8 +8,8 @@ from config import GENERATED_DIR, PUBLIC_BASE_URL
 from database import db
 from model_registry import models
 from realtime import broadcast
-from utils import now
-from usage_service import record_usage
+from lib.utils import now
+from services.usage_service import record_usage, require_model_balance
 
 
 async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: dict[str, Any], user_id: int) -> None:
@@ -23,6 +23,8 @@ async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: 
             try:
                 started_at = time.monotonic()
                 prompt = build_image_prompt(scene)
+                with db() as conn:
+                    require_model_balance(conn, user_id, config)
                 await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"imageStatus": "generating", "imageProgress": 20, "errorMsg": ""}})
                 if config["provider"] not in {"openai", "gemini"}:
                     raise ValueError("image generation currently only supports provider openai/gemini")

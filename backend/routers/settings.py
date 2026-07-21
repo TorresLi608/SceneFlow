@@ -4,11 +4,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
+from services.config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
 from database import db, row, rows
 from security import current_user_id
 from serializers import config_json, official_config_json
-from utils import now
+from lib.utils import now
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])

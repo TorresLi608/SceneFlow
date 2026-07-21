@@ -6,8 +6,10 @@ import sqlite3
 import time
 from typing import Any, Mapping
 
+from fastapi import HTTPException
+
 from database import db, row, rows
-from utils import new_id, now
+from lib.utils import new_id, now
 
 
 PRICE_FIELDS = {
@@ -98,6 +100,17 @@ def calculate_cost_micros(pricing: Mapping[str, Any], usage: Mapping[str, int], 
     return int((cost * Decimal(1_000_000)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def require_model_balance(conn: sqlite3.Connection, user_id: int, config: Mapping[str, Any]) -> None:
+    source = str(config.get("source") or ("official" if config.get("officialConfigId") else "user"))
+    if source != "official":
+        return
+    user = row(conn, "SELECT role, balance_micros FROM users WHERE id=? AND deleted_at IS NULL", (user_id,))
+    if not user:
+        raise HTTPException(401, "user not found")
+    if (user["role"] or "user") != "superAdmin" and int(user["balance_micros"] or 0) <= 0:
+        raise HTTPException(402, "当前余额不足，请先兑换额度后再使用官方模型。")
+
+
 def record_usage(
     user_id: int,
     config: Mapping[str, Any],
@@ -156,12 +169,15 @@ def record_usage(
             )
 
 
-def usage_logs(conn: sqlite3.Connection, user_id: int, feature: str = "all", days: int = 30) -> dict[str, Any]:
+def usage_logs(conn: sqlite3.Connection, user_id: int, feature: str = "all", days: int = 30, source: str = "all") -> dict[str, Any]:
     conditions = ["user_id=?", "created_at>=datetime('now', ?)"]
     args: list[Any] = [user_id, f"-{max(1, min(days, 365))} days"]
     if feature != "all":
         conditions.append("feature=?")
         args.append(feature)
+    if source != "all":
+        conditions.append("config_source=?")
+        args.append(source)
     where = " AND ".join(conditions)
     items = rows(conn, f"SELECT * FROM usage_logs WHERE {where} ORDER BY created_at DESC LIMIT 500", tuple(args))
     summary = row(

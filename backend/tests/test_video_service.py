@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 
-from video_service import VideoSettings, build_doubao_payload, resolve_video_settings
+from services.video_service import VideoSettings, build_doubao_payload, resolve_video_settings
 
 
 REFERENCE = {"name": "first.png", "data": "data:image/png;base64," + base64.b64encode(b"image").decode("ascii")}

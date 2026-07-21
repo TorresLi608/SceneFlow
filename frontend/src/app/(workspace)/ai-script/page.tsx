@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Clapperboard, FolderPlus, Search, SlidersHorizontal } from "lucide-react";
+import { Clapperboard, FolderPlus, RotateCcw, Search } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -10,6 +10,7 @@ import { createProjectAction, listProjectsAction } from "@/actions/projects-acti
 import { queryKeys } from "@/actions/query-keys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
@@ -40,6 +41,11 @@ export default function AiScriptPage() {
     video_generating: t("home.projectStatus.video_generating"),
     done: t("home.projectStatus.done"),
   };
+  const statusItems = [
+    { value: "all", label: t("home.projectStatusAll") },
+    ...Object.entries(statusLabels).map(([value, label]) => ({ value, label })),
+  ];
+  const filtersActive = Boolean(query.trim()) || statusFilter !== "all";
 
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects,
@@ -90,22 +96,20 @@ export default function AiScriptPage() {
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("home.searchProjects")} className="pl-8" />
           </div>
-          <select
+          <Select
+            items={statusItems}
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as "all" | ProjectStatus)}
-            className="h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            onValueChange={(value) => setStatusFilter((value ?? "all") as "all" | ProjectStatus)}
           >
-            <option value="all">{t("home.projectStatusAll")}</option>
-            {Object.entries(statusLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <Button variant="outline">
-            <SlidersHorizontal className="mr-2 size-4" />
-            {t("home.advancedFilters")}
-          </Button>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectGroup>{statusItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+          </Select>
+          {filtersActive ? (
+            <Button variant="outline" onClick={() => { setQuery(""); setStatusFilter("all"); }}>
+              <RotateCcw data-icon="inline-start" />
+              {t("common.clearFilters")}
+            </Button>
+          ) : null}
           <Button onClick={() => createProjectMutation.mutate()} disabled={createProjectMutation.isPending}>
             <FolderPlus className="mr-2 size-4" />
             {createProjectMutation.isPending ? t("home.creatingProject") : t("home.newProject")}

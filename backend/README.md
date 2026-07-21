@@ -10,6 +10,20 @@ pip install -r requirements.txt
 python -m uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
+## Structure
+
+- `routers/`: FastAPI endpoints and request/response orchestration.
+- `services/`: model, usage, chat, artifact, project, and generation business logic.
+- `lib/`: small shared helpers such as IDs, timestamps, and attachment parsing.
+- `tests/`: dependency-free executable self-checks.
+
+Run all backend checks:
+
+```bash
+cd backend
+.venv/bin/python tests/run_all.py
+```
+
 ## Optional env
 
 - `PORT` (default `8080`)
@@ -35,7 +49,7 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 
 ## Model routing
 
-- `model.py` owns LLM provider switching.
+- `model.py` owns LLM provider switching; `services/` owns application workflows.
 - Chat models use LangChain adapters. OpenAI-compatible providers share `ChatOpenAI(base_url=...)`; Anthropic uses `ChatAnthropic`.
 - Chat context assembly uses LangGraph: SQLite history -> 1M-token budget check -> old-context summary compression -> model messages.
 - Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.

@@ -6,16 +6,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from config_service import active_model_config
+from services.config_service import active_model_config
 from database import db, row, rows
-from generation_service import run_generation, run_video_generation
+from services.generation_service import run_generation, run_video_generation
 from model_registry import models
-from project_service import parse_project_model, project_and_scenes
+from services.project_service import parse_project_model, project_and_scenes
 from realtime import broadcast
 from security import current_user_id
 from serializers import project_json, scene_json
-from utils import new_id, now
-from usage_service import record_usage
+from lib.utils import new_id, now
+from services.usage_service import record_usage, require_model_balance
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -179,6 +179,7 @@ async def optimize_project(project_id: str, payload: dict[str, Any], user_id: in
         if not script:
             raise HTTPException(400, "script is required")
         config = active_model_config(conn, user_id, "script", "故事生成/剧本优化")
+        require_model_balance(conn, user_id, config)
     started_at = time.monotonic()
     try:
         result = await models.optimize_script(
@@ -210,6 +211,7 @@ async def generate_project(project_id: str, payload: dict[str, Any], user_id: in
         except HTTPException as image_error:
             config = active_model_config(conn, user_id, "script", "镜头提示词生成回退")
             warning = "图片生成默认模型当前不可用，已回退到剧本/提示词默认模型。原始原因：" + str(image_error.detail)
+        require_model_balance(conn, user_id, config)
         conn.execute("UPDATE projects SET status='generating', updated_at=? WHERE id=?", (now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating"}})
     asyncio.create_task(run_generation(project_id, [dict(scene) for scene in scenes], config, user_id))
@@ -225,6 +227,7 @@ async def generate_video(project_id: str, payload: dict[str, Any], user_id: int 
         if project["status"] == "video_generating":
             raise HTTPException(409, "project video is already generating")
         config = active_model_config(conn, user_id, "video", "视频生成")
+        require_model_balance(conn, user_id, config)
         model = str(payload.get("model") or config["model"]).strip()
         conn.execute("UPDATE projects SET status='video_generating', video_status='generating', video_progress=0, updated_at=? WHERE id=?", (now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "video_generating", "videoStatus": "generating", "videoModel": model}})

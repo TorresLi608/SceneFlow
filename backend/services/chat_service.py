@@ -6,14 +6,15 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from attachment_parser import attachment_text_part
-from config_service import normalize_base_url, normalize_model, normalize_provider, validate_config_fields
+from lib.attachment_parser import attachment_text_part
+from services.config_service import normalize_base_url, normalize_model, normalize_provider, validate_config_fields
 from context_graph import build_context_messages
 from database import row, rows
 from model import pick_model
 from security import decrypt
 from serializers import chat_message_json, chat_session_json
-from utils import new_id, now
+from services.usage_service import require_model_balance
+from lib.utils import new_id, now
 
 CHAT_PURPOSES = ("script", "general")
 MAX_CHAT_ATTACHMENTS = 5
@@ -203,6 +204,7 @@ def begin_chat_turn(
         config_id if config_id else session["config_id"],
         official_config_id if official_config_id else session["official_config_id"],
     )
+    require_model_balance(conn, user_id, config)
     user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"], attachments=normalized_attachments)
     return config, user_message
 

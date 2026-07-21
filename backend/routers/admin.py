@@ -9,12 +9,12 @@ from typing import Annotated, Any
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
+from services.config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
 from database import db, row, rows
 from security import current_super_admin_id
 from serializers import official_config_json, user_json
-from usage_service import normalize_pricing, pricing_updates
-from utils import now
+from services.usage_service import normalize_pricing, pricing_updates
+from lib.utils import now
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])

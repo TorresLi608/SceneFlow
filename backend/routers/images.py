@@ -8,12 +8,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from config import GENERATED_DIR, PUBLIC_BASE_URL
-from config_service import active_model_config, official_model_config_any, user_model_config_any
+from services.config_service import active_model_config, official_model_config_any, user_model_config_any
 from database import db
 from model_registry import models
 from security import current_user_id
-from utils import new_id
-from usage_service import record_usage
+from lib.utils import new_id
+from services.usage_service import record_usage, require_model_balance
 
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -76,6 +76,7 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
             config = user_model_config_any(conn, user_id, int(config_id), ("image", "general"), "图片生成")
         else:
             config = active_model_config(conn, user_id, "image", "图片生成")
+        require_model_balance(conn, user_id, config)
 
     if config["provider"] not in {"openai", "gemini"}:
         raise HTTPException(400, "image generation currently only supports provider openai/gemini")

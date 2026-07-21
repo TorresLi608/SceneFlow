@@ -6,8 +6,8 @@ import time
 
 import database
 from database import db, init_db
-from usage_service import calculate_cost_micros, record_usage, usage_logs
-from utils import now
+from services.usage_service import calculate_cost_micros, record_usage, require_model_balance, usage_logs
+from lib.utils import now
 
 
 def test_cost_calculation() -> None:
@@ -60,10 +60,27 @@ def test_official_and_user_logs() -> None:
             )
             with db() as conn:
                 result = usage_logs(conn, int(user_id))
+                official_only = usage_logs(conn, int(user_id), source="official")
+                user_only = usage_logs(conn, int(user_id), source="user")
             assert result["summary"]["calls"] == 2
             assert result["summary"]["costMicros"] == 8850
             assert result["logs"][0]["costMicros"] == 0
             assert result["logs"][1]["costMicros"] == 8850
+            assert official_only["summary"]["calls"] == 1
+            assert user_only["summary"]["calls"] == 1
+
+            with db() as conn:
+                try:
+                    require_model_balance(conn, int(user_id), {"source": "official"})
+                    raise AssertionError("zero-balance ordinary users must be blocked from official configs")
+                except Exception as exc:
+                    assert getattr(exc, "status_code", None) == 402
+                    assert "余额不足" in str(getattr(exc, "detail", ""))
+                require_model_balance(conn, int(user_id), {"source": "user"})
+                conn.execute("UPDATE users SET balance_micros=1 WHERE id=?", (user_id,))
+                require_model_balance(conn, int(user_id), {"source": "official"})
+                conn.execute("UPDATE users SET role='superAdmin', balance_micros=0 WHERE id=?", (user_id,))
+                require_model_balance(conn, int(user_id), {"source": "official"})
         finally:
             database.DB_PATH = original_path
 

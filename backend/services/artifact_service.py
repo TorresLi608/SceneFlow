@@ -24,7 +24,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from config import CJK_FONT_NAME, CJK_FONT_PATH, JWT_SECRET, PRIVATE_GENERATED_DIR, PUBLIC_BASE_URL
-from utils import new_id
+from lib.utils import new_id
 
 
 MAX_DOCUMENT_CHARS = 100_000

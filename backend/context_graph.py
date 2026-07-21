@@ -7,7 +7,7 @@ from typing import Any
 from config import MAX_CONTEXT_TOKENS
 from database import row, rows
 from model_registry import models
-from utils import now
+from lib.utils import now
 
 
 RECENT_MESSAGES_TO_KEEP = 20

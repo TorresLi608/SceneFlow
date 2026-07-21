@@ -4,7 +4,7 @@ import sqlite3
 
 from fastapi import HTTPException
 
-from config_service import config_create_fields, config_update_fields, normalize_config_payload
+from services.config_service import config_create_fields, config_update_fields, normalize_config_payload
 from database import row
 from model import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
 from security import encrypt

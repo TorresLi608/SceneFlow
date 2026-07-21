@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeDollarSign, Loader2, Plus, X } from "lucide-react";
+import { BadgeDollarSign, Loader2, Plus, RotateCcw, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { createRedemptionCodeAction, listRedemptionCodesAction } from "@/actions/admin-actions";
@@ -74,11 +74,17 @@ export function RedemptionCodeManager() {
         <Button onClick={() => setCreateOpen(true)}><Plus data-icon="inline-start" />{t("admin.createRedemptionCode")}</Button>
       </div>
 
-      <div className="flex justify-end rounded-lg border bg-muted/20 p-3">
+      <div className="flex justify-end gap-2 rounded-lg border bg-muted/20 p-3">
         <Select items={statusItems} value={status} onValueChange={(value) => { setStatus((value ?? "all") as RedemptionCodeStatus | "all"); setPage(1); }}>
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent><SelectGroup>{statusItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
         </Select>
+        {status !== "all" ? (
+          <Button variant="outline" onClick={() => { setStatus("all"); setPage(1); }}>
+            <RotateCcw data-icon="inline-start" />
+            {t("common.clearFilters")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="overflow-hidden rounded-lg border">

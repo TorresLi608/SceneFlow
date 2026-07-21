@@ -5,7 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from database import db, row
 from realtime import broadcast, clients
 from security import user_id_from_token
-from utils import now
+from lib.utils import now
 
 
 router = APIRouter(tags=["websocket"])

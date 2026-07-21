@@ -10,10 +10,11 @@ from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool, ToolException
 
-from artifact_service import save_document_artifact, save_image_artifact, tool_result
+from services.artifact_service import save_document_artifact, save_image_artifact, tool_result
+from database import db
 from model import _content_text, _lc_messages, _openai_image_size
 from model_registry import models
-from usage_service import aggregate_token_usage, record_usage
+from services.usage_service import aggregate_token_usage, record_usage, require_model_balance
 
 
 AGENT_SYSTEM_PROMPT = """You are SceneFlow Assistant. Answer clearly and concisely.
@@ -58,6 +59,9 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
             raise ToolException("image generation is not configured; ask the user to enable an image model in Settings")
         try:
             started_at = time.monotonic()
+            if user_id is not None:
+                with db() as conn:
+                    require_model_balance(conn, user_id, image_config)
             provider = image_config["provider"]
             size = aspect_ratio if provider == "gemini" else _openai_image_size(aspect_ratio)
             quality = "2K" if provider == "gemini" else "medium"

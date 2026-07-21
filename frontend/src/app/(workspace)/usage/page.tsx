@@ -1,17 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 
 import { listUsageLogsAction } from "@/actions/usage-actions";
 import { queryKeys } from "@/actions/query-keys";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
 import { formatMoney } from "@/lib/money";
 import { providerLabel } from "@/lib/model-providers";
 import type { UsageLogItem } from "@/types/usage";
 
 const featureValues = ["all", "chat", "image", "video", "agent_image", "script_parse", "script_optimize", "storyboard_image"];
+const dayValues = ["7", "30", "90"];
+type UsageSource = "all" | "official" | "user";
 
 function number(value: number) {
   return new Intl.NumberFormat().format(value);
@@ -21,13 +25,22 @@ export default function UsagePage() {
   const { t, formatDateTime } = useI18n();
   const [feature, setFeature] = useState("all");
   const [days, setDays] = useState(30);
+  const [source, setSource] = useState<UsageSource>("all");
   const query = useQuery({
-    queryKey: [...queryKeys.usageLogs, feature, days],
-    queryFn: () => listUsageLogsAction(feature, days),
+    queryKey: [...queryKeys.usageLogs, feature, days, source],
+    queryFn: () => listUsageLogsAction(feature, days, source),
   });
   const summary = query.data?.summary ?? { calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 };
   const logs = query.data?.logs ?? [];
   const featureLabel = (value: string) => t(`usage.feature.${value}`);
+  const featureItems = featureValues.map((value) => ({ value, label: featureLabel(value) }));
+  const dayItems = dayValues.map((value) => ({ value, label: t("usage.days", { days: Number(value) }) }));
+  const sourceItems = [
+    { value: "all", label: t("common.all") },
+    { value: "official", label: t("config.source.official") },
+    { value: "user", label: t("config.source.user") },
+  ];
+  const filtersActive = feature !== "all" || days !== 30 || source !== "all";
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
@@ -36,19 +49,31 @@ export default function UsagePage() {
           <h2 className="text-base font-semibold">{t("usage.title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("usage.description")}</p>
         </div>
-        <div className="flex gap-2">
-          <Select value={feature} onValueChange={(value) => setFeature(value ?? "all")}>
+        <div className="flex flex-wrap gap-2">
+          <Select items={featureItems} value={feature} onValueChange={(value) => setFeature(value ?? "all")}>
             <SelectTrigger className="w-40"><SelectValue>{featureLabel(feature)}</SelectValue></SelectTrigger>
             <SelectContent>
-              {featureValues.map((value) => <SelectItem key={value} value={value}>{featureLabel(value)}</SelectItem>)}
+              <SelectGroup>{featureValues.map((value) => <SelectItem key={value} value={value}>{featureLabel(value)}</SelectItem>)}</SelectGroup>
             </SelectContent>
           </Select>
-          <Select value={String(days)} onValueChange={(value) => setDays(Number(value))}>
+          <Select items={sourceItems} value={source} onValueChange={(value) => setSource((value ?? "all") as UsageSource)}>
+            <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectGroup>{sourceItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select items={dayItems} value={String(days)} onValueChange={(value) => setDays(Number(value))}>
             <SelectTrigger className="w-28"><SelectValue>{t("usage.days", { days })}</SelectValue></SelectTrigger>
             <SelectContent>
-              {[7, 30, 90].map((value) => <SelectItem key={value} value={String(value)}>{t("usage.days", { days: value })}</SelectItem>)}
+              <SelectGroup>{dayItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
             </SelectContent>
           </Select>
+          {filtersActive ? (
+            <Button variant="outline" size="sm" onClick={() => { setFeature("all"); setSource("all"); setDays(30); }}>
+              <RotateCcw data-icon="inline-start" />
+              {t("common.clearFilters")}
+            </Button>
+          ) : null}
         </div>
       </div>
 

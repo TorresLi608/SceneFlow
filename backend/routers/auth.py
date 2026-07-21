@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from database import db, row
 from security import token_for
 from serializers import user_json
-from utils import now
+from lib.utils import now
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])

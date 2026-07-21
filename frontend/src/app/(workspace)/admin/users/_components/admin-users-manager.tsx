@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, Plus, Trash2, X } from "lucide-react";
+import { KeyRound, Loader2, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -41,6 +41,7 @@ export function AdminUsersManager() {
   const [createOpen, setCreateOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [level, setLevel] = useState<1 | 2 | 3>(1);
   const [resetResult, setResetResult] = useState<{ username: string; password: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "reset"; id: number; username: string } | null>(null);
 
@@ -64,6 +65,7 @@ export function AdminUsersManager() {
       setCreateOpen(false);
       setUsername("");
       setPassword("");
+      setLevel(1);
       setMessage(t("admin.userCreated"));
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
     },
@@ -94,6 +96,7 @@ export function AdminUsersManager() {
   const currentPage = Math.min(page, pageCount);
   const pageUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const isMutating = updateUserMutation.isPending || deleteUserMutation.isPending || resetPasswordMutation.isPending;
+  const filtersActive = Boolean(search.trim()) || roleFilter !== "all" || statusFilter !== "all";
 
   const roleItems = useMemo(
     () => [
@@ -129,7 +132,7 @@ export function AdminUsersManager() {
         </Button>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-3 xl:grid-cols-[minmax(220px,1fr)_180px_180px]">
+      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_180px_180px_auto]">
         <Input
           value={search}
           onChange={(event) => {
@@ -180,6 +183,12 @@ export function AdminUsersManager() {
             <SelectGroup>{statusItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
           </SelectContent>
         </Select>
+        {filtersActive ? (
+          <Button variant="outline" onClick={() => { setSearch(""); setRoleFilter("all"); setStatusFilter("all"); setPage(1); }}>
+            <RotateCcw data-icon="inline-start" />
+            {t("common.clearFilters")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="overflow-hidden rounded-lg border">
@@ -295,7 +304,7 @@ export function AdminUsersManager() {
             className="flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault();
-              createUserMutation.mutate({ username: username.trim(), password });
+              createUserMutation.mutate({ username: username.trim(), password, level });
             }}
           >
             <FieldGroup>
@@ -306,6 +315,13 @@ export function AdminUsersManager() {
               <Field>
                 <FieldLabel htmlFor="adminCreatePassword">{t("auth.password")}</FieldLabel>
                 <Input id="adminCreatePassword" type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} maxLength={128} required />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="adminCreateLevel">{t("admin.userLevel")}</FieldLabel>
+                <Select items={levelItems} value={String(level)} onValueChange={(value) => setLevel(Number(value) as 1 | 2 | 3)}>
+                  <SelectTrigger id="adminCreateLevel"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>{levelItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+                </Select>
               </Field>
             </FieldGroup>
             <div className="flex justify-end gap-2">

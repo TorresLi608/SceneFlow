@@ -6,12 +6,12 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 
 from config import GENERATED_DIR, PUBLIC_BASE_URL
-from config_service import active_model_config, official_model_config, user_model_config
+from services.config_service import active_model_config, official_model_config, user_model_config
 from database import db
 from security import current_user_id
-from utils import new_id
-from video_service import generate_video, parse_reference, resolve_video_settings
-from usage_service import record_usage
+from lib.utils import new_id
+from services.video_service import generate_video, parse_reference, resolve_video_settings
+from services.usage_service import record_usage, require_model_balance
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -44,6 +44,7 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
             config = user_model_config(conn, user_id, int(config_id), "video", "视频生成")
         else:
             config = active_model_config(conn, user_id, "video", "视频生成")
+        require_model_balance(conn, user_id, config)
 
     resolution = str(payload.get("resolution") or "1280x720")
     started_at = time.monotonic()
