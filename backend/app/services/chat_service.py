@@ -43,8 +43,8 @@ def _row_chat_config(config: sqlite3.Row | None, config_id: int | None = None, o
 def _active_chat_config(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
     config = row(
         conn,
-        """SELECT * FROM user_configs
-        WHERE user_id=? AND purpose IN ('script', 'general') AND is_active=1 AND is_enabled=1 AND deleted_at IS NULL
+        """SELECT * FROM model_configs
+        WHERE source='user' AND user_id=? AND purpose IN ('script', 'general') AND is_active=1 AND is_enabled=1 AND deleted_at IS NULL
         ORDER BY CASE purpose WHEN 'script' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1""",
         (user_id,),
     )
@@ -53,14 +53,15 @@ def _active_chat_config(conn: sqlite3.Connection, user_id: int) -> dict[str, Any
 
     config = row(
         conn,
-        """SELECT official_model_configs.*
+        """SELECT model_configs.*
         FROM user_official_config_defaults
-        JOIN official_model_configs ON official_model_configs.id=user_official_config_defaults.official_config_id
+        JOIN model_configs ON model_configs.id=user_official_config_defaults.official_config_id
         WHERE user_official_config_defaults.user_id=?
           AND user_official_config_defaults.purpose IN ('script', 'general')
-          AND official_model_configs.is_enabled=1
-          AND official_model_configs.is_verified=1
-          AND official_model_configs.deleted_at IS NULL
+          AND model_configs.source='official'
+          AND model_configs.is_enabled=1
+          AND model_configs.is_verified=1
+          AND model_configs.deleted_at IS NULL
         ORDER BY CASE user_official_config_defaults.purpose WHEN 'script' THEN 0 ELSE 1 END LIMIT 1""",
         (user_id,),
     )
@@ -69,8 +70,8 @@ def _active_chat_config(conn: sqlite3.Connection, user_id: int) -> dict[str, Any
 
     config = row(
         conn,
-        """SELECT * FROM official_model_configs
-        WHERE purpose IN ('script', 'general') AND is_active=1 AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL
+        """SELECT * FROM model_configs
+        WHERE source='official' AND purpose IN ('script', 'general') AND is_active=1 AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL
         ORDER BY CASE purpose WHEN 'script' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1""",
     )
     return _row_chat_config(config, official_config_id=config["id"] if config else None)
@@ -78,13 +79,13 @@ def _active_chat_config(conn: sqlite3.Connection, user_id: int) -> dict[str, Any
 
 def chat_config(conn: sqlite3.Connection, user_id: int, config_id: int | None, official_config_id: int | None = None) -> dict[str, Any]:
     if official_config_id is not None:
-        config = row(conn, "SELECT * FROM official_model_configs WHERE id=? AND deleted_at IS NULL", (official_config_id,))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='official' AND deleted_at IS NULL", (official_config_id,))
         return _row_chat_config(config, official_config_id=official_config_id)
 
     if config_id is None:
         return _active_chat_config(conn, user_id)
 
-    config = row(conn, "SELECT * FROM user_configs WHERE id=? AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+    config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
     return _row_chat_config(config, config_id=config_id)
 
 

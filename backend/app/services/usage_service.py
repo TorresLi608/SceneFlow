@@ -124,9 +124,8 @@ def record_usage(
     config_id = config.get("officialConfigId") if source == "official" else config.get("configId")
     pricing = normalize_pricing({})
     if config_id:
-        table = "official_model_configs" if source == "official" else "user_configs"
         with db() as conn:
-            stored_config = row(conn, f"SELECT * FROM {table} WHERE id=?", (int(config_id),))
+            stored_config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source=?", (int(config_id), source))
         if stored_config:
             pricing = normalize_pricing({}, stored_config)
     cost_micros = calculate_cost_micros(pricing, token_usage, quantity)

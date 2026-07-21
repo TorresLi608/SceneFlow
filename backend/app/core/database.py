@@ -28,6 +28,7 @@ def db() -> Any:
 
 def init_db() -> None:
     with db() as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -67,12 +68,13 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_created_at ON redemption_codes(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_redeemed_by ON redemption_codes(redeemed_by_user_id);
-            CREATE TABLE IF NOT EXISTS user_configs (
+            CREATE TABLE IF NOT EXISTS model_configs (
                 id integer PRIMARY KEY AUTOINCREMENT,
                 created_at datetime,
                 updated_at datetime,
                 deleted_at datetime,
-                user_id integer NOT NULL,
+                user_id integer,
+                source text NOT NULL DEFAULT "user" CHECK(source IN ("user", "official")),
                 provider text NOT NULL,
                 encrypted_key text NOT NULL,
                 is_active numeric DEFAULT false,
@@ -90,36 +92,12 @@ def init_db() -> None:
                 cache_write_price_per_million real DEFAULT 0,
                 unit_price real DEFAULT 0,
                 unit_name text DEFAULT "token",
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                CHECK((source="user" AND user_id IS NOT NULL) OR (source="official" AND user_id IS NULL))
             );
-            CREATE INDEX IF NOT EXISTS idx_user_configs_user_id ON user_configs(user_id);
-            CREATE INDEX IF NOT EXISTS idx_user_configs_purpose ON user_configs(purpose);
-            CREATE INDEX IF NOT EXISTS idx_user_configs_deleted_at ON user_configs(deleted_at);
-            CREATE TABLE IF NOT EXISTS official_model_configs (
-                id integer PRIMARY KEY AUTOINCREMENT,
-                created_at datetime,
-                updated_at datetime,
-                deleted_at datetime,
-                provider text NOT NULL,
-                encrypted_key text NOT NULL,
-                is_active numeric DEFAULT false,
-                is_enabled numeric DEFAULT true,
-                purpose text DEFAULT "script",
-                model_name text,
-                is_verified numeric DEFAULT false,
-                name text,
-                description text,
-                base_url text,
-                pricing_multiplier real DEFAULT 1,
-                input_price_per_million real DEFAULT 0,
-                output_price_per_million real DEFAULT 0,
-                cache_read_price_per_million real DEFAULT 0,
-                cache_write_price_per_million real DEFAULT 0,
-                unit_price real DEFAULT 0,
-                unit_name text DEFAULT "token"
-            );
-            CREATE INDEX IF NOT EXISTS idx_official_model_configs_purpose ON official_model_configs(purpose);
-            CREATE INDEX IF NOT EXISTS idx_official_model_configs_deleted_at ON official_model_configs(deleted_at);
+            CREATE INDEX IF NOT EXISTS idx_model_configs_user_id ON model_configs(user_id);
+            CREATE INDEX IF NOT EXISTS idx_model_configs_source_purpose ON model_configs(source, purpose);
+            CREATE INDEX IF NOT EXISTS idx_model_configs_deleted_at ON model_configs(deleted_at);
             CREATE TABLE IF NOT EXISTS user_official_config_defaults (
                 user_id integer NOT NULL,
                 purpose text NOT NULL,
@@ -128,7 +106,7 @@ def init_db() -> None:
                 updated_at datetime,
                 PRIMARY KEY(user_id, purpose),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(official_config_id) REFERENCES official_model_configs(id) ON DELETE CASCADE
+                FOREIGN KEY(official_config_id) REFERENCES model_configs(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS projects (
                 id text PRIMARY KEY,
@@ -176,8 +154,8 @@ def init_db() -> None:
                 context_summary text,
                 context_summary_until datetime,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(config_id) REFERENCES user_configs(id) ON DELETE SET NULL,
-                FOREIGN KEY(official_config_id) REFERENCES official_model_configs(id) ON DELETE SET NULL
+                FOREIGN KEY(config_id) REFERENCES model_configs(id) ON DELETE SET NULL,
+                FOREIGN KEY(official_config_id) REFERENCES model_configs(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_chat_sessions_deleted_at ON chat_sessions(deleted_at);
@@ -238,38 +216,7 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN level integer NOT NULL DEFAULT 1")
         if "user_group" not in user_columns:
             conn.execute('ALTER TABLE users ADD COLUMN user_group text NOT NULL DEFAULT "default"')
-        user_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(user_configs)").fetchall()}
-        if "base_url" not in user_config_columns:
-            conn.execute("ALTER TABLE user_configs ADD COLUMN base_url text")
-        if "is_enabled" not in user_config_columns:
-            conn.execute("ALTER TABLE user_configs ADD COLUMN is_enabled numeric DEFAULT true")
-        for name, definition in (
-            ("pricing_multiplier", "real DEFAULT 1"),
-            ("input_price_per_million", "real DEFAULT 0"),
-            ("output_price_per_million", "real DEFAULT 0"),
-            ("cache_read_price_per_million", "real DEFAULT 0"),
-            ("cache_write_price_per_million", "real DEFAULT 0"),
-            ("unit_price", "real DEFAULT 0"),
-            ("unit_name", 'text DEFAULT "token"'),
-        ):
-            if name not in user_config_columns:
-                conn.execute(f"ALTER TABLE user_configs ADD COLUMN {name} {definition}")
-        official_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(official_model_configs)").fetchall()}
-        if "base_url" not in official_config_columns:
-            conn.execute("ALTER TABLE official_model_configs ADD COLUMN base_url text")
-        if "is_enabled" not in official_config_columns:
-            conn.execute("ALTER TABLE official_model_configs ADD COLUMN is_enabled numeric DEFAULT true")
-        for name, definition in (
-            ("pricing_multiplier", "real DEFAULT 1"),
-            ("input_price_per_million", "real DEFAULT 0"),
-            ("output_price_per_million", "real DEFAULT 0"),
-            ("cache_read_price_per_million", "real DEFAULT 0"),
-            ("cache_write_price_per_million", "real DEFAULT 0"),
-            ("unit_price", "real DEFAULT 0"),
-            ("unit_name", 'text DEFAULT "token"'),
-        ):
-            if name not in official_config_columns:
-                conn.execute(f"ALTER TABLE official_model_configs ADD COLUMN {name} {definition}")
+        _migrate_legacy_model_configs(conn)
         session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         if "official_config_id" not in session_columns:
             conn.execute("ALTER TABLE chat_sessions ADD COLUMN official_config_id integer")
@@ -283,6 +230,120 @@ def init_db() -> None:
         if "video_progress" not in project_columns:
             conn.execute("ALTER TABLE projects ADD COLUMN video_progress integer DEFAULT 0")
         seed_super_admin(conn)
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return row(conn, "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)) is not None
+
+
+def _ensure_legacy_config_columns(conn: sqlite3.Connection, table: str) -> None:
+    columns = {item["name"] for item in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for name, definition in (
+        ("base_url", "text"),
+        ("is_enabled", "numeric DEFAULT true"),
+        ("pricing_multiplier", "real DEFAULT 1"),
+        ("input_price_per_million", "real DEFAULT 0"),
+        ("output_price_per_million", "real DEFAULT 0"),
+        ("cache_read_price_per_million", "real DEFAULT 0"),
+        ("cache_write_price_per_million", "real DEFAULT 0"),
+        ("unit_price", "real DEFAULT 0"),
+        ("unit_name", 'text DEFAULT "token"'),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def _migrate_legacy_model_configs(conn: sqlite3.Connection) -> None:
+    has_user_configs = _table_exists(conn, "user_configs")
+    has_official_configs = _table_exists(conn, "official_model_configs")
+    if not has_user_configs and not has_official_configs:
+        return
+
+    conn.execute("SAVEPOINT migrate_model_configs")
+    try:
+        if has_user_configs:
+            _ensure_legacy_config_columns(conn, "user_configs")
+        if has_official_configs:
+            _ensure_legacy_config_columns(conn, "official_model_configs")
+
+        user_ids: dict[int, int] = {}
+        official_ids: dict[int, int] = {}
+        columns = (
+            "created_at", "updated_at", "deleted_at", "provider", "encrypted_key", "is_active", "is_enabled",
+            "purpose", "model_name", "is_verified", "name", "description", "base_url", "pricing_multiplier",
+            "input_price_per_million", "output_price_per_million", "cache_read_price_per_million",
+            "cache_write_price_per_million", "unit_price", "unit_name",
+        )
+        if has_user_configs:
+            for config in rows(conn, "SELECT * FROM user_configs ORDER BY id"):
+                cur = conn.execute(
+                    f"INSERT INTO model_configs (user_id, source, {', '.join(columns)}) VALUES (?, 'user', {', '.join('?' for _ in columns)})",
+                    (config["user_id"], *(config[column] for column in columns)),
+                )
+                user_ids[int(config["id"])] = int(cur.lastrowid)
+        if has_official_configs:
+            for config in rows(conn, "SELECT * FROM official_model_configs ORDER BY id"):
+                cur = conn.execute(
+                    f"INSERT INTO model_configs (user_id, source, {', '.join(columns)}) VALUES (NULL, 'official', {', '.join('?' for _ in columns)})",
+                    tuple(config[column] for column in columns),
+                )
+                official_ids[int(config["id"])] = int(cur.lastrowid)
+
+        defaults = rows(conn, "SELECT * FROM user_official_config_defaults") if _table_exists(conn, "user_official_config_defaults") else []
+        sessions = rows(conn, "SELECT * FROM chat_sessions") if _table_exists(conn, "chat_sessions") else []
+        conn.execute("DROP TABLE IF EXISTS user_official_config_defaults")
+        conn.execute(
+            """CREATE TABLE user_official_config_defaults (
+            user_id integer NOT NULL, purpose text NOT NULL, official_config_id integer NOT NULL,
+            created_at datetime, updated_at datetime, PRIMARY KEY(user_id, purpose),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(official_config_id) REFERENCES model_configs(id) ON DELETE CASCADE)"""
+        )
+        for item in defaults:
+            mapped_id = official_ids.get(int(item["official_config_id"]))
+            if mapped_id:
+                conn.execute(
+                    "INSERT INTO user_official_config_defaults VALUES (?, ?, ?, ?, ?)",
+                    (item["user_id"], item["purpose"], mapped_id, item["created_at"], item["updated_at"]),
+                )
+
+        conn.execute("DROP TABLE IF EXISTS chat_sessions")
+        conn.execute(
+            """CREATE TABLE chat_sessions (
+            id text PRIMARY KEY, created_at datetime, updated_at datetime, deleted_at datetime,
+            user_id integer NOT NULL, title text NOT NULL, config_id integer, official_config_id integer,
+            provider text, model_name text, context_summary text, context_summary_until datetime,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(config_id) REFERENCES model_configs(id) ON DELETE SET NULL,
+            FOREIGN KEY(official_config_id) REFERENCES model_configs(id) ON DELETE SET NULL)"""
+        )
+        for item in sessions:
+            keys = item.keys()
+            conn.execute(
+                "INSERT INTO chat_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item["id"], item["created_at"], item["updated_at"], item["deleted_at"], item["user_id"], item["title"],
+                    user_ids.get(int(item["config_id"])) if item["config_id"] is not None else None,
+                    official_ids.get(int(item["official_config_id"])) if "official_config_id" in keys and item["official_config_id"] is not None else None,
+                    item["provider"], item["model_name"],
+                    item["context_summary"] if "context_summary" in keys else None,
+                    item["context_summary_until"] if "context_summary_until" in keys else None,
+                ),
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_deleted_at ON chat_sessions(deleted_at)")
+
+        for old_id, new_id in user_ids.items():
+            conn.execute("UPDATE usage_logs SET config_id=? WHERE config_source='user' AND config_id=?", (new_id, old_id))
+        for old_id, new_id in official_ids.items():
+            conn.execute("UPDATE usage_logs SET config_id=? WHERE config_source='official' AND config_id=?", (new_id, old_id))
+        conn.execute("DROP TABLE IF EXISTS user_configs")
+        conn.execute("DROP TABLE IF EXISTS official_model_configs")
+        conn.execute("RELEASE migrate_model_configs")
+    except Exception:
+        conn.execute("ROLLBACK TO migrate_model_configs")
+        conn.execute("RELEASE migrate_model_configs")
+        raise
 
 
 def seed_super_admin(conn: sqlite3.Connection) -> None:

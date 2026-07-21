@@ -26,7 +26,7 @@ def config_json(config: sqlite3.Row) -> dict[str, Any]:
     keys = config.keys()
     return {
         "id": config["id"],
-        "source": "user",
+        "source": config["source"] if "source" in keys else "user",
         "name": config["name"] or "",
         "description": config["description"] or "",
         "purpose": config["purpose"],

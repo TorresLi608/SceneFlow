@@ -8,10 +8,11 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
+from app.api.v1.admin import create_default_model, update_model_config
 from app.api.v1.settings import create_config, update_config
 from app.core import database
-from app.core.database import db, init_db, row
-from app.core.security import encrypt
+from app.core.database import db, init_db, row, rows
+from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
 from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload
 
@@ -21,8 +22,10 @@ def _conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute(
         """
-        CREATE TABLE user_configs (
+        CREATE TABLE model_configs (
             id integer PRIMARY KEY,
+            user_id integer,
+            source text,
             purpose text,
             provider text,
             base_url text,
@@ -34,8 +37,8 @@ def _conn() -> sqlite3.Connection:
         """
     )
     conn.execute(
-        "INSERT INTO user_configs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (1, "script", "qwen", "", "qwen-max", encrypt("old-secret-key"), 1, 1),
+        "INSERT INTO model_configs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, 1, "user", "script", "qwen", "", "qwen-max", encrypt("old-secret-key"), 1, 1),
     )
     return conn
 
@@ -61,7 +64,7 @@ def test_config_create_fields_rejects_disabled_default() -> None:
 
 
 def test_config_update_fields_disables_active_config() -> None:
-    current = row(_conn(), "SELECT * FROM user_configs WHERE id=1")
+    current = row(_conn(), "SELECT * FROM model_configs WHERE id=1")
     payload = {"isEnabled": False}
     normalized = normalize_config_payload(payload, current)
 
@@ -163,6 +166,115 @@ def test_user_config_pricing_round_trip() -> None:
             database.DB_PATH = original_path
 
 
+def test_model_config_source_switch_preserves_id_and_key() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original_path = database.DB_PATH
+        database.DB_PATH = str(Path(directory) / "config.db")
+        try:
+            init_db()
+            with db() as conn:
+                admin_id = int(conn.execute(
+                    "INSERT INTO users (username, password, role, is_disabled) VALUES ('source-admin', 'x', 'superAdmin', 0)"
+                ).lastrowid)
+                config_id = int(conn.execute(
+                    """INSERT INTO model_configs
+                    (created_at, updated_at, user_id, source, name, purpose, provider, base_url, model_name, encrypted_key,
+                     is_active, is_enabled, is_verified)
+                    VALUES ('now', 'now', ?, 'user', 'Personal', 'script', 'openai', 'https://api.openai.com/v1', 'gpt-test', ?, 1, 1, 1)""",
+                    (admin_id, encrypt("source-secret-key")),
+                ).lastrowid)
+
+            payload = {
+                "name": "Converted",
+                "purpose": "script",
+                "provider": "openai",
+                "baseUrl": "https://api.openai.com/v1",
+                "modelSeries": "gpt-test",
+                "isActive": True,
+                "isEnabled": True,
+            }
+            with patch("app.api.v1.admin.validate_provider", new=AsyncMock()):
+                created_official = asyncio.run(create_default_model({**payload, "apiKey": "official-secret-key"}, admin_id))["config"]
+                official = asyncio.run(update_model_config(config_id, {**payload, "source": "official"}, admin_id))["config"]
+                personal = asyncio.run(update_model_config(config_id, {**payload, "source": "user"}, admin_id))["config"]
+
+            with db() as conn:
+                converted = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
+            assert official["source"] == "official"
+            assert created_official["source"] == "official"
+            assert personal["source"] == "user"
+            assert official["id"] == personal["id"] == config_id
+            assert decrypt(converted["encrypted_key"]) == "source-secret-key"
+        finally:
+            database.DB_PATH = original_path
+
+
+def test_legacy_model_config_tables_merge_without_losing_references() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original_path = database.DB_PATH
+        database.DB_PATH = str(Path(directory) / "legacy.db")
+        try:
+            conn = sqlite3.connect(database.DB_PATH)
+            conn.executescript(
+                """
+                CREATE TABLE users (
+                    id integer PRIMARY KEY AUTOINCREMENT, created_at datetime, updated_at datetime, deleted_at datetime,
+                    username text NOT NULL UNIQUE, password text NOT NULL, role text, is_disabled numeric
+                );
+                CREATE TABLE user_configs (
+                    id integer PRIMARY KEY AUTOINCREMENT, created_at datetime, updated_at datetime, deleted_at datetime,
+                    user_id integer NOT NULL, provider text NOT NULL, encrypted_key text NOT NULL, is_active numeric,
+                    purpose text, model_name text, is_verified numeric, name text, description text
+                );
+                CREATE TABLE official_model_configs (
+                    id integer PRIMARY KEY AUTOINCREMENT, created_at datetime, updated_at datetime, deleted_at datetime,
+                    provider text NOT NULL, encrypted_key text NOT NULL, is_active numeric, purpose text,
+                    model_name text, is_verified numeric, name text, description text
+                );
+                CREATE TABLE user_official_config_defaults (
+                    user_id integer NOT NULL, purpose text NOT NULL, official_config_id integer NOT NULL,
+                    created_at datetime, updated_at datetime, PRIMARY KEY(user_id, purpose)
+                );
+                CREATE TABLE chat_sessions (
+                    id text PRIMARY KEY, created_at datetime, updated_at datetime, deleted_at datetime,
+                    user_id integer NOT NULL, title text NOT NULL, config_id integer, official_config_id integer,
+                    provider text, model_name text
+                );
+                CREATE TABLE chat_messages (
+                    id text PRIMARY KEY, created_at datetime, session_id text NOT NULL, role text NOT NULL,
+                    content text NOT NULL, provider text, model_name text
+                );
+                INSERT INTO users VALUES (1, 'now', 'now', NULL, 'legacy-user', 'x', 'user', 0);
+                INSERT INTO user_configs VALUES (1, 'now', 'now', NULL, 1, 'openai', 'user-key', 1, 'script', 'user-model', 1, 'User', '');
+                INSERT INTO official_model_configs VALUES (1, 'now', 'now', NULL, 'openai', 'official-key', 1, 'script', 'official-model', 1, 'Official', '');
+                INSERT INTO user_official_config_defaults VALUES (1, 'script', 1, 'now', 'now');
+                INSERT INTO chat_sessions VALUES ('legacy-chat', 'now', 'now', NULL, 1, 'Legacy', 1, 1, 'openai', 'user-model');
+                INSERT INTO chat_messages VALUES ('legacy-message', 'now', 'legacy-chat', 'user', 'hello', 'openai', 'user-model');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            init_db()
+
+            with db() as conn:
+                tables = {item["name"] for item in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                configs = rows(conn, "SELECT * FROM model_configs ORDER BY source")
+                defaults = row(conn, "SELECT * FROM user_official_config_defaults WHERE user_id=1")
+                session = row(conn, "SELECT * FROM chat_sessions WHERE id='legacy-chat'")
+                message = row(conn, "SELECT * FROM chat_messages WHERE id='legacy-message'")
+                foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+            assert "user_configs" not in tables
+            assert "official_model_configs" not in tables
+            assert {config["source"] for config in configs} == {"user", "official"}
+            assert session["config_id"] != session["official_config_id"]
+            assert defaults["official_config_id"] == session["official_config_id"]
+            assert message["content"] == "hello"
+            assert foreign_key_errors == []
+        finally:
+            database.DB_PATH = original_path
+
+
 if __name__ == "__main__":
     test_config_create_fields_rejects_disabled_default()
     test_config_update_fields_disables_active_config()
@@ -171,3 +283,5 @@ if __name__ == "__main__":
     test_video_gemini_config_is_valid()
     test_gemini_image_helpers()
     test_user_config_pricing_round_trip()
+    test_model_config_source_switch_preserves_id_and_key()
+    test_legacy_model_config_tables_merge_without_losing_references()

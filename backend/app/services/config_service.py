@@ -185,7 +185,7 @@ def _model_config(config: sqlite3.Row, purpose: str, stage: str, source: str) ->
 def official_model_config(conn: sqlite3.Connection, config_id: int, purpose: str, stage: str) -> dict[str, str]:
     config = row(
         conn,
-        "SELECT * FROM official_model_configs WHERE id=? AND purpose=? AND is_enabled=1 AND deleted_at IS NULL",
+        "SELECT * FROM model_configs WHERE id=? AND source='official' AND purpose=? AND is_enabled=1 AND deleted_at IS NULL",
         (config_id, purpose),
     )
     return _model_config(config, purpose, stage, "official")
@@ -194,7 +194,7 @@ def official_model_config(conn: sqlite3.Connection, config_id: int, purpose: str
 def user_model_config(conn: sqlite3.Connection, user_id: int, config_id: int, purpose: str, stage: str) -> dict[str, str]:
     config = row(
         conn,
-        "SELECT * FROM user_configs WHERE id=? AND user_id=? AND purpose=? AND is_enabled=1 AND deleted_at IS NULL",
+        "SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND purpose=? AND is_enabled=1 AND deleted_at IS NULL",
         (config_id, user_id, purpose),
     )
     return _model_config(config, purpose, stage, "user")
@@ -204,7 +204,7 @@ def official_model_config_any(conn: sqlite3.Connection, config_id: int, purposes
     placeholders = ",".join("?" for _ in purposes)
     config = row(
         conn,
-        f"SELECT * FROM official_model_configs WHERE id=? AND purpose IN ({placeholders}) AND is_enabled=1 AND deleted_at IS NULL",
+        f"SELECT * FROM model_configs WHERE id=? AND source='official' AND purpose IN ({placeholders}) AND is_enabled=1 AND deleted_at IS NULL",
         (config_id, *purposes),
     )
     return _model_config(config, config["purpose"] if config else "", stage, "official")
@@ -214,7 +214,7 @@ def user_model_config_any(conn: sqlite3.Connection, user_id: int, config_id: int
     placeholders = ",".join("?" for _ in purposes)
     config = row(
         conn,
-        f"SELECT * FROM user_configs WHERE id=? AND user_id=? AND purpose IN ({placeholders}) AND is_enabled=1 AND deleted_at IS NULL",
+        f"SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND purpose IN ({placeholders}) AND is_enabled=1 AND deleted_at IS NULL",
         (config_id, user_id, *purposes),
     )
     return _model_config(config, config["purpose"] if config else "", stage, "user")
@@ -223,21 +223,22 @@ def user_model_config_any(conn: sqlite3.Connection, user_id: int, config_id: int
 def active_model_config(conn: sqlite3.Connection, user_id: int, purpose: str, stage: str) -> dict[str, str]:
     config = row(
         conn,
-        "SELECT * FROM user_configs WHERE user_id=? AND purpose=? AND is_active=1 AND is_enabled=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
+        "SELECT * FROM model_configs WHERE source='user' AND user_id=? AND purpose=? AND is_active=1 AND is_enabled=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
         (user_id, purpose),
     )
     if config:
         return _model_config(config, purpose, stage, "user")
     config = row(
         conn,
-        """SELECT official_model_configs.*
+        """SELECT model_configs.*
         FROM user_official_config_defaults
-        JOIN official_model_configs ON official_model_configs.id=user_official_config_defaults.official_config_id
+        JOIN model_configs ON model_configs.id=user_official_config_defaults.official_config_id
         WHERE user_official_config_defaults.user_id=?
           AND user_official_config_defaults.purpose=?
-          AND official_model_configs.is_enabled=1
-          AND official_model_configs.is_verified=1
-          AND official_model_configs.deleted_at IS NULL
+          AND model_configs.source='official'
+          AND model_configs.is_enabled=1
+          AND model_configs.is_verified=1
+          AND model_configs.deleted_at IS NULL
         LIMIT 1""",
         (user_id, purpose),
     )
@@ -245,7 +246,7 @@ def active_model_config(conn: sqlite3.Connection, user_id: int, purpose: str, st
         return _model_config(config, purpose, stage, "official")
     config = row(
         conn,
-        "SELECT * FROM official_model_configs WHERE purpose=? AND is_active=1 AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
+        "SELECT * FROM model_configs WHERE source='official' AND purpose=? AND is_active=1 AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1",
         (purpose,),
     )
     return _model_config(config, purpose, stage, "official")

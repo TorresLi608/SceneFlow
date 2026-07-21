@@ -84,3 +84,8 @@ export async function updateOfficialConfigAction(id: number, payload: UpdateOffi
 export async function deleteOfficialConfigAction(id: number) {
   await httpClient.delete(`/api/bff/admin/default-models/${id}`);
 }
+
+export async function updateModelConfigAction(id: number, payload: UpdateOfficialConfigInput & { source: "user" | "official" }) {
+  const response = await httpClient.patch<AdminDefaultModelItemResponse>(`/api/bff/admin/model-configs/${id}`, payload);
+  return response.data;
+}

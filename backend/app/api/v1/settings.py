@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 @router.get("/keys")
 def list_configs(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as conn:
-        configs = rows(conn, "SELECT * FROM user_configs WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC", (user_id,))
+        configs = rows(conn, "SELECT * FROM model_configs WHERE source='user' AND user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC", (user_id,))
         active_user_purposes = {config["purpose"] for config in configs if config["is_active"] and config["is_enabled"]}
         active_official = {
             config["purpose"]: config["official_config_id"]
@@ -26,7 +26,7 @@ def list_configs(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
         }
         official_configs = rows(
             conn,
-            "SELECT * FROM official_model_configs WHERE is_enabled=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY purpose, updated_at DESC",
+            "SELECT * FROM model_configs WHERE source='official' AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY purpose, updated_at DESC",
         )
     return {
         "configs": [config_json(config) for config in configs],
@@ -67,7 +67,7 @@ async def validate_config(payload: dict[str, Any], user_id: int = Depends(curren
 @router.get("/keys/{config_id}")
 def get_config(config_id: int, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as conn:
-        config = row(conn, "SELECT * FROM user_configs WHERE id=? AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
     if not config:
         raise HTTPException(404, "config not found")
     return {"config": config_json(config)}
@@ -91,14 +91,14 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
     stamp = now()
     with db() as conn:
         if bool(payload.get("isActive")):
-            conn.execute("UPDATE user_configs SET is_active=0, updated_at=? WHERE user_id=? AND purpose=? AND deleted_at IS NULL", (stamp, user_id, fields["purpose"]))
+            conn.execute("UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND deleted_at IS NULL", (stamp, user_id, fields["purpose"]))
             conn.execute("DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?", (user_id, fields["purpose"]))
         cur = conn.execute(
-            """INSERT INTO user_configs
-            (created_at, updated_at, user_id, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
+            """INSERT INTO model_configs
+            (created_at, updated_at, user_id, source, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
              pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
              cache_write_price_per_million, unit_price, unit_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 stamp,
                 stamp,
@@ -121,14 +121,14 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
                 pricing["unit_name"],
             ),
         )
-        config = row(conn, "SELECT * FROM user_configs WHERE id=?", (cur.lastrowid,))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (cur.lastrowid,))
     return {"config": config_json(config)}
 
 
 @router.patch("/keys/{config_id}")
 async def update_config(config_id: int, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as conn:
-        config = row(conn, "SELECT * FROM user_configs WHERE id=? AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
     if not config:
         raise HTTPException(404, "config not found")
 
@@ -152,20 +152,20 @@ async def update_config(config_id: int, payload: dict[str, Any], user_id: int = 
     stamp = now()
     with db() as conn:
         if payload.get("isActive"):
-            conn.execute("UPDATE user_configs SET is_active=0, updated_at=? WHERE user_id=? AND purpose=? AND id<>? AND deleted_at IS NULL", (stamp, user_id, normalized["purpose"], config_id))
+            conn.execute("UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND id<>? AND deleted_at IS NULL", (stamp, user_id, normalized["purpose"], config_id))
             conn.execute("DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?", (user_id, normalized["purpose"]))
         conn.execute(
-            f"UPDATE user_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND user_id=?",
+            f"UPDATE model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND source='user' AND user_id=?",
             (*updates.values(), stamp, config_id, user_id),
         )
-        config = row(conn, "SELECT * FROM user_configs WHERE id=?", (config_id,))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
     return {"config": config_json(config)}
 
 
 @router.delete("/keys/{config_id}", status_code=204)
 def delete_config(config_id: int, user_id: int = Depends(current_user_id)) -> None:
     with db() as conn:
-        conn.execute("UPDATE user_configs SET deleted_at=?, updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL", (now(), now(), config_id, user_id))
+        conn.execute("UPDATE model_configs SET deleted_at=?, updated_at=? WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (now(), now(), config_id, user_id))
 
 
 @router.post("/official/{config_id}/activate")
@@ -174,13 +174,13 @@ def activate_official_config(config_id: int, user_id: int = Depends(current_user
     with db() as conn:
         config = row(
             conn,
-            "SELECT * FROM official_model_configs WHERE id=? AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL",
+            "SELECT * FROM model_configs WHERE id=? AND source='official' AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL",
             (config_id,),
         )
         if not config:
             raise HTTPException(404, "official config not found")
         conn.execute(
-            "UPDATE user_configs SET is_active=0, updated_at=? WHERE user_id=? AND purpose=? AND deleted_at IS NULL",
+            "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND deleted_at IS NULL",
             (stamp, user_id, config["purpose"]),
         )
         conn.execute(

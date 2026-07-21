@@ -8,6 +8,7 @@ import {
   createOfficialConfigAction,
   deleteOfficialConfigAction,
   listOfficialConfigsAction,
+  updateModelConfigAction,
   updateOfficialConfigAction,
 } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
@@ -319,8 +320,8 @@ export function ModelConfigManager() {
       };
 
       if (editingConfig) {
-        if (editingConfig.source === "official") {
-          await updateOfficialConfigAction(editingConfig.id, payload);
+        if (isSuperAdmin) {
+          await updateModelConfigAction(editingConfig.id, { ...payload, source: saveAsOfficial ? "official" : "user" });
         } else {
           await updateUserConfigAction(editingConfig.id, payload);
         }
@@ -616,7 +617,7 @@ export function ModelConfigManager() {
             {isSuperAdmin ? (
               <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
                 <span>{t("admin.asOfficialConfig")}</span>
-                <Switch checked={isOfficial} disabled={Boolean(editingConfig)} onCheckedChange={setIsOfficial} />
+                <Switch checked={isOfficial} onCheckedChange={setIsOfficial} />
               </label>
             ) : null}
 

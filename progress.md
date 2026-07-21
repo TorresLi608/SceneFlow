@@ -406,3 +406,64 @@
 | 2026-07-21 | `apply_patch` could not find the expected findings section | 1 | Re-read `findings.md` and patched against the actual section order. |
 | 2026-07-21 | Architecture findings patch used the wrong section position | 1 | Patched the current file structure directly and stopped assuming section order. |
 | 2026-07-21 | TypeScript rejected string arrays passed to Base UI Select `items` | 1 | Replaced them with `{ value, label }` arrays. |
+
+## Session: 2026-07-21 — AI 短剧 / 漫剧产品与技术调研
+
+### Phase 1: 仓库与现状盘点
+
+- **Status:** complete
+- Actions taken:
+  - 读取 `planning-with-files` 说明与模板。
+  - 检查并保留现有 `task_plan.md`、`findings.md`、`progress.md` 历史。
+  - 建立本次调研的范围、阶段和初始技术假设。
+  - 读取仓库状态、前后端依赖、运行说明与前端 Next.js 约束。
+  - 确认 `backend/sceneflow.db` 是本轮开始前的既有修改，后续保持不动。
+  - 扫描生成、项目、分镜、对话、模型、用量和实时进度相关代码。
+  - 初步确认独立图片/视频生成已接真实模型，而项目音频和项目成片仍为模拟实现。
+  - 读取项目 API、生成服务、数据库 schema、前端项目类型与工作台交互。
+  - 确认当前持久化模型和异步机制不足以支撑可恢复的多阶段短剧生产任务。
+  - 尝试 GitHub 泛关键词检索；因噪声过高，改用定向候选核验。
+  - GitHub API 后续受 DNS/审批服务异常影响，浏览器又明确禁止 GitHub；已记录限制并停止尝试该域名。
+  - 搜索引擎和部分产品官网也受浏览策略限制；确定不写无法实时核验的热度/价格数字。
+  - 确定用两份根目录 Markdown 交付产品与技术方案。
+  - 收录用户补充的全链路开源、核心模型与商业平台候选清单。
+  - 再次尝试用户明确提供的 GitHub/Gitee 地址，仍被浏览策略拒绝；停止外部访问并保留核验标记。
+  - 生成 `AI_SHORT_DRAMA_PRODUCT.md`，包含对标、业务流程、双模式、功能阶段、页面、指标与 MVP 验收。
+  - 生成 `AI_SHORT_DRAMA_TECHNICAL.md`，包含现状、架构、数据模型、持久化任务、模型适配、一致性、TTS/字幕/FFmpeg、API、测试与实施顺序。
+  - 将用户提供的开源/商业候选及其推定业务流程并入两份文档，所有未能打开原站的易变信息均标为待核验。
+  - 运行 `git diff --check` 通过，并检查两份文档标题结构。
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+  - `AI_SHORT_DRAMA_PRODUCT.md`
+  - `AI_SHORT_DRAMA_TECHNICAL.md`
+
+### Test Results
+
+| Test | Expected | Actual | Status |
+|---|---|---|---|
+| `git diff --check` | Markdown 无空白错误 | 无输出 | Pass |
+| 文档结构扫描 | 产品/技术章节完整 | 400/526 行，章节结构完整 | Pass |
+
+## Session: 2026-07-21 — AI 短剧 / 漫剧可执行开发技术方案
+
+### Phase 1: 当前实现复核
+
+- **Status:** in_progress
+- Actions taken:
+  - 重新读取 `planning-with-files` 说明。
+  - 完整读取现有技术方案与当前工作区状态。
+  - 确认本轮直接增强现有技术文档，不新增重复方案文件。
+  - 发现模型配置、数据库、用量和管理 UI 存在未提交修改，安排在方案定稿前复核。
+  - 读取当前模型配置统一迁移 diff、项目 API/服务、视频服务、项目类型/actions/store。
+  - 确认开发方案必须兼容正在进行的统一 `model_configs` 改造，并缩小 Zustand 的未来职责。
+  - 核对配置 purpose、统一模型表、数据库迁移、项目列表、工作台和场景卡实现。
+  - 确认 `audio` purpose 尚缺完整链路，并决定 MVP 先将现有 `scenes` 直接演进为镜头，避免立即引入两级场/镜头模型。
+  - 定位项目 WebSocket 和事件处理集中在 `workbench-editor.tsx`，确定先抽项目控制器 hook。
+  - 核对现有后端自检体系与前端测试现状，确定只新增项目/job/合成及状态 reducer 的最小检查。
+  - 首次大型文档补丁因一处上下文不匹配失败；已记录并改用分段补丁。
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`

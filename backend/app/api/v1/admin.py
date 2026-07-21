@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import db, row, rows
 from app.api.deps import current_super_admin_id
-from app.schemas.serializers import official_config_json, user_json
+from app.schemas.serializers import config_json, official_config_json, user_json
 from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
 from app.services.usage_service import normalize_pricing, pricing_updates, usage_log_json
 from app.utils.common import now
@@ -327,8 +327,84 @@ def create_redemption_code(payload: dict[str, Any], _: int = Depends(current_sup
 @router.get("/default-models")
 def list_default_models(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     with db() as conn:
-        configs = rows(conn, "SELECT * FROM official_model_configs WHERE deleted_at IS NULL ORDER BY updated_at DESC")
+        configs = rows(conn, "SELECT * FROM model_configs WHERE source='official' AND deleted_at IS NULL ORDER BY updated_at DESC")
     return {"configs": [official_config_json(config) for config in configs]}
+
+
+@router.patch("/model-configs/{config_id}")
+async def update_model_config(
+    config_id: int,
+    payload: dict[str, Any],
+    admin_id: int = Depends(current_super_admin_id),
+) -> dict[str, Any]:
+    with db() as conn:
+        config = row(
+            conn,
+            "SELECT * FROM model_configs WHERE id=? AND deleted_at IS NULL AND (source='official' OR user_id=?)",
+            (config_id, admin_id),
+        )
+    if not config:
+        raise HTTPException(404, "config not found")
+    target_source = str(payload.get("source", config["source"]))
+    if target_source not in {"user", "official"}:
+        raise HTTPException(400, "invalid config source")
+
+    normalized = normalize_config_payload(payload, config)
+    if normalized["needs_validation"]:
+        await validate_provider(
+            normalized["purpose"],
+            normalized["provider"],
+            normalized["model"],
+            normalized["api_key"],
+            normalized["base_url"],
+        )
+    updates = config_update_fields(payload, config, normalized)
+    try:
+        updates.update(pricing_updates(payload, config))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    source_changed = target_source != config["source"]
+    if source_changed:
+        updates.update(source=target_source, user_id=None if target_source == "official" else admin_id)
+    if not updates:
+        raise HTTPException(400, "no fields to update")
+
+    stamp = now()
+    with db() as conn:
+        is_active = bool(updates.get("is_active", config["is_active"]))
+        purpose = updates.get("purpose", config["purpose"])
+        if is_active and target_source == "official":
+            conn.execute(
+                "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='official' AND purpose=? AND id<>? AND deleted_at IS NULL",
+                (stamp, purpose, config_id),
+            )
+        elif is_active:
+            conn.execute(
+                "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND id<>? AND deleted_at IS NULL",
+                (stamp, admin_id, purpose, config_id),
+            )
+            conn.execute(
+                "DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?",
+                (admin_id, purpose),
+            )
+        if source_changed and target_source == "official":
+            conn.execute(
+                "UPDATE chat_sessions SET config_id=NULL, official_config_id=? WHERE user_id=? AND config_id=?",
+                (config_id, admin_id, config_id),
+            )
+        elif source_changed:
+            conn.execute("DELETE FROM user_official_config_defaults WHERE official_config_id=?", (config_id,))
+            conn.execute(
+                "UPDATE chat_sessions SET config_id=?, official_config_id=NULL WHERE user_id=? AND official_config_id=?",
+                (config_id, admin_id, config_id),
+            )
+            conn.execute("UPDATE chat_sessions SET official_config_id=NULL WHERE official_config_id=?", (config_id,))
+        conn.execute(
+            f"UPDATE model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
+            (*updates.values(), stamp, config_id),
+        )
+        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
+    return {"config": config_json(config)}
 
 
 @router.post("/default-models", status_code=201)
@@ -352,13 +428,13 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
     stamp = now()
     with db() as conn:
         if bool(payload.get("isActive")):
-            conn.execute("UPDATE official_model_configs SET is_active=0, updated_at=? WHERE purpose=? AND deleted_at IS NULL", (stamp, fields["purpose"]))
+            conn.execute("UPDATE model_configs SET is_active=0, updated_at=? WHERE source='official' AND purpose=? AND deleted_at IS NULL", (stamp, fields["purpose"]))
         cur = conn.execute(
-            """INSERT INTO official_model_configs
-            (created_at, updated_at, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
+            """INSERT INTO model_configs
+            (created_at, updated_at, user_id, source, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
              pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
              cache_write_price_per_million, unit_price, unit_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, NULL, 'official', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 stamp,
                 stamp,
@@ -381,14 +457,14 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
                 pricing["unit_name"],
             ),
         )
-        config = row(conn, "SELECT * FROM official_model_configs WHERE id=?", (cur.lastrowid,))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (cur.lastrowid,))
     return {"config": official_config_json(config)}
 
 
 @router.patch("/default-models/{config_id}")
 async def update_default_model(config_id: int, payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     with db() as conn:
-        config = row(conn, "SELECT * FROM official_model_configs WHERE id=? AND deleted_at IS NULL", (config_id,))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='official' AND deleted_at IS NULL", (config_id,))
     if not config:
         raise HTTPException(404, "official config not found")
 
@@ -413,14 +489,14 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
     with db() as conn:
         if payload.get("isActive"):
             conn.execute(
-                "UPDATE official_model_configs SET is_active=0, updated_at=? WHERE purpose=? AND id<>? AND deleted_at IS NULL",
+                "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='official' AND purpose=? AND id<>? AND deleted_at IS NULL",
                 (stamp, normalized["purpose"], config_id),
             )
         conn.execute(
-            f"UPDATE official_model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
+            f"UPDATE model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND source='official'",
             (*updates.values(), stamp, config_id),
         )
-        config = row(conn, "SELECT * FROM official_model_configs WHERE id=?", (config_id,))
+        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
     return {"config": official_config_json(config)}
 
 
@@ -428,6 +504,6 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
 def delete_default_model(config_id: int, _: int = Depends(current_super_admin_id)) -> None:
     with db() as conn:
         conn.execute(
-            "UPDATE official_model_configs SET deleted_at=?, updated_at=? WHERE id=? AND deleted_at IS NULL",
+            "UPDATE model_configs SET deleted_at=?, updated_at=? WHERE id=? AND source='official' AND deleted_at IS NULL",
             (now(), now(), config_id),
         )
