@@ -78,6 +78,7 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 
 ### Admin (superAdmin required)
 - `GET /api/admin/users`
+- `GET /api/admin/usage-logs?search=&page=&pageSize=`
 - `PATCH /api/admin/users/:id`
 - `DELETE /api/admin/users/:id`
 - `GET /api/admin/default-models`

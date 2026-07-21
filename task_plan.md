@@ -393,3 +393,71 @@ Complete — implementation, verification, and documentation finished.
 | `apply_patch` findings hunk mismatch | 1 | Re-read the file and used its actual section order. |
 | Second `apply_patch` findings hunk mismatch | 1 | Patched the actual sections independently and logged the repeated assumption error. |
 | Base UI Select rejected primitive `items` arrays | 1 | Converted usage feature/day options to `{ value, label }` items. |
+
+## Session 2026-07-21: Admin All Usage Records
+
+### Goal
+
+Allow super administrators to browse every user's usage history with fuzzy username search and pagination.
+
+### Phases
+
+#### Phase 1: Backend query
+- [x] Add super-admin-only `/api/admin/usage-logs` endpoint.
+- [x] Join usage records with usernames.
+- [x] Add parameterized fuzzy username search and pagination.
+- **Status:** complete
+
+#### Phase 2: Management UI
+- [x] Add “全部使用记录” management menu and route title.
+- [x] Add username search, clear action, table, and pagination.
+- [x] Display user, time, type, source, model, tokens, and cost.
+- **Status:** complete
+
+#### Phase 3: Verification and documentation
+- [x] Add fuzzy-search and pagination backend self-check.
+- [x] Run backend tests/compile and frontend lint/type-check.
+- [x] Update README, findings, and progress logs.
+- **Status:** complete
+
+### Verification
+
+- `cd backend && .venv/bin/python tests/run_all.py`
+- `cd backend && .venv/bin/python -m compileall -q .`
+- `cd frontend && pnpm lint`
+- `cd frontend && pnpm exec tsc --noEmit`
+- `git diff --check`
+
+## Session 2026-07-21: Admin User Role Selection
+
+### Goal
+
+Let a super administrator choose ordinary user or super administrator when creating an account, defaulting to ordinary user.
+
+### Phases
+
+#### Phase 1: Backend validation
+- [x] Accept `user` and `superAdmin` roles only.
+- [x] Default omitted role to `user`.
+- [x] Persist the selected role during creation.
+- **Status:** complete
+
+#### Phase 2: Frontend form
+- [x] Add role selector to the create-user dialog.
+- [x] Default/reset the selector to ordinary user.
+- [x] Submit the selected role through existing admin actions/types.
+- **Status:** complete
+
+#### Phase 3: Verification and documentation
+- [x] Test default role, super-admin creation, and invalid-role rejection.
+- [x] Run backend tests/compile and frontend lint/type-check.
+- [x] Update planning logs.
+- **Status:** complete
+
+### Verification
+
+- `cd backend && .venv/bin/python tests/run_all.py`
+- `cd backend && .venv/bin/python -m compileall -q .`
+- `cd frontend && pnpm lint`
+- `cd frontend && pnpm exec tsc --noEmit`
+- `git diff --check`

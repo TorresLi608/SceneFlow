@@ -1,5 +1,23 @@
 # Progress Log
 
+## Session: 2026-07-21 — Admin User Role Selection
+
+- **Status:** complete
+- Added role selection to the create-user form; default is ordinary user.
+- Backend role whitelist accepts only ordinary user and super administrator.
+- Backend tests, Python compile, frontend lint, TypeScript, and diff check passed.
+- Files: `backend/routers/admin.py`, `backend/tests/test_admin_users.py`, `frontend/src/types/admin.ts`, and the admin user manager.
+
+## Session: 2026-07-21 — Admin All Usage Records
+
+- **Status:** complete
+- Added management menu and `/admin/usage-logs` page.
+- Added `GET /api/admin/usage-logs` with super-admin authorization, username fuzzy search, and pagination.
+- Added `backend/tests/test_admin_usage_logs.py`.
+- Verification passed: backend test runner, Python compile, frontend lint, TypeScript, and `git diff --check`.
+- Documentation patch initially assumed a stale progress heading; re-read the file and applied against its actual structure.
+- Files: `backend/routers/admin.py`, `backend/tests/test_admin_usage_logs.py`, admin actions/types/query keys, workspace navigation/title, i18n, and `/admin/usage-logs`.
+
 ## Session: 2026-07-20
 
 ### Phase 13: 用户与邀请码管理

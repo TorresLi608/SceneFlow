@@ -2,6 +2,7 @@ import { httpClient } from "@/lib/http/client";
 import type {
   AdminDefaultModelItemResponse,
   AdminDefaultModelListResponse,
+  AdminUsageLogListResponse,
   AdminUserItemResponse,
   AdminUserListResponse,
   CreateAdminUserInput,
@@ -18,6 +19,11 @@ import type {
 
 export async function listAdminUsersAction() {
   const response = await httpClient.get<AdminUserListResponse>("/api/bff/admin/users");
+  return response.data;
+}
+
+export async function listAdminUsageLogsAction(params: { search?: string; page?: number; pageSize?: number } = {}) {
+  const response = await httpClient.get<AdminUsageLogListResponse>("/api/bff/admin/usage-logs", { params });
   return response.data;
 }
 

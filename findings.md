@@ -1,5 +1,19 @@
 # Findings & Decisions
 
+## Session 2026-07-21: Admin User Role Selection
+
+- User creation now accepts only `user` or `superAdmin`; omitted role defaults to `user`.
+- The management form exposes a role select defaulting to ordinary user and resets to that default after success.
+- Regression checks cover the default role, super-admin creation, and rejection of unknown roles.
+
+## Session 2026-07-21: Admin All Usage Records
+
+- Added a super-admin-only paginated usage-log endpoint joining `usage_logs` with `users`.
+- Username search uses a parameterized SQLite `LIKE '%term%'` match.
+- Reused the existing usage serializer, table, money formatter, pagination, and permission patterns.
+- Added `/admin/usage-logs` with username search, clear filter, model/source/token/cost columns, and pagination.
+- Backend self-check covers fuzzy username matching and page boundaries.
+
 ## Session 2026-07-21: Balance Enforcement and Usage Audit
 
 ### Requirements

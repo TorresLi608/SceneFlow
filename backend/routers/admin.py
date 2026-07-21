@@ -13,7 +13,7 @@ from services.config_service import config_create_fields, config_update_fields, 
 from database import db, row, rows
 from security import current_super_admin_id
 from serializers import official_config_json, user_json
-from services.usage_service import normalize_pricing, pricing_updates
+from services.usage_service import normalize_pricing, pricing_updates, usage_log_json
 from lib.utils import now
 
 
@@ -95,20 +95,59 @@ def list_users(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     return {"users": [user_json(user) for user in users]}
 
 
+@router.get("/usage-logs")
+def list_all_usage_logs(
+    _: int = Depends(current_super_admin_id),
+    search: Annotated[str, Query(max_length=64)] = "",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+) -> dict[str, Any]:
+    args: list[Any] = []
+    where = ""
+    if search.strip():
+        where = " WHERE users.username LIKE ?"
+        args.append(f"%{search.strip()}%")
+    offset = (page - 1) * page_size
+    with db() as conn:
+        total = row(
+            conn,
+            f"SELECT COUNT(*) AS total FROM usage_logs JOIN users ON users.id=usage_logs.user_id{where}",
+            tuple(args),
+        )["total"]
+        logs = rows(
+            conn,
+            f"""SELECT usage_logs.*, users.username
+            FROM usage_logs JOIN users ON users.id=usage_logs.user_id
+            {where}
+            ORDER BY usage_logs.created_at DESC LIMIT ? OFFSET ?""",
+            (*args, page_size, offset),
+        )
+    return {
+        "usageLogs": [
+            {**usage_log_json(item), "user": {"id": item["user_id"], "username": item["username"]}}
+            for item in logs
+        ],
+        "pagination": pagination(total, page, page_size),
+    }
+
+
 @router.post("/users", status_code=201)
 def create_user(payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     username = str(payload.get("username", "")).strip()
     password = str(payload.get("password", ""))
     if not 3 <= len(username) <= 64 or not 6 <= len(password) <= 128:
         raise HTTPException(400, "invalid username or password length")
+    role = str(payload.get("role", "user"))
+    if role not in {"user", "superAdmin"}:
+        raise HTTPException(400, "role must be user or superAdmin")
     level = user_level(payload.get("level", 1))
     stamp = now()
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     with db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled, level) VALUES (?, ?, ?, ?, 'user', 0, ?)",
-                (stamp, stamp, username, hashed, level),
+                "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled, level) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (stamp, stamp, username, hashed, role, level),
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "username already exists") from exc

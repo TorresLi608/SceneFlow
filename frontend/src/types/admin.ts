@@ -1,4 +1,5 @@
 import type { AuthUser, CreateUserConfigInput, UpdateUserConfigInput, UserConfig, UserConfigItemResponse } from "@/types/auth";
+import type { UsageLogItem } from "@/types/usage";
 
 export interface AdminUserListResponse {
   users: AuthUser[];
@@ -8,9 +9,19 @@ export interface AdminUserItemResponse {
   user: AuthUser;
 }
 
+export interface AdminUsageLog extends UsageLogItem {
+  user: { id: number; username: string };
+}
+
+export interface AdminUsageLogListResponse {
+  usageLogs: AdminUsageLog[];
+  pagination: Pagination;
+}
+
 export interface CreateAdminUserInput {
   username: string;
   password: string;
+  role?: AuthUser["role"];
   level?: 1 | 2 | 3;
 }
 

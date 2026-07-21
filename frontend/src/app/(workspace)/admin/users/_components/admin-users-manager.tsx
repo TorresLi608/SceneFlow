@@ -41,6 +41,7 @@ export function AdminUsersManager() {
   const [createOpen, setCreateOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<AuthUser["role"]>("user");
   const [level, setLevel] = useState<1 | 2 | 3>(1);
   const [resetResult, setResetResult] = useState<{ username: string; password: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "reset"; id: number; username: string } | null>(null);
@@ -65,6 +66,7 @@ export function AdminUsersManager() {
       setCreateOpen(false);
       setUsername("");
       setPassword("");
+      setRole("user");
       setLevel(1);
       setMessage(t("admin.userCreated"));
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
@@ -98,13 +100,16 @@ export function AdminUsersManager() {
   const isMutating = updateUserMutation.isPending || deleteUserMutation.isPending || resetPasswordMutation.isPending;
   const filtersActive = Boolean(search.trim()) || roleFilter !== "all" || statusFilter !== "all";
 
-  const roleItems = useMemo(
+  const createRoleItems = useMemo(
     () => [
-      { value: "all", label: t("admin.allRoles") },
       { value: "user", label: t("admin.roleUser") },
       { value: "superAdmin", label: t("admin.roleSuperAdmin") },
     ],
     [t]
+  );
+  const roleItems = useMemo(
+    () => [{ value: "all", label: t("admin.allRoles") }, ...createRoleItems],
+    [createRoleItems, t]
   );
   const statusItems = useMemo(
     () => [
@@ -304,7 +309,7 @@ export function AdminUsersManager() {
             className="flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault();
-              createUserMutation.mutate({ username: username.trim(), password, level });
+              createUserMutation.mutate({ username: username.trim(), password, role, level });
             }}
           >
             <FieldGroup>
@@ -315,6 +320,13 @@ export function AdminUsersManager() {
               <Field>
                 <FieldLabel htmlFor="adminCreatePassword">{t("auth.password")}</FieldLabel>
                 <Input id="adminCreatePassword" type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} maxLength={128} required />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="adminCreateRole">{t("admin.tableRole")}</FieldLabel>
+                <Select items={createRoleItems} value={role} onValueChange={(value) => setRole((value ?? "user") as AuthUser["role"])}>
+                  <SelectTrigger id="adminCreateRole"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>{createRoleItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+                </Select>
               </Field>
               <Field>
                 <FieldLabel htmlFor="adminCreateLevel">{t("admin.userLevel")}</FieldLabel>
