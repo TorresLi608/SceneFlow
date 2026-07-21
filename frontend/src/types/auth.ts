@@ -1,4 +1,4 @@
-export type ConfigPurpose = "general" | "script" | "image" | "video";
+export type ConfigPurpose = "general" | "script" | "image" | "video" | "audio";
 export type PricingUnit = "token" | "request" | "image" | "second";
 
 export interface ModelPricing {

@@ -324,6 +324,38 @@ Complete
 - `rg` scan for stale chat-scroll/ResizeObserver phrases in markdown
 - `git diff --check`
 
+## Session 2026-07-21: AI 漫剧 / 短剧开发首个纵向切片
+
+### Goal
+
+完成项目生产参数的前后端持久化闭环，并建立可恢复、可重试的 generation job 后端基础。
+
+### Phases
+
+#### Phase 1: 项目生产设置
+- [x] 扩展项目数据表、兼容迁移、校验与序列化。
+- [x] 提供创建参数和独立更新 API。
+- [x] 在项目工作台提供模式、画幅、帧率、时长、语言及提示词设置。
+- [x] 同步前端类型、actions、store 与 WebSocket 增量字段。
+- **Status:** complete
+
+#### Phase 2: 持久化任务基础
+- [x] 新增 generation jobs 表、索引和序列化。
+- [x] 实现入队、列表、取消、重试、租约领取和完成服务。
+- [x] 提供项目任务列表及任务取消/重试 API。
+- [x] 增加所有权、幂等、重试和项目设置回归测试。
+- **Status:** complete
+
+#### Phase 3: Verification
+- [x] 后端全量测试与 compileall。
+- [x] 前端 ESLint 与 TypeScript 检查。
+- [x] `git diff --check`。
+- **Status:** complete
+
+### Deferred
+
+- worker processor、任务入队 UI、角色级声音/字幕、角色/地点资产、候选分镜版本及 FFmpeg 合成将在后续纵向切片接入。基础真实 TTS 已完成。
+
 ## Session 2026-07-21: AI 短剧 / 漫剧产品与技术调研
 
 ### Goal
@@ -407,6 +439,75 @@ Complete
 |---|---:|---|
 | 技术文档大型补丁因一个表格上下文不匹配而失败 | 1 | 不重复整块补丁；拆成版本/模型修订与新增开发章节两部分，并按实际文本定位。 |
 | 文档检查发现版本行尾空格和两处旧 `shot` 术语 | 1 | 删除尾随空格，并统一为现有 `scenes` 镜头语义。 |
+
+## Session 2026-07-21: AI 漫剧 / 短剧开发启动
+
+### Goal
+
+按照 V0.2 技术方案开始实现 SceneFlow 的 AI 漫剧/短剧纵向链路，先交付不依赖具体供应商配置的生产基础、项目设置和持久化任务能力，并保持现有功能与数据兼容。
+
+### Phases
+
+#### Phase 0: 基线与冲突审计
+- [x] 复核所有未提交修改，避免覆盖用户正在进行的模型配置改造。
+- [x] 运行当前后端/前端基线检查。
+- [x] 确认 pnpm workspace、Next.js 约束和数据库迁移现状。
+- **Status:** complete
+
+#### Phase 1: 后端生产基础
+- [x] 增量扩展项目生产设置字段。
+- [x] 实现持久化 generation jobs、幂等、租约、重试和取消服务基础。
+- [x] 增加项目生产设置、任务查询和控制 API。
+- **Status:** complete（worker processor 待后续阶段）
+
+#### Phase 2: 前端生产基础
+- [x] 扩展项目类型/actions/store。
+- [x] 增加项目生产设置 UI。
+- [x] 保持现有项目生成/排序/实时更新正常。
+- [ ] 增加任务状态 UI。
+- **Status:** partial
+
+#### Phase 3: 验证与交付
+- [x] 增加后端 job/项目/TTS 回归自检。
+- [x] 运行后端全测、前端 lint/type-check 和数据库兼容检查。
+- [x] 更新开发记录并说明下一阶段。
+- **Status:** complete
+
+#### Phase 4: 可配置真实 TTS
+- [x] 统一模型配置增加 `audio` purpose。
+- [x] 接入 Edge-TTS、本地 System TTS 和 OpenAI compatible TTS。
+- [x] 将模拟音频替换为真实文件并增加测试与回退。
+- **Status:** complete
+
+### Decisions Made
+
+| Decision | Rationale |
+|---|---|
+| 首个实现切片为 DR-01 + DR-06 基础 | 后续图片、TTS、视频和合成都依赖生产设置和可靠任务。 |
+| 具体生成供应商暂不硬编码 | 用户后续配置模型；先提供 purpose/adapter/job 接入边界。 |
+| 不覆盖现有统一 `model_configs` 修改 | 这些是工作区中的用户变更，AI 短剧代码只在兼容点增量工作。 |
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| 项目 API 补丁包含不存在的占位 import 上下文 | 1 | 拆分为精确 import、创建逻辑和新 endpoint 三个补丁，不重复原补丁。 |
+| Edge-TTS 真实冒烟在受限网络环境不可达 | 1 | 验证自动回退系统语音，并用异步 mock 测试覆盖 Edge 保存分支。 |
+
+## Session 2026-07-21: 开发文档同步
+
+### Goal
+
+将生产设置、generation jobs、可配置 TTS 和 Edge-TTS 的真实实现状态同步到产品、技术及 planning 文档。
+
+### Phases
+
+- [x] 复核代码变更与现有文档中的过时描述。
+- [x] 更新产品文档的已完成功能和待确认项。
+- [x] 将技术方案升级为 V0.3，标明已完成、部分完成和待开发边界。
+- [x] 更新 `task_plan.md`、`findings.md` 和 `progress.md`。
+- [x] 运行文档一致性和 `git diff --check`。
+- **Status:** complete
 
 ### Errors Encountered
 | Error | Attempt | Resolution |
@@ -511,6 +612,71 @@ Allow super administrators to browse every user's usage history with fuzzy usern
 - `cd frontend && pnpm lint`
 - `cd frontend && pnpm exec tsc --noEmit`
 - `git diff --check`
+
+## Session 2026-07-21: 模型配置、邀请码/兑换码与图片单价修复
+
+### Goal
+
+完成并记录以下管理端修复：模型配置可在官方与个人来源之间直接切换；合并重复的模型配置表；邀请码和兑换码展示使用时间与创建人；修复图片单价无法清空编辑以及保存返回 500 的问题。
+
+### Phases
+
+#### Phase 1: 统一模型配置存储
+- [x] 将 `user_configs` 与 `official_model_configs` 合并为 `model_configs`。
+- [x] 使用 `source=user|official` 和 `user_id` 区分配置归属。
+- [x] 增加旧数据库迁移、配置 ID 重映射、用户默认模型和会话引用迁移。
+- [x] 允许管理员编辑现有配置时直接切换官方/个人来源，保留同一个配置 ID 与 API Key。
+- **Status:** complete
+
+#### Phase 2: 邀请码与兑换码审计字段
+- [x] 为邀请码和兑换码增加 `created_by_user_id`，生成时记录当前管理员。
+- [x] API 返回 `createdBy`，管理表格展示“创建人”。
+- [x] 邀请码展示使用时间；兑换码沿用已有兑换时间展示。
+- [x] 旧记录无法可靠反推创建人时显示 `—`，不做错误回填。
+- **Status:** complete
+
+#### Phase 3: 图片单价编辑与保存
+- [x] 将计费输入的前端编辑状态改为字符串，允许删除初始 `0` 后重新输入整数或小数。
+- [x] 提交时再将价格转换为数字。
+- [x] 仅在连接字段改变或首次设为默认配置时重新验证模型。
+- [x] 仅修改价格时不再调用外部模型验证接口。
+- [x] 增加完整管理页参数更新图片单价的回归测试。
+- **Status:** complete
+
+#### Phase 4: Verification and handoff
+- [x] 验证旧双表向统一表的迁移及外键完整性。
+- [x] 在真实数据库副本中验证配置 ID `5` 可保存 `unitPrice=5`、`unitName=image`。
+- [x] 运行后端全量测试、前端 TypeScript、ESLint 和 diff 检查。
+- [x] 记录运行中旧后端进程尚未加载修复代码的环境问题。
+- **Status:** complete
+
+### Verification
+
+- `cd backend && .venv/bin/python tests/run_all.py`
+- `cd frontend && pnpm exec tsc --noEmit`
+- `cd frontend && pnpm lint`
+- 临时数据库及真实数据库副本迁移验证：通过，外键检查无错误。
+- 当前代码直接调用 `update_model_config(5, payload, 2)`：成功返回 `unitPrice: 5.0`、`unitName: image`。
+- `git diff --check`
+
+### Key Decisions
+
+| Decision | Rationale |
+|---|---|
+| 合并为一张 `model_configs` 表 | 两类配置字段和生命周期高度一致；双表使来源切换必须删除重建，并造成默认配置、会话和用量引用分叉。 |
+| 保持配置 ID 不变地切换来源 | 避免重建配置、重复录入 API Key，以及修复下游引用。 |
+| 不为旧邀请码/兑换码猜测创建人 | 历史数据没有可靠来源，错误回填比显示未知更危险。 |
+| 价格编辑期间保留字符串状态 | 数字输入每次按键立即转换会把空字符串强制变回 `0`，导致无法正常编辑。 |
+| 价格修改不触发供应商验证 | 计费字段不影响连接有效性，外部验证会引入无关超时和 500。 |
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---|---|
+| 图片单价中的 `0` 无法删除 | 1 | 将输入状态改为字符串，保存时再转换为数字。 |
+| 保存完整图片模型参数时提示 `Internal Server Error` | 1 | 发现更新流程无条件调用外部模型验证；改为仅在连接字段变化或首次设默认时验证。 |
+| 监听 `8080` 的后端 PID `58712` 仍运行旧代码，请求持续等待 | 1 | 代码和数据库副本验证均已通过；需要用户在后端终端手动 `Ctrl+C` 后运行 `npm run dev:backend`。 |
+| 尝试终止旧后端进程被 sandbox 拒绝，升级审批服务返回 `codex-auto-review` 404 | 1 | 未绕过权限；将重启步骤作为运行环境交接项记录。 |
 
 ## Session 2026-07-21: Admin User Role Selection
 

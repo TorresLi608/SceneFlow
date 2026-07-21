@@ -217,8 +217,86 @@
 - 后端只新增 job/audio/compose 三个服务和一个 worker，复用 project/generation/video/usage/realtime。
 - 文档最终为 822 行；`git diff --check` 通过，旧 shot 路径/字段扫描无残留。
 
+## 2026-07-21 AI 漫剧 / 短剧开发启动
+
+### Requirements
+
+- 按已确认的产品/技术文档开始实际开发。
+- 前后端都需要形成可运行纵向切片。
+- 具体模型允许后续配置；当前应补齐可配置的模型用途和接入边界。
+- 保留当前工作区已有未提交代码和本地数据库。
+
+### Initial Scope
+
+- 本轮优先实现项目生产设置与持久化生成任务基础，不假装完成尚未接供应商的 TTS/视频合成。
+- 后续生成能力统一通过 generation job 接入，避免继续使用不可恢复的裸 `asyncio.create_task`。
+
+### Baseline Findings
+
+- 当前业务代码工作树已干净，只有本次 planning 文档修改；之前观察到的统一 `model_configs` 等修改已成为当前基线，不再是冲突中的未提交改动。
+- 前端 pnpm workspace 没有额外 package，命令应继续在 `frontend/` 下执行。
+- 本轮新增 UI 仍属于现有 Client Component 边界，不需要新增额外 `'use client'` 文件边界。
+- 后端 `init_db` 已采用 `CREATE TABLE IF NOT EXISTS` + 列级 `ALTER TABLE` 兼容迁移，适合继续增量扩展项目字段与 job 表。
+- 项目创建/更新/序列化均集中，生产设置可在现有 create/patch 接口落地，无需另建 controller 层。
+- 当前项目图片和项目视频仍由裸 `asyncio.create_task` 启动；首个 job 基础应先新增 API/服务并用于新业务任务，避免在同一切片立即重写已工作的生成路径。
+- 后端测试为自动扫描所有 `test_*.py` 的 assert 自检，新增测试文件会自动进入全量 runner。
+- 前端项目类型/actions/store 都集中且规模可控，DR-01 只需扩展这三处并增加一个路由私有设置组件。
+- 当前工作台存在一处重复 `setStatusMessage` 调用，但与本需求无关且无行为风险，本轮不顺手扩散修复。
+- 生产设置 UI 放在现有脚本卡顶部即可形成最小纵向切片，不需要现在实现完整六阶段导航。
+
 ### Issues Encountered
 
 | Issue | Resolution |
 |---|---|
 | 技术文档大型补丁上下文不匹配 | 改为小范围修订现有矛盾，再单独追加需求追踪和开发章节。 |
+| React lint 禁止在 effect 中同步重置表单 state | 由父组件按项目 ID 设置 `key`，项目切换时自然重建表单。 |
+| 工作台 mutation 区域缺少一个闭合 `});` | 精确恢复闭合符后通过 ESLint 与 TypeScript 检查。 |
+
+### First-slice Results
+
+- 项目现在拥有可持久化的生产约束，后续脚本拆解、分镜、图片、视频和导出可以读取同一份参数。
+- generation job 已具备数据库和服务基础，但尚无 worker processor；因此当前只宣称任务基础完成，不宣称 AI 短剧全流水线已经可运行。
+- 供应商和具体模型没有硬编码，保持用户后续通过统一模型管理配置的路径。
+
+### TTS Slice Results
+
+- 复用 `model_configs` 的 `audio` purpose，不新增语音专用配置表。
+- 免费默认能力使用 Edge-TTS；部署环境网络不可用时回退 macOS `say` 或 Linux `espeak-ng`。
+- OpenAI TTS 使用兼容 HTTP 接口，模型名和 Base URL 均由现有模型管理配置。
+- Edge-TTS 已作为默认免费 TTS；当前受限网络环境的真实调用触发了预期的系统语音回退，独立异步调用测试覆盖 Edge 输出分支。
+
+### Documentation Sync Findings
+
+- 技术文档 V0.2 仍把真实 TTS、audio purpose 和 generation jobs 全部写成缺口，与当前代码不一致，已升级为 V0.3 开发同步版。
+- DR-01 已完成；DR-06 为后端任务基础完成、worker/UI 待完成；DR-07 为基础真实 TTS 完成、角色绑定/字幕待完成。
+- 产品文档已增加当前可用能力，避免把 Edge-TTS 继续列为开发前未决供应商。
+
+## 2026-07-21 模型配置与管理端修复发现
+
+### 模型配置表与来源切换
+
+- `user_configs` 与 `official_model_configs` 保存的是同一种模型配置，主要差异只是来源和所有者；双表会让编辑时的来源切换变成跨表迁移。
+- 双表结构同时扩大了默认配置、聊天会话、用量记录和删除约束的分支数量，是“非官方改官方必须重新创建”的根因。
+- 合并后的 `model_configs` 通过 `source=user|official` 和可空 `user_id` 表达归属，可以在同一记录上切换来源并保留 ID/API Key。
+- 旧数据库迁移不能只复制配置本身，还必须重映射用户默认官方模型、会话 `config_id`/`official_config_id` 等引用；迁移使用事务和外键检查验证。
+
+### 邀请码与兑换码字段
+
+- 邀请码已有可用于表示使用时间的数据，兑换码也已有兑换时间；本次真正缺失的持久化审计字段是“创建人”。
+- 新增 `created_by_user_id` 后，生成邀请码或兑换码时记录当前管理员，列表 API 通过关联用户返回 `createdBy`。
+- 历史记录在创建时没有保存操作者，无法可靠回填；界面显示 `—` 是正确的数据语义。
+
+### 图片单价编辑与保存
+
+- 单价输入使用数字 state 并在每次输入时立即 `Number(...)`，清空输入会立即变成 `0`，所以用户无法删除初始值后正常输入。
+- 编辑态应保留原始字符串，提交时才做数字转换和校验；这样同时支持空态、整数和小数输入。
+- 保存返回 500 的直接原因不是用户提供的 `unitPrice: 5` 参数，而是配置更新无条件执行供应商模型验证。
+- 对仅价格、描述、启用状态等非连接字段的修改，外部模型验证没有必要，并可能因第三方接口不可达或响应慢造成请求挂起/500。
+- 新逻辑仅在 provider、base URL、API Key、模型系列等连接字段真正变化，或配置首次设为默认时验证。
+- 使用用户提供的完整参数在真实数据库副本更新配置 ID `5` 成功，得到 `unitPrice=5.0`、`unitName=image`，说明当前代码路径已修复。
+
+### Runtime Finding
+
+- 当前监听 `8080` 的 PID `58712` 是修改前启动的旧后端进程，没有热加载到最新代码；继续向它发送 PATCH 仍会等待并最终在前端表现为 500。
+- 由于 sandbox 不允许终止该进程，且升级审批服务返回 404，不能由当前会话代为重启。
+- 需要在原后端终端按 `Ctrl+C`，然后执行 `npm run dev:backend`，再重新保存模型配置。

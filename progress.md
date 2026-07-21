@@ -483,3 +483,152 @@
 | `git diff --check` | Pass |
 | 技术文档结构 | 822 行，需求/前端/后端/阶段/DoD 章节齐全 |
 | 旧 shot 术语扫描 | 无 `/shots`、`shot_id`、`SHOT_UPDATE` 残留 |
+
+## Session: 2026-07-21 — AI 漫剧 / 短剧开发启动
+
+### Phase 0: 基线与冲突审计
+
+- **Status:** complete
+- Actions taken:
+  - 读取 `planning-with-files` 与 pnpm 技能说明。
+  - 确定首个纵向切片为项目生产设置与持久化 generation jobs。
+  - 明确具体供应商暂不硬编码，保留后续模型配置入口。
+  - 检查工作树与 pnpm/Next.js 约束；确认当前业务代码无未提交冲突，只有 planning 文档变更。
+  - 基线后端全测、前端 lint/type-check 通过。
+  - 读取数据库迁移、项目 API/服务、serializer、应用入口和测试 runner，确定增量实现边界。
+  - 首次项目 API 补丁因错误的占位 import 上下文失败；改为精确分段补丁。
+  - 后端项目生产设置、generation job schema/service/API 和对应自检已实现，后端全量测试通过。
+  - 读取前端项目 types/actions/store/workbench，确定用一个路由私有设置组件完成 DR-01 UI。
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### Phase 1: 生产设置与任务基础
+
+- **Status:** complete
+- Actions taken:
+  - 为项目增加漫剧/真人短剧模式、画幅、分辨率、帧率、目标时长、语言、统一风格提示词、负面提示词和当前阶段。
+  - 增加兼容旧 SQLite 数据库的增量迁移与服务层输入校验。
+  - 增加生产设置更新 API，并让项目创建、读取和前端 store 全链路支持新字段。
+  - 在项目工作台增加生产设置表单，中英文文案齐全，保存成功后即时更新本地项目状态。
+  - 新增持久化 generation jobs 表及入队、幂等、取消、重试、租约领取、完成等服务能力。
+  - 新增项目任务列表、任务取消与重试 API，并广播任务更新事件。
+  - 后端全量测试、compileall、前端 lint/type-check 和 diff 检查全部通过。
+- Files created:
+  - `backend/app/api/v1/jobs.py`
+  - `backend/app/services/job_service.py`
+  - `backend/tests/test_job_service.py`
+  - `backend/tests/test_project_production.py`
+  - `frontend/src/app/projects/[projectId]/_components/production-settings.tsx`
+
+### Phase 2: 可配置 TTS 与本地免费语音
+
+- **Status:** complete
+- Actions taken:
+  - 将 `audio` 加入统一模型用途和模型管理界面。
+  - 支持 OpenAI 兼容 `/audio/speech` TTS 配置。
+  - 内置 macOS `say` / Linux `espeak-ng` 免费系统语音回退，无需 API Key。
+  - 将原有场景假音频 URL 替换为真实 WAV 文件生成与持久化。
+  - 工作台显示当前 TTS 配置；未配置时明确显示内置免费系统语音。
+  - 增加 TTS 配置及系统命令选择测试，并完成真实本机语音冒烟测试。
+  - 新增 Edge-TTS 免费供应商及默认中文音色 `zh-CN-XiaoxiaoNeural`，服务不可达时自动回退本地系统语音。
+
+### Phase 3: 产品与技术文档同步
+
+- **Status:** complete
+- Actions taken:
+  - 按 `planning-with-files` 重新读取计划、发现、进度、产品文档和技术文档。
+  - 将技术方案升级为 V0.3，新增当前已完成/未完成清单。
+  - 更新 DR-01、DR-06、DR-07 追踪矩阵、数据库/TTS 服务边界、阶段计划和当前到目标差异。
+  - 更新产品文档中的 TTS 能力、待确认问题和当前已完成功能。
+  - 修正 planning 文档中仍处于 pending、仍把 TTS 列为 deferred 的过时状态。
+- Files modified:
+  - `AI_SHORT_DRAMA_PRODUCT.md`
+  - `AI_SHORT_DRAMA_TECHNICAL.md`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## Session: 2026-07-21 — 模型配置、邀请码/兑换码与图片单价修复
+
+### Phase 1: 统一模型配置表与来源切换
+
+- **Status:** complete
+- Actions taken:
+  - 将个人配置表与官方配置表合并为 `model_configs`。
+  - 以 `source` 和 `user_id` 区分官方配置与个人配置。
+  - 增加兼容旧数据库的自动迁移、配置 ID 重映射，以及默认模型和会话引用迁移。
+  - 调整管理端模型 API，使现有配置可以直接切换来源而无需重新创建。
+  - 在临时数据库和真实数据库副本中执行迁移验证，外键检查无错误。
+- Main files involved:
+  - `backend/app/core/database.py`
+  - `backend/app/api/v1/admin.py`
+  - `backend/app/api/v1/settings.py`
+  - `backend/app/services/config_service.py`
+  - `backend/app/services/chat_service.py`
+  - `backend/app/services/usage_service.py`
+  - `backend/app/schemas/serializers.py`
+  - `backend/tests/test_config_service.py`
+  - `frontend/src/app/(workspace)/admin/models/_components/model-config-manager.tsx`
+
+### Phase 2: 邀请码与兑换码审计信息
+
+- **Status:** complete
+- Actions taken:
+  - 为 `invitation_codes`、`redemption_codes` 增加 `created_by_user_id` 兼容迁移。
+  - 新生成记录保存当前管理员，列表 API 返回 `createdBy`。
+  - 邀请码列表新增使用时间和创建人；兑换码列表新增创建人并保留兑换时间。
+  - 旧记录缺少可靠创建人时显示 `—`。
+  - 增加邀请码、兑换码创建人回归测试。
+- Main files involved:
+  - `backend/app/core/database.py`
+  - `backend/app/api/v1/admin.py`
+  - `backend/tests/test_invitation_codes.py`
+  - `backend/tests/test_redemption_codes.py`
+  - `frontend/src/types/admin.ts`
+  - `frontend/src/lib/i18n.ts`
+  - `frontend/src/app/(workspace)/admin/invitation-codes/_components/invitation-code-manager.tsx`
+  - `frontend/src/app/(workspace)/admin/redemption-codes/_components/redemption-code-manager.tsx`
+
+### Phase 3: 图片单价输入与保存
+
+- **Status:** complete
+- Actions taken:
+  - 将模型计费输入状态由 `number` 改为 `string`，允许清空初始 `0` 后输入新价格。
+  - 保存时才通过 `Number(...)` 转换单价。
+  - 调整 `normalize_config_payload` 及更新接口，仅在连接字段变化或首次设为默认时调用 `validate_provider`。
+  - 增加使用完整管理页 payload 更新图片单价的回归测试，断言不调用外部验证且单价成功保存。
+  - 在真实数据库副本中以配置 ID `5`、管理员 ID `2` 调用当前更新逻辑，返回 `unitPrice: 5.0`、`unitName: image`。
+- Main files involved:
+  - `backend/app/api/v1/admin.py`
+  - `backend/app/services/config_service.py`
+  - `backend/tests/test_config_service.py`
+  - `frontend/src/app/(workspace)/admin/models/_components/model-config-manager.tsx`
+
+### Verification Results
+
+| Check | Result |
+|---|---|
+| 后端全量测试 | Pass |
+| 前端 `pnpm exec tsc --noEmit` | Pass |
+| 前端 `pnpm lint` | Pass |
+| 临时数据库统一表迁移与外键检查 | Pass |
+| 真实数据库副本迁移与图片单价更新 | Pass |
+| `git diff --check` | Pass |
+
+### Runtime Handoff
+
+- 当前监听 `8080` 的后端 PID `58712` 仍是旧进程，未加载最新代码。
+- 对该旧进程发送相同 PATCH 会持续等待，前端最终显示 `Internal Server Error`。
+- 终止进程的 sandbox 权限请求被拒绝，升级审批又因 `codex-auto-review` 404 失败；没有绕过权限限制。
+- 用户需在后端终端执行：先 `Ctrl+C`，再运行 `npm run dev:backend`。
+
+### Error Log
+
+| Timestamp | Error | Attempt | Resolution |
+|---|---|---|---|
+| 2026-07-21 | 图片单价初始 `0` 无法删除 | 1 | 输入编辑态改为字符串，提交时转换为数字。 |
+| 2026-07-21 | 保存完整图片模型参数返回 500 | 1 | 将无条件供应商验证改为按连接字段变化触发。 |
+| 2026-07-21 | 旧后端进程未加载修复代码 | 1 | 记录 PID 和手动重启命令，等待用户在运行终端重启。 |
+| 2026-07-21 | sandbox 拒绝终止 PID，审批服务返回 404 | 1 | 保持安全边界，不尝试绕过权限。 |

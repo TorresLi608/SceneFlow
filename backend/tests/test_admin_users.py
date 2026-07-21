@@ -6,6 +6,7 @@ from pathlib import Path
 import bcrypt
 
 from app.api.v1.admin import create_user, reset_user_password, update_user
+from app.api.v1.users import update_me
 from app.core import database
 from app.core.database import db, init_db, row
 
@@ -42,6 +43,17 @@ def test_admin_create_and_reset_user() -> None:
                 saved = row(conn, "SELECT * FROM users WHERE id=?", (created["id"],))
             assert bcrypt.checkpw(reset.encode(), saved["password"].encode())
             assert not bcrypt.checkpw(b"initial-password", saved["password"].encode())
+
+            try:
+                update_me({"currentPassword": "wrong-password", "password": "changed-password"}, created["id"])
+                raise AssertionError("the current password must be verified")
+            except Exception as exc:
+                assert getattr(exc, "status_code", None) == 400
+
+            update_me({"currentPassword": reset, "password": "changed-password"}, created["id"])
+            with db() as conn:
+                saved = row(conn, "SELECT * FROM users WHERE id=?", (created["id"],))
+            assert bcrypt.checkpw(b"changed-password", saved["password"].encode())
         finally:
             database.DB_PATH = original_path
 

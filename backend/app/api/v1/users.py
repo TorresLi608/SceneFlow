@@ -76,14 +76,27 @@ def update_me(payload: dict[str, Any], user_id: int = Depends(current_user_id)) 
         updates.append("username=?")
         args.append(username)
     if "password" in payload:
+        current_password = str(payload.get("currentPassword", ""))
         password = str(payload["password"])
+        if not 1 <= len(current_password) <= 128:
+            raise HTTPException(400, "current password is invalid")
         if not 6 <= len(password) <= 128:
             raise HTTPException(400, "password length must be between 6 and 128")
-        updates.append("password=?")
-        args.append(bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode())
-    if not updates:
+        if len(password.encode()) > 72:
+            raise HTTPException(400, "password must be at most 72 bytes")
+    if not updates and "password" not in payload:
         raise HTTPException(400, "no fields to update")
     with db() as conn:
+        if "password" in payload:
+            user = row(conn, "SELECT password FROM users WHERE id=? AND deleted_at IS NULL", (user_id,))
+            try:
+                password_matches = bool(user) and bcrypt.checkpw(current_password.encode(), user["password"].encode())
+            except ValueError:
+                password_matches = False
+            if not password_matches:
+                raise HTTPException(400, "current password is incorrect")
+            updates.append("password=?")
+            args.append(bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode())
         try:
             conn.execute(
                 f"UPDATE users SET {', '.join(updates)}, updated_at=? WHERE id=? AND deleted_at IS NULL",

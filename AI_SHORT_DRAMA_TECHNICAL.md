@@ -1,6 +1,6 @@
 # SceneFlow AI 短剧 / 漫剧技术方案
 
-> 版本：V0.2（可执行开发方案）
+> 版本：V0.3（开发同步版）
 > 日期：2026-07-21  
 > 原则：复用现有栈，先完成单机可恢复 MVP；不在首版引入分布式基础设施。
 
@@ -10,9 +10,9 @@ SceneFlow 已具备约一半的基础能力：项目/分镜、LLM 剧本处理�
 
 - 角色/场景/风格资产和引用关系。
 - 镜头级结构、版本和参数。
-- 真实 TTS、字幕时间轴和媒体合成。
+- 角色声音绑定、字幕时间轴和媒体合成；基础真实 TTS 已接入。
 - 将现有视频生成服务接入项目镜头。
-- 持久化任务、重试、取消、幂等和恢复。
+- generation job 数据与服务基础已完成，worker 执行和页面任务控制仍待接入。
 - 项目级成本估算与质量门禁。
 
 MVP 推荐继续使用 FastAPI + SQLite + Next.js，不先引入 Celery、Redis、Kafka、Temporal 或独立工作流平台。新增 SQLite 任务表和一个有租约的后台 worker，即可支撑当前单机部署；达到多实例或任务吞吐瓶颈后再换队列。
@@ -35,7 +35,27 @@ MVP 推荐继续使用 FastAPI + SQLite + Next.js，不先引入 Celery、Redis�
 - 官方/个人模型配置、余额校验、用量日志和价格计算已存在。
 - 生成文件写入服务器目录并通过 URL 返回。
 
-### 2.3 当前缺陷
+### 2.3 已落地开发状态（2026-07-21）
+
+已完成：
+
+- `projects` 增加模式、画幅、宽高、帧率、目标时长、语言、全局风格/负面提示词和当前阶段，并兼容旧 SQLite 数据库增量迁移。
+- 项目创建、序列化及 `PATCH /api/projects/{id}/production-settings` 支持生产设置；工作台已有中英文设置表单。
+- 新增 `generation_jobs` 表、索引及入队、幂等、列表、领取租约、完成、取消和重试服务。
+- 新增项目任务列表，以及 job cancel/retry API 和 `JOB_UPDATE` 广播基础。
+- 统一模型配置增加 `audio` purpose，管理端可配置 Edge-TTS、本地系统语音和 OpenAI 兼容 TTS。
+- “一键生成”中的模拟音频已替换为真实音频文件：默认 Edge-TTS `zh-CN-XiaoxiaoNeural`，不可达时回退 macOS `say` 或 Linux `espeak-ng`。
+- OpenAI 兼容 TTS 通过 `{baseUrl}/audio/speech` 调用并复用现有余额、价格和用量记录。
+- 后端全量测试、`compileall`、前端 ESLint/TypeScript 和真实本地语音冒烟测试通过。
+
+尚未完成：
+
+- generation job worker processor 和现有图片/视频任务的统一入队。
+- 前端任务列表、取消/重试交互和完整阶段导航。
+- 角色/地点/资产版本、角色级音色/语速/情绪绑定。
+- 字幕 cue、FFmpeg 预览/导出及项目镜头视频化。
+
+### 2.4 当前缺陷
 
 | 位置 | 当前行为 | 对短剧的影响 |
 |---|---|---|
@@ -281,15 +301,21 @@ generate_speech(request) -> MediaResult
 
 ### 6.4 TTS
 
-将模型配置 `purpose` 扩展为 `audio`，复用官方/个人配置、加密、默认选择、余额和用量体系。
+模型配置 `purpose=audio` 已实现，复用官方/个人配置、加密、默认选择、余额和用量体系。
 
-首版实现一个真实供应商即可，接口预留：
+当前已接入：
+
+- Edge-TTS：默认免费方案，默认音色 `zh-CN-XiaoxiaoNeural`，无需 API Key。
+- System TTS：macOS `say` 或 Linux `espeak-ng`，无需 API Key。
+- OpenAI compatible TTS：模型名与 Base URL 可配置，调用 `/audio/speech`。
+
+当前输入为 `text` 和配置中的模型/音色；后续角色声音绑定再补：
 
 - `text`, `voice_id`, `language`。
 - `speed`, `pitch`, `emotion`（供应商支持时）。
 - 返回音频、时长和可选字词时间戳。
 
-如果 TTS 不返回字词时间戳，MVP 可按标点/字符比例生成字幕时间，后续接 WhisperX 做精确对齐。
+当前音频时长使用文本长度近似值；字幕阶段应优先读取真实媒体时长，并按标点/字符比例生成初始字幕，后续接 WhisperX 做精确对齐。
 
 ### 6.5 漫剧运镜
 
@@ -512,14 +538,14 @@ WebSocket 继续使用项目频道，事件统一为：
 开始实现前必须确认：
 
 - FFmpeg 可用性和部署方式。
-- 首个 TTS 供应商及商用许可。
+- Edge-TTS、系统语音以及后续商业 TTS 的部署可用性和许可边界。
 - 图片/视频供应商的参考图、时长、并发和内容安全限制。
 - 所选开源模型/组件许可证及权重商用条款。
 - 单机 SQLite worker 是否符合首发部署规模；若首发即多实例，应直接使用 PostgreSQL 和独立 worker。
 
 ## 18. 本轮刻意跳过
 
-- 没有引入新的依赖或修改业务代码。
+- 没有引入工作流/DAG 框架；仅增加 Edge-TTS 这一项真实语音依赖。
 - 没有设计通用 DAG DSL、插件系统或多智能体团队。
 - 没有把所有供应商参数强行抽象成完全一致。
 - 没有实时核验易变化的价格、星数和 API 细节；这些属于开发启动前的短期核验任务。
@@ -547,13 +573,13 @@ WebSocket 继续使用项目频道，事件统一为：
 
 | 需求 | 前端落点 | 后端落点 | 数据落点 | 验收结果 |
 |---|---|---|---|---|
-| DR-01 | 新建项目弹窗、生产设置、`types/project.ts` | 扩展项目 create/update 与校验 | `projects` 增量字段 | 刷新后设置保持，非法规格被拒绝 |
+| DR-01 | 工作台生产设置、`types/project.ts`（已完成） | create/update、独立设置 API 与校验（已完成） | `projects` 增量字段（已完成） | 刷新后设置保持，非法规格被拒绝 |
 | DR-02 | 剧本阶段和结构确认 | `POST /projects/{id}/structure`，复用 LLM 路由 | 角色、地点、扩展 `scenes` | 一次调用生成可编辑的结构化结果 |
 | DR-03 | 设定阶段、角色/地点卡 | 角色/地点 CRUD、参考图生成/上传 | `characters`、`locations`、`assets` | 镜头可引用锁定设定；换图后下游变 stale |
 | DR-04 | `SceneCard` 演进为镜头卡、详情抽屉 | 扩展 scene update/reorder | `scenes`、`scene_characters` | 镜头参数可编辑、持久化和排序 |
 | DR-05 | 生成、候选版本、成本和错误 | 单镜头/批量图片 job，复用图片模型 | `assets`、`generation_jobs` | 失败镜头可单独重试，成功镜头不重做 |
-| DR-06 | 任务条、失败筛选、取消/重试 | `job_service`、worker、jobs API、WebSocket | `generation_jobs` | 重启可恢复，重复点击不重复调用 |
-| DR-07 | 配音阶段、声音选择、播放器、字幕表格 | `audio` purpose、TTS service、字幕生成 | 音频 assets、`subtitle_cues` | 真实音频可试听，字幕时间合法 |
+| DR-06 | 任务条、失败筛选、取消/重试（待完成） | `job_service`、jobs API 已完成；worker 待完成 | `generation_jobs` 已完成 | 当前服务级幂等/租约/重试已测；重启恢复待 worker 验收 |
+| DR-07 | TTS 配置已完成；配音阶段、角色声音、播放器和字幕待完成 | Edge/System/OpenAI TTS 已完成；字幕生成待完成 | scene 音频字段已复用；`subtitle_cues` 待建 | 当前生成真实音频；字幕验收待完成 |
 | DR-08 | 时间轴、预览、质量检查、下载 | `compose_service` 调 FFmpeg | `timeline_items`、export asset | 输出有效 MP4、SRT 和封面 |
 | DR-09 | “升级为视频”、视频候选 | scene video job，复用 `video_service` | video assets、jobs | 指定镜头视频化并进入成片 |
 | DR-10 | 预计成本、项目用量分类 | estimate/usage-summary，复用 pricing/usage | 复用 `usage_logs` | 执行前显示估算，完成后显示实际成本 |
@@ -633,9 +659,9 @@ frontend/src/app/projects/[projectId]/_components/
 
 修改 `backend/app/core/database.py`，沿用当前启动迁移方式：
 
-1. 先完成当前统一 `model_configs` 迁移。
-2. 对 `projects`、`scenes` 使用增量字段，保留已有项目。
-3. 新建 `characters`、`locations`、`scene_characters`、`assets`、`subtitle_cues`、`timeline_items`、`generation_jobs`。
+1. 统一 `model_configs` 迁移已完成，并已扩展 `audio` purpose。
+2. `projects` 生产设置增量字段已完成；后续继续扩展 `scenes` 并保留已有项目。
+3. `generation_jobs` 已完成；后续新建 `characters`、`locations`、`scene_characters`、`assets`、`subtitle_cues`、`timeline_items`。
 4. 为 `project_id`、`scene_id`、`status`、`lease_expires_at` 和资产版本查询建立索引。
 5. 旧 scene 图片/音频 URL 先由 serializer 兼容读取，不一次性移动历史文件。
 
@@ -643,11 +669,11 @@ frontend/src/app/projects/[projectId]/_components/
 
 基于正在统一的 `model_configs`：
 
-- `config_service.py` 增加 `audio` purpose。
-- 第一版只允许实际接入的一个 TTS provider，不预列未实现供应商。
+- `config_service.py` 已增加 `audio` purpose。
+- 已接入 Edge-TTS、System TTS 和 OpenAI compatible TTS，不预列未实现供应商。
 - `usage_service.py` 支持 `unit_name=character|second` 和项目用量汇总。
 - 管理端与用户设置增加音频用途，复用现有官方/个人配置 UI。
-- `test_config_service.py` 覆盖 audio provider、个人/官方切换和价格字段。
+- `test_tts_service.py` 已覆盖免费配置、Edge 异步保存和系统二进制选择；个人/官方切换继续复用配置服务测试。
 
 不增加独立语音配置表；角色通过 `voice_config_id` 引用统一模型配置。
 
@@ -663,7 +689,7 @@ frontend/src/app/projects/[projectId]/_components/
 只新增三个服务：
 
 - `job_service.py`：入队、领取、租约、心跳、重试、取消和状态更新。
-- `audio_service.py`：TTS 调用与音频持久化。
+- `tts_service.py`（已新增）：Edge/System/OpenAI TTS 调用；生成服务负责项目音频路径持久化。
 - `compose_service.py`：FFmpeg 参数、媒体探测、预览和导出。
 
 不新增通用 workflow、plugin、repository 或 provider factory 层。
@@ -716,7 +742,7 @@ generated/projects/{project_id}/
 
 - `tests/test_project_production.py`：设置、角色、地点、镜头字段和所有权。
 - `tests/test_job_service.py`：入队、幂等、领取、租约恢复、取消和重试。
-- `tests/test_audio_service.py`：TTS mock、落盘和用量。
+- `tests/test_tts_service.py`（已新增）：Edge mock、系统语音命令和无 API Key 配置。
 - `tests/test_compose_service.py`：极短素材合成与 ffprobe 校验。
 
 扩展 `test_database.py`、`test_images.py`、`test_video_service.py`、`test_usage_service.py` 和 `tests/run_all.py`。
@@ -733,8 +759,8 @@ generated/projects/{project_id}/
 
 对应 DR-01、DR-06、DR-10、DR-12。
 
-- 后端：项目字段、assets/jobs 表、job service/worker、估算接口、统一事件。
-- 前端：拆 `use-project-workbench`、生产设置、job 状态条、WebSocket reducer。
+- 已完成：项目生产字段、`generation_jobs`、job service/API、生产设置 UI 和设置实时字段。
+- 待完成：assets、worker processor、估算接口、job 状态条、WebSocket reducer 和项目控制器拆分。
 
 完成标准：测试 job 可入队；worker 重启后继续；页面收到正确进度。
 
@@ -751,8 +777,8 @@ generated/projects/{project_id}/
 
 对应 DR-07、DR-10。
 
-- 后端：audio purpose、首个 TTS provider、字幕 cue 和音频用量。
-- 前端：声音绑定、批量配音、试听和字幕校正。
+- 已完成：audio purpose、Edge/System/OpenAI TTS、场景真实音频落盘和商业 TTS 用量记录。
+- 待完成：角色声音绑定、独立批量配音任务、真实媒体时长、字幕 cue、试听和字幕校正。
 
 完成标准：生成真实音频；刷新不丢；字幕无负时长和重叠错误。
 
@@ -812,11 +838,11 @@ MVP 最终 Definition of Done：
 
 | 当前代码 | 开发后 |
 |---|---|
-| `scenes` 只有旁白、提示词、单图/模拟音频 | `scenes` 作为完整镜头，引用角色/地点并选择图片、音频、视频版本 |
-| 项目图片真实，音频/成片模拟 | 图片、TTS、镜头视频和 FFmpeg 成片均为真实链路 |
-| `asyncio.create_task` 内存任务 | SQLite 持久化 job + worker 租约恢复 |
+| `scenes` 已有旁白、提示词、单图和真实 TTS，但无资产版本 | `scenes` 作为完整镜头，引用角色/地点并选择图片、音频、视频版本 |
+| 项目图片和 TTS 真实，成片仍模拟 | 镜头视频和 FFmpeg 成片也进入真实链路 |
+| generation job 数据/服务已完成，现有生成仍使用 `asyncio.create_task` | 新业务及现有生成统一通过 worker 租约恢复 |
 | WebSocket 逻辑集中在巨大页面 | 项目控制器 hook + 统一 job/asset 事件 |
 | Zustand 保存完整项目副本 | React Query 为事实源，Zustand 只保留选择和临时状态 |
 | 独立视频页与项目链路分离 | 项目镜头直接复用 `video_service` |
-| 模型 purpose 无 audio | 统一 `model_configs` 增加 audio 并复用计费/官方/个人配置 |
+| `audio` purpose 与 Edge/System/OpenAI TTS 已完成 | 增加角色声音绑定、字幕和精确时长 |
 | 无最终媒体合成 | FFmpeg 生成预览、MP4、SRT 和封面 |

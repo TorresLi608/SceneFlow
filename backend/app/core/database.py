@@ -123,7 +123,17 @@ def init_db() -> None:
                 status text DEFAULT "idle",
                 video_url text,
                 video_status text DEFAULT "idle",
-                video_progress integer DEFAULT 0
+                video_progress integer DEFAULT 0,
+                mode text NOT NULL DEFAULT "comic" CHECK(mode IN ("comic", "drama")),
+                aspect_ratio text NOT NULL DEFAULT "9:16",
+                width integer NOT NULL DEFAULT 1080,
+                height integer NOT NULL DEFAULT 1920,
+                fps integer NOT NULL DEFAULT 24,
+                target_duration_ms integer NOT NULL DEFAULT 60000,
+                language text NOT NULL DEFAULT "zh-CN",
+                style_prompt text NOT NULL DEFAULT "",
+                negative_prompt text NOT NULL DEFAULT "",
+                current_stage text NOT NULL DEFAULT "script"
             );
             CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
             CREATE INDEX IF NOT EXISTS idx_projects_deleted_at ON projects(deleted_at);
@@ -144,6 +154,35 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_scenes_project_id ON scenes(project_id);
             CREATE INDEX IF NOT EXISTS idx_scenes_deleted_at ON scenes(deleted_at);
+            CREATE TABLE IF NOT EXISTS generation_jobs (
+                id text PRIMARY KEY,
+                created_at datetime NOT NULL,
+                updated_at datetime NOT NULL,
+                started_at datetime,
+                finished_at datetime,
+                user_id integer NOT NULL,
+                project_id text NOT NULL,
+                scene_id text,
+                job_type text NOT NULL,
+                status text NOT NULL DEFAULT "queued" CHECK(status IN ("queued", "running", "succeeded", "failed", "canceled")),
+                progress integer NOT NULL DEFAULT 0,
+                input_json text NOT NULL DEFAULT "{}",
+                result_json text,
+                attempt integer NOT NULL DEFAULT 0,
+                max_attempts integer NOT NULL DEFAULT 3,
+                idempotency_key text,
+                lease_owner text,
+                lease_expires_at datetime,
+                heartbeat_at datetime,
+                error_code text,
+                error_message text,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY(scene_id) REFERENCES scenes(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_generation_jobs_project_created ON generation_jobs(project_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_generation_jobs_status_lease ON generation_jobs(status, lease_expires_at, created_at);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_generation_jobs_idempotency ON generation_jobs(user_id, project_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
             CREATE TABLE IF NOT EXISTS chat_sessions (
                 id text PRIMARY KEY,
                 created_at datetime,
@@ -239,6 +278,24 @@ def init_db() -> None:
             conn.execute("ALTER TABLE projects ADD COLUMN title text")
         if "video_progress" not in project_columns:
             conn.execute("ALTER TABLE projects ADD COLUMN video_progress integer DEFAULT 0")
+        for name, definition in (
+            ("mode", 'text NOT NULL DEFAULT "comic"'),
+            ("aspect_ratio", 'text NOT NULL DEFAULT "9:16"'),
+            ("width", "integer NOT NULL DEFAULT 1080"),
+            ("height", "integer NOT NULL DEFAULT 1920"),
+            ("fps", "integer NOT NULL DEFAULT 24"),
+            ("target_duration_ms", "integer NOT NULL DEFAULT 60000"),
+            ("language", 'text NOT NULL DEFAULT "zh-CN"'),
+            ("style_prompt", 'text NOT NULL DEFAULT ""'),
+            ("negative_prompt", 'text NOT NULL DEFAULT ""'),
+            ("current_stage", 'text NOT NULL DEFAULT "script"'),
+        ):
+            if name not in project_columns:
+                conn.execute(f"ALTER TABLE projects ADD COLUMN {name} {definition}")
+        conn.execute("DROP INDEX IF EXISTS idx_generation_jobs_idempotency")
+        conn.execute(
+            "CREATE UNIQUE INDEX idx_generation_jobs_idempotency ON generation_jobs(user_id, project_id, idempotency_key) WHERE idempotency_key IS NOT NULL"
+        )
         seed_super_admin(conn)
 
 

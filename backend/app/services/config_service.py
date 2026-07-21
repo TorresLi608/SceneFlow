@@ -44,8 +44,14 @@ def normalize_model(provider: str, value: str) -> str:
 
 
 def validate_config_fields(purpose: str, provider: str, model: str, base_url: str = "") -> None:
-    if purpose not in {"general", "script", "image", "video"}:
+    if purpose not in {"general", "script", "image", "video", "audio"}:
         raise HTTPException(400, "invalid purpose")
+    if purpose == "audio":
+        if provider not in {"edge", "system", "openai"}:
+            raise HTTPException(400, "audio purpose only supports provider edge/system/openai")
+        if not model.strip():
+            raise HTTPException(400, "audio purpose requires a voice or modelSeries")
+        return
     if provider == "custom":
         if purpose not in {"general", "script"}:
             raise HTTPException(400, "custom provider currently only supports general/script purpose")
@@ -148,11 +154,13 @@ def config_update_fields(payload: dict[str, Any], current: sqlite3.Row, normaliz
 
 
 async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:
+    if purpose == "audio" and provider in {"edge", "system"}:
+        return
     if not api_key.strip():
         raise HTTPException(400, "apiKey is required")
     if not 8 <= len(api_key) <= 512:
         raise HTTPException(400, "apiKey length must be between 8 and 512")
-    if purpose == "video":
+    if purpose in {"video", "audio"}:
         return
     try:
         if purpose == "image":
@@ -173,7 +181,7 @@ def _model_config(config: sqlite3.Row, purpose: str, stage: str, source: str) ->
     if not bool(config["is_verified"]):
         raise HTTPException(400, f"{stage}当前默认模型尚未通过校验。")
     api_key = decrypt(config["encrypted_key"]).strip()
-    if not api_key:
+    if not api_key and provider not in {"edge", "system"}:
         raise HTTPException(400, f"{stage}当前默认模型缺少 API Key。")
     return {
         "provider": provider,

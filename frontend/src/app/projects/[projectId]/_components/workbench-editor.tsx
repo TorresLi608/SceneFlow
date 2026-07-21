@@ -35,6 +35,7 @@ import {
   parseProjectAction,
   reorderProjectScenesAction,
   updateProjectAction,
+  updateProductionSettingsAction,
   updateProjectSceneAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
@@ -62,7 +63,14 @@ import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { UserConfig } from "@/types/auth";
-import type { ProjectStatus, SceneTaskStatus, SceneUpdatePayload } from "@/types/project";
+import type {
+  ProductionSettings,
+  ProjectStage,
+  ProjectStatus,
+  SceneTaskStatus,
+  SceneUpdatePayload,
+} from "@/types/project";
+import { ProductionSettingsForm } from "./production-settings";
 import { SceneCard } from "./scene-card";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -176,7 +184,9 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const activeScriptConfig = activeConfigByPurpose.script;
   const activeImageConfig = activeConfigByPurpose.image;
   const activeVideoConfig = activeConfigByPurpose.video;
+  const activeAudioConfig = activeConfigByPurpose.audio;
   const hasUsableScriptConfig = Boolean(activeScriptConfig);
+  const hasUsableImageConfig = Boolean(activeImageConfig);
 
   const parseProjectMutation = useMutation({
     mutationFn: (params: { projectId: string; script: string; model?: string }) =>
@@ -228,6 +238,21 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       updateProjectAction(params.projectId, { originalScript: params.originalScript }),
     onError: (error) => {
       setStatusMessage(resolveRequestError(error, t("home.saveProjectFailed")));
+    },
+  });
+
+  const updateProductionSettingsMutation = useMutation({
+    mutationFn: (params: { projectId: string; settings: ProductionSettings }) =>
+      updateProductionSettingsAction(params.projectId, params.settings),
+    onSuccess: (response) => {
+      updateProjectFields(response.project.id, {
+        productionSettings: response.project.productionSettings,
+        currentStage: response.project.currentStage,
+      });
+      setStatusMessage(t("home.productionSettingsSaved"));
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, t("home.productionSettingsFailed")));
     },
   });
 
@@ -407,6 +432,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           const videoStatus = payload.data?.videoStatus;
           const videoProgress = payload.data?.videoProgress;
           const videoUrl = payload.data?.videoUrl;
+          const productionSettings = payload.data?.productionSettings;
+          const currentStage = payload.data?.currentStage;
 
           if (typeof status === "string") {
             setProjectStatus(payload.projectId, status as ProjectStatus);
@@ -424,6 +451,12 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           }
           if (typeof videoUrl === "string") {
             patch.videoUrl = videoUrl;
+          }
+          if (productionSettings && typeof productionSettings === "object") {
+            patch.productionSettings = productionSettings as ProductionSettings;
+          }
+          if (typeof currentStage === "string") {
+            patch.currentStage = currentStage as ProjectStage;
           }
           if (Object.keys(patch).length > 0) {
             updateProjectFields(payload.projectId, patch);
@@ -711,7 +744,21 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                 <CardTitle className="text-base">{t("home.scriptInput")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-2 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-3">
+                {currentProject ? (
+                  <ProductionSettingsForm
+                    key={currentProject.id}
+                    settings={currentProject.productionSettings}
+                    disabled={updateProductionSettingsMutation.isPending}
+                    onSave={(settings) =>
+                      updateProductionSettingsMutation.mutate({
+                        projectId: currentProject.id,
+                        settings,
+                      })
+                    }
+                  />
+                ) : null}
+
+                <div className="grid gap-2 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2">
                   <p>
                     {t("home.scriptConfigSummary", {
                       value: summarizeActiveConfig(
@@ -743,6 +790,19 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                         t("settings.customConfig"),
                         t
                       ),
+                    })}
+                  </p>
+                  <p>
+                    {t("home.audioConfigSummary", {
+                      value: activeAudioConfig
+                        ? summarizeActiveConfig(
+                            activeAudioConfig,
+                            t("settings.unconfigured"),
+                            t("settings.officialConfig"),
+                            t("settings.customConfig"),
+                            t
+                          )
+                        : t("settings.builtinSystemTts"),
                     })}
                   </p>
                 </div>
@@ -817,7 +877,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                       }}
                       disabled={
                         !currentProject ||
-                        !hasUsableScriptConfig ||
+                        !hasUsableImageConfig ||
                         currentProject.status === "parsing" ||
                         currentProject.status === "generating" ||
                         currentProject.scenes.length === 0

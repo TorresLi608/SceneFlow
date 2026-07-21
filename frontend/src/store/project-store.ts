@@ -16,7 +16,16 @@ interface ProjectStoreState {
   updateProjectFields: (
     projectID: string,
     patch: Partial<
-      Pick<Project, "status" | "originalScript" | "videoStatus" | "videoProgress" | "videoUrl">
+      Pick<
+        Project,
+        | "status"
+        | "originalScript"
+        | "videoStatus"
+        | "videoProgress"
+        | "videoUrl"
+        | "productionSettings"
+        | "currentStage"
+      >
     >
   ) => void;
   applyParsedScenes: (
@@ -55,6 +64,18 @@ function normalizeProject(project: Project): Project {
     videoStatus: project.videoStatus ?? "idle",
     videoProgress: typeof project.videoProgress === "number" ? project.videoProgress : 0,
     videoUrl: project.videoUrl ?? null,
+    productionSettings: project.productionSettings ?? {
+      mode: "comic",
+      aspectRatio: "9:16",
+      width: 1080,
+      height: 1920,
+      fps: 24,
+      targetDurationMs: 60000,
+      language: "zh-CN",
+      stylePrompt: "",
+      negativePrompt: "",
+    },
+    currentStage: project.currentStage ?? "script",
     scenes: normalizeOrder(project.scenes.map(normalizeScene)),
   };
 }

@@ -13,7 +13,8 @@ from app.llms.registry import models
 from app.schemas.serializers import project_json, scene_json
 from app.services.config_service import active_model_config
 from app.services.generation_service import run_generation, run_video_generation
-from app.services.project_service import parse_project_model, project_and_scenes
+from app.services.job_service import list_project_jobs
+from app.services.project_service import parse_project_model, production_settings, project_and_scenes
 from app.services.usage_service import record_usage, require_model_balance
 from app.utils.common import new_id, now
 
@@ -44,13 +45,19 @@ def create_project(payload: dict[str, Any], user_id: int = Depends(current_user_
     stamp = now()
     title = str(payload.get("title", "")).strip()[:80] or "新项目"
     script = str(payload.get("originalScript", "")).strip()
+    settings = production_settings(payload.get("productionSettings", {}), defaults=True)
     project_id = new_id("proj")
     with db() as conn:
         conn.execute(
             """INSERT INTO projects
-            (id, created_at, updated_at, user_id, title, original_script, status, video_status, video_progress)
-            VALUES (?, ?, ?, ?, ?, ?, 'idle', 'idle', 0)""",
-            (project_id, stamp, stamp, user_id, title, script),
+            (id, created_at, updated_at, user_id, title, original_script, status, video_status, video_progress,
+             mode, aspect_ratio, width, height, fps, target_duration_ms, language, style_prompt, negative_prompt, current_stage)
+            VALUES (?, ?, ?, ?, ?, ?, 'idle', 'idle', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                project_id, stamp, stamp, user_id, title, script, settings["mode"], settings["aspect_ratio"],
+                settings["width"], settings["height"], settings["fps"], settings["target_duration_ms"],
+                settings["language"], settings["style_prompt"], settings["negative_prompt"], settings["current_stage"],
+            ),
         )
         project = row(conn, "SELECT * FROM projects WHERE id=?", (project_id,))
     return {"project": project_json(project, [])}
@@ -76,6 +83,40 @@ async def update_project(project_id: str, payload: dict[str, Any], user_id: int 
         project, scenes = project_and_scenes(conn, project_id, user_id)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": payload})
     return {"project": project_json(project, scenes)}
+
+
+@router.patch("/{project_id}/production-settings")
+async def update_production_settings(
+    project_id: str,
+    payload: dict[str, Any],
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    updates = production_settings(payload)
+    if not updates:
+        raise HTTPException(400, "no production settings to update")
+    stamp = now()
+    with db() as conn:
+        project_and_scenes(conn, project_id, user_id)
+        conn.execute(
+            f"UPDATE projects SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
+            (*updates.values(), stamp, project_id),
+        )
+        project, scenes = project_and_scenes(conn, project_id, user_id)
+    serialized = project_json(project, scenes)
+    data = {
+        "productionSettings": serialized["productionSettings"],
+        "currentStage": serialized["currentStage"],
+        "updatedAt": stamp,
+    }
+    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": data})
+    return {"project": serialized}
+
+
+@router.get("/{project_id}/jobs")
+def list_jobs(project_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    with db() as conn:
+        jobs = list_project_jobs(conn, user_id, project_id)
+    return {"jobs": jobs}
 
 
 @router.patch("/{project_id}/scenes/reorder")
@@ -206,15 +247,18 @@ async def generate_project(project_id: str, payload: dict[str, Any], user_id: in
             raise HTTPException(400, "no scenes available, parse script first")
         if project["status"] == "generating":
             raise HTTPException(409, "project is already generating")
-        try:
-            config, warning = active_model_config(conn, user_id, "image", "镜头提示词生成"), ""
-        except HTTPException as image_error:
-            config = active_model_config(conn, user_id, "script", "镜头提示词生成回退")
-            warning = "图片生成默认模型当前不可用，已回退到剧本/提示词默认模型。原始原因：" + str(image_error.detail)
+        config = active_model_config(conn, user_id, "image", "分镜图片生成")
+        warning = ""
         require_model_balance(conn, user_id, config)
+        try:
+            audio_config = active_model_config(conn, user_id, "audio", "场景配音")
+        except HTTPException:
+            audio_config = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
+        if audio_config["provider"] not in {"edge", "system"}:
+            require_model_balance(conn, user_id, audio_config)
         conn.execute("UPDATE projects SET status='generating', updated_at=? WHERE id=?", (now(), project_id))
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating"}})
-    asyncio.create_task(run_generation(project_id, [dict(scene) for scene in scenes], config, user_id))
+    asyncio.create_task(run_generation(project_id, [dict(scene) for scene in scenes], config, audio_config, user_id))
     return {"projectId": project_id, "status": "generating", "model": str(payload.get("model") or config["model"]), "provider": config["provider"], "imageModel": config["model"], "warning": warning, "sceneCount": len(scenes)}
 
 

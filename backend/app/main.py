@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1 import admin, auth, chat, images, projects, settings, usage, users, videos, websocket
+from app.api.v1 import admin, auth, chat, images, jobs, projects, settings, usage, users, videos, websocket
 from app.core.config import CORS_ORIGINS, GENERATED_DIR
 from app.core.database import init_db
 
@@ -41,6 +41,7 @@ app.include_router(images.router)
 app.include_router(videos.router)
 app.include_router(usage.router)
 app.include_router(projects.router)
+app.include_router(jobs.router)
 app.include_router(websocket.router)
 
 

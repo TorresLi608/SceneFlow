@@ -11,8 +11,10 @@ import type {
   CreateProjectInput,
   ProjectItemResponse,
   ProjectListResponse,
+  GenerationJobListResponse,
   ReorderScenesInput,
   UpdateProjectInput,
+  UpdateProductionSettingsInput,
   UpdateSceneInput,
 } from "@/types/project";
 
@@ -28,6 +30,19 @@ export async function createProjectAction(payload: CreateProjectInput) {
 
 export async function updateProjectAction(projectID: string, payload: UpdateProjectInput) {
   const response = await httpClient.patch<ProjectItemResponse>(`/api/bff/projects/${projectID}`, payload);
+  return response.data;
+}
+
+export async function updateProductionSettingsAction(projectID: string, payload: UpdateProductionSettingsInput) {
+  const response = await httpClient.patch<ProjectItemResponse>(
+    `/api/bff/projects/${projectID}/production-settings`,
+    payload
+  );
+  return response.data;
+}
+
+export async function listProjectJobsAction(projectID: string) {
+  const response = await httpClient.get<GenerationJobListResponse>(`/api/bff/projects/${projectID}/jobs`);
   return response.data;
 }
 

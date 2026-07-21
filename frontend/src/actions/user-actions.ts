@@ -11,6 +11,11 @@ export async function updateMeAction(payload: UpdateMeInput) {
   return response.data;
 }
 
+export async function changePasswordAction(currentPassword: string, password: string) {
+  const response = await httpClient.patch<UserMeResponse>("/api/bff/users/me", { currentPassword, password });
+  return response.data;
+}
+
 export async function redeemCodeAction(code: string) {
   const response = await httpClient.post<RedeemCodeResponse>("/api/bff/users/redeem", { code });
   return response.data;

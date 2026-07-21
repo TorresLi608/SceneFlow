@@ -19,6 +19,20 @@ export interface Scene {
 }
 
 export type ProjectStatus = "idle" | "parsing" | "generating" | "video_generating" | "done";
+export type ProjectMode = "comic" | "drama";
+export type ProjectStage = "script" | "bible" | "storyboard" | "audio" | "timeline" | "export";
+
+export interface ProductionSettings {
+  mode: ProjectMode;
+  aspectRatio: "9:16" | "16:9" | "1:1";
+  width: number;
+  height: number;
+  fps: 24 | 30;
+  targetDurationMs: number;
+  language: string;
+  stylePrompt: string;
+  negativePrompt: string;
+}
 
 export interface Project {
   id: string;
@@ -28,6 +42,8 @@ export interface Project {
   videoStatus: SceneTaskStatus | "idle";
   videoProgress: number;
   videoUrl: string | null;
+  productionSettings: ProductionSettings;
+  currentStage: ProjectStage;
   updatedAt: string;
   scenes: Scene[];
 }
@@ -43,11 +59,39 @@ export interface ProjectListResponse {
 export interface CreateProjectInput {
   title?: string;
   originalScript?: string;
+  productionSettings?: Partial<ProductionSettings>;
 }
 
 export interface UpdateProjectInput {
   title?: string;
   originalScript?: string;
+}
+
+export type UpdateProductionSettingsInput = Partial<ProductionSettings> & {
+  currentStage?: ProjectStage;
+};
+
+export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
+
+export interface GenerationJob {
+  id: string;
+  projectId: string;
+  sceneId: string | null;
+  jobType: "storyboards" | "audio" | "videos" | "preview" | "export";
+  status: GenerationJobStatus;
+  progress: number;
+  attempt: number;
+  maxAttempts: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface GenerationJobListResponse {
+  jobs: GenerationJob[];
 }
 
 export interface UpdateSceneInput {

@@ -69,6 +69,7 @@ def scene_json(scene: sqlite3.Row) -> dict[str, Any]:
 
 
 def project_json(project: sqlite3.Row, scenes: list[sqlite3.Row]) -> dict[str, Any]:
+    keys = project.keys()
     return {
         "id": project["id"],
         "title": project["title"] or "未命名项目",
@@ -77,6 +78,18 @@ def project_json(project: sqlite3.Row, scenes: list[sqlite3.Row]) -> dict[str, A
         "videoStatus": project["video_status"] or "idle",
         "videoProgress": project["video_progress"] or 0,
         "videoUrl": project["video_url"] or None,
+        "productionSettings": {
+            "mode": project["mode"] if "mode" in keys else "comic",
+            "aspectRatio": project["aspect_ratio"] if "aspect_ratio" in keys else "9:16",
+            "width": project["width"] if "width" in keys else 1080,
+            "height": project["height"] if "height" in keys else 1920,
+            "fps": project["fps"] if "fps" in keys else 24,
+            "targetDurationMs": project["target_duration_ms"] if "target_duration_ms" in keys else 60000,
+            "language": project["language"] if "language" in keys else "zh-CN",
+            "stylePrompt": project["style_prompt"] if "style_prompt" in keys else "",
+            "negativePrompt": project["negative_prompt"] if "negative_prompt" in keys else "",
+        },
+        "currentStage": project["current_stage"] if "current_stage" in keys else "script",
         "updatedAt": project["updated_at"],
         "scenes": [scene_json(scene) for scene in scenes],
     }

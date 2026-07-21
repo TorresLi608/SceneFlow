@@ -1,11 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Coins, Loader2, ReceiptText, Send, UserRound } from "lucide-react";
+import { Coins, KeyRound, Loader2, ReceiptText, Send, UserRound } from "lucide-react";
 import { useState } from "react";
 
 import { queryKeys } from "@/actions/query-keys";
-import { getMeAction, redeemCodeAction, updateMeAction } from "@/actions/user-actions";
+import { changePasswordAction, getMeAction, redeemCodeAction, updateMeAction } from "@/actions/user-actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,9 @@ export default function ProfilePage() {
   const setUser = useUserStore((state) => state.setUser);
   const [username, setUsername] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
   const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: getMeAction });
   const user = meQuery.data?.user;
@@ -51,6 +54,16 @@ export default function ProfilePage() {
       });
     },
     onError: (error) => setMessage({ title: t("profile.redeemFailed"), description: resolveRequestError(error, t("profile.redeemFailed")) }),
+  });
+  const passwordMutation = useMutation({
+    mutationFn: () => changePasswordAction(currentPassword, newPassword),
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage({ title: t("profile.passwordSuccess"), description: t("profile.passwordSuccessDescription") });
+    },
+    onError: (error) => setMessage({ title: t("profile.passwordFailed"), description: resolveRequestError(error, t("profile.passwordFailed")) }),
   });
 
   return (
@@ -136,6 +149,42 @@ export default function ProfilePage() {
                   <Button type="submit" disabled={updateMutation.isPending || usernameValue.trim() === user?.username}>
                     {updateMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <UserRound data-icon="inline-start" />}
                     {updateMutation.isPending ? t("common.loading") : t("common.save")}
+                  </Button>
+                </FieldGroup>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("profile.passwordTitle")}</CardTitle>
+              <CardDescription>{t("profile.passwordDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={(event) => {
+                event.preventDefault();
+                if (newPassword !== confirmPassword) {
+                  setMessage({ title: t("profile.passwordFailed"), description: t("auth.passwordMismatch") });
+                  return;
+                }
+                passwordMutation.mutate();
+              }}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="currentPassword">{t("profile.currentPassword")}</FieldLabel>
+                    <Input id="currentPassword" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} maxLength={128} autoComplete="current-password" required />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="newPassword">{t("profile.newPassword")}</FieldLabel>
+                    <Input id="newPassword" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={6} maxLength={128} autoComplete="new-password" required />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="confirmNewPassword">{t("profile.confirmNewPassword")}</FieldLabel>
+                    <Input id="confirmNewPassword" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={6} maxLength={128} autoComplete="new-password" required />
+                  </Field>
+                  <Button type="submit" disabled={passwordMutation.isPending}>
+                    {passwordMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <KeyRound data-icon="inline-start" />}
+                    {passwordMutation.isPending ? t("profile.changingPassword") : t("profile.changePassword")}
                   </Button>
                 </FieldGroup>
               </form>

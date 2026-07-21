@@ -9,10 +9,11 @@ from app.core.database import db
 from app.core.realtime import broadcast
 from app.llms.registry import models
 from app.services.usage_service import record_usage, require_model_balance
+from app.services.tts_service import synthesize
 from app.utils.common import now
 
 
-async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: dict[str, Any], user_id: int) -> None:
+async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: dict[str, Any], audio_config: dict[str, Any], user_id: int) -> None:
     semaphore = asyncio.Semaphore(3)
 
     async def one(scene: dict[str, Any]) -> None:
@@ -39,13 +40,22 @@ async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: 
                     conn.execute("UPDATE scenes SET image_status='error', updated_at=? WHERE id=?", (now(), scene["id"]))
                 await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"imageStatus": "error", "imageProgress": 0, "errorMsg": "AI 图片生成失败：" + str(exc)[:220]}})
 
-            for index, progress in enumerate([25, 50, 75, 100]):
-                await asyncio.sleep((110 + ((int(scene["order_num"]) + index) % 5) * 40) / 1000)
-                await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "generating", "audioProgress": progress, "errorMsg": ""}})
-            audio_url = f"https://example.com/audio/{scene['id']}.mp3"
-            with db() as conn:
-                conn.execute("UPDATE scenes SET audio_status='success', audio_url=?, updated_at=? WHERE id=?", (audio_url, now(), scene["id"]))
-            await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "success", "audioProgress": 100, "audioUrl": audio_url, "audioDuration": 2.0 + (int(scene["order_num"]) % 5 + 1) * 0.8, "errorMsg": ""}})
+            try:
+                await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "generating", "audioProgress": 20, "errorMsg": ""}})
+                extension = "mp3" if audio_config["provider"] == "edge" else "wav"
+                audio_path = GENERATED_DIR / "projects" / project_id / f"{scene['id']}.{extension}"
+                audio_started_at = time.monotonic()
+                audio_path, duration = await synthesize(str(scene.get("narration") or ""), audio_config, audio_path)
+                if audio_config["provider"] not in {"edge", "system"}:
+                    record_usage(user_id, audio_config, "scene_tts", audio_started_at, quantity=duration)
+                audio_url = f"{PUBLIC_BASE_URL}/generated/projects/{project_id}/{audio_path.name}"
+                with db() as conn:
+                    conn.execute("UPDATE scenes SET audio_status='success', audio_url=?, audio_duration=?, updated_at=? WHERE id=?", (audio_url, duration, now(), scene["id"]))
+                await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "success", "audioProgress": 100, "audioUrl": audio_url, "audioDuration": duration, "errorMsg": ""}})
+            except Exception as exc:
+                with db() as conn:
+                    conn.execute("UPDATE scenes SET audio_status='error', updated_at=? WHERE id=?", (now(), scene["id"]))
+                await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "error", "audioProgress": 0, "errorMsg": "AI 配音生成失败：" + str(exc)[:220]}})
 
     await asyncio.gather(*(one(scene) for scene in scenes))
     with db() as conn:

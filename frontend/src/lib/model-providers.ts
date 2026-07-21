@@ -109,6 +109,29 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       docsUrl: "https://ai.google.dev/gemini-api/docs/video",
     },
   ],
+  audio: [
+    {
+      value: "edge",
+      label: "Edge-TTS",
+      modelSeries: "zh-CN-XiaoxiaoNeural",
+      modelPlaceholder: "zh-CN-XiaoxiaoNeural",
+      docsUrl: "https://github.com/rany2/edge-tts",
+    },
+    {
+      value: "system",
+      label: "System TTS",
+      modelSeries: "Tingting",
+      modelPlaceholder: "Tingting / zh",
+    },
+    {
+      value: "openai",
+      label: "OpenAI TTS",
+      modelSeries: "gpt-4o-mini-tts",
+      modelPlaceholder: "gpt-4o-mini-tts",
+      baseUrl: "https://api.openai.com/v1",
+      docsUrl: "https://platform.openai.com/docs/guides/text-to-speech",
+    },
+  ],
 };
 
 export const providerLabelMap = Object.fromEntries(
@@ -125,6 +148,8 @@ const providerLabelKeyMap: Record<string, string> = {
   gemini: "provider.gemini",
   openai: "provider.openai",
   qwen: "provider.qwen",
+  system: "provider.system",
+  edge: "provider.edge",
 };
 
 export function providerLabel(provider: string, t?: Translate) {

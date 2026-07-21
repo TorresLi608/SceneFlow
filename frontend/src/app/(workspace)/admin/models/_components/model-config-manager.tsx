@@ -79,6 +79,7 @@ function isDefaultConfig(config: UserConfig, activeUserByPurpose: Partial<Record
 function defaultPricingUnit(purpose: ConfigPurpose): UserConfig["unitName"] {
   if (purpose === "image") return "image";
   if (purpose === "video") return "second";
+  if (purpose === "audio") return "second";
   return "token";
 }
 
@@ -124,6 +125,7 @@ export function ModelConfigManager() {
     script: t("settings.scriptPurpose"),
     image: t("settings.imagePurpose"),
     video: t("settings.videoPurpose"),
+    audio: t("settings.audioPurpose"),
   };
 
   const officialQuery = useQuery({
@@ -267,6 +269,7 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, value, mode));
     setModelSeries(option.modelSeries);
+    if (["edge", "system"].includes(value)) setApiKey("");
   };
 
   const onConnectionModeChange = (value: string | null) => {
@@ -290,10 +293,10 @@ export function ModelConfigManager() {
       if (editingConfig?.source === "official" && !isSuperAdmin) {
         throw new Error(t("admin.noEditOfficialPermission"));
       }
-      if (!editingConfig && !saveAsOfficial && !apiKey.trim()) {
+      if (!["edge", "system"].includes(provider) && !editingConfig && !saveAsOfficial && !apiKey.trim()) {
         throw new Error(t("admin.userConfigNeedsApiKey"));
       }
-      if (!editingConfig && saveAsOfficial && isDefault && !apiKey.trim()) {
+      if (!["edge", "system"].includes(provider) && !editingConfig && saveAsOfficial && isDefault && !apiKey.trim()) {
         throw new Error(t("admin.officialDefaultNeedsApiKey"));
       }
       if (editingConfig && isDefaultConfig(editingConfig, activeUserByPurpose) && !isDefault) {
@@ -315,7 +318,7 @@ export function ModelConfigManager() {
         outputPricePerMillion: Number(outputPricePerMillion),
         cacheReadPricePerMillion: Number(cacheReadPricePerMillion),
         cacheWritePricePerMillion: Number(cacheWritePricePerMillion),
-        unitPrice: purpose === "image" || purpose === "video" ? Number(unitPrice) : 0,
+        unitPrice: purpose === "image" || purpose === "video" || purpose === "audio" ? Number(unitPrice) : 0,
         unitName: defaultPricingUnit(purpose),
       };
 
@@ -683,7 +686,7 @@ export function ModelConfigManager() {
                   id="adminConfigBaseUrl"
                   value={baseUrl}
                   onChange={(event) => setBaseUrl(event.target.value)}
-                  disabled={!isRelay}
+                  disabled={!isRelay || ["edge", "system"].includes(provider)}
                   placeholder="https://api.example.com/v1"
                 />
               </div>
@@ -697,6 +700,7 @@ export function ModelConfigManager() {
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
+                disabled={["edge", "system"].includes(provider)}
               />
             </div>
 
@@ -712,7 +716,7 @@ export function ModelConfigManager() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <PricingInput id="pricingMultiplier" label={t("admin.pricingMultiplier")} value={pricingMultiplier} onChange={setPricingMultiplier} />
-                {purpose === "image" || purpose === "video" ? (
+                {purpose === "image" || purpose === "video" || purpose === "audio" ? (
                   <PricingInput
                     id="unitPrice"
                     label={t(purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}
