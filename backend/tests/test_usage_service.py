@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 import time
 
-import database
-from database import db, init_db
-from services.usage_service import calculate_cost_micros, record_usage, require_model_balance, usage_logs
-from lib.utils import now
+from app.core import database
+from app.core.database import db, init_db
+from app.services.usage_service import calculate_cost_micros, record_usage, require_model_balance, usage_logs
+from app.utils.common import now
 
 
 def test_cost_calculation() -> None:

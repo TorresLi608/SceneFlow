@@ -5,9 +5,9 @@ from pathlib import Path
 
 import bcrypt
 
-import database
-from database import db, init_db, row
-from routers.admin import create_user, reset_user_password, update_user
+from app.api.v1.admin import create_user, reset_user_password, update_user
+from app.core import database
+from app.core.database import db, init_db, row
 
 
 def test_admin_create_and_reset_user() -> None:

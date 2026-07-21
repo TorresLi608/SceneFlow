@@ -43,10 +43,9 @@
   - OpenAI 兼容供应商走 `ChatOpenAI`。
   - Claude/Anthropic 走 `ChatAnthropic`。
   - Gemini 走 OpenAI compatible endpoint。
-- 新增 `backend/context_graph.py`：
-  - 使用 LangGraph `StateGraph` 构建上下文加载/压缩流程。
-  - 使用 `langgraph.runtime.Runtime` 和 `runtime.stream_writer` 发 Agent Runtime 事件。
-  - 1M token 预算由 `MAX_CONTEXT_TOKENS = 1_000_000` 控制。
+- `backend/app/graph/graphs/context_graph.py`：
+  - 使用异步 Python 流程构建上下文加载/压缩，并直接产出 Agent Runtime 事件。
+  - token 预算由 `SCENEFLOW_MAX_CONTEXT_TOKENS` 控制，默认 100000。
   - 超限时压缩旧消息，保留最近 20 条明细消息，摘要写入 `chat_sessions.context_summary`。
 - 流式聊天接口现在实时推送：
   - `agent_step`: 加载历史上下文、压缩长期记忆、调用模型、保存回复、执行失败。
@@ -65,7 +64,7 @@
   - `frontend/src/components/chat/chat-message-list.tsx` 增加自动贴底、手动上滚停止跟随、浮动向下箭头。
   - `frontend/src/components/chat/chat-panel.tsx` 传入 `autoScrollKey`，用于历史消息初次加载和会话切换后的强制滚到底部。
 - 项目 CRUD 已走后端 SQLite：
-  - 后端：`backend/routers/projects.py`
+  - 后端：`backend/app/api/v1/projects.py`
   - 前端 BFF：`frontend/src/app/api/bff/projects/**`
   - 删除了前端模板路由 `frontend/src/app/api/bff/projects/templates/route.ts`。
 - 根目录新增 `package.json`，提供前后端启动命令。
@@ -128,9 +127,9 @@
 
 ## 下次接手优先看
 
-1. `backend/context_graph.py`：上下文记忆、压缩、Agent Runtime 事件。
-2. `backend/routers/chat.py`：流式聊天事件如何输出到前端。
-3. `backend/model.py`：LangChain 模型路由和供应商兼容。
+1. `backend/app/graph/graphs/context_graph.py`：上下文记忆、压缩、Agent Runtime 事件。
+2. `backend/app/api/v1/chat.py`：流式聊天事件如何输出到前端。
+3. `backend/app/llms/router.py`：LangChain 模型路由和供应商兼容。
 4. `frontend/src/components/chat/use-chat-controller.ts`：前端如何消费流式事件。
 5. `frontend/src/components/chat/chat-message-list.tsx`：执行流程 UI。
 6. `frontend/src/lib/model-providers.ts`：供应商默认配置。

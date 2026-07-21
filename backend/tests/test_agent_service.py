@@ -8,8 +8,7 @@ from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 
-from services import agent_service
-from services import artifact_service
+from app.services import agent_service, artifact_service
 
 
 class ToolFakeModel(FakeMessagesListChatModel):

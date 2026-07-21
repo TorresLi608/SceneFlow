@@ -4,7 +4,7 @@ import sqlite3
 
 import bcrypt
 
-from database import SUPER_ADMIN_USERNAME, seed_super_admin, row
+from app.core.database import SUPER_ADMIN_USERNAME, row, seed_super_admin
 
 
 def _conn() -> sqlite3.Connection:

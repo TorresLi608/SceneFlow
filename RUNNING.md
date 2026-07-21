@@ -12,7 +12,7 @@ cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m uvicorn app:app --host 0.0.0.0 --port 8080
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 后端默认地址：
@@ -93,7 +93,7 @@ NEXT_PUBLIC_WS_BASE_URL=ws://127.0.0.1:8080
 
 ```bash
 cd backend
-PORT=8090 python -m uvicorn app:app --host 0.0.0.0 --port 8090
+PORT=8090 python -m uvicorn app.main:app --host 0.0.0.0 --port 8090
 ```
 
 同时修改 `frontend/.env.local`：
@@ -122,5 +122,5 @@ pnpm start
 ```bash
 cd backend
 source .venv/bin/activate
-python -m uvicorn app:app --host 0.0.0.0 --port 8080
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```

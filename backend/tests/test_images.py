@@ -7,10 +7,10 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-import database
-from database import db, init_db
-from routers.images import generate_image
-from lib.utils import now
+from app.api.v1.images import generate_image
+from app.core import database
+from app.core.database import db, init_db
+from app.utils.common import now
 
 
 @contextmanager
@@ -22,11 +22,11 @@ def test_generate_image_records_usage_without_references() -> None:
     config = {"provider": "openai", "apiKey": "test-key", "model": "gpt-image-1"}
     usage = Mock()
     with (
-        patch("routers.images.db", _db),
-        patch("routers.images.active_model_config", return_value=config),
-        patch("routers.images.models.generate_image", AsyncMock(return_value=SimpleNamespace(data=b"png", format="png"))),
-        patch("routers.images.record_usage", usage),
-        patch("routers.images.persist_image", return_value="http://example.test/image.png"),
+        patch("app.api.v1.images.db", _db),
+        patch("app.api.v1.images.active_model_config", return_value=config),
+        patch("app.api.v1.images.models.generate_image", AsyncMock(return_value=SimpleNamespace(data=b"png", format="png"))),
+        patch("app.api.v1.images.record_usage", usage),
+        patch("app.api.v1.images.persist_image", return_value="http://example.test/image.png"),
     ):
         result = asyncio.run(generate_image({"prompt": "a fox"}, 1))
 
@@ -52,10 +52,10 @@ def test_official_image_requires_balance_but_personal_config_does_not() -> None:
             config = {"source": "official", "provider": "openai", "apiKey": "test-key", "model": "gpt-image-1"}
             generate = AsyncMock(return_value=SimpleNamespace(data=b"png", format="png"))
             with (
-                patch("routers.images.active_model_config", return_value=config),
-                patch("routers.images.models.generate_image", generate),
-                patch("routers.images.record_usage"),
-                patch("routers.images.persist_image", return_value="http://example.test/image.png"),
+                patch("app.api.v1.images.active_model_config", return_value=config),
+                patch("app.api.v1.images.models.generate_image", generate),
+                patch("app.api.v1.images.record_usage"),
+                patch("app.api.v1.images.persist_image", return_value="http://example.test/image.png"),
             ):
                 try:
                     asyncio.run(generate_image({"prompt": "a fox"}, user_id))

@@ -4,11 +4,11 @@ from pathlib import Path
 import tempfile
 import time
 
-import database
-from database import db, init_db
-from routers.admin import list_all_usage_logs
-from services.usage_service import record_usage
-from lib.utils import now
+from app.api.v1.admin import list_all_usage_logs
+from app.core import database
+from app.core.database import db, init_db
+from app.services.usage_service import record_usage
+from app.utils.common import now
 
 
 def test_admin_usage_logs_support_username_search_and_pagination() -> None:

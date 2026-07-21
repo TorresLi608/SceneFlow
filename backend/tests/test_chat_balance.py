@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 from unittest.mock import patch
 
-import database
-from database import db, init_db, row
-from services.chat_service import begin_chat_turn
-from lib.utils import now
+from app.core import database
+from app.core.database import db, init_db, row
+from app.services.chat_service import begin_chat_turn
+from app.utils.common import now
 
 
 def test_chat_balance_gate_runs_before_message_save() -> None:
@@ -30,7 +30,7 @@ def test_chat_balance_gate_runs_before_message_save() -> None:
                 )
 
             official = {"source": "official", "provider": "openai", "model": "gpt-test"}
-            with patch("services.chat_service.chat_config", return_value=official):
+            with patch("app.services.chat_service.chat_config", return_value=official):
                 with db() as conn:
                     try:
                         begin_chat_turn(conn, "chat-1", user_id, "hello", [], None)
@@ -40,7 +40,7 @@ def test_chat_balance_gate_runs_before_message_save() -> None:
                     assert row(conn, "SELECT COUNT(*) AS total FROM chat_messages")["total"] == 0
 
             personal = {"source": "user", "provider": "openai", "model": "gpt-personal"}
-            with patch("services.chat_service.chat_config", return_value=personal):
+            with patch("app.services.chat_service.chat_config", return_value=personal):
                 with db() as conn:
                     _, message = begin_chat_turn(conn, "chat-1", user_id, "hello", [], None)
                     assert message["content"] == "hello"

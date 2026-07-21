@@ -7,6 +7,6 @@
   },
   "scripts": {
     "dev:frontend": "pnpm --dir frontend dev",
-    "dev:backend": "cd backend && .venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8080"
+    "dev:backend": "cd backend && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080"
   }
 }

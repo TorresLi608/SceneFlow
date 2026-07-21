@@ -3,10 +3,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import database
-from database import init_db
-from routers.admin import create_invitation_code, list_invitation_codes
-from routers.auth import register
+from app.api.v1.admin import create_invitation_code, list_invitation_codes
+from app.api.v1.auth import register
+from app.core import database
+from app.core.database import init_db
 
 
 def test_invitation_code_is_required_and_consumed() -> None:

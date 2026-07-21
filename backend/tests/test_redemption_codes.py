@@ -3,10 +3,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import database
-from database import init_db
-from routers.admin import create_redemption_code, create_user, list_redemption_codes
-from routers.users import redeem_code
+from app.api.v1.admin import create_redemption_code, create_user, list_redemption_codes
+from app.api.v1.users import redeem_code
+from app.core import database
+from app.core.database import init_db
 
 
 def test_redemption_code_credits_balance_once() -> None:
