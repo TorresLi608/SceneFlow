@@ -550,6 +550,17 @@
   - `findings.md`
   - `progress.md`
 
+### Phase 4: 前后端结构与业务审计
+
+- **Status:** complete
+- Actions taken:
+  - 审查数据库迁移、项目设置、generation jobs、模型配置、TTS、工作台和模型管理调用链。
+  - 修复图片配置错误回退、项目级幂等范围、TTS 兼容字段、Linux 回退音色和 API Key 残留。
+  - 使用现有 FFprobe 获取真实音频时长，不引入许可证不合适的解析依赖。
+  - 统一前后端目标时长范围，并增加画幅/宽高一致性校验和默认尺寸推导。
+  - 明确 LangGraph 与持久化 worker 的混合编排边界，并更新技术方案和后端 README。
+  - 后端全测/compileall、前端 lint/type-check 和 diff 检查通过。
+
 ## Session: 2026-07-21 — 模型配置、邀请码/兑换码与图片单价修复
 
 ### Phase 1: 统一模型配置表与来源切换

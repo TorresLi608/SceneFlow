@@ -12,6 +12,8 @@ def test_production_settings_defaults_and_updates() -> None:
     assert defaults["width"] == 1080
     assert defaults["height"] == 1920
     assert defaults["fps"] == 24
+    landscape = production_settings({"aspectRatio": "16:9"}, defaults=True)
+    assert (landscape["width"], landscape["height"]) == (1920, 1080)
 
     updates = production_settings({"mode": "drama", "fps": 30, "targetDurationMs": 90000, "stylePrompt": "cinematic"})
     assert updates == {
@@ -23,9 +25,15 @@ def test_production_settings_defaults_and_updates() -> None:
 
 
 def test_production_settings_reject_invalid_input() -> None:
-    for payload in ({"mode": "other"}, {"fps": 25}, {"width": "wide"}, {"targetDurationMs": 1000}):
+    for payload, defaults in (
+        ({"mode": "other"}, False),
+        ({"fps": 25}, False),
+        ({"width": "wide"}, False),
+        ({"targetDurationMs": 1000}, False),
+        ({"aspectRatio": "9:16", "width": 1920, "height": 1080}, True),
+    ):
         try:
-            production_settings(payload)
+            production_settings(payload, defaults=defaults)
         except HTTPException as exc:
             assert exc.status_code == 400
         else:

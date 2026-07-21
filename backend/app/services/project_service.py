@@ -38,7 +38,11 @@ def production_settings(payload: dict[str, Any], *, defaults: bool = False) -> d
         if aspect_ratio not in ASPECT_RATIOS:
             raise HTTPException(400, "unsupported aspect ratio")
         values["aspect_ratio"] = aspect_ratio
-    for request_key, column, default in (("width", "width", 1080), ("height", "height", 1920)):
+    default_size = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}.get(
+        values.get("aspect_ratio", "9:16"),
+        (1080, 1920),
+    )
+    for request_key, column, default in (("width", "width", default_size[0]), ("height", "height", default_size[1])):
         if defaults or request_key in payload:
             value = integer(request_key, default)
             if not 256 <= value <= 4096:
@@ -67,6 +71,10 @@ def production_settings(payload: dict[str, Any], *, defaults: bool = False) -> d
         if stage not in PROJECT_STAGES:
             raise HTTPException(400, "invalid project stage")
         values["current_stage"] = stage
+    if defaults:
+        ratios = {"9:16": 9 / 16, "16:9": 16 / 9, "1:1": 1.0}
+        if abs(values["width"] / values["height"] - ratios[values["aspect_ratio"]]) > 0.03:
+            raise HTTPException(400, "width and height do not match aspectRatio")
     return values
 
 

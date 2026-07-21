@@ -91,12 +91,27 @@ async def update_production_settings(
     payload: dict[str, Any],
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    updates = production_settings(payload)
-    if not updates:
+    if not payload:
         raise HTTPException(400, "no production settings to update")
     stamp = now()
     with db() as conn:
-        project_and_scenes(conn, project_id, user_id)
+        project, _ = project_and_scenes(conn, project_id, user_id)
+        updates = production_settings(
+            {
+                "mode": project["mode"],
+                "aspectRatio": project["aspect_ratio"],
+                "width": project["width"],
+                "height": project["height"],
+                "fps": project["fps"],
+                "targetDurationMs": project["target_duration_ms"],
+                "language": project["language"],
+                "stylePrompt": project["style_prompt"],
+                "negativePrompt": project["negative_prompt"],
+                "currentStage": project["current_stage"],
+                **payload,
+            },
+            defaults=True,
+        )
         conn.execute(
             f"UPDATE projects SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
             (*updates.values(), stamp, project_id),

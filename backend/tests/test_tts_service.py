@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.config_service import normalize_config_payload
-from app.services.tts_service import _openai_tts, _system_tts, synthesize
+from app.services.tts_service import _duration, _openai_tts, _system_tts, synthesize
 
 
 def test_system_audio_config_needs_no_api_key() -> None:
@@ -26,9 +26,7 @@ def test_system_tts_uses_available_binary() -> None:
 def test_edge_tts_saves_mp3() -> None:
     communicator = MagicMock()
     communicator.save = AsyncMock()
-    media = MagicMock()
-    media.info.length = 2.5
-    with TemporaryDirectory() as directory, patch("app.services.tts_service.edge_tts.Communicate", return_value=communicator), patch("app.services.tts_service.MutagenFile", return_value=media):
+    with TemporaryDirectory() as directory, patch("app.services.tts_service.edge_tts.Communicate", return_value=communicator), patch("app.services.tts_service._duration", return_value=2.5):
         path = Path(directory) / "voice.mp3"
         actual, duration = asyncio.run(synthesize("你好", {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural"}, path))
         assert actual == path
@@ -50,8 +48,15 @@ def test_openai_tts_requests_wav() -> None:
         assert path.read_bytes() == b"wav"
 
 
+def test_duration_uses_ffprobe() -> None:
+    result = MagicMock(stdout='{"format":{"duration":"3.25"}}')
+    with patch("app.services.tts_service.shutil.which", return_value="/usr/bin/ffprobe"), patch("app.services.tts_service.subprocess.run", return_value=result):
+        assert _duration(Path("voice.mp3"), 9) == 3.25
+
+
 if __name__ == "__main__":
     test_system_audio_config_needs_no_api_key()
     test_system_tts_uses_available_binary()
     test_edge_tts_saves_mp3()
     test_openai_tts_requests_wav()
+    test_duration_uses_ffprobe()

@@ -100,8 +100,22 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 
 ### Project Generate (JWT required)
 - `POST /api/projects/:id/generate`
-  - request body: `{ "model": "gpt-4o" }` (optional)
-  - starts goroutine-based concurrent image/audio generation simulation
+  - requires an active image configuration
+  - generates real storyboard images and TTS audio concurrently
+  - TTS supports Edge/System/OpenAI audio configurations
+- `PATCH /api/projects/:id/production-settings`
+- `GET /api/projects/:id/jobs`
+- `POST /api/jobs/:id/cancel`
+- `POST /api/jobs/:id/retry`
+
+`generation_jobs` currently provides persistence, idempotency, leases, cancel, and retry services. The worker processor and project job UI are still pending; existing image/audio generation still starts in the API process.
+
+## Short-drama orchestration
+
+- LangGraph is reserved for checkpointed LLM decisions and human approval, such as script structure and continuity review.
+- `generation_jobs` plus a worker owns deterministic image, TTS, video, and FFmpeg tasks.
+- Rollback means selecting an earlier asset version and marking downstream results stale, not deleting generated assets.
+- LangGraph is already installed through LangChain; no extra dependency is needed.
 
 ### WebSocket
 - `GET /ws/projects/:id?token=<JWT>`

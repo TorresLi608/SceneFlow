@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 import httpx
 import edge_tts
-from mutagen import File as MutagenFile
 
 
 async def synthesize(text: str, config: dict[str, str], output: Path) -> tuple[Path, float]:
@@ -28,9 +28,23 @@ async def synthesize(text: str, config: dict[str, str], output: Path) -> tuple[P
         await _openai_tts(text, config, output)
     else:
         raise ValueError("audio purpose only supports provider edge/system/openai")
-    media = MutagenFile(output)
-    duration = float(media.info.length) if media and media.info else len(text) / 4.5
-    return output, max(1.0, duration)
+    return output, _duration(output, len(text) / 4.5)
+
+
+def _duration(path: Path, fallback: float) -> float:
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        try:
+            return max(1.0, float(json.loads(result.stdout)["format"]["duration"]))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return max(1.0, fallback)
 
 
 def _system_tts(text: str, voice: str, output: Path) -> None:
