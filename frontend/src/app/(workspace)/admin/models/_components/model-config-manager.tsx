@@ -83,7 +83,7 @@ function defaultPricingUnit(purpose: ConfigPurpose): UserConfig["unitName"] {
 }
 
 export function ModelConfigManager() {
-  const { t } = useI18n();
+  const { t, formatDateTime } = useI18n();
   const queryClient = useQueryClient();
   const defaultOption = defaultProviderOption();
   const user = useUserStore((state) => state.user);
@@ -113,12 +113,12 @@ export function ModelConfigManager() {
   const [apiKey, setApiKey] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [isDefault, setIsDefault] = useState(false);
-  const [pricingMultiplier, setPricingMultiplier] = useState(1);
-  const [inputPricePerMillion, setInputPricePerMillion] = useState(0);
-  const [outputPricePerMillion, setOutputPricePerMillion] = useState(0);
-  const [cacheReadPricePerMillion, setCacheReadPricePerMillion] = useState(0);
-  const [cacheWritePricePerMillion, setCacheWritePricePerMillion] = useState(0);
-  const [unitPrice, setUnitPrice] = useState(0);
+  const [pricingMultiplier, setPricingMultiplier] = useState("1");
+  const [inputPricePerMillion, setInputPricePerMillion] = useState("0");
+  const [outputPricePerMillion, setOutputPricePerMillion] = useState("0");
+  const [cacheReadPricePerMillion, setCacheReadPricePerMillion] = useState("0");
+  const [cacheWritePricePerMillion, setCacheWritePricePerMillion] = useState("0");
+  const [unitPrice, setUnitPrice] = useState("0");
   const purposeLabel: Record<ConfigPurpose, string> = {
     general: t("settings.generalPurpose"),
     script: t("settings.scriptPurpose"),
@@ -209,12 +209,12 @@ export function ModelConfigManager() {
     setApiKey("");
     setIsEnabled(true);
     setIsDefault(false);
-    setPricingMultiplier(1);
-    setInputPricePerMillion(0);
-    setOutputPricePerMillion(0);
-    setCacheReadPricePerMillion(0);
-    setCacheWritePricePerMillion(0);
-    setUnitPrice(0);
+    setPricingMultiplier("1");
+    setInputPricePerMillion("0");
+    setOutputPricePerMillion("0");
+    setCacheReadPricePerMillion("0");
+    setCacheWritePricePerMillion("0");
+    setUnitPrice("0");
   };
 
   const openCreate = () => {
@@ -236,12 +236,12 @@ export function ModelConfigManager() {
     setApiKey("");
     setIsEnabled(config.isEnabled);
     setIsDefault(isDefaultConfig(config, activeUserByPurpose));
-    setPricingMultiplier(config.pricingMultiplier);
-    setInputPricePerMillion(config.inputPricePerMillion);
-    setOutputPricePerMillion(config.outputPricePerMillion);
-    setCacheReadPricePerMillion(config.cacheReadPricePerMillion);
-    setCacheWritePricePerMillion(config.cacheWritePricePerMillion);
-    setUnitPrice(config.unitPrice);
+    setPricingMultiplier(String(config.pricingMultiplier));
+    setInputPricePerMillion(String(config.inputPricePerMillion));
+    setOutputPricePerMillion(String(config.outputPricePerMillion));
+    setCacheReadPricePerMillion(String(config.cacheReadPricePerMillion));
+    setCacheWritePricePerMillion(String(config.cacheWritePricePerMillion));
+    setUnitPrice(String(config.unitPrice));
     setFormOpen(true);
   };
 
@@ -255,7 +255,7 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
     setModelSeries(option.modelSeries);
-    setUnitPrice(0);
+    setUnitPrice("0");
   };
 
   const onProviderChange = (nextProvider: string | null) => {
@@ -310,12 +310,12 @@ export function ModelConfigManager() {
         apiKey: apiKey.trim() || undefined,
         isActive: isDefault,
         isEnabled,
-        pricingMultiplier,
-        inputPricePerMillion,
-        outputPricePerMillion,
-        cacheReadPricePerMillion,
-        cacheWritePricePerMillion,
-        unitPrice: purpose === "image" || purpose === "video" ? unitPrice : 0,
+        pricingMultiplier: Number(pricingMultiplier),
+        inputPricePerMillion: Number(inputPricePerMillion),
+        outputPricePerMillion: Number(outputPricePerMillion),
+        cacheReadPricePerMillion: Number(cacheReadPricePerMillion),
+        cacheWritePricePerMillion: Number(cacheWritePricePerMillion),
+        unitPrice: purpose === "image" || purpose === "video" ? Number(unitPrice) : 0,
         unitName: defaultPricingUnit(purpose),
       };
 
@@ -515,7 +515,7 @@ export function ModelConfigManager() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border/70">
-        <table className="w-full min-w-[980px] text-sm">
+        <table className="w-full min-w-[1120px] text-sm">
           <thead className="bg-muted/40 text-xs text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left font-medium">{t("settings.name")}</th>
@@ -524,6 +524,7 @@ export function ModelConfigManager() {
               <th className="px-3 py-2 text-left font-medium">{t("admin.tableModel")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("admin.status")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("admin.tableDefault")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("admin.tableUpdatedAt")}</th>
               <th className="px-3 py-2 text-center font-medium">{t("admin.tableActions")}</th>
             </tr>
           </thead>
@@ -560,6 +561,9 @@ export function ModelConfigManager() {
                       onCheckedChange={(next) => defaultMutation.mutate({ config, checked: next })}
                     />
                   </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
+                    {formatDateTime(config.updatedAt)}
+                  </td>
                   <td className="px-3 py-3">
                     <div className="flex justify-center gap-1">
                       <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title={t("admin.view")}>
@@ -590,7 +594,7 @@ export function ModelConfigManager() {
             })}
             {!busy && pageRows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">{t("admin.noMatchingConfigs")}</td>
+                <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">{t("admin.noMatchingConfigs")}</td>
               </tr>
             ) : null}
           </tbody>
@@ -812,11 +816,11 @@ export function ModelConfigManager() {
   );
 }
 
-function PricingInput({ id, label, value, onChange }: { id: string; label: string; value: number; onChange: (value: number) => void }) {
+function PricingInput({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" min="0" step="0.000001" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <Input id={id} type="number" min="0" step="0.000001" value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }

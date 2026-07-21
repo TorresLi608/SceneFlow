@@ -207,6 +207,16 @@
 - 后端已有 `test_video_service.py`、`test_images.py`、`test_config_service.py`、`test_database.py` 和统一 `tests/run_all.py`；新增功能应继续用小型 assert 自检，并增加项目/job/compose 三类测试即可。
 - 当前前端只有用户列表的 Node 逻辑测试。镜头/job 状态 reducer 是最值得新增的一个前端自检，不需要引入完整测试框架。
 
+### Final Development-plan Decisions
+
+- 技术方案升级为 V0.2，增加 DR-01 至 DR-12 需求编号、代码追踪矩阵、前端方案、后端方案、Stage 0–6 和最终 DoD。
+- Stage 0 明确先完成用户正在进行的统一 `model_configs` 改造，AI 短剧功能不与其并行重写同一区域。
+- MVP 保留现有 `/ai-script` 与 `/projects/[projectId]`，使用阶段查询参数，不先重构路由。
+- MVP 将当前 `scenes` 直接演进为镜头；真正的一场多镜模型延期。
+- 前端先拆项目控制器 hook，React Query 作为持久化事实源，Zustand 缩小职责。
+- 后端只新增 job/audio/compose 三个服务和一个 worker，复用 project/generation/video/usage/realtime。
+- 文档最终为 822 行；`git diff --check` 通过，旧 shot 路径/字段扫描无残留。
+
 ### Issues Encountered
 
 | Issue | Resolution |

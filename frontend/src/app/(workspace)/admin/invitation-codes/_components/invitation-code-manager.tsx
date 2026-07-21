@@ -93,7 +93,7 @@ export function InvitationCodeManager() {
       </div>
 
       <div className="overflow-hidden rounded-lg border">
-        <Table className="min-w-[820px]">
+        <Table className="min-w-[1080px]">
           <TableHeader>
             <TableRow>
               <TableHead>{t("admin.invitationCode")}</TableHead>
@@ -101,6 +101,8 @@ export function InvitationCodeManager() {
               <TableHead>{t("admin.tableCreatedAt")}</TableHead>
               <TableHead>{t("admin.expiresAt")}</TableHead>
               <TableHead>{t("admin.usedBy")}</TableHead>
+              <TableHead>{t("admin.usedAt")}</TableHead>
+              <TableHead>{t("admin.createdBy")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -111,10 +113,12 @@ export function InvitationCodeManager() {
                 <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(item.expiresAt)}</TableCell>
                 <TableCell>{item.usedBy?.username ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{item.usedAt ? formatDateTime(item.usedAt) : "—"}</TableCell>
+                <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
               </TableRow>
             ))}
-            {codesQuery.isLoading ? <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
-            {!codesQuery.isLoading && !codesQuery.data?.invitationCodes.length ? <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{t("admin.noInvitationCodes")}</TableCell></TableRow> : null}
+            {codesQuery.isLoading ? <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
+            {!codesQuery.isLoading && !codesQuery.data?.invitationCodes.length ? <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("admin.noInvitationCodes")}</TableCell></TableRow> : null}
           </TableBody>
         </Table>
       </div>

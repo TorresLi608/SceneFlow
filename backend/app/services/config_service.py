@@ -12,9 +12,6 @@ from app.llms.registry import models
 from app.llms.router import pick_model
 
 
-CONFIG_VALIDATION_KEYS = ("apiKey", "provider", "baseUrl", "modelSeries", "model", "purpose")
-
-
 def normalize_purpose(value: str) -> str:
     return (value or "script").strip().lower() or "script"
 
@@ -74,6 +71,11 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
 
 
 def normalize_config_payload(payload: dict[str, Any], current: sqlite3.Row | None = None) -> dict[str, Any]:
+    current_purpose = normalize_purpose(str(current["purpose"])) if current else ""
+    current_provider = normalize_provider(str(current["provider"])) if current else ""
+    current_base_url = normalize_base_url(str(current["base_url"] or "")) if current else ""
+    current_model = normalize_model(current_provider, str(current["model_name"] or "")) if current else ""
+    current_api_key = decrypt(current["encrypted_key"]) if current else ""
     purpose = normalize_purpose(str(payload.get("purpose", current["purpose"] if current else "")))
     provider = normalize_provider(str(payload.get("provider", current["provider"] if current else "")))
     base_url = normalize_base_url(str(payload.get("baseUrl", (current["base_url"] or "") if current else "")))
@@ -82,7 +84,7 @@ def normalize_config_payload(payload: dict[str, Any], current: sqlite3.Row | Non
     if "apiKey" in payload:
         api_key = str(payload["apiKey"]).strip()
     elif current:
-        api_key = decrypt(current["encrypted_key"])
+        api_key = current_api_key
     else:
         api_key = str(payload.get("apiKey", "")).strip()
     validate_config_fields(purpose, provider, model, base_url)
@@ -92,7 +94,9 @@ def normalize_config_payload(payload: dict[str, Any], current: sqlite3.Row | Non
         "base_url": base_url,
         "model": model,
         "api_key": api_key,
-        "needs_validation": any(key in payload for key in CONFIG_VALIDATION_KEYS) or bool(payload.get("isActive")),
+        "needs_validation": current is None
+        or (purpose, provider, base_url, model, api_key) != (current_purpose, current_provider, current_base_url, current_model, current_api_key)
+        or (bool(payload.get("isActive")) and not bool(current["is_active"])),
     }
 
 

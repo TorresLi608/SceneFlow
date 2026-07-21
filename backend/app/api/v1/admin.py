@@ -43,6 +43,11 @@ def invitation_code_json(invitation: sqlite3.Row, stamp: str | None = None) -> d
             if invitation["used_by_user_id"]
             else None
         ),
+        "createdBy": (
+            {"id": invitation["created_by_user_id"], "username": invitation["created_by_username"]}
+            if invitation["created_by_user_id"]
+            else None
+        ),
     }
 
 
@@ -59,6 +64,11 @@ def redemption_code_json(redemption: sqlite3.Row, stamp: str | None = None) -> d
         "redeemedBy": (
             {"id": redemption["redeemed_by_user_id"], "username": redemption["redeemed_by_username"]}
             if redemption["redeemed_by_user_id"]
+            else None
+        ),
+        "createdBy": (
+            {"id": redemption["created_by_user_id"], "username": redemption["created_by_username"]}
+            if redemption["created_by_user_id"]
             else None
         ),
     }
@@ -211,7 +221,7 @@ def list_invitation_codes(
         conditions.append("invitation_codes.used_at IS NULL AND invitation_codes.expires_at>?")
         args.append(stamp)
     if search.strip():
-        conditions.append("users.username LIKE ?")
+        conditions.append("used_users.username LIKE ?")
         args.append(f"%{search.strip()}%")
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     offset = (page - 1) * page_size
@@ -219,14 +229,16 @@ def list_invitation_codes(
         total = row(
             conn,
             f"""SELECT COUNT(*) AS total FROM invitation_codes
-            LEFT JOIN users ON users.id=invitation_codes.used_by_user_id{where}""",
+            LEFT JOIN users AS used_users ON used_users.id=invitation_codes.used_by_user_id{where}""",
             tuple(args),
         )["total"]
         invitations = rows(
             conn,
-            f"""SELECT invitation_codes.*, users.username AS used_by_username
+            f"""SELECT invitation_codes.*, used_users.username AS used_by_username,
+            creator_users.username AS created_by_username
             FROM invitation_codes
-            LEFT JOIN users ON users.id=invitation_codes.used_by_user_id
+            LEFT JOIN users AS used_users ON used_users.id=invitation_codes.used_by_user_id
+            LEFT JOIN users AS creator_users ON creator_users.id=invitation_codes.created_by_user_id
             {where}
             ORDER BY invitation_codes.created_at DESC LIMIT ? OFFSET ?""",
             (*args, page_size, offset),
@@ -238,7 +250,7 @@ def list_invitation_codes(
 
 
 @router.post("/invitation-codes", status_code=201)
-def create_invitation_code(payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+def create_invitation_code(payload: dict[str, Any], admin_id: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     try:
         days = int(payload.get("days", 0))
     except (TypeError, ValueError) as exc:
@@ -250,13 +262,13 @@ def create_invitation_code(payload: dict[str, Any], _: int = Depends(current_sup
     code = secrets.token_hex(6).upper()
     with db() as conn:
         cur = conn.execute(
-            "INSERT INTO invitation_codes (created_at, expires_at, code) VALUES (?, ?, ?)",
-            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code),
+            "INSERT INTO invitation_codes (created_at, expires_at, code, created_by_user_id) VALUES (?, ?, ?, ?)",
+            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code, admin_id),
         )
         invitation = row(
             conn,
-            """SELECT invitation_codes.*, NULL AS used_by_username
-            FROM invitation_codes WHERE id=?""",
+            """SELECT invitation_codes.*, NULL AS used_by_username, users.username AS created_by_username
+            FROM invitation_codes LEFT JOIN users ON users.id=invitation_codes.created_by_user_id WHERE invitation_codes.id=?""",
             (cur.lastrowid,),
         )
     return {"invitationCode": invitation_code_json(invitation, created.isoformat())}
@@ -286,9 +298,11 @@ def list_redemption_codes(
         total = row(conn, f"SELECT COUNT(*) AS total FROM redemption_codes{where}", tuple(args))["total"]
         redemptions = rows(
             conn,
-            f"""SELECT redemption_codes.*, users.username AS redeemed_by_username
+            f"""SELECT redemption_codes.*, redeemer_users.username AS redeemed_by_username,
+            creator_users.username AS created_by_username
             FROM redemption_codes
-            LEFT JOIN users ON users.id=redemption_codes.redeemed_by_user_id
+            LEFT JOIN users AS redeemer_users ON redeemer_users.id=redemption_codes.redeemed_by_user_id
+            LEFT JOIN users AS creator_users ON creator_users.id=redemption_codes.created_by_user_id
             {where}
             ORDER BY redemption_codes.created_at DESC LIMIT ? OFFSET ?""",
             (*args, page_size, offset),
@@ -300,7 +314,7 @@ def list_redemption_codes(
 
 
 @router.post("/redemption-codes", status_code=201)
-def create_redemption_code(payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+def create_redemption_code(payload: dict[str, Any], admin_id: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     try:
         days = int(payload.get("days", 0))
     except (TypeError, ValueError) as exc:
@@ -312,13 +326,13 @@ def create_redemption_code(payload: dict[str, Any], _: int = Depends(current_sup
     code = "RC-" + secrets.token_hex(8).upper()
     with db() as conn:
         cur = conn.execute(
-            "INSERT INTO redemption_codes (created_at, expires_at, code, amount_micros) VALUES (?, ?, ?, ?)",
-            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code, micros),
+            "INSERT INTO redemption_codes (created_at, expires_at, code, amount_micros, created_by_user_id) VALUES (?, ?, ?, ?, ?)",
+            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code, micros, admin_id),
         )
         redemption = row(
             conn,
-            """SELECT redemption_codes.*, NULL AS redeemed_by_username
-            FROM redemption_codes WHERE id=?""",
+            """SELECT redemption_codes.*, NULL AS redeemed_by_username, users.username AS created_by_username
+            FROM redemption_codes LEFT JOIN users ON users.id=redemption_codes.created_by_user_id WHERE redemption_codes.id=?""",
             (cur.lastrowid,),
         )
     return {"redemptionCode": redemption_code_json(redemption, created.isoformat())}

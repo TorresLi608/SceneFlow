@@ -25,6 +25,8 @@ def test_redemption_code_credits_balance_once() -> None:
             listed = list_redemption_codes(1, status="redeemed", page=1, page_size=10)
             assert listed["pagination"]["total"] == 1
             assert listed["redemptionCodes"][0]["redeemedBy"]["username"] == "alice"
+            assert listed["redemptionCodes"][0]["redeemedAt"] is not None
+            assert listed["redemptionCodes"][0]["createdBy"]["username"] == "superAdmin"
 
             try:
                 redeem_code({"code": redemption["code"]}, user["id"])

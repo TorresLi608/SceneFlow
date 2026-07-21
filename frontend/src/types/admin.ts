@@ -40,6 +40,7 @@ export interface InvitationCode {
   expiresAt: string;
   usedAt: string | null;
   usedBy: { id: number; username: string } | null;
+  createdBy: { id: number; username: string } | null;
 }
 
 export interface InvitationCodeListResponse {
@@ -69,6 +70,7 @@ export interface RedemptionCode {
   expiresAt: string;
   redeemedAt: string | null;
   redeemedBy: { id: number; username: string } | null;
+  createdBy: { id: number; username: string } | null;
 }
 
 export interface RedemptionCodeListResponse {

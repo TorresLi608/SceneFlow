@@ -166,6 +166,45 @@ def test_user_config_pricing_round_trip() -> None:
             database.DB_PATH = original_path
 
 
+def test_price_only_admin_edit_skips_model_revalidation() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original_path = database.DB_PATH
+        database.DB_PATH = str(Path(directory) / "pricing-edit.db")
+        try:
+            init_db()
+            with db() as conn:
+                config_id = int(conn.execute(
+                    """INSERT INTO model_configs
+                    (created_at, updated_at, user_id, source, name, purpose, provider, base_url, model_name, encrypted_key,
+                     is_active, is_enabled, is_verified, unit_price, unit_name)
+                    VALUES ('now', 'now', NULL, 'official', 'Image', 'image', 'openai', 'https://relay.example.com/v1',
+                            'gpt-image-2', ?, 1, 1, 1, 0, 'image')""",
+                    (encrypt("source-secret-key"),),
+                ).lastrowid)
+
+            validator = AsyncMock()
+            with patch("app.api.v1.admin.validate_provider", new=validator):
+                updated = asyncio.run(update_model_config(config_id, {
+                    "source": "official",
+                    "name": "Image",
+                    "description": "",
+                    "purpose": "image",
+                    "provider": "openai",
+                    "baseUrl": "https://relay.example.com/v1",
+                    "modelSeries": "gpt-image-2",
+                    "isActive": True,
+                    "isEnabled": True,
+                    "pricingMultiplier": 1,
+                    "unitPrice": 0.5,
+                    "unitName": "image",
+                }, 1))["config"]
+
+            validator.assert_not_awaited()
+            assert updated["unitPrice"] == 0.5
+        finally:
+            database.DB_PATH = original_path
+
+
 def test_model_config_source_switch_preserves_id_and_key() -> None:
     with tempfile.TemporaryDirectory() as directory:
         original_path = database.DB_PATH
@@ -283,5 +322,6 @@ if __name__ == "__main__":
     test_video_gemini_config_is_valid()
     test_gemini_image_helpers()
     test_user_config_pricing_round_trip()
+    test_price_only_admin_edit_skips_model_revalidation()
     test_model_config_source_switch_preserves_id_and_key()
     test_legacy_model_config_tables_merge_without_losing_references()

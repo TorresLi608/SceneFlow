@@ -88,7 +88,7 @@ export function RedemptionCodeManager() {
       </div>
 
       <div className="overflow-hidden rounded-lg border">
-        <Table className="min-w-[1080px]">
+        <Table className="min-w-[1200px]">
           <TableHeader>
             <TableRow>
               <TableHead>{t("admin.redemptionCode")}</TableHead>
@@ -96,6 +96,7 @@ export function RedemptionCodeManager() {
               <TableHead>{t("admin.redemptionAmount")}</TableHead>
               <TableHead>{t("admin.redeemedBy")}</TableHead>
               <TableHead>{t("admin.redeemedAt")}</TableHead>
+              <TableHead>{t("admin.createdBy")}</TableHead>
               <TableHead>{t("admin.tableCreatedAt")}</TableHead>
               <TableHead>{t("admin.expiresAt")}</TableHead>
             </TableRow>
@@ -108,12 +109,13 @@ export function RedemptionCodeManager() {
                 <TableCell className="font-medium tabular-nums">{formatMoney(item.amountMicros)}</TableCell>
                 <TableCell>{item.redeemedBy?.username ?? "—"}</TableCell>
                 <TableCell className="text-muted-foreground">{item.redeemedAt ? formatDateTime(item.redeemedAt) : "—"}</TableCell>
+                <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(item.expiresAt)}</TableCell>
               </TableRow>
             ))}
-            {codesQuery.isLoading ? <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
-            {!codesQuery.isLoading && !codesQuery.data?.redemptionCodes.length ? <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("admin.noRedemptionCodes")}</TableCell></TableRow> : null}
+            {codesQuery.isLoading ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
+            {!codesQuery.isLoading && !codesQuery.data?.redemptionCodes.length ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("admin.noRedemptionCodes")}</TableCell></TableRow> : null}
           </TableBody>
         </Table>
       </div>

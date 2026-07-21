@@ -52,7 +52,9 @@ def init_db() -> None:
                 code text NOT NULL UNIQUE,
                 used_at datetime,
                 used_by_user_id integer,
-                FOREIGN KEY(used_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+                created_by_user_id integer,
+                FOREIGN KEY(used_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY(created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_invitation_codes_created_at ON invitation_codes(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_invitation_codes_used_by ON invitation_codes(used_by_user_id);
@@ -64,7 +66,9 @@ def init_db() -> None:
                 amount_micros integer NOT NULL,
                 redeemed_at datetime,
                 redeemed_by_user_id integer,
-                FOREIGN KEY(redeemed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+                created_by_user_id integer,
+                FOREIGN KEY(redeemed_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY(created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_created_at ON redemption_codes(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_redeemed_by ON redemption_codes(redeemed_by_user_id);
@@ -216,6 +220,12 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN level integer NOT NULL DEFAULT 1")
         if "user_group" not in user_columns:
             conn.execute('ALTER TABLE users ADD COLUMN user_group text NOT NULL DEFAULT "default"')
+        invitation_columns = {item["name"] for item in conn.execute("PRAGMA table_info(invitation_codes)").fetchall()}
+        if "created_by_user_id" not in invitation_columns:
+            conn.execute("ALTER TABLE invitation_codes ADD COLUMN created_by_user_id integer")
+        redemption_columns = {item["name"] for item in conn.execute("PRAGMA table_info(redemption_codes)").fetchall()}
+        if "created_by_user_id" not in redemption_columns:
+            conn.execute("ALTER TABLE redemption_codes ADD COLUMN created_by_user_id integer")
         _migrate_legacy_model_configs(conn)
         session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         if "official_config_id" not in session_columns:

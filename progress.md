@@ -450,7 +450,7 @@
 
 ### Phase 1: 当前实现复核
 
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - 重新读取 `planning-with-files` 说明。
   - 完整读取现有技术方案与当前工作区状态。
@@ -463,7 +463,23 @@
   - 定位项目 WebSocket 和事件处理集中在 `workbench-editor.tsx`，确定先抽项目控制器 hook。
   - 核对现有后端自检体系与前端测试现状，确定只新增项目/job/合成及状态 reducer 的最小检查。
   - 首次大型文档补丁因一处上下文不匹配失败；已记录并改用分段补丁。
+  - 文档扫描发现一处尾随空格和两处旧 shot 术语，已统一修正。
+  - 将 `AI_SHORT_DRAMA_TECHNICAL.md` 升级为 V0.2 可执行开发方案。
+  - 新增 DR-01 至 DR-12 需求清单和前端/后端/数据/验收追踪矩阵。
+  - 新增前端组件、类型、actions/query、状态职责和检查方案。
+  - 新增后端迁移、模型/TTS、服务、worker、API、FFmpeg 和测试方案。
+  - 新增 Stage 0–6 纵向开发顺序、联调流程和最终 Definition of Done。
+  - 运行 `git diff --check` 通过，并确认文档不存在旧 `/shots`、`shot_id`、`SHOT_UPDATE` 残留。
 - Files created/modified:
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
+  - `AI_SHORT_DRAMA_TECHNICAL.md`
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `git diff --check` | Pass |
+| 技术文档结构 | 822 行，需求/前端/后端/阶段/DoD 章节齐全 |
+| 旧 shot 术语扫描 | 无 `/shots`、`shot_id`、`SHOT_UPDATE` 残留 |

@@ -1,6 +1,6 @@
 # SceneFlow AI 短剧 / 漫剧技术方案
 
-> 版本：V0.1（评审稿）  
+> 版本：V0.2（可执行开发方案）
 > 日期：2026-07-21  
 > 原则：复用现有栈，先完成单机可恢复 MVP；不在首版引入分布式基础设施。
 
@@ -83,7 +83,7 @@ Worker      ├─ LLM 结构化
 | 小说解析/分集 | LumenX、Toonflow、ArcReel、商业 SaaS | 现有 LLM 路由 + 新结构化 schema |
 | 编剧/分镜职责 | Multi-Agent 项目、ManjuForge | 一个可恢复结构化工作流，不创建多 Agent 团队 |
 | 角色固定 | StoryDiffusion、NanoBanana/参考图类能力 | `characters` + reference asset + provider adapter |
-| 多镜头生成 | SkyReels、ShotStream、可灵/Vidu/即梦 | `shots` + 并发 job + 现有视频服务 |
+| 多镜头生成 | SkyReels、ShotStream、可灵/Vidu/即梦 | 扩展 `scenes` + 并发 job + 现有视频服务 |
 | 配音字幕 | Toonflow、ai_story、NarratoAI 类流程 | audio provider + subtitle cues |
 | 自动剪辑 | ArcReel、MoneyPrinterTurbo、商业 SaaS | FFmpeg composition service |
 | 批量生产 | ReelMate、MoodMax、工作室型产品 | 持久化 job、失败重试、成本与项目进度 |
@@ -91,7 +91,7 @@ Worker      ├─ LLM 结构化
 
 ## 4. 领域模型
 
-保持现有 `projects`、`scenes` 兼容，增量增加真实需要的表。不要一开始建立泛化资产平台。
+保持现有 `projects`、`scenes` 兼容，增量增加真实需要的表。MVP 将当前 `scenes` 直接视为镜头实体，避免同时引入“场 → 镜头”两级迁移；真正出现一场多镜需求后再拆分。不要一开始建立泛化资产平台。
 
 ### 4.1 `projects` 增量字段
 
@@ -120,19 +120,14 @@ Worker      ├─ LLM 结构化
 
 - `id`, `project_id`, `name`, `description`, `reference_asset_id`, `locked`。
 
-### 4.4 `scenes` 增量
+### 4.4 `scenes` 增量（MVP 镜头实体）
 
-现有 `scenes` 保留为“场/段落”，增加：
-
-- `location_id`、`time_of_day`、`summary`、`estimated_duration_ms`。
-
-### 4.5 `shots`
-
-每个场景包含多个镜头，是生成和重试的最小业务单元。
+现有 LLM 解析结果和 UI 实际已把每条 `scene` 当作一个分镜镜头。MVP 保留表名与 API 路径，直接补充镜头字段，作为生成和重试的最小业务单元。
 
 | 字段 | 说明 |
 |---|---|
-| `id`, `scene_id`, `order_num` | 顺序 |
+| `id`, `project_id`, `order_num` | 顺序 |
+| `location_id` | 可选地点引用 |
 | `shot_type` | 特写/近景/中景/全景等 |
 | `camera_angle` | 平视/俯拍/仰拍等 |
 | `camera_motion` | 固定/推/拉/摇/移等 |
@@ -144,9 +139,13 @@ Worker      ├─ LLM 结构化
 | `selected_image_asset_id` | 当前分镜图 |
 | `selected_video_asset_id` | 当前视频片段 |
 
-### 4.6 `shot_characters`
+### 4.5 真正的“场 → 镜头”层级（延期）
 
-- `shot_id`, `character_id`, `role`, `appearance_override`。
+当产品需要场次标题、同一地点多镜头、场级调度或跨镜头连续性时，再新增 `story_scenes`，并让现有 `scenes` 通过 `story_scene_id` 归属场次。首版不增加空洞层级。
+
+### 4.6 `scene_characters`
+
+- `scene_id`, `character_id`, `role`, `appearance_override`。
 - 只记录镜头出场角色，不把所有项目设定塞进提示词。
 
 ### 4.7 `assets`
@@ -155,7 +154,7 @@ Worker      ├─ LLM 结构化
 
 | 字段 | 说明 |
 |---|---|
-| `id`, `project_id`, `shot_id` | 所属范围 |
+| `id`, `project_id`, `scene_id` | 所属范围 |
 | `kind` | `image` / `video` / `audio` / `subtitle` / `export` |
 | `purpose` | `character_ref`、`storyboard`、`shot_video`、`voice` 等 |
 | `version` | 同一用途的候选版本 |
@@ -168,7 +167,7 @@ Worker      ├─ LLM 结构化
 
 ### 4.8 `subtitle_cues`
 
-- `project_id`, `shot_id`, `speaker_character_id`。
+- `project_id`, `scene_id`, `speaker_character_id`。
 - `start_ms`, `end_ms`, `text`, `style_json`。
 
 ### 4.9 `timeline_items`
@@ -184,7 +183,7 @@ MVP 只需扁平时间轴：
 
 | 字段 | 说明 |
 |---|---|
-| `id`, `user_id`, `project_id`, `shot_id` | 所属对象 |
+| `id`, `user_id`, `project_id`, `scene_id` | 所属对象 |
 | `job_type` | `script_structure`、`image`、`video`、`tts`、`compose` 等 |
 | `status` | `queued/running/succeeded/failed/canceled` |
 | `input_json`, `result_json` | 任务输入/输出 |
@@ -272,7 +271,7 @@ generate_speech(request) -> MediaResult
 
 ### 6.3 视频生成
 
-直接复用现有 `video_service.generate_video`，把每个 `shot` 转成请求：
+直接复用现有 `video_service.generate_video`，把每个镜头 `scene` 转成请求：
 
 - 默认使用已选分镜图做图生视频，提高一致性。
 - 没有分镜图时才允许文生视频。
@@ -359,11 +358,11 @@ generate_speech(request) -> MediaResult
 
 ### 镜头与资产
 
-- `GET/POST/PATCH /api/projects/{id}/shots`
-- `POST /api/projects/{id}/shots/{shot_id}/generate-image`
-- `POST /api/projects/{id}/shots/{shot_id}/generate-video`
-- `POST /api/projects/{id}/shots/{shot_id}/generate-audio`
-- `POST /api/projects/{id}/shots/{shot_id}/assets/{asset_id}/select`
+- `GET/PATCH /api/projects/{id}/scenes/{scene_id}`（扩展现有接口）
+- `POST /api/projects/{id}/scenes/{scene_id}/generate-image`
+- `POST /api/projects/{id}/scenes/{scene_id}/generate-video`
+- `POST /api/projects/{id}/scenes/{scene_id}/generate-audio`
+- `POST /api/projects/{id}/scenes/{scene_id}/assets/{asset_id}/select`
 
 ### 批量任务
 
@@ -385,7 +384,7 @@ WebSocket 继续使用项目频道，事件统一为：
 
 - `JOB_UPDATE`
 - `ASSET_UPDATE`
-- `SHOT_UPDATE`
+- `SCENE_UPDATE`
 - `PROJECT_UPDATE`
 
 ## 10. 前端实现映射
@@ -450,7 +449,7 @@ WebSocket 继续使用项目频道，事件统一为：
 
 ### 日志字段
 
-- `job_id`, `project_id`, `shot_id`, `user_id`。
+- `job_id`, `project_id`, `scene_id`, `user_id`。
 - provider/model/config source。
 - attempt、耗时、供应商任务 ID、错误码。
 - 不记录 API key、完整私密剧本或上传文件正文。
@@ -524,3 +523,300 @@ WebSocket 继续使用项目频道，事件统一为：
 - 没有设计通用 DAG DSL、插件系统或多智能体团队。
 - 没有把所有供应商参数强行抽象成完全一致。
 - 没有实时核验易变化的价格、星数和 API 细节；这些属于开发启动前的短期核验任务。
+
+## 19. 需求编号与范围
+
+以下编号作为产品需求、代码提交、测试和验收的共同索引。
+
+| 编号 | 需求点 | 优先级 | MVP |
+|---|---|---:|---:|
+| DR-01 | 项目生产设置：模式、画幅、分辨率、帧率、语言、目标时长、全局风格 | P0 | 是 |
+| DR-02 | 剧本结构化：角色、地点、镜头、对白、旁白、情绪、建议时长 | P0 | 是 |
+| DR-03 | 角色/地点设定与参考图锁定 | P0 | 是 |
+| DR-04 | 镜头工作台：参数编辑、排序、状态、单镜头操作 | P0 | 是 |
+| DR-05 | 分镜图生成、候选版本和当前版本选择 | P0 | 是 |
+| DR-06 | 持久化任务：批量执行、进度、取消、失败重试、重启恢复、幂等 | P0 | 是 |
+| DR-07 | 真实 TTS、角色声音绑定、试听与字幕时间轴 | P0 | 是 |
+| DR-08 | 漫剧运镜、BGM/字幕合成、低清预览和 MP4/SRT 导出 | P0 | 是 |
+| DR-09 | 镜头图生视频/文生视频、候选版本和最终合成 | P1 | 第二阶段 |
+| DR-10 | 生成前成本估算、余额校验、项目实际用量汇总 | P0 | 是 |
+| DR-11 | 项目 AI 导演助理：改剧本、补提示、检查连续性和解释失败 | P1 | 部分复用 |
+| DR-12 | 安全与质量门禁：所有权、文件校验、内容拒绝、完整性和导出检查 | P0 | 是 |
+
+## 20. 需求到代码追踪矩阵
+
+| 需求 | 前端落点 | 后端落点 | 数据落点 | 验收结果 |
+|---|---|---|---|---|
+| DR-01 | 新建项目弹窗、生产设置、`types/project.ts` | 扩展项目 create/update 与校验 | `projects` 增量字段 | 刷新后设置保持，非法规格被拒绝 |
+| DR-02 | 剧本阶段和结构确认 | `POST /projects/{id}/structure`，复用 LLM 路由 | 角色、地点、扩展 `scenes` | 一次调用生成可编辑的结构化结果 |
+| DR-03 | 设定阶段、角色/地点卡 | 角色/地点 CRUD、参考图生成/上传 | `characters`、`locations`、`assets` | 镜头可引用锁定设定；换图后下游变 stale |
+| DR-04 | `SceneCard` 演进为镜头卡、详情抽屉 | 扩展 scene update/reorder | `scenes`、`scene_characters` | 镜头参数可编辑、持久化和排序 |
+| DR-05 | 生成、候选版本、成本和错误 | 单镜头/批量图片 job，复用图片模型 | `assets`、`generation_jobs` | 失败镜头可单独重试，成功镜头不重做 |
+| DR-06 | 任务条、失败筛选、取消/重试 | `job_service`、worker、jobs API、WebSocket | `generation_jobs` | 重启可恢复，重复点击不重复调用 |
+| DR-07 | 配音阶段、声音选择、播放器、字幕表格 | `audio` purpose、TTS service、字幕生成 | 音频 assets、`subtitle_cues` | 真实音频可试听，字幕时间合法 |
+| DR-08 | 时间轴、预览、质量检查、下载 | `compose_service` 调 FFmpeg | `timeline_items`、export asset | 输出有效 MP4、SRT 和封面 |
+| DR-09 | “升级为视频”、视频候选 | scene video job，复用 `video_service` | video assets、jobs | 指定镜头视频化并进入成片 |
+| DR-10 | 预计成本、项目用量分类 | estimate/usage-summary，复用 pricing/usage | 复用 `usage_logs` | 执行前显示估算，完成后显示实际成本 |
+| DR-11 | 项目内 AI 助理 | 复用 chat agent，注入只读项目上下文 | 首版不增表 | 能引用设定，但不能自行触发高成本任务 |
+| DR-12 | 可读错误和导出阻断 | 所有权、媒体探测、错误分类、导出检查 | job/asset error 字段 | 缺素材、非法文件、余额不足不产生错误成片 |
+
+## 21. 前端开发方案
+
+### 21.1 路由与页面
+
+继续使用现有路由，不新增平行应用：
+
+- `/ai-script`：项目列表和新建入口。
+- `/projects/[projectId]`：生产工作台。
+
+项目页新增阶段导航。MVP 使用 `?stage=script|bible|storyboard|audio|timeline|export`，刷新可恢复阶段，不立即重构路由。
+
+### 21.2 组件拆分
+
+当前 `workbench-editor.tsx` 同时负责查询、mutation、WebSocket、布局和交互。DR-01 开发前先拆为：
+
+```text
+frontend/src/app/projects/[projectId]/_components/
+  workbench-editor.tsx          # 布局与阶段切换
+  use-project-workbench.ts      # query/mutation/WS 和事件分发
+  production-settings.tsx       # DR-01
+  script-stage.tsx              # DR-02
+  bible-stage.tsx               # DR-03
+  storyboard-stage.tsx          # DR-04/05
+  shot-card.tsx                 # 由 scene-card 演进
+  asset-version-picker.tsx      # DR-05/09
+  job-status-bar.tsx            # DR-06/10
+  audio-stage.tsx               # DR-07
+  timeline-stage.tsx            # DR-08
+  export-stage.tsx              # DR-08/12
+```
+
+路由私有组件保持在 `_components`。只有出现两个真实消费者后才移动到全局 components。
+
+### 21.3 类型、Actions 与 Query
+
+- `frontend/src/types/project.ts`
+  - 增加 `ProductionSettings`、`Character`、`Location`、扩展 `Scene`、`Asset`、`GenerationJob`、`SubtitleCue`、`TimelineItem`。
+  - 新状态统一为 `draft/ready/queued/running/succeeded/failed/canceled/stale`；旧状态只在迁移 serializer 中兼容。
+- `frontend/src/actions/projects-actions.ts`
+  - 增加设定、结构化、角色/地点、镜头资产、job、估算和导出 actions。
+- `frontend/src/actions/query-keys.ts`
+  - 增加 `project(id)`、`characters(id)`、`locations(id)`、`jobs(id)`、`usageSummary(id)`。
+
+继续沿用当前 action → BFF → FastAPI 访问路径，不为每个接口手写重复代理。
+
+### 21.4 状态职责
+
+- React Query：项目详情、角色、地点、资产、job 和用量的事实来源。
+- Zustand：`selectedProjectId`、当前阶段、少量临时实时状态。
+- WebSocket 事件更新对应 Query Cache；不再把全部资产版本复制到 Zustand。
+- 表单编辑使用组件本地 state，保存成功后更新 Query Cache。
+
+### 21.5 关键交互
+
+- 批量生成前展示镜头数、模型、预计成本、缺失设定和确认按钮。
+- 每个镜头分别显示图片、音频和视频状态，只重试失败资产。
+- 选择已有候选版本不产生新模型调用。
+- 更换锁定参考图时提示受影响镜头数，只标记 stale。
+- 导出前展示质量检查，阻断缺图、缺音频、失败 job 和字幕越界。
+
+### 21.6 前端检查
+
+- `pnpm lint`
+- `pnpm exec tsc --noEmit`
+- 新增一个 Node 自检覆盖 job/asset WebSocket reducer：乱序、重复、失败重试、取消和 stale。
+- 手工检查窄屏、空项目、部分失败、余额不足和任务恢复。
+
+## 22. 后端开发方案
+
+### 22.1 数据库与迁移
+
+修改 `backend/app/core/database.py`，沿用当前启动迁移方式：
+
+1. 先完成当前统一 `model_configs` 迁移。
+2. 对 `projects`、`scenes` 使用增量字段，保留已有项目。
+3. 新建 `characters`、`locations`、`scene_characters`、`assets`、`subtitle_cues`、`timeline_items`、`generation_jobs`。
+4. 为 `project_id`、`scene_id`、`status`、`lease_expires_at` 和资产版本查询建立索引。
+5. 旧 scene 图片/音频 URL 先由 serializer 兼容读取，不一次性移动历史文件。
+
+### 22.2 模型配置与 TTS
+
+基于正在统一的 `model_configs`：
+
+- `config_service.py` 增加 `audio` purpose。
+- 第一版只允许实际接入的一个 TTS provider，不预列未实现供应商。
+- `usage_service.py` 支持 `unit_name=character|second` 和项目用量汇总。
+- 管理端与用户设置增加音频用途，复用现有官方/个人配置 UI。
+- `test_config_service.py` 覆盖 audio provider、个人/官方切换和价格字段。
+
+不增加独立语音配置表；角色通过 `voice_config_id` 引用统一模型配置。
+
+### 22.3 服务边界
+
+保留并修改：
+
+- `project_service.py`：生产设置、角色/地点/镜头所有权和业务校验。
+- `generation_service.py`：只把业务动作转成 job；删除模拟音频和模拟项目视频。
+- `video_service.py`：继续负责真实供应商调用，不重写。
+- `usage_service.py`：成本估算、项目汇总和余额边界。
+
+只新增三个服务：
+
+- `job_service.py`：入队、领取、租约、心跳、重试、取消和状态更新。
+- `audio_service.py`：TTS 调用与音频持久化。
+- `compose_service.py`：FFmpeg 参数、媒体探测、预览和导出。
+
+不新增通用 workflow、plugin、repository 或 provider factory 层。
+
+### 22.4 Worker
+
+新增 `backend/worker.py`：
+
+```bash
+cd backend
+.venv/bin/python worker.py
+```
+
+- LLM、TTS、视频使用低并发。
+- 图片沿用当前并发上限 3。
+- FFmpeg 合成默认单并发。
+- SQLite 领取使用短事务，供应商调用期间不持有数据库锁。
+- 按 `job_type` 直接分派处理器，不创建 DAG DSL。
+
+### 22.5 API、Serializer 与实时事件
+
+- `backend/app/api/v1/projects.py`：生产设置、结构化、角色/地点、scene 资产、批量 job、估算和汇总。
+- 可新增 `backend/app/api/v1/jobs.py`：job 查询、retry、cancel；不承载项目业务。
+- `backend/app/schemas/serializers.py`：项目详情返回设置、扩展 scene、选中资产和轻量状态；候选版本用独立接口，避免列表膨胀。
+- `backend/app/core/realtime.py`：继续项目频道，统一 `JOB_UPDATE/ASSET_UPDATE/SCENE_UPDATE/PROJECT_UPDATE`。
+
+项目列表只返回封面、计数、阶段和汇总状态，不返回全部资产版本。
+
+### 22.6 文件与 FFmpeg
+
+```text
+generated/projects/{project_id}/
+  references/
+  storyboards/{scene_id}/
+  videos/{scene_id}/
+  audio/{scene_id}/
+  subtitles/
+  previews/
+  exports/
+```
+
+- 路径由服务端使用 project/scene/asset ID 生成。
+- FFmpeg 使用 `asyncio.create_subprocess_exec` 参数数组，不拼 shell。
+- 完成后通过 ffprobe 校验时长、视频轨和音频轨。
+- 失败只返回日志摘要，不返回完整命令、密钥或私密路径。
+
+### 22.7 后端测试
+
+新增：
+
+- `tests/test_project_production.py`：设置、角色、地点、镜头字段和所有权。
+- `tests/test_job_service.py`：入队、幂等、领取、租约恢复、取消和重试。
+- `tests/test_audio_service.py`：TTS mock、落盘和用量。
+- `tests/test_compose_service.py`：极短素材合成与 ffprobe 校验。
+
+扩展 `test_database.py`、`test_images.py`、`test_video_service.py`、`test_usage_service.py` 和 `tests/run_all.py`。
+
+## 23. 分阶段开发任务
+
+### Stage 0：稳定当前模型配置改造
+
+对应基础依赖。完成统一 `model_configs` 迁移，确保 chat/image/video/usage、个人/官方配置和旧数据库全部正常。
+
+完成标准：现有后端全测、前端 lint/type-check 通过；旧数据库可启动。
+
+### Stage 1：项目生产基础与持久化 Job
+
+对应 DR-01、DR-06、DR-10、DR-12。
+
+- 后端：项目字段、assets/jobs 表、job service/worker、估算接口、统一事件。
+- 前端：拆 `use-project-workbench`、生产设置、job 状态条、WebSocket reducer。
+
+完成标准：测试 job 可入队；worker 重启后继续；页面收到正确进度。
+
+### Stage 2：剧本、设定与分镜图
+
+对应 DR-02、DR-03、DR-04、DR-05。
+
+- 后端：结构化输出、角色/地点 CRUD、scene 扩展、参考图和分镜图片 job。
+- 前端：剧本、设定、分镜阶段；镜头卡和资产版本选择。
+
+完成标准：剧本生成可编辑角色/地点/镜头；锁定参考图后批量出图；失败镜头单独重试。
+
+### Stage 3：真实配音与字幕
+
+对应 DR-07、DR-10。
+
+- 后端：audio purpose、首个 TTS provider、字幕 cue 和音频用量。
+- 前端：声音绑定、批量配音、试听和字幕校正。
+
+完成标准：生成真实音频；刷新不丢；字幕无负时长和重叠错误。
+
+### Stage 4：漫剧预览与导出
+
+对应 DR-08、DR-12。
+
+- 后端：timeline、FFmpeg 运镜、混音、字幕、预览/导出和质量检查。
+- 前端：限定时间轴、预览、质量清单和下载。
+
+完成标准：导出 9:16 H.264/AAC MP4、SRT 和封面；导出 job 可安全重试。
+
+### Stage 5：镜头视频化
+
+对应 DR-09。
+
+- 后端：选中分镜图交给现有 `video_service`，生成 scene video asset 并进入同一合成链路。
+- 前端：升级为视频、视频候选、草稿/高清选择。
+
+完成标准：只升级指定镜头；未升级镜头继续使用漫剧运镜；混合成片正常导出。
+
+### Stage 6：AI 导演助理与高级一致性
+
+对应 DR-11 和 P1/P2。
+
+- 给现有 chat agent 注入只读项目上下文。
+- 只提供建议或预览参数；高成本调用仍需用户确认。
+- 供应商参考图实测不足后再评估 ComfyUI/StoryDiffusion。
+
+## 24. 联调与最终完成标准
+
+每个 Stage 按以下顺序形成纵向切片：
+
+1. 数据库迁移与 serializer。
+2. 后端 service 自检。
+3. API、权限和余额检查。
+4. 前端 types/actions/query。
+5. 页面和 mutation。
+6. WebSocket 增量状态。
+7. 失败、取消和重启恢复。
+8. 后端全测、前端 lint/type-check、状态 reducer 自检和 `git diff --check`。
+
+MVP 最终 Definition of Done：
+
+- 现有用户、项目和模型配置迁移后数据不丢。
+- 用户可保存生产设置，并从剧本生成角色、地点和可编辑镜头。
+- 参考图可上传或生成、锁定并用于分镜。
+- 分镜图支持批量、候选版本、选择和单镜头重试。
+- 真实 TTS、试听和可编辑字幕可用。
+- 所有长任务支持进度、取消、重试和重启恢复。
+- 可导出包含画面、语音、字幕和可选 BGM 的有效 MP4/SRT。
+- 生成前显示估算，完成后显示项目实际成本。
+- 官方模型余额不足不会发起调用；个人配置继续记录用量。
+- 所有资源校验所有权，FFmpeg 不接受拼接 shell 输入。
+
+## 25. 当前代码到目标代码的差异
+
+| 当前代码 | 开发后 |
+|---|---|
+| `scenes` 只有旁白、提示词、单图/模拟音频 | `scenes` 作为完整镜头，引用角色/地点并选择图片、音频、视频版本 |
+| 项目图片真实，音频/成片模拟 | 图片、TTS、镜头视频和 FFmpeg 成片均为真实链路 |
+| `asyncio.create_task` 内存任务 | SQLite 持久化 job + worker 租约恢复 |
+| WebSocket 逻辑集中在巨大页面 | 项目控制器 hook + 统一 job/asset 事件 |
+| Zustand 保存完整项目副本 | React Query 为事实源，Zustand 只保留选择和临时状态 |
+| 独立视频页与项目链路分离 | 项目镜头直接复用 `video_service` |
+| 模型 purpose 无 audio | 统一 `model_configs` 增加 audio 并复用计费/官方/个人配置 |
+| 无最终媒体合成 | FFmpeg 生成预览、MP4、SRT 和封面 |

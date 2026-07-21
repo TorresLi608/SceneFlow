@@ -29,6 +29,8 @@ def test_invitation_code_is_required_and_consumed() -> None:
 
             assert listed[0]["status"] == "used"
             assert listed[0]["usedBy"]["username"] == "alice"
+            assert listed[0]["usedAt"] is not None
+            assert listed[0]["createdBy"]["username"] == "superAdmin"
             assert result["pagination"]["total"] == 1
         finally:
             database.DB_PATH = original_path
