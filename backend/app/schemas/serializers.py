@@ -58,13 +58,19 @@ def official_config_json(config: sqlite3.Row, is_active: bool | None = None) -> 
 
 
 def scene_json(scene: sqlite3.Row) -> dict[str, Any]:
+    keys = scene.keys()
     return {
         "id": scene["id"],
         "order": scene["order_num"],
         "narration": scene["narration"],
         "visualPrompt": scene["visual_prompt"],
         "image": {"url": scene["image_url"] or None, "status": scene["image_status"], "progress": 0},
-        "audio": {"url": scene["audio_url"] or None, "status": scene["audio_status"], "progress": 0, "duration": 0},
+        "audio": {
+            "url": scene["audio_url"] or None,
+            "status": scene["audio_status"],
+            "progress": 0,
+            "duration": (scene["audio_duration"] if "audio_duration" in keys else 0) or 0,
+        },
     }
 
 

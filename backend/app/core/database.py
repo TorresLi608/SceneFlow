@@ -150,6 +150,7 @@ def init_db() -> None:
                 image_status text DEFAULT "idle",
                 audio_url text,
                 audio_status text DEFAULT "idle",
+                audio_duration real NOT NULL DEFAULT 0,
                 FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_scenes_project_id ON scenes(project_id);
@@ -292,6 +293,9 @@ def init_db() -> None:
         ):
             if name not in project_columns:
                 conn.execute(f"ALTER TABLE projects ADD COLUMN {name} {definition}")
+        scene_columns = {item["name"] for item in conn.execute("PRAGMA table_info(scenes)").fetchall()}
+        if "audio_duration" not in scene_columns:
+            conn.execute("ALTER TABLE scenes ADD COLUMN audio_duration real NOT NULL DEFAULT 0")
         conn.execute("DROP INDEX IF EXISTS idx_generation_jobs_idempotency")
         conn.execute(
             "CREATE UNIQUE INDEX idx_generation_jobs_idempotency ON generation_jobs(user_id, project_id, idempotency_key) WHERE idempotency_key IS NOT NULL"
