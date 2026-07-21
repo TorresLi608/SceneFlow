@@ -8,6 +8,7 @@ from app.core.database import db, row, rows
 from app.api.deps import current_user_id
 from app.schemas.serializers import config_json, official_config_json
 from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
+from app.services.usage_service import normalize_pricing, pricing_updates
 from app.utils.common import now
 
 
@@ -83,6 +84,10 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
         normalized["base_url"],
     )
     fields = config_create_fields(payload, normalized, 1)
+    try:
+        pricing = normalize_pricing(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     stamp = now()
     with db() as conn:
         if bool(payload.get("isActive")):
@@ -90,8 +95,10 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
             conn.execute("DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?", (user_id, fields["purpose"]))
         cur = conn.execute(
             """INSERT INTO user_configs
-            (created_at, updated_at, user_id, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (created_at, updated_at, user_id, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
+             pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
+             cache_write_price_per_million, unit_price, unit_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 stamp,
                 stamp,
@@ -105,6 +112,13 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
                 fields["encrypted_key"],
                 fields["is_active"],
                 fields["is_enabled"],
+                pricing["pricing_multiplier"],
+                pricing["input_price_per_million"],
+                pricing["output_price_per_million"],
+                pricing["cache_read_price_per_million"],
+                pricing["cache_write_price_per_million"],
+                pricing["unit_price"],
+                pricing["unit_name"],
             ),
         )
         config = row(conn, "SELECT * FROM user_configs WHERE id=?", (cur.lastrowid,))
@@ -128,6 +142,12 @@ async def update_config(config_id: int, payload: dict[str, Any], user_id: int = 
             normalized["base_url"],
         )
     updates = config_update_fields(payload, config, normalized)
+    try:
+        updates.update(pricing_updates(payload, config))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not updates:
+        raise HTTPException(400, "no fields to update")
 
     stamp = now()
     with db() as conn:

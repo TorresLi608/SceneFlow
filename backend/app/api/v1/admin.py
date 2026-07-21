@@ -406,6 +406,8 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
         updates.update(pricing_updates(payload, config))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    if not updates:
+        raise HTTPException(400, "no fields to update")
 
     stamp = now()
     with db() as conn:

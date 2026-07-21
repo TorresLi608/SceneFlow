@@ -140,8 +140,6 @@ def config_update_fields(payload: dict[str, Any], current: sqlite3.Row, normaliz
         updates["is_enabled"] = 1 if payload["isEnabled"] else 0
         if not payload["isEnabled"]:
             updates["is_active"] = 0
-    if not updates:
-        raise HTTPException(400, "no fields to update")
     return updates
 
 

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
 import sqlite3
+import tempfile
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
-from app.core.database import row
+from app.api.v1.settings import create_config, update_config
+from app.core import database
+from app.core.database import db, init_db, row
 from app.core.security import encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
 from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload
@@ -123,6 +129,40 @@ def test_gemini_image_helpers() -> None:
     assert _openai_image_quality("2K") == "medium"
 
 
+def test_user_config_pricing_round_trip() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original_path = database.DB_PATH
+        database.DB_PATH = str(Path(directory) / "config.db")
+        try:
+            init_db()
+            with db() as conn:
+                user_id = conn.execute(
+                    "INSERT INTO users (username, password, role, is_disabled) VALUES ('pricing-user', 'x', 'user', 0)"
+                ).lastrowid
+            with patch("app.api.v1.settings.validate_provider", new=AsyncMock()):
+                created = asyncio.run(
+                    create_config(
+                        {
+                            "purpose": "image",
+                            "provider": "openai",
+                            "modelSeries": "gpt-image-1",
+                            "apiKey": "new-secret-key",
+                            "isActive": False,
+                            "pricingMultiplier": 1.5,
+                            "unitPrice": 0.1,
+                            "unitName": "image",
+                        },
+                        int(user_id),
+                    )
+                )["config"]
+                updated = asyncio.run(update_config(created["id"], {"unitPrice": 0.25}, int(user_id)))["config"]
+            assert created["pricingMultiplier"] == 1.5
+            assert created["unitName"] == "image"
+            assert updated["unitPrice"] == 0.25
+        finally:
+            database.DB_PATH = original_path
+
+
 if __name__ == "__main__":
     test_config_create_fields_rejects_disabled_default()
     test_config_update_fields_disables_active_config()
@@ -130,3 +170,4 @@ if __name__ == "__main__":
     test_image_gemini_config_is_valid()
     test_video_gemini_config_is_valid()
     test_gemini_image_helpers()
+    test_user_config_pricing_round_trip()

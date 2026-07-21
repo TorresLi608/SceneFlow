@@ -5,7 +5,7 @@ import tempfile
 import time
 
 from app.core import database
-from app.core.database import db, init_db
+from app.core.database import db, init_db, row
 from app.services.usage_service import calculate_cost_micros, record_usage, require_model_balance, usage_logs
 from app.utils.common import now
 
@@ -21,6 +21,7 @@ def test_cost_calculation() -> None:
     }
     usage = {"inputTokens": 1000, "outputTokens": 500, "cacheReadTokens": 200, "cacheWriteTokens": 100}
     assert calculate_cost_micros(pricing, usage) == 8850
+    assert calculate_cost_micros({"pricing_multiplier": 1, "unit_price": 0.2}, {}, quantity=3) == 600000
 
 
 def test_official_and_user_logs() -> None:
@@ -32,10 +33,10 @@ def test_official_and_user_logs() -> None:
             stamp = now()
             with db() as conn:
                 user_id = conn.execute(
-                    "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled) VALUES (?, ?, 'usage-user', 'x', 'user', 0)",
+                    "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled, balance_micros) VALUES (?, ?, 'usage-user', 'x', 'user', 0, 20000)",
                     (stamp, stamp),
                 ).lastrowid
-                config_id = conn.execute(
+                official_config_id = conn.execute(
                     """INSERT INTO official_model_configs
                     (created_at, updated_at, provider, encrypted_key, purpose, model_name, pricing_multiplier,
                      input_price_per_million, output_price_per_million, cache_read_price_per_million,
@@ -43,17 +44,25 @@ def test_official_and_user_logs() -> None:
                     VALUES (?, ?, 'openai', 'x', 'script', 'gpt-test', 5, 1, 2, 0.1, 0.5, 0, 'token')""",
                     (stamp, stamp),
                 ).lastrowid
+                user_config_id = conn.execute(
+                    """INSERT INTO user_configs
+                    (created_at, updated_at, user_id, provider, encrypted_key, purpose, model_name, pricing_multiplier,
+                     input_price_per_million, output_price_per_million, cache_read_price_per_million,
+                     cache_write_price_per_million, unit_price, unit_name)
+                    VALUES (?, ?, ?, 'openai', 'x', 'script', 'gpt-user', 5, 1, 2, 0.1, 0.5, 0, 'token')""",
+                    (stamp, stamp, user_id),
+                ).lastrowid
             usage = {"inputTokens": 1000, "outputTokens": 500, "cacheReadTokens": 200, "cacheWriteTokens": 100}
             record_usage(
                 int(user_id),
-                {"source": "official", "officialConfigId": config_id, "provider": "openai", "model": "gpt-test"},
+                {"source": "official", "officialConfigId": official_config_id, "provider": "openai", "model": "gpt-test"},
                 "chat",
                 time.monotonic(),
                 usage,
             )
             record_usage(
                 int(user_id),
-                {"source": "user", "configId": 9, "provider": "openai", "model": "gpt-user"},
+                {"source": "user", "configId": user_config_id, "provider": "openai", "model": "gpt-user"},
                 "chat",
                 time.monotonic(),
                 usage,
@@ -63,13 +72,15 @@ def test_official_and_user_logs() -> None:
                 official_only = usage_logs(conn, int(user_id), source="official")
                 user_only = usage_logs(conn, int(user_id), source="user")
             assert result["summary"]["calls"] == 2
-            assert result["summary"]["costMicros"] == 8850
-            assert result["logs"][0]["costMicros"] == 0
-            assert result["logs"][1]["costMicros"] == 8850
+            assert result["summary"]["costMicros"] == 17700
+            assert official_only["summary"]["costMicros"] == 8850
+            assert user_only["summary"]["costMicros"] == 8850
             assert official_only["summary"]["calls"] == 1
             assert user_only["summary"]["calls"] == 1
 
             with db() as conn:
+                assert row(conn, "SELECT balance_micros FROM users WHERE id=?", (user_id,))["balance_micros"] == 11150
+                conn.execute("UPDATE users SET balance_micros=0 WHERE id=?", (user_id,))
                 try:
                     require_model_balance(conn, int(user_id), {"source": "official"})
                     raise AssertionError("zero-balance ordinary users must be blocked from official configs")

@@ -123,12 +123,13 @@ def record_usage(
     source = str(config.get("source") or ("official" if config.get("officialConfigId") else "user"))
     config_id = config.get("officialConfigId") if source == "official" else config.get("configId")
     pricing = normalize_pricing({})
-    if source == "official" and config_id:
+    if config_id:
+        table = "official_model_configs" if source == "official" else "user_configs"
         with db() as conn:
-            official = row(conn, "SELECT * FROM official_model_configs WHERE id=?", (int(config_id),))
-        if official:
-            pricing = normalize_pricing({}, official)
-    cost_micros = calculate_cost_micros(pricing, token_usage, quantity) if source == "official" else 0
+            stored_config = row(conn, f"SELECT * FROM {table} WHERE id=?", (int(config_id),))
+        if stored_config:
+            pricing = normalize_pricing({}, stored_config)
+    cost_micros = calculate_cost_micros(pricing, token_usage, quantity)
     with db() as conn:
         conn.execute(
             """INSERT INTO usage_logs
@@ -162,7 +163,7 @@ def record_usage(
                 pricing["unit_name"],
             ),
         )
-        if cost_micros:
+        if source == "official" and cost_micros:
             conn.execute(
                 "UPDATE users SET balance_micros=MAX(0, balance_micros-?), updated_at=? WHERE id=?",
                 (cost_micros, now(), user_id),

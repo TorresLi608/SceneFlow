@@ -47,7 +47,7 @@ import {
   providerOptions,
 } from "@/lib/model-providers";
 import { useUserStore } from "@/store/user-store";
-import type { ConfigPurpose, PricingUnit, UserConfig } from "@/types/auth";
+import type { ConfigPurpose, UserConfig } from "@/types/auth";
 
 const pageSize = 10;
 const emptyConfigs: UserConfig[] = [];
@@ -75,7 +75,7 @@ function isDefaultConfig(config: UserConfig, activeUserByPurpose: Partial<Record
   return !activeUserByPurpose[config.purpose] && config.isActive;
 }
 
-function defaultPricingUnit(purpose: ConfigPurpose): PricingUnit {
+function defaultPricingUnit(purpose: ConfigPurpose): UserConfig["unitName"] {
   if (purpose === "image") return "image";
   if (purpose === "video") return "second";
   return "token";
@@ -118,7 +118,6 @@ export function ModelConfigManager() {
   const [cacheReadPricePerMillion, setCacheReadPricePerMillion] = useState(0);
   const [cacheWritePricePerMillion, setCacheWritePricePerMillion] = useState(0);
   const [unitPrice, setUnitPrice] = useState(0);
-  const [unitName, setUnitName] = useState<PricingUnit>("token");
   const purposeLabel: Record<ConfigPurpose, string> = {
     general: t("settings.generalPurpose"),
     script: t("settings.scriptPurpose"),
@@ -215,7 +214,6 @@ export function ModelConfigManager() {
     setCacheReadPricePerMillion(0);
     setCacheWritePricePerMillion(0);
     setUnitPrice(0);
-    setUnitName("token");
   };
 
   const openCreate = () => {
@@ -243,7 +241,6 @@ export function ModelConfigManager() {
     setCacheReadPricePerMillion(config.cacheReadPricePerMillion);
     setCacheWritePricePerMillion(config.cacheWritePricePerMillion);
     setUnitPrice(config.unitPrice);
-    setUnitName(config.unitName);
     setFormOpen(true);
   };
 
@@ -257,7 +254,7 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
     setModelSeries(option.modelSeries);
-    setUnitName(defaultPricingUnit(value));
+    setUnitPrice(0);
   };
 
   const onProviderChange = (nextProvider: string | null) => {
@@ -312,17 +309,13 @@ export function ModelConfigManager() {
         apiKey: apiKey.trim() || undefined,
         isActive: isDefault,
         isEnabled,
-        ...((saveAsOfficial || editingConfig?.source === "official")
-          ? {
-              pricingMultiplier,
-              inputPricePerMillion,
-              outputPricePerMillion,
-              cacheReadPricePerMillion,
-              cacheWritePricePerMillion,
-              unitPrice,
-              unitName,
-            }
-          : {}),
+        pricingMultiplier,
+        inputPricePerMillion,
+        outputPricePerMillion,
+        cacheReadPricePerMillion,
+        cacheWritePricePerMillion,
+        unitPrice: purpose === "image" || purpose === "video" ? unitPrice : 0,
+        unitName: defaultPricingUnit(purpose),
       };
 
       if (editingConfig) {
@@ -707,33 +700,30 @@ export function ModelConfigManager() {
               <Textarea id="adminConfigDescription" value={description} onChange={(event) => setDescription(event.target.value)} />
             </div>
 
-            {isOfficial ? (
-              <div className="space-y-3 border-t border-border/70 pt-4">
-                <div>
-                  <p className="text-sm font-medium">{t("admin.pricingTitle")}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{t("admin.pricingHint")}</p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <PricingInput id="pricingMultiplier" label={t("admin.pricingMultiplier")} value={pricingMultiplier} onChange={setPricingMultiplier} />
-                  <div className="space-y-2">
-                    <Label htmlFor="pricingUnitName">{t("admin.pricingUnit")}</Label>
-                    <Select value={unitName} onValueChange={(value) => setUnitName((value ?? "token") as PricingUnit)}>
-                      <SelectTrigger id="pricingUnitName"><SelectValue>{t(`usage.unit.${unitName}`)}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        {(["token", "request", "image", "second"] as PricingUnit[]).map((value) => (
-                          <SelectItem key={value} value={value}>{t(`usage.unit.${value}`)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <PricingInput id="inputPrice" label={t("admin.inputPrice")} value={inputPricePerMillion} onChange={setInputPricePerMillion} />
-                  <PricingInput id="outputPrice" label={t("admin.outputPrice")} value={outputPricePerMillion} onChange={setOutputPricePerMillion} />
-                  <PricingInput id="cacheReadPrice" label={t("admin.cacheReadPrice")} value={cacheReadPricePerMillion} onChange={setCacheReadPricePerMillion} />
-                  <PricingInput id="cacheWritePrice" label={t("admin.cacheWritePrice")} value={cacheWritePricePerMillion} onChange={setCacheWritePricePerMillion} />
-                  <PricingInput id="unitPrice" label={t("admin.unitPrice")} value={unitPrice} onChange={setUnitPrice} />
-                </div>
+            <div className="space-y-3 border-t border-border/70 pt-4">
+              <div>
+                <p className="text-sm font-medium">{t("admin.pricingTitle")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("admin.pricingHint")}</p>
               </div>
-            ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PricingInput id="pricingMultiplier" label={t("admin.pricingMultiplier")} value={pricingMultiplier} onChange={setPricingMultiplier} />
+                {purpose === "image" || purpose === "video" ? (
+                  <PricingInput
+                    id="unitPrice"
+                    label={t(purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}
+                    value={unitPrice}
+                    onChange={setUnitPrice}
+                  />
+                ) : (
+                  <>
+                    <PricingInput id="inputPrice" label={t("admin.inputPrice")} value={inputPricePerMillion} onChange={setInputPricePerMillion} />
+                    <PricingInput id="outputPrice" label={t("admin.outputPrice")} value={outputPricePerMillion} onChange={setOutputPricePerMillion} />
+                    <PricingInput id="cacheReadPrice" label={t("admin.cacheReadPrice")} value={cacheReadPricePerMillion} onChange={setCacheReadPricePerMillion} />
+                    <PricingInput id="cacheWritePrice" label={t("admin.cacheWritePrice")} value={cacheWritePricePerMillion} onChange={setCacheWritePricePerMillion} />
+                  </>
+                )}
+              </div>
+            </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
@@ -773,9 +763,11 @@ export function ModelConfigManager() {
               <p>{t("admin.tableModel")}: {viewingConfig.modelSeries}</p>
               <p className="break-all">Base URL：{viewingConfig.baseUrl || "-"}</p>
               <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")} / {viewingConfig.isVerified ? t("settings.verified") : t("settings.unverified")}</p>
-              {viewingConfig.source === "official" ? (
-                <p>{t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {t("admin.inputPrice")}: ${viewingConfig.inputPricePerMillion} · {t("admin.outputPrice")}: ${viewingConfig.outputPricePerMillion}</p>
-              ) : null}
+              <p>
+                {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {viewingConfig.purpose === "image" || viewingConfig.purpose === "video"
+                  ? `${t(viewingConfig.purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}: $${viewingConfig.unitPrice}`
+                  : `${t("admin.inputPrice")}: $${viewingConfig.inputPricePerMillion} · ${t("admin.outputPrice")}: $${viewingConfig.outputPricePerMillion}`}
+              </p>
             </div>
           ) : null}
         </DialogContent>

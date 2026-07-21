@@ -83,6 +83,13 @@ def init_db() -> None:
                 name text,
                 description text,
                 base_url text,
+                pricing_multiplier real DEFAULT 1,
+                input_price_per_million real DEFAULT 0,
+                output_price_per_million real DEFAULT 0,
+                cache_read_price_per_million real DEFAULT 0,
+                cache_write_price_per_million real DEFAULT 0,
+                unit_price real DEFAULT 0,
+                unit_name text DEFAULT "token",
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_user_configs_user_id ON user_configs(user_id);
@@ -236,6 +243,17 @@ def init_db() -> None:
             conn.execute("ALTER TABLE user_configs ADD COLUMN base_url text")
         if "is_enabled" not in user_config_columns:
             conn.execute("ALTER TABLE user_configs ADD COLUMN is_enabled numeric DEFAULT true")
+        for name, definition in (
+            ("pricing_multiplier", "real DEFAULT 1"),
+            ("input_price_per_million", "real DEFAULT 0"),
+            ("output_price_per_million", "real DEFAULT 0"),
+            ("cache_read_price_per_million", "real DEFAULT 0"),
+            ("cache_write_price_per_million", "real DEFAULT 0"),
+            ("unit_price", "real DEFAULT 0"),
+            ("unit_name", 'text DEFAULT "token"'),
+        ):
+            if name not in user_config_columns:
+                conn.execute(f"ALTER TABLE user_configs ADD COLUMN {name} {definition}")
         official_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(official_model_configs)").fetchall()}
         if "base_url" not in official_config_columns:
             conn.execute("ALTER TABLE official_model_configs ADD COLUMN base_url text")
