@@ -70,7 +70,7 @@ LangGraph 已随当前 LangChain 依赖安装，但不作为媒体生产总编�
 
 | 位置 | 当前行为 | 对短剧的影响 |
 |---|---|---|
-| `generation_service.run_generation` | 场景图真实生成，音频为模拟 URL | 无法真实配音和合成 |
+| `generation_service.run_generation` | 场景图和 TTS 已真实生成，但仍由 API 进程内任务执行 | 服务重启会中断生成，尚未统一由 worker 恢复 |
 | `run_video_generation` | 模拟进度和 `example.com` 视频 | 项目无法产出真实成片 |
 | `asyncio.create_task` | 任务只在当前进程内存中 | 重启丢任务，无法可靠重试 |
 | `projects/scenes` schema | 只有剧本、旁白、提示词、单图/单音频 | 无角色、镜头、版本、字幕和时间轴 |

@@ -643,3 +643,20 @@
 | 2026-07-21 | 保存完整图片模型参数返回 500 | 1 | 将无条件供应商验证改为按连接字段变化触发。 |
 | 2026-07-21 | 旧后端进程未加载修复代码 | 1 | 记录 PID 和手动重启命令，等待用户在运行终端重启。 |
 | 2026-07-21 | sandbox 拒绝终止 PID，审批服务返回 404 | 1 | 保持安全边界，不尝试绕过权限。 |
+
+## Session: 2026-07-21 — AI 短剧编排与代码审查文档
+
+- **Status:** complete
+- Actions taken:
+  - 使用 `planning-with-files` 复核计划、发现、进度和主技术方案。
+  - 核实 LangGraph 1.2.7 已由 LangChain 安装，无需新增依赖。
+  - 明确 LangGraph 与 generation jobs/worker 的职责边界。
+  - 记录人工中断、服务恢复、幂等、租约和版本化回滚流程。
+  - 记录本轮前后端代码审查修复项及后续开发顺序。
+  - 新增 `AI_SHORT_DRAMA_ORCHESTRATION.md`，并修正主技术方案的过时缺陷描述。
+- Files modified:
+  - `AI_SHORT_DRAMA_ORCHESTRATION.md`
+  - `AI_SHORT_DRAMA_TECHNICAL.md`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`

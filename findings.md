@@ -307,3 +307,11 @@
 - 当前监听 `8080` 的 PID `58712` 是修改前启动的旧后端进程，没有热加载到最新代码；继续向它发送 PATCH 仍会等待并最终在前端表现为 500。
 - 由于 sandbox 不允许终止该进程，且升级审批服务返回 404，不能由当前会话代为重启。
 - 需要在原后端终端按 `Ctrl+C`，然后执行 `npm run dev:backend`，再重新保存模型配置。
+
+## 2026-07-21 编排文档结论
+
+- 当前最合理的是 LangGraph + generation jobs/worker 混合架构，不使用单一工具强行覆盖全部流程。
+- LangGraph 第一条流程应只覆盖“剧本结构化 → 校验 → 人工确认 → 保存角色/地点/镜头”。
+- 图片、TTS、视频和 FFmpeg 通过数据库 job 执行；WebSocket 仅通知，不作为状态事实源。
+- 中断恢复依赖 checkpoint 和 job lease；业务回滚依赖资产版本指针与下游 stale 标记。
+- 已生成独立文档 `AI_SHORT_DRAMA_ORCHESTRATION.md`，作为后续 worker 和首个 LangGraph 实现依据。

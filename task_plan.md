@@ -324,6 +324,36 @@ Complete
 - `rg` scan for stale chat-scroll/ResizeObserver phrases in markdown
 - `git diff --check`
 
+## Session 2026-07-21: AI 短剧编排与代码审查文档
+
+### Goal
+
+生成可独立评审的编排架构文档，明确 LangGraph、持久化任务、worker、中断恢复和资产回滚边界。
+
+### Phases
+
+- [x] 复核当前前后端、TTS、generation jobs 和 LangChain/LangGraph 依赖。
+- [x] 汇总代码审查修复项与仍未完成范围。
+- [x] 生成 `AI_SHORT_DRAMA_ORCHESTRATION.md`。
+- [x] 修正主技术方案中的模拟音频过时描述。
+- [x] 更新 planning 文件并完成 Markdown 检查。
+- **Status:** complete
+
+### Decisions Made
+
+| Decision | Rationale |
+|---|---|
+| LangGraph 只负责 LLM 决策与人工确认 | checkpoint/interrupt 适合小型结构化状态，不适合媒体长任务。 |
+| 媒体任务继续使用 generation jobs + worker | 数据库租约、幂等和重试可避免重启丢任务与重复扣费。 |
+| 回滚使用版本指针与 stale 标记 | 已生成素材有成本，不应通过删除模拟事务回滚。 |
+| 音频时长复用 FFprobe | 避免手写媒体解析，也不引入许可证需额外评估的依赖。 |
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| 受限网络首次无法安装音频解析依赖 | 1 | 联网审批后核对许可证，最终不纳入项目并改用已有 FFprobe。 |
+
 ## Session 2026-07-21: AI 漫剧 / 短剧开发首个纵向切片
 
 ### Goal
