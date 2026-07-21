@@ -149,6 +149,11 @@ def record_usage(
                 pricing["unit_name"],
             ),
         )
+        if cost_micros:
+            conn.execute(
+                "UPDATE users SET balance_micros=MAX(0, balance_micros-?), updated_at=? WHERE id=?",
+                (cost_micros, now(), user_id),
+            )
 
 
 def usage_logs(conn: sqlite3.Connection, user_id: int, feature: str = "all", days: int = 30) -> dict[str, Any]:

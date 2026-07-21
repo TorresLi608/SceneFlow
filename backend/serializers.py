@@ -6,11 +6,17 @@ from typing import Any
 
 
 def user_json(user: sqlite3.Row) -> dict[str, Any]:
+    keys = user.keys()
     return {
         "id": user["id"],
         "username": user["username"],
         "role": user["role"] or "user",
         "isDisabled": bool(user["is_disabled"]),
+        "balanceMicros": user["balance_micros"] if "balance_micros" in keys else 0,
+        "level": user["level"] if "level" in keys else 1,
+        "group": user["user_group"] if "user_group" in keys else "default",
+        "historicalCostMicros": user["historical_cost_micros"] if "historical_cost_micros" in keys else 0,
+        "requestCount": user["request_count"] if "request_count" in keys else 0,
         "createdAt": user["created_at"],
         "updatedAt": user["updated_at"],
     }

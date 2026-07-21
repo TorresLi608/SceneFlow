@@ -38,7 +38,10 @@ def init_db() -> None:
                 username text NOT NULL UNIQUE,
                 password text NOT NULL,
                 role text DEFAULT "user",
-                is_disabled numeric DEFAULT false
+                is_disabled numeric DEFAULT false,
+                balance_micros integer NOT NULL DEFAULT 0,
+                level integer NOT NULL DEFAULT 1,
+                user_group text NOT NULL DEFAULT "default"
             );
             CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
             CREATE TABLE IF NOT EXISTS invitation_codes (
@@ -51,6 +54,19 @@ def init_db() -> None:
                 FOREIGN KEY(used_by_user_id) REFERENCES users(id) ON DELETE SET NULL
             );
             CREATE INDEX IF NOT EXISTS idx_invitation_codes_created_at ON invitation_codes(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_invitation_codes_used_by ON invitation_codes(used_by_user_id);
+            CREATE TABLE IF NOT EXISTS redemption_codes (
+                id integer PRIMARY KEY AUTOINCREMENT,
+                created_at datetime NOT NULL,
+                expires_at datetime NOT NULL,
+                code text NOT NULL UNIQUE,
+                amount_micros integer NOT NULL,
+                redeemed_at datetime,
+                redeemed_by_user_id integer,
+                FOREIGN KEY(redeemed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_redemption_codes_created_at ON redemption_codes(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_redemption_codes_redeemed_by ON redemption_codes(redeemed_by_user_id);
             CREATE TABLE IF NOT EXISTS user_configs (
                 id integer PRIMARY KEY AUTOINCREMENT,
                 created_at datetime,
@@ -209,6 +225,12 @@ def init_db() -> None:
             conn.execute('ALTER TABLE users ADD COLUMN role text DEFAULT "user"')
         if "is_disabled" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN is_disabled numeric DEFAULT false")
+        if "balance_micros" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN balance_micros integer NOT NULL DEFAULT 0")
+        if "level" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN level integer NOT NULL DEFAULT 1")
+        if "user_group" not in user_columns:
+            conn.execute('ALTER TABLE users ADD COLUMN user_group text NOT NULL DEFAULT "default"')
         user_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(user_configs)").fetchall()}
         if "base_url" not in user_config_columns:
             conn.execute("ALTER TABLE user_configs ADD COLUMN base_url text")

@@ -11,6 +11,7 @@ export interface AdminUserItemResponse {
 export interface CreateAdminUserInput {
   username: string;
   password: string;
+  level?: 1 | 2 | 3;
 }
 
 export interface ResetAdminUserPasswordResponse {
@@ -32,10 +33,40 @@ export interface InvitationCode {
 
 export interface InvitationCodeListResponse {
   invitationCodes: InvitationCode[];
+  pagination: Pagination;
 }
 
 export interface InvitationCodeItemResponse {
   invitationCode: InvitationCode;
+}
+
+export interface Pagination {
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+export type RedemptionCodeStatus = "unused" | "expired" | "redeemed";
+
+export interface RedemptionCode {
+  id: number;
+  code: string;
+  status: RedemptionCodeStatus;
+  amountMicros: number;
+  createdAt: string;
+  expiresAt: string;
+  redeemedAt: string | null;
+  redeemedBy: { id: number; username: string } | null;
+}
+
+export interface RedemptionCodeListResponse {
+  redemptionCodes: RedemptionCode[];
+  pagination: Pagination;
+}
+
+export interface RedemptionCodeItemResponse {
+  redemptionCode: RedemptionCode;
 }
 
 export interface AdminDefaultModelListResponse {

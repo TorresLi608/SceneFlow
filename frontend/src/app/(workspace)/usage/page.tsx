@@ -7,14 +7,11 @@ import { listUsageLogsAction } from "@/actions/usage-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
+import { formatMoney } from "@/lib/money";
 import { providerLabel } from "@/lib/model-providers";
 import type { UsageLogItem } from "@/types/usage";
 
 const featureValues = ["all", "chat", "image", "video", "agent_image", "script_parse", "script_optimize", "storyboard_image"];
-
-function money(micros: number) {
-  return `$${(micros / 1_000_000).toFixed(6)}`;
-}
 
 function number(value: number) {
   return new Intl.NumberFormat().format(value);
@@ -58,7 +55,7 @@ export default function UsagePage() {
       <div className="mt-5 grid divide-y rounded-lg border border-border/70 bg-muted/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <Summary label={t("usage.calls")} value={number(summary.calls)} />
         <Summary label={t("usage.totalTokens")} value={number(summary.inputTokens + summary.outputTokens)} />
-        <Summary label={t("usage.totalCost")} value={money(summary.costMicros)} />
+        <Summary label={t("usage.totalCost")} value={formatMoney(summary.costMicros, 6)} />
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-border/70">
@@ -112,7 +109,7 @@ function UsageRow({
       <td className="whitespace-nowrap px-3 py-3 tabular-nums">{(item.durationMs / 1000).toFixed(1)} s</td>
       <td className="px-3 py-3 text-right tabular-nums"><p>{number(item.inputTokens)}</p>{item.cacheReadTokens ? <p className="text-xs text-muted-foreground">{t("usage.cached", { value: number(item.cacheReadTokens) })}</p> : null}</td>
       <td className="px-3 py-3 text-right tabular-nums">{number(item.outputTokens)}</td>
-      <td className="px-3 py-3 text-right font-medium tabular-nums">{money(item.costMicros)}</td>
+      <td className="px-3 py-3 text-right font-medium tabular-nums">{formatMoney(item.costMicros, 6)}</td>
       <td className="px-3 py-3 text-xs text-muted-foreground">
         <details>
           <summary className="cursor-pointer text-foreground">{t("usage.viewDetails")}</summary>

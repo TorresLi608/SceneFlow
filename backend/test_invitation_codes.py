@@ -24,10 +24,12 @@ def test_invitation_code_is_required_and_consumed() -> None:
                 assert getattr(exc, "detail", None) == "invitation code required"
 
             register({"username": "alice", "password": "password", "invitationCode": invitation["code"]})
-            listed = list_invitation_codes(1)["invitationCodes"]
+            result = list_invitation_codes(1, status="used", search="ali", page=1, page_size=10)
+            listed = result["invitationCodes"]
 
             assert listed[0]["status"] == "used"
             assert listed[0]["usedBy"]["username"] == "alice"
+            assert result["pagination"]["total"] == 1
         finally:
             database.DB_PATH = original_path
 

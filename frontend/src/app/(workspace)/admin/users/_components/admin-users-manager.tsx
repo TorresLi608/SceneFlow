@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Plus, Trash2, X } from "lucide-react";
+import { KeyRound, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -13,12 +13,14 @@ import {
 } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import type { AuthUser } from "@/types/auth";
@@ -40,6 +42,7 @@ export function AdminUsersManager() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [resetResult, setResetResult] = useState<{ username: string; password: string } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "reset"; id: number; username: string } | null>(null);
 
   const usersQuery = useQuery({
     queryKey: queryKeys.adminUsers,
@@ -47,7 +50,7 @@ export function AdminUsersManager() {
   });
 
   const updateUserMutation = useMutation({
-    mutationFn: ({ id, isDisabled }: { id: number; isDisabled: boolean }) => updateAdminUserAction(id, { isDisabled }),
+    mutationFn: ({ id, payload }: { id: number; payload: { isDisabled?: boolean; level?: 1 | 2 | 3 } }) => updateAdminUserAction(id, payload),
     onSuccess: async () => {
       setMessage(t("admin.userStatusUpdated"));
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
@@ -92,23 +95,36 @@ export function AdminUsersManager() {
   const pageUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const isMutating = updateUserMutation.isPending || deleteUserMutation.isPending || resetPasswordMutation.isPending;
 
-  const deleteUser = (id: number, username: string) => {
-    if (window.confirm(t("admin.confirmDeleteUser", { username }))) deleteUserMutation.mutate(id);
-  };
-
-  const resetPassword = (id: number, username: string) => {
-    if (window.confirm(t("admin.confirmResetPassword", { username }))) resetPasswordMutation.mutate({ id, username });
-  };
+  const roleItems = useMemo(
+    () => [
+      { value: "all", label: t("admin.allRoles") },
+      { value: "user", label: t("admin.roleUser") },
+      { value: "superAdmin", label: t("admin.roleSuperAdmin") },
+    ],
+    [t]
+  );
+  const statusItems = useMemo(
+    () => [
+      { value: "all", label: t("admin.allStatuses") },
+      { value: "active", label: t("common.statusNormal") },
+      { value: "disabled", label: t("admin.userDisabled") },
+    ],
+    [t]
+  );
+  const levelItems = useMemo(
+    () => ([1, 2, 3] as const).map((level) => ({ value: String(level), label: t("admin.levelValue", { level }) })),
+    [t]
+  );
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">{t("admin.registeredUsers")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("admin.usersDescription")}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" />
+          <Plus data-icon="inline-start" />
           {t("admin.createUser")}
         </Button>
       </div>
@@ -123,6 +139,7 @@ export function AdminUsersManager() {
           placeholder={t("admin.searchUsers")}
         />
         <Select
+          items={roleItems}
           value={roleFilter}
           onValueChange={(value) => {
             setRoleFilter((value ?? "all") as UserRoleFilter);
@@ -139,12 +156,11 @@ export function AdminUsersManager() {
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t("admin.allRoles")}</SelectItem>
-            <SelectItem value="user">{t("admin.roleUser")}</SelectItem>
-            <SelectItem value="superAdmin">{t("admin.roleSuperAdmin")}</SelectItem>
+            <SelectGroup>{roleItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
           </SelectContent>
         </Select>
         <Select
+          items={statusItems}
           value={statusFilter}
           onValueChange={(value) => {
             setStatusFilter((value ?? "all") as UserStatusFilter);
@@ -161,62 +177,72 @@ export function AdminUsersManager() {
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t("admin.allStatuses")}</SelectItem>
-            <SelectItem value="active">{t("common.statusNormal")}</SelectItem>
-            <SelectItem value="disabled">{t("admin.userDisabled")}</SelectItem>
+            <SelectGroup>{statusItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border/70">
-        <table className="w-full min-w-[860px] text-sm">
-          <thead className="bg-muted/40 text-xs text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium">{t("settings.name")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.tableRole")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.status")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.tableCreatedAt")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.tableUpdatedAt")}</th>
-              <th className="px-3 py-2 text-center font-medium">{t("admin.tableActions")}</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="overflow-hidden rounded-lg border">
+        <Table className="min-w-[980px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("settings.name")}</TableHead>
+              <TableHead>{t("admin.tableRole")}</TableHead>
+              <TableHead>{t("admin.userLevel")}</TableHead>
+              <TableHead>{t("admin.status")}</TableHead>
+              <TableHead>{t("admin.tableCreatedAt")}</TableHead>
+              <TableHead>{t("admin.tableUpdatedAt")}</TableHead>
+              <TableHead className="text-center">{t("admin.tableActions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {pageUsers.map((item) => {
               const isProtected = item.role === "superAdmin";
               return (
-                <tr key={item.id} className="border-t border-border/70">
-                  <td className="px-3 py-3">
+                <TableRow key={item.id}>
+                  <TableCell>
                     <p className="font-medium">{item.username}</p>
                     <p className="mt-1 text-xs text-muted-foreground">ID {item.id}</p>
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={isProtected ? "default" : "secondary"}>
                       {isProtected ? t("admin.roleSuperAdmin") : t("admin.roleUser")}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      items={levelItems}
+                      value={String(item.level)}
+                      disabled={isProtected || isMutating}
+                      onValueChange={(value) => updateUserMutation.mutate({ id: item.id, payload: { level: Number(value) as 1 | 2 | 3 } })}
+                    >
+                      <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectGroup>{levelItems.map((level) => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}</SelectGroup></SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
                     <Badge variant={item.isDisabled ? "destructive" : "outline"}>
                       {item.isDisabled ? t("admin.userDisabled") : t("common.statusNormal")}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-3 text-muted-foreground">{formatDateTime(item.createdAt)}</td>
-                  <td className="px-3 py-3 text-muted-foreground">{formatDateTime(item.updatedAt)}</td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatDateTime(item.updatedAt)}</TableCell>
+                  <TableCell>
                     <div className="flex justify-center items-center gap-2">
                       <Button
                         size="icon-sm"
                         variant="ghost"
                         disabled={isProtected || isMutating}
-                        onClick={() => resetPassword(item.id, item.username)}
+                        onClick={() => setConfirmAction({ type: "reset", id: item.id, username: item.username })}
                         aria-label={t("admin.resetPassword")}
                         title={t("admin.resetPassword")}
                       >
-                        <KeyRound className="size-4" />
+                        <KeyRound />
                       </Button>
                       <Switch
                         checked={!item.isDisabled}
                         disabled={isProtected || isMutating}
-                        onCheckedChange={(enabled) => updateUserMutation.mutate({ id: item.id, isDisabled: !enabled })}
+                        onCheckedChange={(enabled) => updateUserMutation.mutate({ id: item.id, payload: { isDisabled: !enabled } })}
                         aria-label={item.isDisabled ? t("admin.enable") : t("admin.disable")}
                         title={item.isDisabled ? t("admin.enable") : t("admin.disable")}
                       />
@@ -224,29 +250,25 @@ export function AdminUsersManager() {
                         size="icon-sm"
                         variant="ghost"
                         disabled={isProtected || isMutating}
-                        onClick={() => deleteUser(item.id, item.username)}
+                        onClick={() => setConfirmAction({ type: "delete", id: item.id, username: item.username })}
                         aria-label={t("common.delete")}
                         title={t("common.delete")}
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 />
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
             {usersQuery.isLoading ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">{t("common.loading")}</td>
-              </tr>
+              <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow>
             ) : null}
             {!usersQuery.isLoading && pageUsers.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">{t("admin.noMatchingUsers")}</td>
-              </tr>
+              <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("admin.noMatchingUsers")}</TableCell></TableRow>
             ) : null}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
@@ -261,7 +283,7 @@ export function AdminUsersManager() {
         </div>
       </div>
 
-      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+      {message ? <Alert><AlertDescription>{message}</AlertDescription></Alert> : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
@@ -270,41 +292,29 @@ export function AdminUsersManager() {
             <DialogDescription>{t("admin.createUserDescription")}</DialogDescription>
           </DialogHeader>
           <form
-            className="grid gap-4"
+            className="flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault();
               createUserMutation.mutate({ username: username.trim(), password });
             }}
           >
-            <div className="space-y-2">
-              <Label htmlFor="adminCreateUsername">{t("auth.username")}</Label>
-              <Input
-                id="adminCreateUsername"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                minLength={3}
-                maxLength={64}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="adminCreatePassword">{t("auth.password")}</Label>
-              <Input
-                id="adminCreatePassword"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={6}
-                maxLength={128}
-                required
-              />
-            </div>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="adminCreateUsername">{t("auth.username")}</FieldLabel>
+                <Input id="adminCreateUsername" value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={64} required />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="adminCreatePassword">{t("auth.password")}</FieldLabel>
+                <Input id="adminCreatePassword" type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} maxLength={128} required />
+              </Field>
+            </FieldGroup>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                <X className="size-4" />
+                <X data-icon="inline-start" />
                 {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={createUserMutation.isPending}>
+                {createUserMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Plus data-icon="inline-start" />}
                 {createUserMutation.isPending ? t("common.loading") : t("admin.createUser")}
               </Button>
             </div>
@@ -319,6 +329,34 @@ export function AdminUsersManager() {
             <DialogDescription>{t("admin.passwordResetDescription", { username: resetResult?.username ?? "" })}</DialogDescription>
           </DialogHeader>
           <Input value={resetResult?.password ?? ""} readOnly onFocus={(event) => event.currentTarget.select()} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(confirmAction)} onOpenChange={(open) => !open && setConfirmAction(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{confirmAction?.type === "delete" ? t("common.delete") : t("admin.resetPassword")}</DialogTitle>
+            <DialogDescription>
+              {confirmAction?.type === "delete"
+                ? t("admin.confirmDeleteUser", { username: confirmAction?.username ?? "" })
+                : t("admin.confirmResetPassword", { username: confirmAction?.username ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>{t("common.cancel")}</Button>
+            <Button
+              variant={confirmAction?.type === "delete" ? "destructive" : "default"}
+              onClick={() => {
+                if (!confirmAction) return;
+                if (confirmAction.type === "delete") deleteUserMutation.mutate(confirmAction.id);
+                else resetPasswordMutation.mutate({ id: confirmAction.id, username: confirmAction.username });
+                setConfirmAction(null);
+              }}
+            >
+              {confirmAction?.type === "delete" ? <Trash2 data-icon="inline-start" /> : <KeyRound data-icon="inline-start" />}
+              {confirmAction?.type === "delete" ? t("common.delete") : t("admin.resetPassword")}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

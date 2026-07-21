@@ -10,6 +10,9 @@ import type {
   InvitationCodeListResponse,
   CreateOfficialConfigInput,
   ResetAdminUserPasswordResponse,
+  RedemptionCodeItemResponse,
+  RedemptionCodeListResponse,
+  RedemptionCodeStatus,
   UpdateOfficialConfigInput,
 } from "@/types/admin";
 
@@ -23,7 +26,7 @@ export async function createAdminUserAction(payload: CreateAdminUserInput) {
   return response.data;
 }
 
-export async function updateAdminUserAction(id: number, payload: { isDisabled: boolean }) {
+export async function updateAdminUserAction(id: number, payload: { isDisabled?: boolean; level?: 1 | 2 | 3 }) {
   const response = await httpClient.patch<AdminUserItemResponse>(`/api/bff/admin/users/${id}`, payload);
   return response.data;
 }
@@ -37,8 +40,18 @@ export async function deleteAdminUserAction(id: number) {
   await httpClient.delete(`/api/bff/admin/users/${id}`);
 }
 
-export async function listInvitationCodesAction() {
-  const response = await httpClient.get<InvitationCodeListResponse>("/api/bff/admin/invitation-codes");
+export async function listInvitationCodesAction(params: { status?: string; search?: string; page?: number; pageSize?: number } = {}) {
+  const response = await httpClient.get<InvitationCodeListResponse>("/api/bff/admin/invitation-codes", { params });
+  return response.data;
+}
+
+export async function listRedemptionCodesAction(params: { status?: RedemptionCodeStatus | "all"; page?: number; pageSize?: number } = {}) {
+  const response = await httpClient.get<RedemptionCodeListResponse>("/api/bff/admin/redemption-codes", { params });
+  return response.data;
+}
+
+export async function createRedemptionCodeAction(payload: { amount: string; days: InvitationCodeDays }) {
+  const response = await httpClient.post<RedemptionCodeItemResponse>("/api/bff/admin/redemption-codes", payload);
   return response.data;
 }
 

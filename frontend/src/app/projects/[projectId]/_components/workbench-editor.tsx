@@ -44,6 +44,14 @@ import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -95,6 +103,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const sceneSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
 
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
@@ -315,6 +324,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       setStatusMessage(null);
     },
     onSuccess: (_, projectId) => {
+      setDeleteProjectOpen(false);
       removeProject(projectId);
       router.push("/");
       setStatusMessage(t("home.status.projectDeleted"));
@@ -849,10 +859,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                         if (!currentProject || deleteProjectMutation.isPending) {
                           return;
                         }
-                        if (!window.confirm(t("home.deleteProjectConfirm", { title: currentProject.title }))) {
-                          return;
-                        }
-                        deleteProjectMutation.mutate(currentProject.id);
+                        setDeleteProjectOpen(true);
                       }}
                       disabled={!currentProject || deleteProjectMutation.isPending}
                     >
@@ -941,6 +948,41 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
         </section>
       </div>
+
+      <Dialog
+        open={deleteProjectOpen}
+        onOpenChange={(open) => {
+          if (!deleteProjectMutation.isPending) setDeleteProjectOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("home.deleteProject")}</DialogTitle>
+            <DialogDescription>
+              {t("home.deleteProjectConfirm", { title: currentProject?.title ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteProjectOpen(false)}
+              disabled={deleteProjectMutation.isPending}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (currentProject) deleteProjectMutation.mutate(currentProject.id);
+              }}
+              disabled={!currentProject || deleteProjectMutation.isPending}
+            >
+              <Trash2 data-icon="inline-start" />
+              {deleteProjectMutation.isPending ? t("home.deletingProject") : t("home.deleteProject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

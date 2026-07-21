@@ -7,7 +7,7 @@ import bcrypt
 
 import database
 from database import db, init_db, row
-from routers.admin import create_user, reset_user_password
+from routers.admin import create_user, reset_user_password, update_user
 
 
 def test_admin_create_and_reset_user() -> None:
@@ -18,6 +18,14 @@ def test_admin_create_and_reset_user() -> None:
             init_db()
             created = create_user({"username": "alice", "password": "initial-password"}, 1)["user"]
             assert created["role"] == "user"
+            updated = update_user(created["id"], {"level": 3}, 1)["user"]
+            assert updated["level"] == 3
+
+            try:
+                create_user({"username": "invalid-level", "password": "password", "level": 0}, 1)
+                raise AssertionError("level 0 must be rejected")
+            except Exception as exc:
+                assert getattr(exc, "status_code", None) == 400
 
             reset = reset_user_password(created["id"], 1)["password"]
             assert len(reset) >= 6

@@ -16,6 +16,11 @@ export interface AuthUser {
   username: string;
   role: "user" | "superAdmin";
   isDisabled: boolean;
+  balanceMicros: number;
+  level: 1 | 2 | 3;
+  group: string;
+  historicalCostMicros: number;
+  requestCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +37,16 @@ export interface RegisterInput {
 }
 
 export interface UserMeResponse {
+  user: AuthUser;
+}
+
+export interface UpdateMeInput {
+  username?: string;
+  password?: string;
+}
+
+export interface RedeemCodeResponse {
+  amountMicros: number;
   user: AuthUser;
 }
 

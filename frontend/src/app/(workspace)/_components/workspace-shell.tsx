@@ -1,14 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
+import { ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { queryKeys } from "@/actions/query-keys";
 import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
 
@@ -18,10 +20,12 @@ function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/images")) return "home.images";
   if (pathname.startsWith("/videos")) return "home.videos";
   if (pathname.startsWith("/usage")) return "home.usageLogs";
+  if (pathname.startsWith("/profile")) return "home.personalSettings";
   if (pathname.startsWith("/ai-script")) return "home.aiScript";
   if (pathname.startsWith("/admin/models")) return "home.modelManagement";
   if (pathname.startsWith("/admin/users")) return "home.userManagement";
   if (pathname.startsWith("/admin/invitation-codes")) return "home.invitationCodeManagement";
+  if (pathname.startsWith("/admin/redemption-codes")) return "home.redemptionCodeManagement";
   return "home.chat";
 }
 
@@ -34,6 +38,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const user = useUserStore((state) => state.user);
   const setUser = useUserStore((state) => state.setUser);
   const logout = useUserStore((state) => state.logout);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keepAccountOpen = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setAccountOpen(true);
+  };
+  const scheduleAccountClose = () => {
+    closeTimer.current = setTimeout(() => setAccountOpen(false), 160);
+  };
 
   const meQuery = useQuery({
     queryKey: queryKeys.me,
@@ -44,6 +57,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (meQuery.data?.user) setUser(meQuery.data.user);
   }, [meQuery.data?.user, setUser]);
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -83,16 +100,40 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
             <div className="flex items-center gap-2">
               <PreferencesSwitcher />
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  logout();
-                  router.replace("/login");
-                }}
-              >
-                <LogOut className="mr-2 size-4" />
-                {t("common.logout")}
-              </Button>
+              <Popover open={accountOpen} onOpenChange={setAccountOpen}>
+                <div onMouseEnter={keepAccountOpen} onMouseLeave={scheduleAccountClose}>
+                  <PopoverTrigger render={<Button variant="secondary" />}>
+                    <UserRound data-icon="inline-start" />
+                    {user?.username ?? t("common.loading")}
+                    <ChevronDown data-icon="inline-end" />
+                  </PopoverTrigger>
+                </div>
+                <PopoverContent align="end" onMouseEnter={keepAccountOpen} onMouseLeave={scheduleAccountClose}>
+                  <PopoverHeader>
+                    <PopoverTitle>{user?.username ?? t("common.unknownUser")}</PopoverTitle>
+                    <PopoverDescription>{t("admin.levelValue", { level: user?.level ?? 1 })}</PopoverDescription>
+                  </PopoverHeader>
+                  <Separator />
+                  <div className="flex flex-col gap-1">
+                    <Button variant="ghost" className="justify-start" onClick={() => { setAccountOpen(false); router.push("/profile"); }}>
+                      <Settings data-icon="inline-start" />
+                      {t("home.personalSettings")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="justify-start"
+                      onClick={() => {
+                        setAccountOpen(false);
+                        logout();
+                        router.replace("/login");
+                      }}
+                    >
+                      <LogOut data-icon="inline-start" />
+                      {t("common.logout")}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </header>

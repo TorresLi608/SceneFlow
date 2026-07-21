@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ImageIcon, KeyRound, LayoutDashboard, MessageSquare, Shield, SlidersHorizontal, Video } from "lucide-react";
+import { Activity, BadgeDollarSign, ImageIcon, KeyRound, LayoutDashboard, MessageSquare, Settings, Shield, SlidersHorizontal, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -35,7 +35,7 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
         <p className="mt-1 text-xs text-muted-foreground">{t("home.brandSubtitle")}</p>
       </div>
 
-      <nav className="space-y-1 px-3" aria-label={t("home.menu")}>
+      <nav className="flex flex-col gap-1 px-3" aria-label={t("home.menu")}>
         <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.businessCenter")}</p>
         <SidebarLink href="/chat" active={isActive("/chat")}>
           <MessageSquare className="size-4" />
@@ -56,6 +56,10 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
 
         <div className="pt-4">
           <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.personalCenter")}</p>
+          <SidebarLink href="/profile" active={isActive("/profile")}>
+            <Settings className="size-4" />
+            {t("home.personalSettings")}
+          </SidebarLink>
           <SidebarLink href="/usage" active={isActive("/usage")}>
             <Activity className="size-4" />
             {t("home.usageLogs")}
@@ -77,6 +81,10 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
               <SidebarLink href="/admin/invitation-codes" active={isActive("/admin/invitation-codes")}>
                 <KeyRound className="size-4" />
                 {t("home.invitationCodeManagement")}
+              </SidebarLink>
+              <SidebarLink href="/admin/redemption-codes" active={isActive("/admin/redemption-codes")}>
+                <BadgeDollarSign className="size-4" />
+                {t("home.redemptionCodeManagement")}
               </SidebarLink>
             </>
           ) : null}

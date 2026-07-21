@@ -3,10 +3,11 @@ from __future__ import annotations
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Annotated, Any
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
 from database import db, row, rows
@@ -45,6 +46,48 @@ def invitation_code_json(invitation: sqlite3.Row, stamp: str | None = None) -> d
     }
 
 
+def redemption_code_json(redemption: sqlite3.Row, stamp: str | None = None) -> dict[str, Any]:
+    status = "redeemed" if redemption["redeemed_at"] else "expired" if redemption["expires_at"] <= (stamp or now()) else "unused"
+    return {
+        "id": redemption["id"],
+        "code": redemption["code"],
+        "status": status,
+        "amountMicros": redemption["amount_micros"],
+        "createdAt": redemption["created_at"],
+        "expiresAt": redemption["expires_at"],
+        "redeemedAt": redemption["redeemed_at"],
+        "redeemedBy": (
+            {"id": redemption["redeemed_by_user_id"], "username": redemption["redeemed_by_username"]}
+            if redemption["redeemed_by_user_id"]
+            else None
+        ),
+    }
+
+
+def pagination(total: int, page: int, page_size: int) -> dict[str, int]:
+    return {"total": total, "page": page, "pageSize": page_size, "pageCount": max(1, (total + page_size - 1) // page_size)}
+
+
+def amount_micros(value: Any) -> int:
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(400, "amount must be a valid number") from exc
+    if not amount.is_finite() or amount <= 0 or amount > Decimal("1000000"):
+        raise HTTPException(400, "amount must be greater than 0 and at most 1000000")
+    return int((amount * Decimal(1_000_000)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def user_level(value: Any) -> int:
+    try:
+        level = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "level must be 1, 2, or 3") from exc
+    if level not in {1, 2, 3}:
+        raise HTTPException(400, "level must be 1, 2, or 3")
+    return level
+
+
 @router.get("/users")
 def list_users(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     with db() as conn:
@@ -58,13 +101,14 @@ def create_user(payload: dict[str, Any], _: int = Depends(current_super_admin_id
     password = str(payload.get("password", ""))
     if not 3 <= len(username) <= 64 or not 6 <= len(password) <= 128:
         raise HTTPException(400, "invalid username or password length")
+    level = user_level(payload.get("level", 1))
     stamp = now()
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     with db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled) VALUES (?, ?, ?, ?, 'user', 0)",
-                (stamp, stamp, username, hashed),
+                "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled, level) VALUES (?, ?, ?, ?, 'user', 0, ?)",
+                (stamp, stamp, username, hashed, level),
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "username already exists") from exc
@@ -76,11 +120,16 @@ def create_user(payload: dict[str, Any], _: int = Depends(current_super_admin_id
 def update_user(target_user_id: int, payload: dict[str, Any], admin_id: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     with db() as conn:
         editable_user(conn, target_user_id, admin_id)
-        if "isDisabled" not in payload:
+        updates: dict[str, Any] = {}
+        if "isDisabled" in payload:
+            updates["is_disabled"] = 1 if payload["isDisabled"] else 0
+        if "level" in payload:
+            updates["level"] = user_level(payload["level"])
+        if not updates:
             raise HTTPException(400, "no fields to update")
         conn.execute(
-            "UPDATE users SET is_disabled=?, updated_at=? WHERE id=?",
-            (1 if payload["isDisabled"] else 0, now(), target_user_id),
+            f"UPDATE users SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
+            (*updates.values(), now(), target_user_id),
         )
         user = row(conn, "SELECT * FROM users WHERE id=?", (target_user_id,))
     return {"user": user_json(user)}
@@ -104,17 +153,49 @@ def delete_user(target_user_id: int, admin_id: int = Depends(current_super_admin
 
 
 @router.get("/invitation-codes")
-def list_invitation_codes(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+def list_invitation_codes(
+    _: int = Depends(current_super_admin_id),
+    status: Annotated[str, Query(pattern="^(all|unused|used|expired)$")] = "all",
+    search: Annotated[str, Query(max_length=64)] = "",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 10,
+) -> dict[str, Any]:
     stamp = now()
+    conditions = []
+    args: list[Any] = []
+    if status == "used":
+        conditions.append("invitation_codes.used_at IS NOT NULL")
+    elif status == "expired":
+        conditions.append("invitation_codes.used_at IS NULL AND invitation_codes.expires_at<=?")
+        args.append(stamp)
+    elif status == "unused":
+        conditions.append("invitation_codes.used_at IS NULL AND invitation_codes.expires_at>?")
+        args.append(stamp)
+    if search.strip():
+        conditions.append("users.username LIKE ?")
+        args.append(f"%{search.strip()}%")
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    offset = (page - 1) * page_size
     with db() as conn:
+        total = row(
+            conn,
+            f"""SELECT COUNT(*) AS total FROM invitation_codes
+            LEFT JOIN users ON users.id=invitation_codes.used_by_user_id{where}""",
+            tuple(args),
+        )["total"]
         invitations = rows(
             conn,
-            """SELECT invitation_codes.*, users.username AS used_by_username
+            f"""SELECT invitation_codes.*, users.username AS used_by_username
             FROM invitation_codes
             LEFT JOIN users ON users.id=invitation_codes.used_by_user_id
-            ORDER BY invitation_codes.created_at DESC""",
+            {where}
+            ORDER BY invitation_codes.created_at DESC LIMIT ? OFFSET ?""",
+            (*args, page_size, offset),
         )
-    return {"invitationCodes": [invitation_code_json(invitation, stamp) for invitation in invitations]}
+    return {
+        "invitationCodes": [invitation_code_json(invitation, stamp) for invitation in invitations],
+        "pagination": pagination(total, page, page_size),
+    }
 
 
 @router.post("/invitation-codes", status_code=201)
@@ -140,6 +221,68 @@ def create_invitation_code(payload: dict[str, Any], _: int = Depends(current_sup
             (cur.lastrowid,),
         )
     return {"invitationCode": invitation_code_json(invitation, created.isoformat())}
+
+
+@router.get("/redemption-codes")
+def list_redemption_codes(
+    _: int = Depends(current_super_admin_id),
+    status: Annotated[str, Query(pattern="^(all|unused|redeemed|expired)$")] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 10,
+) -> dict[str, Any]:
+    stamp = now()
+    conditions = []
+    args: list[Any] = []
+    if status == "redeemed":
+        conditions.append("redemption_codes.redeemed_at IS NOT NULL")
+    elif status == "expired":
+        conditions.append("redemption_codes.redeemed_at IS NULL AND redemption_codes.expires_at<=?")
+        args.append(stamp)
+    elif status == "unused":
+        conditions.append("redemption_codes.redeemed_at IS NULL AND redemption_codes.expires_at>?")
+        args.append(stamp)
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    offset = (page - 1) * page_size
+    with db() as conn:
+        total = row(conn, f"SELECT COUNT(*) AS total FROM redemption_codes{where}", tuple(args))["total"]
+        redemptions = rows(
+            conn,
+            f"""SELECT redemption_codes.*, users.username AS redeemed_by_username
+            FROM redemption_codes
+            LEFT JOIN users ON users.id=redemption_codes.redeemed_by_user_id
+            {where}
+            ORDER BY redemption_codes.created_at DESC LIMIT ? OFFSET ?""",
+            (*args, page_size, offset),
+        )
+    return {
+        "redemptionCodes": [redemption_code_json(item, stamp) for item in redemptions],
+        "pagination": pagination(total, page, page_size),
+    }
+
+
+@router.post("/redemption-codes", status_code=201)
+def create_redemption_code(payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+    try:
+        days = int(payload.get("days", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "validity must be 1, 7, or 30 days") from exc
+    if days not in {1, 7, 30}:
+        raise HTTPException(400, "validity must be 1, 7, or 30 days")
+    micros = amount_micros(payload.get("amount"))
+    created = datetime.now(timezone.utc)
+    code = "RC-" + secrets.token_hex(8).upper()
+    with db() as conn:
+        cur = conn.execute(
+            "INSERT INTO redemption_codes (created_at, expires_at, code, amount_micros) VALUES (?, ?, ?, ?)",
+            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code, micros),
+        )
+        redemption = row(
+            conn,
+            """SELECT redemption_codes.*, NULL AS redeemed_by_username
+            FROM redemption_codes WHERE id=?""",
+            (cur.lastrowid,),
+        )
+    return {"redemptionCode": redemption_code_json(redemption, created.isoformat())}
 
 
 @router.get("/default-models")

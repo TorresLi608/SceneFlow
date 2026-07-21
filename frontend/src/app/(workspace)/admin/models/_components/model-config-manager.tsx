@@ -24,6 +24,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -98,6 +99,7 @@ export function ModelConfigManager() {
   const [viewingConfig, setViewingConfig] = useState<UserConfig | null>(null);
   const [editingConfig, setEditingConfig] = useState<UserConfig | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [deletingConfig, setDeletingConfig] = useState<UserConfig | null>(null);
 
   const [isOfficial, setIsOfficial] = useState(false);
   const [name, setName] = useState("");
@@ -403,6 +405,7 @@ export function ModelConfigManager() {
       return config.source === "official" ? deleteOfficialConfigAction(config.id) : deleteUserConfigAction(config.id);
     },
     onSuccess: async () => {
+      setDeletingConfig(null);
       setMessage(t("admin.configDeleted"));
       await refreshConfigs();
     },
@@ -566,11 +569,7 @@ export function ModelConfigManager() {
                         size="icon-sm"
                         variant="ghost"
                         disabled={busy || !canManageConfig}
-                        onClick={() => {
-                          if (window.confirm(t("admin.confirmDeleteConfig", { name: configTitle(config, purposeLabel, t) }))) {
-                            deleteMutation.mutate(config);
-                          }
-                        }}
+                        onClick={() => setDeletingConfig(config)}
                         title={t("common.delete")}
                       >
                         <Trash2 className="size-4" />
@@ -764,6 +763,41 @@ export function ModelConfigManager() {
               ) : null}
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deletingConfig)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) setDeletingConfig(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("common.delete")}</DialogTitle>
+            <DialogDescription>
+              {deletingConfig
+                ? t("admin.confirmDeleteConfig", { name: configTitle(deletingConfig, purposeLabel, t) })
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeletingConfig(null)}
+              disabled={deleteMutation.isPending}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletingConfig && deleteMutation.mutate(deletingConfig)}
+              disabled={!deletingConfig || deleteMutation.isPending}
+            >
+              <Trash2 data-icon="inline-start" />
+              {deleteMutation.isPending ? t("common.loading") : t("common.delete")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
