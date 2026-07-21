@@ -3,7 +3,7 @@
 ## 环境要求
 
 - Python 3.11
-- Node.js 20+ / npm
+- Node.js 22+ / pnpm 10
 
 ## 1. 启动后端
 
@@ -59,8 +59,8 @@ BACKEND_API_BASE_URL=http://127.0.0.1:8080
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 前端默认地址：
@@ -113,8 +113,8 @@ NEXT_PUBLIC_WS_BASE_URL=ws://127.0.0.1:8090
 
 ```bash
 cd frontend
-npm run build
-npm run start
+pnpm build
+pnpm start
 ```
 
 后端生产运行仍可使用 uvicorn：

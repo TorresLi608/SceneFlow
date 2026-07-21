@@ -33,4 +33,10 @@ async def project_ws(websocket: WebSocket, project_id: str, token: str = "") -> 
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        clients.get(project_id, set()).discard(websocket)
+        pass
+    finally:
+        project_clients = clients.get(project_id)
+        if project_clients:
+            project_clients.discard(websocket)
+            if not project_clients:
+                clients.pop(project_id, None)

@@ -2,32 +2,15 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Any
 
-from langgraph.graph import END, START, StateGraph
-from langgraph.runtime import Runtime
-
+from config import MAX_CONTEXT_TOKENS
 from database import row, rows
 from model_registry import models
 from utils import now
 
 
-MAX_CONTEXT_TOKENS = 1_000_000
 RECENT_MESSAGES_TO_KEEP = 20
-
-
-@dataclass
-class ContextRuntime:
-    conn: sqlite3.Connection
-    session_id: str
-    config: dict[str, Any]
-
-
-class ContextState(TypedDict, total=False):
-    summary: str
-    history: list[sqlite3.Row]
-    messages: list[dict[str, Any]]
 
 
 def estimate_tokens(text: str) -> int:
@@ -120,7 +103,7 @@ def _message_content(item: sqlite3.Row) -> Any:
 
 
 def _as_messages(summary: str, history: list[sqlite3.Row]) -> list[dict[str, Any]]:
-    messages = [{"role": "system", "content": "You are SceneFlow Assistant. Answer clearly and concisely."}]
+    messages: list[dict[str, Any]] = []
     if summary.strip():
         messages.append(
             {
@@ -141,79 +124,37 @@ def _format_history(summary: str, history: list[sqlite3.Row]) -> str:
     return "\n\n".join(parts)
 
 
-def _emit_step(runtime: Runtime[ContextRuntime], step: str, label: str, status: str, detail: str = "") -> None:
-    runtime.stream_writer(
-        {
-            "type": "agent_step",
-            "step": {
-                "id": step,
-                "label": label,
-                "status": status,
-                "detail": detail,
-            },
-        }
-    )
-
-
-async def _load_context(state: ContextState, runtime: Runtime[ContextRuntime]) -> ContextState:
-    _emit_step(runtime, "load_context", "加载历史上下文", "running")
-    conn = runtime.context.conn
-    session = row(conn, "SELECT context_summary, context_summary_until FROM chat_sessions WHERE id=?", (runtime.context.session_id,))
+def _load_context(conn: sqlite3.Connection, session_id: str) -> tuple[str, list[sqlite3.Row], list[dict[str, Any]]]:
+    session = row(conn, "SELECT context_summary, context_summary_until FROM chat_sessions WHERE id=?", (session_id,))
     summary = (session["context_summary"] or "") if session else ""
     summary_until = (session["context_summary_until"] or "") if session else ""
-    history = _message_rows_after(conn, runtime.context.session_id, summary_until)
-    messages = _as_messages(summary, history)
-    _emit_step(
-        runtime,
-        "load_context",
-        "加载历史上下文",
-        "done",
-        f"{len(history)} 条历史，约 {estimate_messages(messages)} tokens",
-    )
-    return {**state, "summary": summary, "history": history, "messages": messages}
+    history = _message_rows_after(conn, session_id, summary_until)
+    return summary, history, _as_messages(summary, history)
 
 
-def _route_context(state: ContextState) -> Literal["compress", "done"]:
-    if estimate_messages(state["messages"]) <= MAX_CONTEXT_TOKENS:
-        return "done"
-    return "compress" if len(state["history"]) > RECENT_MESSAGES_TO_KEEP else "done"
-
-
-async def _compress_context(state: ContextState, runtime: Runtime[ContextRuntime]) -> ContextState:
-    history = state["history"]
+async def _compress_context(
+    conn: sqlite3.Connection,
+    session_id: str,
+    config: dict[str, Any],
+    summary: str,
+    history: list[sqlite3.Row],
+) -> tuple[list[dict[str, Any]], int] | None:
+    if estimate_messages(_as_messages(summary, history)) <= MAX_CONTEXT_TOKENS or len(history) <= RECENT_MESSAGES_TO_KEEP:
+        return None
     old_messages = history[:-RECENT_MESSAGES_TO_KEEP]
     recent_messages = history[-RECENT_MESSAGES_TO_KEEP:]
-    if not old_messages:
-        return {**state, "history": recent_messages, "messages": _as_messages(state["summary"], recent_messages)}
-
-    _emit_step(runtime, "compress_context", "压缩长期记忆", "running", "上下文超过 1M token 预算")
     summary = await models.summarize_context(
-        runtime.context.config["provider"],
-        runtime.context.config["apiKey"],
-        runtime.context.config["model"],
-        _format_history(state["summary"], old_messages),
-        runtime.context.config.get("baseUrl", ""),
+        config["provider"],
+        config["apiKey"],
+        config["model"],
+        _format_history(summary, old_messages),
+        config.get("baseUrl", ""),
     )
-    summary_until = old_messages[-1]["created_at"]
-    runtime.context.conn.execute(
+    conn.execute(
         "UPDATE chat_sessions SET context_summary=?, context_summary_until=?, updated_at=? WHERE id=?",
-        (summary, summary_until, now(), runtime.context.session_id),
+        (summary, old_messages[-1]["created_at"], now(), session_id),
     )
-    _emit_step(runtime, "compress_context", "压缩长期记忆", "done", f"保留最近 {len(recent_messages)} 条明细消息")
-    return {**state, "summary": summary, "history": recent_messages, "messages": _as_messages(summary, recent_messages)}
-
-
-def _build_graph():
-    graph = StateGraph(ContextState, context_schema=ContextRuntime)
-    graph.add_node("load", _load_context)
-    graph.add_node("compress", _compress_context)
-    graph.add_edge(START, "load")
-    graph.add_conditional_edges("load", _route_context, {"compress": "compress", "done": END})
-    graph.add_edge("compress", END)
-    return graph.compile()
-
-
-_CONTEXT_GRAPH = _build_graph()
+    return _as_messages(summary, recent_messages), len(recent_messages)
 
 
 async def build_context_messages(
@@ -221,8 +162,9 @@ async def build_context_messages(
     session_id: str,
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    state = await _CONTEXT_GRAPH.ainvoke({}, context=ContextRuntime(conn, session_id, config))
-    return state["messages"]
+    summary, history, messages = _load_context(conn, session_id)
+    compressed = await _compress_context(conn, session_id, config, summary, history)
+    return compressed[0] if compressed else messages
 
 
 async def stream_context_messages(
@@ -230,17 +172,25 @@ async def stream_context_messages(
     session_id: str,
     config: dict[str, Any],
 ):
-    final_state: ContextState = {}
-    async for mode, chunk in _CONTEXT_GRAPH.astream(
-        {},
-        context=ContextRuntime(conn, session_id, config),
-        stream_mode=["custom", "values"],
-    ):
-        if mode == "custom":
-            yield chunk
-        elif mode == "values":
-            final_state = chunk
-    yield {"type": "context_ready", "messages": final_state.get("messages", [])}
+    yield _step("load_context", "加载历史上下文", "running")
+    summary, history, messages = _load_context(conn, session_id)
+    yield _step(
+        "load_context",
+        "加载历史上下文",
+        "done",
+        f"{len(history)} 条历史，约 {estimate_messages(messages)} tokens",
+    )
+    if estimate_messages(messages) > MAX_CONTEXT_TOKENS and len(history) > RECENT_MESSAGES_TO_KEEP:
+        yield _step("compress_context", "压缩长期记忆", "running", f"上下文超过 {MAX_CONTEXT_TOKENS} token 预算")
+        compressed = await _compress_context(conn, session_id, config, summary, history)
+        if compressed:
+            messages, recent_count = compressed
+            yield _step("compress_context", "压缩长期记忆", "done", f"保留最近 {recent_count} 条明细消息")
+    yield {"type": "context_ready", "messages": messages}
+
+
+def _step(step: str, label: str, status: str, detail: str = "") -> dict[str, Any]:
+    return {"type": "agent_step", "step": {"id": step, "label": label, "status": status, "detail": detail}}
 
 
 if __name__ == "__main__":

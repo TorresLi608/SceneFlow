@@ -6,19 +6,19 @@ from typing import Any
 
 import bcrypt
 
-from config import DB_PATH
+from config import DB_PATH, SUPER_ADMIN_PASSWORD
 from utils import now
 
 
 SUPER_ADMIN_USERNAME = "superAdmin"
-SUPER_ADMIN_PASSWORD = "superAdmin@123"
 
 
 @contextmanager
 def db() -> Any:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         yield conn
         conn.commit()

@@ -17,6 +17,7 @@ from usage_service import aggregate_token_usage, record_usage
 
 
 AGENT_SYSTEM_PROMPT = """You are SceneFlow Assistant. Answer clearly and concisely.
+Match the user's language unless they ask for another language.
 You can generate images, PDF files, and Word documents with tools.
 - When the user asks for a file or image and has supplied enough information, call the matching tool instead of only describing how to make it.
 - For PDF and Word tools, write the complete document content yourself. Use simple Markdown headings and lists; do not include the title again in the content.

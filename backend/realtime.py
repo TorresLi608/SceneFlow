@@ -17,3 +17,5 @@ async def broadcast(project_id: str, payload: dict[str, Any]) -> None:
             dead.append(ws)
     for ws in dead:
         clients.get(project_id, set()).discard(ws)
+    if not clients.get(project_id):
+        clients.pop(project_id, None)

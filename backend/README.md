@@ -14,17 +14,23 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 
 - `PORT` (default `8080`)
 - `SCENEFLOW_DB_PATH` (default `./sceneflow.db`)
-- `SCENEFLOW_JWT_SECRET` (default `dev-jwt-secret-change-me`)
+- `SCENEFLOW_ENV` (default `development`; set `production` in production)
+- `SCENEFLOW_JWT_SECRET` (development default is intentionally non-production)
 - `SCENEFLOW_AES_KEY` (default `dev-aes-key-change-me`, internally SHA-256 -> 32 bytes)
+- `SCENEFLOW_SUPER_ADMIN_PASSWORD` (default `superAdmin@123` in development)
+- `SCENEFLOW_MAX_CONTEXT_TOKENS` (default `100000`)
 - `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
+- `SCENEFLOW_CORS_ORIGINS` (comma-separated; defaults to the two local frontend origins)
 - `SCENEFLOW_GENERATED_DIR` (default `./generated`)
 - `SCENEFLOW_PRIVATE_GENERATED_DIR` (default `./private_generated`)
 - `SCENEFLOW_CJK_FONT_PATH` (optional PDF Chinese TTF/TTC path; common macOS/Linux paths are auto-detected)
 - `SCENEFLOW_CJK_FONT_NAME` (default `Arial Unicode MS`, used by generated Word documents)
 
+Production startup rejects the development JWT, AES, and super-admin secrets.
+
 ## Super admin
 
-- Startup creates `superAdmin` / `superAdmin@123` only if it is missing, then keeps it enabled with role `superAdmin`.
+- Startup creates `superAdmin` with `SCENEFLOW_SUPER_ADMIN_PASSWORD` only if it is missing, then keeps it enabled with role `superAdmin`.
 - Disabled users cannot log in or use existing tokens.
 
 ## Model routing

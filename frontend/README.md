@@ -4,13 +4,13 @@
 
 ```bash
 cd frontend
-npm install
+pnpm install
 ```
 
 ## Run
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ## Environment

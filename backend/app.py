@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -7,16 +8,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import GENERATED_DIR
+from config import CORS_ORIGINS, GENERATED_DIR
 from database import init_db
 from routers import admin, auth, chat, images, projects, settings, usage, users, videos, websocket
 
 
-app = FastAPI(title="SceneFlow Backend")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="SceneFlow Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Origin", "Content-Type", "Authorization"],
@@ -35,11 +42,6 @@ app.include_router(videos.router)
 app.include_router(usage.router)
 app.include_router(projects.router)
 app.include_router(websocket.router)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
 
 
 @app.get("/healthz")

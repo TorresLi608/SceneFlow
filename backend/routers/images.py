@@ -38,7 +38,6 @@ def parse_reference(value: dict[str, Any], index: int) -> tuple[str, bytes, str]
     if not match:
         raise HTTPException(400, "reference images must be png/jpeg/webp data URLs")
     mime_type, encoded = match.groups()
-    started_at = time.monotonic()
     try:
         data = base64.b64decode(encoded, validate=True)
     except Exception as exc:
@@ -85,6 +84,7 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
     resolution = str(payload.get("resolution") or "2K")
     size = ratio if config["provider"] == "gemini" else RATIO.get(ratio, "auto")
     quality = resolution if config["provider"] == "gemini" else QUALITY.get(resolution, "medium")
+    started_at = time.monotonic()
     try:
         if references:
             images = [parse_reference(item, index + 1) for index, item in enumerate(references)]
