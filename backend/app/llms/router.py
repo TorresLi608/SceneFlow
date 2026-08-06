@@ -67,7 +67,7 @@ def pick_model(provider: str, requested: str = "") -> str:
         "deepseek": "deepseek-chat",
         "qwen": "qwen-plus",
         "doubao": "doubao-seed-1-6-250615",
-        "gemini": "gemini-1.5-flash",
+        "gemini": "gemini-3.6-flash",
         "anthropic": "claude-3-5-sonnet-20240620",
     }.get(provider, "gpt-4o-mini")
 

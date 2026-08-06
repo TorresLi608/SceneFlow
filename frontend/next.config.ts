@@ -19,10 +19,7 @@ const nextConfig: NextConfig = {
   },
   turbopack: {
     root: process.cwd(),
-    rules:
-      process.env.NODE_ENV === "development"
-        ? codeInspectorPlugin({ bundler: "turbopack" })
-        : {},
+    rules: codeInspectorPlugin({ bundler: "turbopack" }),
   },
 };
 
