@@ -15,6 +15,7 @@ import type { UsageLogItem } from "@/types/usage";
 
 const featureValues = ["all", "chat", "image", "video", "agent_image", "script_parse", "script_optimize", "storyboard_image"];
 const dayValues = ["7", "30", "90"];
+const pageSize = 10;
 type UsageSource = "all" | "official" | "user";
 
 function number(value: number) {
@@ -26,12 +27,16 @@ export default function UsagePage() {
   const [feature, setFeature] = useState("all");
   const [days, setDays] = useState(30);
   const [source, setSource] = useState<UsageSource>("all");
+  const [page, setPage] = useState(1);
   const query = useQuery({
     queryKey: [...queryKeys.usageLogs, feature, days, source],
     queryFn: () => listUsageLogsAction(feature, days, source),
   });
   const summary = query.data?.summary ?? { calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 };
   const logs = query.data?.logs ?? [];
+  const pageCount = Math.max(1, Math.ceil(logs.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageLogs = logs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const featureLabel = (value: string) => t(`usage.feature.${value}`);
   const featureItems = featureValues.map((value) => ({ value, label: featureLabel(value) }));
   const dayItems = dayValues.map((value) => ({ value, label: t("usage.days", { days: Number(value) }) }));
@@ -50,26 +55,26 @@ export default function UsagePage() {
           <p className="mt-1 text-sm text-muted-foreground">{t("usage.description")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Select items={featureItems} value={feature} onValueChange={(value) => setFeature(value ?? "all")}>
+          <Select items={featureItems} value={feature} onValueChange={(value) => { setFeature(value ?? "all"); setPage(1); }}>
             <SelectTrigger className="w-40"><SelectValue>{featureLabel(feature)}</SelectValue></SelectTrigger>
             <SelectContent>
               <SelectGroup>{featureValues.map((value) => <SelectItem key={value} value={value}>{featureLabel(value)}</SelectItem>)}</SelectGroup>
             </SelectContent>
           </Select>
-          <Select items={sourceItems} value={source} onValueChange={(value) => setSource((value ?? "all") as UsageSource)}>
+          <Select items={sourceItems} value={source} onValueChange={(value) => { setSource((value ?? "all") as UsageSource); setPage(1); }}>
             <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectGroup>{sourceItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
             </SelectContent>
           </Select>
-          <Select items={dayItems} value={String(days)} onValueChange={(value) => setDays(Number(value))}>
+          <Select items={dayItems} value={String(days)} onValueChange={(value) => { setDays(Number(value)); setPage(1); }}>
             <SelectTrigger className="w-28"><SelectValue>{t("usage.days", { days })}</SelectValue></SelectTrigger>
             <SelectContent>
               <SelectGroup>{dayItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
             </SelectContent>
           </Select>
           {filtersActive ? (
-            <Button variant="outline" size="sm" onClick={() => { setFeature("all"); setSource("all"); setDays(30); }}>
+            <Button variant="outline" size="sm" onClick={() => { setFeature("all"); setSource("all"); setDays(30); setPage(1); }}>
               <RotateCcw data-icon="inline-start" />
               {t("common.clearFilters")}
             </Button>
@@ -84,12 +89,13 @@ export default function UsagePage() {
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-border/70">
-        <table className="w-full min-w-[1180px] text-sm">
+        <table className="w-full min-w-[1300px] text-sm">
           <thead className="bg-muted/40 text-xs text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left font-medium">{t("usage.time")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("usage.type")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("usage.source")}</th>
+              <th className="px-3 py-2 text-left font-medium">{t("usage.configName")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("usage.model")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("usage.duration")}</th>
               <th className="px-3 py-2 text-right font-medium">{t("usage.input")}</th>
@@ -99,12 +105,24 @@ export default function UsagePage() {
             </tr>
           </thead>
           <tbody>
-            {logs.map((item) => <UsageRow key={item.id} item={item} t={t} formatDateTime={formatDateTime} featureLabel={featureLabel} />)}
+            {pageLogs.map((item) => <UsageRow key={item.id} item={item} t={t} formatDateTime={formatDateTime} featureLabel={featureLabel} />)}
             {!query.isLoading && logs.length === 0 ? (
-              <tr><td colSpan={9} className="px-3 py-10 text-center text-muted-foreground">{t("usage.empty")}</td></tr>
+              <tr><td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">{t("usage.empty")}</td></tr>
             ) : null}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+        <span>{t("admin.pagination", { total: logs.length, page: currentPage, pageCount })}</span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+            {t("common.previous")}
+          </Button>
+          <Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+            {t("common.next")}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -130,6 +148,7 @@ function UsageRow({
       <td className="whitespace-nowrap px-3 py-3">{formatDateTime(item.createdAt)}</td>
       <td className="px-3 py-3">{featureLabel(item.feature)}</td>
       <td className="px-3 py-3">{item.source === "official" ? t("config.source.official") : t("config.source.user")}</td>
+      <td className="px-3 py-3"><p className="max-w-40 truncate font-medium">{item.configName || "—"}</p></td>
       <td className="px-3 py-3"><p className="max-w-52 truncate font-medium">{item.model}</p><p className="mt-1 text-xs text-muted-foreground">{providerLabel(item.provider, t)}</p></td>
       <td className="whitespace-nowrap px-3 py-3 tabular-nums">{(item.durationMs / 1000).toFixed(1)} s</td>
       <td className="px-3 py-3 text-right tabular-nums"><p>{number(item.inputTokens)}</p>{item.cacheReadTokens ? <p className="text-xs text-muted-foreground">{t("usage.cached", { value: number(item.cacheReadTokens) })}</p> : null}</td>

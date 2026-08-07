@@ -21,14 +21,19 @@ def test_admin_usage_logs_support_username_search_and_pagination() -> None:
             with db() as conn:
                 alice_id = int(conn.execute("INSERT INTO users (created_at, updated_at, username, password, role) VALUES (?, ?, 'alice', 'x', 'user')", (stamp, stamp)).lastrowid)
                 bob_id = int(conn.execute("INSERT INTO users (created_at, updated_at, username, password, role) VALUES (?, ?, 'bob', 'x', 'user')", (stamp, stamp)).lastrowid)
-            config = {"source": "user", "provider": "openai", "model": "personal-model"}
+                config_id = int(conn.execute(
+                    "INSERT INTO model_configs (created_at, updated_at, user_id, source, name, provider, encrypted_key, purpose, model_name) VALUES (?, ?, ?, 'user', 'Alice GPT', 'openai', 'x', 'script', 'personal-model')",
+                    (stamp, stamp, alice_id),
+                ).lastrowid)
+            config = {"source": "user", "configId": config_id, "provider": "openai", "model": "personal-model"}
             record_usage(alice_id, config, "chat", time.monotonic(), {"inputTokens": 10, "outputTokens": 5})
-            record_usage(bob_id, config, "chat", time.monotonic(), {"inputTokens": 20, "outputTokens": 10})
+            record_usage(bob_id, {"source": "user", "provider": "openai", "model": "personal-model"}, "chat", time.monotonic(), {"inputTokens": 20, "outputTokens": 10})
 
             result = list_all_usage_logs(1, search="lic", page=1, page_size=10)
             assert result["pagination"]["total"] == 1
             assert result["usageLogs"][0]["user"]["username"] == "alice"
             assert result["usageLogs"][0]["inputTokens"] == 10
+            assert result["usageLogs"][0]["configName"] == "Alice GPT"
 
             paged = list_all_usage_logs(1, page=2, page_size=1)
             assert paged["pagination"]["total"] == 2

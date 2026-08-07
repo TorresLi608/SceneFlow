@@ -126,8 +126,9 @@ def list_all_usage_logs(
         )["total"]
         logs = rows(
             conn,
-            f"""SELECT usage_logs.*, users.username
+            f"""SELECT usage_logs.*, users.username, model_configs.name AS config_name
             FROM usage_logs JOIN users ON users.id=usage_logs.user_id
+            LEFT JOIN model_configs ON model_configs.id=usage_logs.config_id AND model_configs.source=usage_logs.config_source
             {where}
             ORDER BY usage_logs.created_at DESC LIMIT ? OFFSET ?""",
             (*args, page_size, offset),

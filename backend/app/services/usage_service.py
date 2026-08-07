@@ -170,16 +170,23 @@ def record_usage(
 
 
 def usage_logs(conn: sqlite3.Connection, user_id: int, feature: str = "all", days: int = 30, source: str = "all") -> dict[str, Any]:
-    conditions = ["user_id=?", "created_at>=datetime('now', ?)"]
+    conditions = ["usage_logs.user_id=?", "usage_logs.created_at>=datetime('now', ?)"]
     args: list[Any] = [user_id, f"-{max(1, min(days, 365))} days"]
     if feature != "all":
-        conditions.append("feature=?")
+        conditions.append("usage_logs.feature=?")
         args.append(feature)
     if source != "all":
-        conditions.append("config_source=?")
+        conditions.append("usage_logs.config_source=?")
         args.append(source)
     where = " AND ".join(conditions)
-    items = rows(conn, f"SELECT * FROM usage_logs WHERE {where} ORDER BY created_at DESC LIMIT 500", tuple(args))
+    items = rows(
+        conn,
+        f"""SELECT usage_logs.*, model_configs.name AS config_name
+        FROM usage_logs
+        LEFT JOIN model_configs ON model_configs.id=usage_logs.config_id AND model_configs.source=usage_logs.config_source
+        WHERE {where} ORDER BY usage_logs.created_at DESC LIMIT 500""",
+        tuple(args),
+    )
     summary = row(
         conn,
         f"""SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input_tokens,
@@ -205,6 +212,7 @@ def usage_log_json(item: sqlite3.Row) -> dict[str, Any]:
         "feature": item["feature"],
         "source": item["config_source"],
         "provider": item["provider"],
+        "configName": (item["config_name"] or "") if "config_name" in item.keys() else "",
         "model": item["model_name"],
         "durationMs": item["duration_ms"],
         "inputTokens": item["input_tokens"],

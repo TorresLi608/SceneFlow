@@ -38,18 +38,18 @@ def test_official_and_user_logs() -> None:
                 ).lastrowid
                 official_config_id = conn.execute(
                     """INSERT INTO model_configs
-                    (created_at, updated_at, user_id, source, provider, encrypted_key, purpose, model_name, pricing_multiplier,
+                    (created_at, updated_at, user_id, source, name, provider, encrypted_key, purpose, model_name, pricing_multiplier,
                      input_price_per_million, output_price_per_million, cache_read_price_per_million,
                      cache_write_price_per_million, unit_price, unit_name)
-                    VALUES (?, ?, NULL, 'official', 'openai', 'x', 'script', 'gpt-test', 5, 1, 2, 0.1, 0.5, 0, 'token')""",
+                    VALUES (?, ?, NULL, 'official', 'Official GPT', 'openai', 'x', 'script', 'gpt-test', 5, 1, 2, 0.1, 0.5, 0, 'token')""",
                     (stamp, stamp),
                 ).lastrowid
                 user_config_id = conn.execute(
                     """INSERT INTO model_configs
-                    (created_at, updated_at, user_id, source, provider, encrypted_key, purpose, model_name, pricing_multiplier,
+                    (created_at, updated_at, user_id, source, name, provider, encrypted_key, purpose, model_name, pricing_multiplier,
                      input_price_per_million, output_price_per_million, cache_read_price_per_million,
                      cache_write_price_per_million, unit_price, unit_name)
-                    VALUES (?, ?, ?, 'user', 'openai', 'x', 'script', 'gpt-user', 5, 1, 2, 0.1, 0.5, 0, 'token')""",
+                    VALUES (?, ?, ?, 'user', 'Personal GPT', 'openai', 'x', 'script', 'gpt-user', 5, 1, 2, 0.1, 0.5, 0, 'token')""",
                     (stamp, stamp, user_id),
                 ).lastrowid
             usage = {"inputTokens": 1000, "outputTokens": 500, "cacheReadTokens": 200, "cacheWriteTokens": 100}
@@ -77,6 +77,7 @@ def test_official_and_user_logs() -> None:
             assert user_only["summary"]["costMicros"] == 8850
             assert official_only["summary"]["calls"] == 1
             assert user_only["summary"]["calls"] == 1
+            assert {item["configName"] for item in result["logs"]} == {"Official GPT", "Personal GPT"}
 
             with db() as conn:
                 assert row(conn, "SELECT balance_micros FROM users WHERE id=?", (user_id,))["balance_micros"] == 11150

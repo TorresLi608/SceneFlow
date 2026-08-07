@@ -4,6 +4,7 @@ export interface UsageLogItem {
   feature: string;
   source: "official" | "user";
   provider: string;
+  configName: string;
   model: string;
   durationMs: number;
   inputTokens: number;

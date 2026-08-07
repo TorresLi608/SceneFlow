@@ -57,13 +57,14 @@ export default function AdminUsageLogsPage() {
         </div>
 
         <div className="overflow-hidden rounded-lg border">
-          <Table className="min-w-[1160px]">
+          <Table className="min-w-[1280px]">
             <TableHeader>
               <TableRow>
                 <TableHead>{t("admin.usageUser")}</TableHead>
                 <TableHead>{t("usage.time")}</TableHead>
                 <TableHead>{t("usage.type")}</TableHead>
                 <TableHead>{t("usage.source")}</TableHead>
+                <TableHead>{t("usage.configName")}</TableHead>
                 <TableHead>{t("usage.model")}</TableHead>
                 <TableHead className="text-right">{t("usage.input")}</TableHead>
                 <TableHead className="text-right">{t("usage.output")}</TableHead>
@@ -77,14 +78,15 @@ export default function AdminUsageLogsPage() {
                   <TableCell className="whitespace-nowrap">{formatDateTime(item.createdAt)}</TableCell>
                   <TableCell>{t(`usage.feature.${item.feature}`)}</TableCell>
                   <TableCell><Badge variant={item.source === "official" ? "default" : "secondary"}>{item.source === "official" ? t("config.source.official") : t("config.source.user")}</Badge></TableCell>
+                  <TableCell><p className="max-w-40 truncate font-medium">{item.configName || "—"}</p></TableCell>
                   <TableCell><p className="max-w-52 truncate font-medium">{item.model}</p><p className="text-xs text-muted-foreground">{providerLabel(item.provider, t)}</p></TableCell>
                   <TableCell className="text-right tabular-nums">{item.inputTokens.toLocaleString()}</TableCell>
                   <TableCell className="text-right tabular-nums">{item.outputTokens.toLocaleString()}</TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatMoney(item.costMicros, 6)}</TableCell>
                 </TableRow>
               ))}
-              {query.isLoading ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
-              {!query.isLoading && !query.data?.usageLogs.length ? <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{t("admin.noUsageRecords")}</TableCell></TableRow> : null}
+              {query.isLoading ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
+              {!query.isLoading && !query.data?.usageLogs.length ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-muted-foreground">{t("admin.noUsageRecords")}</TableCell></TableRow> : null}
             </TableBody>
           </Table>
         </div>

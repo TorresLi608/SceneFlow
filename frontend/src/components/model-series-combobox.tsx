@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,10 +20,6 @@ interface ModelSeriesComboboxProps {
 
 export function ModelSeriesCombobox({ id, value, options, placeholder, selectLabel, emptyLabel, onChange }: ModelSeriesComboboxProps) {
   const [open, setOpen] = useState(false);
-  const filteredOptions = useMemo(() => {
-    const query = value.trim().toLowerCase();
-    return options.filter((option) => !query || option.toLowerCase().includes(query));
-  }, [options, value]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -41,9 +37,9 @@ export function ModelSeriesCombobox({ id, value, options, placeholder, selectLab
         </PopoverTrigger>
       </div>
       <PopoverContent align="end" className="max-h-72 overflow-y-auto p-1">
-        {filteredOptions.length > 0 ? (
+        {options.length > 0 ? (
           <div className="flex flex-col gap-1">
-            {filteredOptions.map((option) => (
+            {options.map((option) => (
               <button
                 key={option}
                 type="button"
