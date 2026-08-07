@@ -242,6 +242,8 @@ class ModelRouter:
             model=pick_model(provider, model),
             api_key=api_key.strip(),
             base_url=base_url_for(provider, base_url),
+            # Explicit base URLs disable langchain-openai's automatic stream usage.
+            stream_usage=True,
             timeout=45,
             max_retries=1,
             **kwargs,

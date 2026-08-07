@@ -9,7 +9,7 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage
 
 from app.services import agent_service, artifact_service
-from app.llms.router import _content_text, _reasoning_text
+from app.llms.router import ModelRouter, _content_text, _reasoning_text
 
 
 class ToolFakeModel(FakeMessagesListChatModel):
@@ -74,6 +74,12 @@ def test_reasoning_blocks_are_separate_from_answer() -> None:
     assert _reasoning_text(content, {"reasoning_content": "准备："}) == "准备：先分析再验证"
 
 
+def test_openai_compatible_streams_report_usage() -> None:
+    model = ModelRouter().chat_model("gemini", "test-key", "gemini-test")
+    assert model.stream_usage is True
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
+    test_openai_compatible_streams_report_usage()

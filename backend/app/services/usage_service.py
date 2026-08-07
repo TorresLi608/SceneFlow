@@ -164,7 +164,7 @@ def record_usage(
         )
         if source == "official" and cost_micros:
             conn.execute(
-                "UPDATE users SET balance_micros=MAX(0, balance_micros-?), updated_at=? WHERE id=?",
+                "UPDATE users SET balance_micros=MAX(0, balance_micros-?), updated_at=? WHERE id=? AND role<>'superAdmin'",
                 (cost_micros, now(), user_id),
             )
 

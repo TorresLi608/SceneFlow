@@ -92,6 +92,16 @@ def test_official_and_user_logs() -> None:
                 require_model_balance(conn, int(user_id), {"source": "official"})
                 conn.execute("UPDATE users SET role='superAdmin', balance_micros=0 WHERE id=?", (user_id,))
                 require_model_balance(conn, int(user_id), {"source": "official"})
+            record_usage(
+                int(user_id),
+                {"source": "official", "officialConfigId": official_config_id, "provider": "openai", "model": "gpt-test"},
+                "chat",
+                time.monotonic(),
+                usage,
+            )
+            with db() as conn:
+                assert row(conn, "SELECT balance_micros FROM users WHERE id=?", (user_id,))["balance_micros"] == 0
+                assert usage_logs(conn, int(user_id))["summary"]["costMicros"] == 26550
         finally:
             database.DB_PATH = original_path
 
