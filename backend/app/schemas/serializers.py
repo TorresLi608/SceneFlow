@@ -12,10 +12,10 @@ def user_json(user: sqlite3.Row) -> dict[str, Any]:
         "username": user["username"],
         "role": user["role"] or "user",
         "isDisabled": bool(user["is_disabled"]),
-        "balanceMicros": user["balance_micros"] if "balance_micros" in keys else 0,
+        "balanceMicros": str(user["balance_micros"] if "balance_micros" in keys else 0),
         "level": user["level"] if "level" in keys else 1,
         "group": user["user_group"] if "user_group" in keys else "default",
-        "historicalCostMicros": user["historical_cost_micros"] if "historical_cost_micros" in keys else 0,
+        "historicalCostMicros": str(user["historical_cost_micros"] if "historical_cost_micros" in keys else 0),
         "requestCount": user["request_count"] if "request_count" in keys else 0,
         "createdAt": user["created_at"],
         "updatedAt": user["updated_at"],
@@ -24,6 +24,18 @@ def user_json(user: sqlite3.Row) -> dict[str, Any]:
 
 def config_json(config: sqlite3.Row) -> dict[str, Any]:
     keys = config.keys()
+    pricing: dict[str, Any] = {}
+    if "pricing_json" in keys and config["pricing_json"]:
+        try:
+            parsed = json.loads(config["pricing_json"])
+            pricing = parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            pass
+
+    def price(name: str, default: str) -> str:
+        value = pricing.get(name, config[name] if name in keys else default)
+        return str(default if value is None else value)
+
     return {
         "id": config["id"],
         "source": config["source"] if "source" in keys else "user",
@@ -39,12 +51,12 @@ def config_json(config: sqlite3.Row) -> dict[str, Any]:
         "isVerified": bool(config["is_verified"]),
         "createdAt": config["created_at"],
         "updatedAt": config["updated_at"],
-        "pricingMultiplier": config["pricing_multiplier"] if "pricing_multiplier" in keys else 1,
-        "inputPricePerMillion": config["input_price_per_million"] if "input_price_per_million" in keys else 0,
-        "outputPricePerMillion": config["output_price_per_million"] if "output_price_per_million" in keys else 0,
-        "cacheReadPricePerMillion": config["cache_read_price_per_million"] if "cache_read_price_per_million" in keys else 0,
-        "cacheWritePricePerMillion": config["cache_write_price_per_million"] if "cache_write_price_per_million" in keys else 0,
-        "unitPrice": config["unit_price"] if "unit_price" in keys else 0,
+        "pricingMultiplier": price("pricing_multiplier", "1"),
+        "inputPricePerMillion": price("input_price_per_million", "0"),
+        "outputPricePerMillion": price("output_price_per_million", "0"),
+        "cacheReadPricePerMillion": price("cache_read_price_per_million", "0"),
+        "cacheWritePricePerMillion": price("cache_write_price_per_million", "0"),
+        "unitPrice": price("unit_price", "0"),
         "unitName": config["unit_name"] if "unit_name" in keys else "token",
     }
 

@@ -41,6 +41,20 @@ Complete
 | 从仓库根目录直接运行 `backend/tests/test_chat_balance.py` 时找不到 `app` 包 | 1 | 改用后端目录和模块方式运行单测。 |
 | 在后端目录直接运行测试文件仍因脚本路径缺少包根目录而失败 | 2 | 使用 `.venv/bin/python -m tests.test_chat_balance`；随后全量 `tests/run_all.py` 通过。 |
 
+### Phase 3: 额度与计费精度整改记录
+
+- [x] 审计前端、后端、SQLite 的额度和模型价格精度链路。
+- [x] 记录十进制字符串 API、整数微单位、精确价格快照与 `decimal.js` 方案。
+- [x] 记录数据库兼容迁移、涉及文件、测试和依赖安装错误。
+- **Status:** complete
+
+### Precision Verification
+
+- 额度加减以整数微单位存储，精确到 6 位小数。
+- 模型价格以十进制字符串传输，并通过 `pricing_json` 无损保存 18 位以上小数。
+- 超过 JavaScript 安全整数范围的金额格式化测试通过。
+- 后端全量测试、前端 ESLint、TypeScript、金额专项测试和 `git diff --check` 均通过。
+
 ## Session 2026-07-20: 用户与邀请码管理记录
 
 ### Goal

@@ -2,12 +2,12 @@ export type ConfigPurpose = "general" | "script" | "image" | "video" | "audio";
 export type PricingUnit = "token" | "request" | "image" | "second";
 
 export interface ModelPricing {
-  pricingMultiplier: number;
-  inputPricePerMillion: number;
-  outputPricePerMillion: number;
-  cacheReadPricePerMillion: number;
-  cacheWritePricePerMillion: number;
-  unitPrice: number;
+  pricingMultiplier: string;
+  inputPricePerMillion: string;
+  outputPricePerMillion: string;
+  cacheReadPricePerMillion: string;
+  cacheWritePricePerMillion: string;
+  unitPrice: string;
   unitName: PricingUnit;
 }
 
@@ -16,10 +16,10 @@ export interface AuthUser {
   username: string;
   role: "user" | "superAdmin";
   isDisabled: boolean;
-  balanceMicros: number;
+  balanceMicros: string;
   level: 1 | 2 | 3;
   group: string;
-  historicalCostMicros: number;
+  historicalCostMicros: string;
   requestCount: number;
   createdAt: string;
   updatedAt: string;
@@ -46,7 +46,7 @@ export interface UpdateMeInput {
 }
 
 export interface RedeemCodeResponse {
-  amountMicros: number;
+  amountMicros: string;
   user: AuthUser;
 }
 

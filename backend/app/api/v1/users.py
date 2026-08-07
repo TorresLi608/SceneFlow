@@ -63,7 +63,7 @@ def redeem_code(payload: dict[str, Any], user_id: int = Depends(current_user_id)
             (redemption["amount_micros"], stamp, user_id),
         )
         user = user_profile(conn, user_id)
-    return {"amountMicros": redemption["amount_micros"], "user": user_json(user)}
+    return {"amountMicros": str(redemption["amount_micros"]), "user": user_json(user)}
 
 
 @router.patch("/me")

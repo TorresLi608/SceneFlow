@@ -65,7 +65,7 @@ export interface RedemptionCode {
   id: number;
   code: string;
   status: RedemptionCodeStatus;
-  amountMicros: number;
+  amountMicros: string;
   createdAt: string;
   expiresAt: string;
   redeemedAt: string | null;

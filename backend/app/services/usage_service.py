@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-import math
+import json
 import sqlite3
 import time
 from typing import Any, Mapping
@@ -23,20 +23,34 @@ PRICE_FIELDS = {
 }
 
 
-def _number(value: Any, default: float) -> float:
+def _number(value: Any, default: str) -> str:
     try:
-        number = float(value)
-    except (TypeError, ValueError):
-        number = default
-    if not math.isfinite(number) or number < 0:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        number = Decimal(default)
+    if not number.is_finite() or number < 0:
         raise ValueError("pricing values must be finite and non-negative")
-    return number
+    return format(number, "f")
+
+
+def pricing_snapshot(pricing: Mapping[str, Any]) -> str:
+    return json.dumps(dict(pricing), ensure_ascii=False, separators=(",", ":"))
 
 
 def normalize_pricing(payload: Mapping[str, Any], current: sqlite3.Row | None = None) -> dict[str, Any]:
+    stored: Mapping[str, Any] = {}
+    if current is not None and "pricing_json" in current.keys() and current["pricing_json"]:
+        try:
+            parsed = json.loads(current["pricing_json"])
+            stored = parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            stored = {}
+
     def value(api_key: str, db_key: str, default: Any) -> Any:
         if api_key in payload:
             return payload[api_key]
+        if db_key in stored:
+            return stored[db_key]
         if current is not None and db_key in current.keys():
             return current[db_key]
         return default
@@ -44,23 +58,26 @@ def normalize_pricing(payload: Mapping[str, Any], current: sqlite3.Row | None = 
     unit_name = str(value("unitName", "unit_name", "token") or "token").strip().lower()
     if unit_name not in {"token", "request", "image", "second"}:
         raise ValueError("unitName must be token/request/image/second")
-    multiplier = _number(value("pricingMultiplier", "pricing_multiplier", 1), 1)
-    if multiplier <= 0:
+    multiplier = _number(value("pricingMultiplier", "pricing_multiplier", 1), "1")
+    if Decimal(multiplier) <= 0:
         raise ValueError("pricingMultiplier must be greater than 0")
     return {
         "pricing_multiplier": multiplier,
-        "input_price_per_million": _number(value("inputPricePerMillion", "input_price_per_million", 0), 0),
-        "output_price_per_million": _number(value("outputPricePerMillion", "output_price_per_million", 0), 0),
-        "cache_read_price_per_million": _number(value("cacheReadPricePerMillion", "cache_read_price_per_million", 0), 0),
-        "cache_write_price_per_million": _number(value("cacheWritePricePerMillion", "cache_write_price_per_million", 0), 0),
-        "unit_price": _number(value("unitPrice", "unit_price", 0), 0),
+        "input_price_per_million": _number(value("inputPricePerMillion", "input_price_per_million", 0), "0"),
+        "output_price_per_million": _number(value("outputPricePerMillion", "output_price_per_million", 0), "0"),
+        "cache_read_price_per_million": _number(value("cacheReadPricePerMillion", "cache_read_price_per_million", 0), "0"),
+        "cache_write_price_per_million": _number(value("cacheWritePricePerMillion", "cache_write_price_per_million", 0), "0"),
+        "unit_price": _number(value("unitPrice", "unit_price", 0), "0"),
         "unit_name": unit_name,
     }
 
 
 def pricing_updates(payload: Mapping[str, Any], current: sqlite3.Row) -> dict[str, Any]:
     pricing = normalize_pricing(payload, current)
-    return {db_key: pricing[db_key] for api_key, db_key in PRICE_FIELDS.items() if api_key in payload}
+    updates = {db_key: pricing[db_key] for api_key, db_key in PRICE_FIELDS.items() if api_key in payload}
+    if updates:
+        updates["pricing_json"] = pricing_snapshot(pricing)
+    return updates
 
 
 def aggregate_token_usage(value: Mapping[str, Any] | None) -> dict[str, int]:
@@ -135,8 +152,8 @@ def record_usage(
             (id, created_at, user_id, feature, config_source, config_id, provider, model_name, duration_ms,
              input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, quantity, cost_micros,
              pricing_multiplier, input_price_per_million, output_price_per_million,
-             cache_read_price_per_million, cache_write_price_per_million, unit_price, unit_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             cache_read_price_per_million, cache_write_price_per_million, unit_price, unit_name, pricing_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 new_id("usage"),
                 now(),
@@ -160,6 +177,7 @@ def record_usage(
                 pricing["cache_write_price_per_million"],
                 pricing["unit_price"],
                 pricing["unit_name"],
+                pricing_snapshot(pricing),
             ),
         )
         if source == "official" and cost_micros:
@@ -199,13 +217,14 @@ def usage_logs(conn: sqlite3.Connection, user_id: int, feature: str = "all", day
             "calls": summary["calls"],
             "inputTokens": summary["input_tokens"],
             "outputTokens": summary["output_tokens"],
-            "costMicros": summary["cost_micros"],
+            "costMicros": str(summary["cost_micros"]),
         },
         "logs": [usage_log_json(item) for item in items],
     }
 
 
 def usage_log_json(item: sqlite3.Row) -> dict[str, Any]:
+    pricing = normalize_pricing({}, item)
     return {
         "id": item["id"],
         "createdAt": item["created_at"],
@@ -220,12 +239,12 @@ def usage_log_json(item: sqlite3.Row) -> dict[str, Any]:
         "cacheReadTokens": item["cache_read_tokens"],
         "cacheWriteTokens": item["cache_write_tokens"],
         "quantity": item["quantity"],
-        "costMicros": item["cost_micros"],
-        "pricingMultiplier": item["pricing_multiplier"],
-        "inputPricePerMillion": item["input_price_per_million"],
-        "outputPricePerMillion": item["output_price_per_million"],
-        "cacheReadPricePerMillion": item["cache_read_price_per_million"],
-        "cacheWritePricePerMillion": item["cache_write_price_per_million"],
-        "unitPrice": item["unit_price"],
-        "unitName": item["unit_name"],
+        "costMicros": str(item["cost_micros"]),
+        "pricingMultiplier": pricing["pricing_multiplier"],
+        "inputPricePerMillion": pricing["input_price_per_million"],
+        "outputPricePerMillion": pricing["output_price_per_million"],
+        "cacheReadPricePerMillion": pricing["cache_read_price_per_million"],
+        "cacheWritePricePerMillion": pricing["cache_write_price_per_million"],
+        "unitPrice": pricing["unit_price"],
+        "unitName": pricing["unit_name"],
     }

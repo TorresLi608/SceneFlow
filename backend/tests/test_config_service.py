@@ -181,21 +181,23 @@ def test_user_config_pricing_round_trip() -> None:
                             "modelSeries": "gpt-image-1",
                             "apiKey": "new-secret-key",
                             "isActive": False,
-                            "pricingMultiplier": 1.5,
-                            "unitPrice": 0.1,
+                            "pricingMultiplier": "1.500000000000000001",
+                            "inputPricePerMillion": "0.123456789012345678",
+                            "unitPrice": "0.100000000000000009",
                             "unitName": "image",
                         },
                         int(user_id),
                     )
                 )["config"]
                 updated = asyncio.run(
-                    update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": 0.25}, int(user_id))
+                    update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": "0.250000000000000001"}, int(user_id))
                 )["config"]
             validator.assert_not_awaited()
-            assert created["pricingMultiplier"] == 1.5
+            assert created["pricingMultiplier"] == "1.500000000000000001"
+            assert created["inputPricePerMillion"] == "0.123456789012345678"
             assert created["unitName"] == "image"
             assert updated["modelSeries"] == "gpt-image-2"
-            assert updated["unitPrice"] == 0.25
+            assert updated["unitPrice"] == "0.250000000000000001"
         finally:
             database.DB_PATH = original_path
 
@@ -234,7 +236,7 @@ def test_price_only_admin_edit_skips_model_revalidation() -> None:
                 }, 1))["config"]
 
             validator.assert_not_awaited()
-            assert updated["unitPrice"] == 0.5
+            assert updated["unitPrice"] == "0.5"
         finally:
             database.DB_PATH = original_path
 

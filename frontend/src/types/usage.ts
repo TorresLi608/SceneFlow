@@ -12,13 +12,13 @@ export interface UsageLogItem {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   quantity: number;
-  costMicros: number;
-  pricingMultiplier: number;
-  inputPricePerMillion: number;
-  outputPricePerMillion: number;
-  cacheReadPricePerMillion: number;
-  cacheWritePricePerMillion: number;
-  unitPrice: number;
+  costMicros: string;
+  pricingMultiplier: string;
+  inputPricePerMillion: string;
+  outputPricePerMillion: string;
+  cacheReadPricePerMillion: string;
+  cacheWritePricePerMillion: string;
+  unitPrice: string;
   unitName: "token" | "request" | "image" | "second";
 }
 
@@ -27,7 +27,7 @@ export interface UsageLogsResponse {
     calls: number;
     inputTokens: number;
     outputTokens: number;
-    costMicros: number;
+    costMicros: string;
   };
   logs: UsageLogItem[];
 }

@@ -72,9 +72,9 @@ def test_official_and_user_logs() -> None:
                 official_only = usage_logs(conn, int(user_id), source="official")
                 user_only = usage_logs(conn, int(user_id), source="user")
             assert result["summary"]["calls"] == 2
-            assert result["summary"]["costMicros"] == 17700
-            assert official_only["summary"]["costMicros"] == 8850
-            assert user_only["summary"]["costMicros"] == 8850
+            assert result["summary"]["costMicros"] == "17700"
+            assert official_only["summary"]["costMicros"] == "8850"
+            assert user_only["summary"]["costMicros"] == "8850"
             assert official_only["summary"]["calls"] == 1
             assert user_only["summary"]["calls"] == 1
             assert {item["configName"] for item in result["logs"]} == {"Official GPT", "Personal GPT"}
@@ -102,7 +102,7 @@ def test_official_and_user_logs() -> None:
             )
             with db() as conn:
                 assert row(conn, "SELECT balance_micros FROM users WHERE id=?", (user_id,))["balance_micros"] == 0
-                assert usage_logs(conn, int(user_id))["summary"]["costMicros"] == 26550
+                assert usage_logs(conn, int(user_id))["summary"]["costMicros"] == "26550"
         finally:
             database.DB_PATH = original_path
 

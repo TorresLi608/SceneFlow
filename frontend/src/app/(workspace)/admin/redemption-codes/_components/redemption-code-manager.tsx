@@ -105,7 +105,7 @@ export function RedemptionCodeManager() {
               <TableRow key={item.id}>
                 <TableCell className="font-mono font-medium tracking-wide">{item.code}</TableCell>
                 <TableCell><Badge variant={statusVariant[item.status]}>{t(`admin.redemptionStatus.${item.status}`)}</Badge></TableCell>
-                <TableCell className="font-medium tabular-nums">{formatMoney(item.amountMicros)}</TableCell>
+                <TableCell className="font-medium tabular-nums">{formatMoney(item.amountMicros, 6)}</TableCell>
                 <TableCell>{item.redeemedBy?.username ?? "—"}</TableCell>
                 <TableCell className="text-muted-foreground">{item.redeemedAt ? formatDateTime(item.redeemedAt) : "—"}</TableCell>
                 <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
@@ -137,7 +137,7 @@ export function RedemptionCodeManager() {
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="redemptionAmount">{t("admin.redemptionAmount")}</FieldLabel>
-                <Input id="redemptionAmount" type="number" min="0.01" max="1000000" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required />
+                <Input id="redemptionAmount" type="number" min="0.000001" max="1000000" step="0.000001" value={amount} onChange={(event) => setAmount(event.target.value)} required />
               </Field>
               <Field>
                 <FieldLabel htmlFor="redemptionDays">{t("admin.invitationValidity")}</FieldLabel>

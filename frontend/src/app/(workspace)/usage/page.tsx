@@ -9,7 +9,7 @@ import { queryKeys } from "@/actions/query-keys";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, isZeroDecimal } from "@/lib/money";
 import { providerLabel } from "@/lib/model-providers";
 import type { UsageLogItem } from "@/types/usage";
 
@@ -32,7 +32,7 @@ export default function UsagePage() {
     queryKey: [...queryKeys.usageLogs, feature, days, source],
     queryFn: () => listUsageLogsAction(feature, days, source),
   });
-  const summary = query.data?.summary ?? { calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 };
+  const summary = query.data?.summary ?? { calls: 0, inputTokens: 0, outputTokens: 0, costMicros: "0" };
   const logs = query.data?.logs ?? [];
   const pageCount = Math.max(1, Math.ceil(logs.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -163,7 +163,7 @@ function UsageRow({
             <p>{t("usage.outputPrice")}: ${item.outputPricePerMillion} / 1M</p>
             <p>{t("usage.cacheReadPrice")}: ${item.cacheReadPricePerMillion} / 1M</p>
             <p>{t("usage.cacheWritePrice")}: ${item.cacheWritePricePerMillion} / 1M</p>
-            {item.unitPrice ? <p>{t("usage.unitPrice")}: ${item.unitPrice} / {t(`usage.unit.${item.unitName}`)} × {item.quantity}</p> : null}
+            {!isZeroDecimal(item.unitPrice) ? <p>{t("usage.unitPrice")}: ${item.unitPrice} / {t(`usage.unit.${item.unitName}`)} × {item.quantity}</p> : null}
           </div>
         </details>
       </td>

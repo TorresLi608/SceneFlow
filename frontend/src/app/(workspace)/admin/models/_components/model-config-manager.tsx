@@ -351,12 +351,12 @@ export function ModelConfigManager() {
         apiKey: apiKey.trim() || undefined,
         isActive: isDefault,
         isEnabled,
-        pricingMultiplier: Number(pricingMultiplier),
-        inputPricePerMillion: Number(inputPricePerMillion),
-        outputPricePerMillion: Number(outputPricePerMillion),
-        cacheReadPricePerMillion: Number(cacheReadPricePerMillion),
-        cacheWritePricePerMillion: Number(cacheWritePricePerMillion),
-        unitPrice: purpose === "image" || purpose === "video" || purpose === "audio" ? Number(unitPrice) : 0,
+        pricingMultiplier,
+        inputPricePerMillion,
+        outputPricePerMillion,
+        cacheReadPricePerMillion,
+        cacheWritePricePerMillion,
+        unitPrice: purpose === "image" || purpose === "video" || purpose === "audio" ? unitPrice : "0",
         unitName: defaultPricingUnit(purpose),
       };
 
@@ -894,7 +894,7 @@ function PricingInput({ id, label, value, onChange }: { id: string; label: strin
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" min="0" step="0.000001" value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input id={id} type="number" min="0" step="any" value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }

@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
-import { formatMoney } from "@/lib/money";
+import { formatMicros, formatMoney } from "@/lib/money";
 import { useUserStore } from "@/store/user-store";
 
 export default function ProfilePage() {
@@ -48,8 +48,8 @@ export default function ProfilePage() {
       queryClient.setQueryData(queryKeys.me, { user: data.user });
       setCode("");
       toast.add({
-        title: t("profile.redeemSuccess", { amount: (data.amountMicros / 1_000_000).toFixed(2) }),
-        description: formatMoney(data.user.balanceMicros),
+        title: t("profile.redeemSuccess", { amount: formatMicros(data.amountMicros, 6) }),
+        description: formatMoney(data.user.balanceMicros, 6),
         type: "success",
       });
     },
@@ -90,8 +90,8 @@ export default function ProfilePage() {
             </div>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-3">
-            <ProfileMetric icon={Coins} label={t("profile.balance")} value={formatMoney(user?.balanceMicros ?? 0)} />
-            <ProfileMetric icon={ReceiptText} label={t("profile.historicalCost")} value={formatMoney(user?.historicalCostMicros ?? 0)} />
+            <ProfileMetric icon={Coins} label={t("profile.balance")} value={formatMoney(user?.balanceMicros ?? "0", 6)} />
+            <ProfileMetric icon={ReceiptText} label={t("profile.historicalCost")} value={formatMoney(user?.historicalCostMicros ?? "0", 6)} />
             <ProfileMetric icon={Send} label={t("profile.requestCount")} value={new Intl.NumberFormat().format(user?.requestCount ?? 0)} />
           </CardContent>
         </Card>

@@ -66,6 +66,21 @@
 - 本地 `main` 与 `origin/main` 同步在 `227b677`；当前仓库没有标签需要额外核对。
 - `.gitignore` 的 `backend/*.db` 只影响尚未跟踪的文件；已经提交过的文件即使匹配规则仍会继续显示改动，必须先从 Git 索引/历史中移除。当前目标文件已完成移除。
 
+### Precision Audit and Decision
+
+- 审计发现额度余额与单次费用已经使用 SQLite 整数 `micros`，因此 6 位小数范围内的加减本身是精确的。
+- 原精度缺口位于价格链路：模型价格在前端经 `Number()` 转换、后端经 Python `float`、SQLite 经 `REAL` 后，高精度小数会在费用计算前丢位。
+- 采用以下兼容方案：
+  - 前端安装常用开源库 `decimal.js@10.6.0`，金额格式化不再依赖 JavaScript 浮点数。
+  - 价格表单保持字符串并直接提交，移除保存时的 `Number()` 转换。
+  - 后端使用标准库 `Decimal` 校验和计算；金额、费用、价格 API 统一返回十进制字符串。
+  - `model_configs`、`usage_logs` 新增 `pricing_json` 精确快照；旧 `REAL` 列保留以兼容现有数据库和旧记录。
+  - 应用启动时自动为旧数据库添加新字段，不需要手工迁移；旧记录回退读取原字段，新写入记录优先读取精确快照。
+- 显示与输入调整：
+  - 余额、历史花费、兑换额度和使用费用统一显示 6 位小数。
+  - 兑换码额度允许输入最小 `0.000001`；模型价格输入使用 `step="any"`，支持更多小数位。
+- 边界说明：额度固定精确到 6 位小数，超过 6 位的兑换金额由后端 `ROUND_HALF_UP` 归入最小微单位；模型价格本身可保留更多小数位。
+
 ## Session 2026-07-21: Admin User Role Selection
 
 - User creation now accepts only `user` or `superAdmin`; omitted role defaults to `user`.

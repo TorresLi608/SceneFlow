@@ -97,6 +97,7 @@ def init_db() -> None:
                 cache_write_price_per_million real DEFAULT 0,
                 unit_price real DEFAULT 0,
                 unit_name text DEFAULT "token",
+                pricing_json text,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 CHECK((source="user" AND user_id IS NOT NULL) OR (source="official" AND user_id IS NULL))
             );
@@ -240,6 +241,7 @@ def init_db() -> None:
                 cache_write_price_per_million real DEFAULT 0,
                 unit_price real DEFAULT 0,
                 unit_name text DEFAULT "token",
+                pricing_json text,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_usage_logs_user_created ON usage_logs(user_id, created_at DESC);
@@ -267,6 +269,12 @@ def init_db() -> None:
         redemption_columns = {item["name"] for item in conn.execute("PRAGMA table_info(redemption_codes)").fetchall()}
         if "created_by_user_id" not in redemption_columns:
             conn.execute("ALTER TABLE redemption_codes ADD COLUMN created_by_user_id integer")
+        model_config_columns = {item["name"] for item in conn.execute("PRAGMA table_info(model_configs)").fetchall()}
+        if "pricing_json" not in model_config_columns:
+            conn.execute("ALTER TABLE model_configs ADD COLUMN pricing_json text")
+        usage_columns = {item["name"] for item in conn.execute("PRAGMA table_info(usage_logs)").fetchall()}
+        if "pricing_json" not in usage_columns:
+            conn.execute("ALTER TABLE usage_logs ADD COLUMN pricing_json text")
         _migrate_legacy_model_configs(conn)
         session_columns = {item["name"] for item in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
         if "official_config_id" not in session_columns:

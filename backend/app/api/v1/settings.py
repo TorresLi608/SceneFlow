@@ -9,7 +9,7 @@ from app.api.deps import current_user_id
 from app.schemas.serializers import config_json, official_config_json
 from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_api_key, validate_provider
 from app.llms.registry import models
-from app.services.usage_service import normalize_pricing, pricing_updates
+from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates
 from app.utils.common import now
 
 
@@ -121,8 +121,8 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
             """INSERT INTO model_configs
             (created_at, updated_at, user_id, source, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
              pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
-             cache_write_price_per_million, unit_price, unit_name)
-            VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)""",
+             cache_write_price_per_million, unit_price, unit_name, pricing_json)
+            VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 stamp,
                 stamp,
@@ -143,6 +143,7 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
                 pricing["cache_write_price_per_million"],
                 pricing["unit_price"],
                 pricing["unit_name"],
+                pricing_snapshot(pricing),
             ),
         )
         config = row(conn, "SELECT * FROM model_configs WHERE id=?", (cur.lastrowid,))

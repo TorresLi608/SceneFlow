@@ -75,6 +75,46 @@
 - `findings.md`：记录 6 个当日提交、当前未提交功能、安全清理结论及技术决策。
 - `progress.md`：记录完整功能清单、涉及文件、测试结果和错误处理。
 
+### Phase 3: 额度与计费精度整改
+
+- **Status:** complete
+- Root cause:
+  - 余额/费用的整数微单位方案可保证 6 位小数精度。
+  - 模型价格此前经过前端 `Number`、后端 `float` 和 SQLite `REAL`，18 位小数会被截断；大额整数返回前端后也可能超过 JavaScript 的安全整数范围。
+- Actions taken:
+  - 安装 `decimal.js@10.6.0` 并更新 `frontend/pnpm-lock.yaml`。
+  - 前端金额字段和模型价格类型改为十进制字符串；`formatMoney`/`formatMicros` 使用 `decimal.js`。
+  - 模型价格表单不再调用 `Number()`，价格输入允许任意小数位。
+  - 兑换额度输入范围调整为最小 `0.000001`、步进 `0.000001`，余额及费用显示 6 位小数。
+  - 后端 `normalize_pricing` 改用 `Decimal`，模型价格和金额序列化为字符串。
+  - `model_configs` 和 `usage_logs` 增加 `pricing_json`；新建、编辑、计费记录均写入精确快照。
+  - 保留旧 `REAL` 列并增加启动迁移，确保现有 SQLite 数据库无需手工处理。
+  - 新增前端金额专项测试，并扩展配置、兑换码和使用费用后端测试。
+- Files modified:
+  - Backend: `app/api/v1/admin.py`, `settings.py`, `users.py`; `app/core/database.py`; `app/schemas/serializers.py`; `app/services/usage_service.py`。
+  - Backend tests: `test_config_service.py`, `test_redemption_codes.py`, `test_usage_service.py`。
+  - Frontend: model pricing form, redemption-code manager, profile, usage page, money utilities and auth/admin/usage types。
+  - Dependency/test: `frontend/package.json`, `frontend/pnpm-lock.yaml`, `frontend/src/lib/money.test.mts`。
+
+### Precision Test Results
+
+| Test | Command / Scope | Result | Status |
+|---|---|---|---|
+| 18 位价格往返 | `test_config_service.py` | `0.123456789012345678` 等价格保存/读取不丢位 | Pass |
+| 微单位额度兑换 | `test_redemption_codes.py` | `12.500001` 精确转换为 `12500001` micros | Pass |
+| 超安全整数金额格式化 | `money.test.mts` | `9007199254740993` micros 正确显示为 `$9007199254.740993` | Pass |
+| 后端全量自测 | `cd backend && .venv/bin/python tests/run_all.py` | 退出码 0 | Pass |
+| 前端 ESLint / TypeScript | `pnpm lint && pnpm exec tsc --noEmit` | 无错误 | Pass |
+| 前端金额专项测试 | `node --no-warnings --experimental-strip-types --test src/lib/money.test.mts` | 1 test passed | Pass |
+| 差异检查 | `git diff --check` | 无空白错误 | Pass |
+
+### Precision Error Log
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| `npm install decimal.js` 未修改该 pnpm 项目的依赖文件 | 1 | 检查锁文件和包管理器后改用 pnpm。 |
+| `pnpm add decimal.js` 在沙箱内出现 registry DNS 失败与 store 路径不一致 | 2 | 使用项目现有 `/Users/torresli/Library/pnpm/store/v10` 并在授权网络环境安装成功。 |
+
 ## Session: 2026-07-21 — Admin User Role Selection
 
 - **Status:** complete

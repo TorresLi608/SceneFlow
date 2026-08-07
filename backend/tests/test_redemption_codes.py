@@ -16,11 +16,11 @@ def test_redemption_code_credits_balance_once() -> None:
         try:
             init_db()
             user = create_user({"username": "alice", "password": "password"}, 1)["user"]
-            redemption = create_redemption_code({"amount": "12.50", "days": 7}, 1)["redemptionCode"]
+            redemption = create_redemption_code({"amount": "12.500001", "days": 7}, 1)["redemptionCode"]
 
             result = redeem_code({"code": redemption["code"]}, user["id"])
-            assert result["amountMicros"] == 12_500_000
-            assert result["user"]["balanceMicros"] == 12_500_000
+            assert result["amountMicros"] == "12500001"
+            assert result["user"]["balanceMicros"] == "12500001"
 
             listed = list_redemption_codes(1, status="redeemed", page=1, page_size=10)
             assert listed["pagination"]["total"] == 1
