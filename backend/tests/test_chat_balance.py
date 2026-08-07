@@ -25,7 +25,7 @@ def test_chat_balance_gate_runs_before_message_save() -> None:
                     ).lastrowid
                 )
                 conn.execute(
-                    "INSERT INTO chat_sessions (id, created_at, updated_at, user_id, title) VALUES ('chat-1', ?, ?, ?, 'test')",
+                    "INSERT INTO chat_sessions (id, created_at, updated_at, user_id, title) VALUES ('chat-1', ?, ?, ?, '新对话')",
                     (stamp, stamp, user_id),
                 )
 
@@ -38,13 +38,17 @@ def test_chat_balance_gate_runs_before_message_save() -> None:
                     except Exception as exc:
                         assert getattr(exc, "status_code", None) == 402
                     assert row(conn, "SELECT COUNT(*) AS total FROM chat_messages")["total"] == 0
+                    assert row(conn, "SELECT title FROM chat_sessions WHERE id='chat-1'")["title"] == "新对话"
 
             personal = {"source": "user", "provider": "openai", "model": "gpt-personal"}
             with patch("app.services.chat_service.chat_config", return_value=personal):
                 with db() as conn:
-                    _, message = begin_chat_turn(conn, "chat-1", user_id, "hello", [], None)
-                    assert message["content"] == "hello"
-                    assert row(conn, "SELECT COUNT(*) AS total FROM chat_messages")["total"] == 1
+                    _, message = begin_chat_turn(conn, "chat-1", user_id, "  第一个问题\n是什么？  ", [], None)
+                    assert message["content"] == "第一个问题\n是什么？"
+                    assert row(conn, "SELECT title FROM chat_sessions WHERE id='chat-1'")["title"] == "第一个问题 是什么？"
+                    begin_chat_turn(conn, "chat-1", user_id, "第二个问题", [], None)
+                    assert row(conn, "SELECT COUNT(*) AS total FROM chat_messages")["total"] == 2
+                    assert row(conn, "SELECT title FROM chat_sessions WHERE id='chat-1'")["title"] == "第一个问题 是什么？"
         finally:
             database.DB_PATH = original_path
 

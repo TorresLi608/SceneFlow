@@ -207,6 +207,12 @@ def begin_chat_turn(
     )
     require_model_balance(conn, user_id, config)
     user_message = save_chat_message(conn, session_id, "user", content, config["provider"], config["model"], attachments=normalized_attachments)
+    if content:
+        conn.execute(
+            """UPDATE chat_sessions SET title=? WHERE id=? AND
+            (SELECT COUNT(*) FROM chat_messages WHERE session_id=? AND role='user')=1""",
+            (" ".join(content.split())[:80], session_id, session_id),
+        )
     return config, user_message
 
 

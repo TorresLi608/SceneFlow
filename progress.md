@@ -1,5 +1,80 @@
 # Progress Log
 
+## Session: 2026-08-07 — 当日修改日志归档
+
+### Phase 1: 盘点当日修改
+
+- **Status:** complete
+- Actions taken:
+  - 读取 `planning-with-files` 技能及模板。
+  - 确认项目根目录已有三份规划文件，选择追加而非覆盖历史。
+  - 检查 2026-08-07 的 6 个 Git 提交、当前未提交差异、Git 可达历史、忽略规则与远端分支状态。
+  - 确认 `backend/sceneflow.db`、`backend/generated/`、`backend/private_generated/` 已不再被跟踪，当前可达 Git 历史也不包含这些对象。
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### Phase 2: 当日修改明细
+
+- **Status:** complete
+- Committed changes:
+  - `9546f17` — 隐私与安全整改、模型发现及智能问答思考过程：
+    - 忽略数据库与生成目录；生成图片、视频、音频和 Agent 产物迁移到私有目录并以签名 URL 访问。
+    - 数据库/生成文件收紧权限；移除公开 `/generated` 静态挂载。
+    - WebSocket JWT 改走子协议头并校验项目归属；Base URL 拒绝私网/localhost/内嵌凭据。
+    - 新增模型列表发现接口和 `ModelSeriesCombobox`；模型系列表单位置调整到 Base URL/API Key 之后。
+    - 分离 reasoning/thinking 与最终回答，使思考模型可展示思考过程。
+    - 增加安全、模型列表、WebSocket、思考内容相关回归测试与后端说明。
+  - `18f197b` — `.gitignore` 增加前端构建缓存忽略规则。
+  - `593cffb` — API Key 返显与协议：
+    - 新增按当前用户/超级管理员权限读取并解密模型 API Key 的接口。
+    - 编辑表单回填 API Key，默认密文，支持眼睛按钮切换明文/密文。
+    - 新增中英双语非商用源码可用 `LICENSE` 与 `DISCLAIMER.md`；根和前端包声明许可证位置。
+  - `924ad5c` — Toast 统一：
+    - 新增基于 Base UI/shadcn 风格的全局 Toast Provider/Viewport。
+    - 用户、邀请码、兑换码、模型配置增删改及个人中心保存/兑换/改密统一成功失败 Toast。
+    - 移除各页面重复的行内状态消息。
+  - `689e950` — 用量与余额修复：
+    - 超级管理员官方模型调用继续记录 Token/费用，但 SQL 扣款排除 `superAdmin`。
+    - OpenAI 兼容流式模型开启 usage 回传，补齐输入/输出 Token 和费用统计。
+  - `227b677` — 使用日志与界面修复：
+    - 后端使用日志关联模型配置名称，个人/管理员列表新增模型名称列。
+    - 个人使用日志按每页 10 条分页，筛选/重置回到第 1 页。
+    - 修复获取模型列表后下拉内容被输入过滤为空的问题。
+    - Popover 提升至 `z-50`，Toast 提升至 `z-[100]`，避免被表单遮罩遮挡。
+    - 品牌副标题统一为“AI工作台”/“AI Workspace”。
+- Current uncommitted changes:
+  - `backend/app/services/chat_service.py`、`backend/tests/test_chat_balance.py`：第一条成功保存的用户问题自动成为会话标题；后续问题和余额拒绝不会覆盖标题。
+  - `backend/app/api/v1/admin.py`、`backend/app/api/v1/settings.py`、`backend/app/services/config_service.py`、`backend/tests/test_config_service.py`：新增/编辑模型保存不再远程校验模型可用性，只保留 API Key 本地完整性检查；获取列表/显式校验不变。
+  - `frontend/src/components/model-series-combobox.tsx`：增加稳定外层节点，继续处理输入/Popover 抖动问题。
+  - `package.json`：版本调整为 `0.0.5`；当前文件末尾缺少换行，未在日志任务中擅自修改。
+  - `task_plan.md`、`findings.md`、`progress.md`：本次当日日志归档。
+
+### Test Results
+
+| Test | Command / Scope | Result | Status |
+|---|---|---|---|
+| 后端全量自测 | `cd backend && .venv/bin/python tests/run_all.py` | 无错误，退出码 0 | Pass |
+| 前端 ESLint | `cd frontend && npm run lint` | 无 lint 错误 | Pass |
+| 前端 TypeScript | `cd frontend && npx tsc --noEmit` | 无类型错误 | Pass |
+| Markdown/Git 空白检查 | `git diff --check` | 无空白错误 | Pass |
+| 敏感文件跟踪状态 | `git ls-files`、`git log --all`、`git rev-list --objects --all` | 数据库与生成目录未跟踪，当前可达历史无相关对象 | Pass |
+| 分支同步状态 | `git branch -vv` | `main` 与 `origin/main` 同步于 `227b677` | Pass |
+
+### Error Log
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| `ModuleNotFoundError: No module named 'app'`：从仓库根目录直接运行聊天测试 | 1 | 切换到 `backend` 并改用模块执行。 |
+| 同一导入错误：在 `backend` 目录直接执行测试文件时脚本目录仍成为导入根 | 2 | 使用 `.venv/bin/python -m tests.test_chat_balance`；验证通过，并改跑 `tests/run_all.py`。 |
+
+### Documentation Result
+
+- `task_plan.md`：记录归档目标、阶段、验证与错误，状态已完成。
+- `findings.md`：记录 6 个当日提交、当前未提交功能、安全清理结论及技术决策。
+- `progress.md`：记录完整功能清单、涉及文件、测试结果和错误处理。
+
 ## Session: 2026-07-21 — Admin User Role Selection
 
 - **Status:** complete

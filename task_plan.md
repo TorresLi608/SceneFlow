@@ -6,6 +6,41 @@ Summarize the current SceneFlow project so future AI sessions can resume develop
 ## Current Phase
 Complete
 
+## Session 2026-08-07: 当日修改日志归档
+
+### Goal
+
+- 将 2026-08-07 已完成及当前未提交的修改、验证结果和已知问题完整记录到持久化日志。
+
+### Phases
+
+#### Phase 1: 盘点当日修改
+
+- [x] 检查当日 Git 提交、当前工作区差异和已有日志。
+- [x] 在 `findings.md` 记录功能范围与关键决策。
+- **Status:** complete
+
+#### Phase 2: 写入并核验日志
+
+- [x] 在 `progress.md` 记录当日修改、涉及文件、测试与错误。
+- [x] 核对日志覆盖所有当日修改并执行 Markdown 差异检查。
+- **Status:** complete
+
+### Verification
+
+- `cd backend && .venv/bin/python tests/run_all.py`：通过。
+- `cd frontend && npm run lint`：通过。
+- `cd frontend && npx tsc --noEmit`：通过。
+- `git diff --check`：通过。
+- Git 隐私检查：数据库与生成目录未被跟踪，当前可达历史无相关对象，`main` 与 `origin/main` 同步。
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| 从仓库根目录直接运行 `backend/tests/test_chat_balance.py` 时找不到 `app` 包 | 1 | 改用后端目录和模块方式运行单测。 |
+| 在后端目录直接运行测试文件仍因脚本路径缺少包根目录而失败 | 2 | 使用 `.venv/bin/python -m tests.test_chat_balance`；随后全量 `tests/run_all.py` 通过。 |
+
 ## Session 2026-07-20: 用户与邀请码管理记录
 
 ### Goal

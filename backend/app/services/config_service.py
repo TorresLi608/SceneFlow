@@ -171,13 +171,17 @@ def config_update_fields(payload: dict[str, Any], current: sqlite3.Row, normaliz
     return updates
 
 
-async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:
-    if purpose == "audio" and provider in {"edge", "system"}:
+def validate_api_key(provider: str, api_key: str) -> None:
+    if provider in {"edge", "system"}:
         return
     if not api_key.strip():
         raise HTTPException(400, "apiKey is required")
     if not 8 <= len(api_key) <= 512:
         raise HTTPException(400, "apiKey length must be between 8 and 512")
+
+
+async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:
+    validate_api_key(provider, api_key)
     if purpose in {"video", "audio"}:
         return
     try:

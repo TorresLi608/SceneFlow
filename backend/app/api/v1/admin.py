@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.database import db, row, rows
 from app.api.deps import current_super_admin_id
 from app.schemas.serializers import config_json, official_config_json, user_json
-from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_provider
+from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_api_key
 from app.services.usage_service import normalize_pricing, pricing_updates, usage_log_json
 from app.utils.common import now
 
@@ -379,13 +379,7 @@ async def update_model_config(
 
     normalized = normalize_config_payload(payload, config)
     if normalized["needs_validation"]:
-        await validate_provider(
-            normalized["purpose"],
-            normalized["provider"],
-            normalized["model"],
-            normalized["api_key"],
-            normalized["base_url"],
-        )
+        validate_api_key(normalized["provider"], normalized["api_key"])
     updates = config_update_fields(payload, config, normalized)
     try:
         updates.update(pricing_updates(payload, config))
@@ -440,13 +434,7 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
     normalized = normalize_config_payload(payload)
     is_verified = 0
     if normalized["api_key"] or payload.get("isActive"):
-        await validate_provider(
-            normalized["purpose"],
-            normalized["provider"],
-            normalized["model"],
-            normalized["api_key"],
-            normalized["base_url"],
-        )
+        validate_api_key(normalized["provider"], normalized["api_key"])
         is_verified = 1
     fields = config_create_fields(payload, normalized, is_verified)
     try:
@@ -498,13 +486,7 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
 
     normalized = normalize_config_payload(payload, config)
     if normalized["needs_validation"]:
-        await validate_provider(
-            normalized["purpose"],
-            normalized["provider"],
-            normalized["model"],
-            normalized["api_key"],
-            normalized["base_url"],
-        )
+        validate_api_key(normalized["provider"], normalized["api_key"])
     updates = config_update_fields(payload, config, normalized)
     try:
         updates.update(pricing_updates(payload, config))

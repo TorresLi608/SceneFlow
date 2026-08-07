@@ -1,5 +1,71 @@
 # Findings & Decisions
 
+## Session 2026-08-07: 当日修改日志归档
+
+### Requirements
+
+- 保留现有规划历史，不覆盖旧日志。
+- 以 Git 当日提交、当前未提交差异和本次会话记录为依据，归档今天的全部修改。
+- 详细修改清单和验证结果写入 `progress.md`。
+
+### Initial Findings
+
+- 项目根目录已存在 `task_plan.md`、`findings.md`、`progress.md`，本次采用追加方式记录。
+- 本次日志任务不修改业务逻辑；仅更新持久化规划与进度文档。
+
+### Git Inventory
+
+- 2026-08-07 共发现 6 个已提交修改：
+  - `9546f17`：生成产物安全存储、签名访问 URL、模型列表获取与可输入下拉组件。
+  - `18f197b`：忽略前端构建缓存。
+  - `593cffb`：模型 API Key 解密返显/明密文切换、许可证与免责声明。
+  - `924ad5c`：管理中心及个人中心统一全局 Toast 提示。
+  - `689e950`：超级管理员不扣余额、OpenAI 兼容流式用量统计。
+  - `227b677`：使用日志增加模型配置名称、分页，并调整 Popover/Toast 层级。
+- 当前未提交业务修改包括：
+  - 智能问答首条用户问题自动更新会话标题，后续问题不覆盖。
+  - 模型新增/编辑保存取消远程可用性校验，仅保留本地 API Key 完整性检查。
+  - `ModelSeriesCombobox` 增加稳定外层容器，避免 Popover 锚点/输入区域重挂载引发抖动。
+  - 根 `package.json` 版本调整为 `0.0.5`（并存在文件末尾换行待核对）。
+- 本次日志归档新增/更新 `task_plan.md`、`findings.md`、`progress.md`。
+
+### Detailed Findings
+
+- 安全与隐私：
+  - `backend/*.db`、`backend/generated/`、`backend/private_generated/` 和前端构建缓存加入忽略规则。
+  - 图片、视频、音频和 Agent 产物统一写入权限受限的私有目录，文件权限为 `0600`、目录权限为 `0700`，不再公开挂载 `/generated`。
+  - 生成产物通过带过期签名的 URL 访问；SQLite 文件初始化后限制为 `0600`。
+  - WebSocket JWT 从 URL 查询参数迁移到 `Sec-WebSocket-Protocol`，并强化项目不存在/越权拒绝。
+  - Base URL 拒绝 localhost、私网 IP 和带账号密码的 URL，降低 SSRF 风险。
+  - 后端文档确认用户密码使用 bcrypt 哈希，模型 API Key 使用 AES-GCM 加密。
+- 模型管理：
+  - 新增基于 Base URL/API Key 的模型列表发现接口；支持 OpenAI 兼容、Gemini `/openai` 和 Anthropic 模型列表。
+  - 新增 shadcn 风格 `Input + Popover` 模型系列组件，允许手工输入或下拉选择；后续修复聚焦/输入抖动、选项过滤导致列表不可见和弹层层级问题。
+  - 编辑配置可按权限解密返显 API Key，默认密码态，并支持眼睛按钮切换明文/密文。
+  - 当前未提交修改进一步取消新增/编辑保存时的远程模型可用性校验；主动“获取模型列表”和显式校验接口仍保留。
+- 智能问答与模型调用：
+  - 推理内容与最终答案分离，兼容 reasoning/thinking 内容块并支持思考过程展示。
+  - OpenAI 兼容流式模型启用 usage 回传，修复输入/输出 Token 统计为 0 的问题。
+  - 当前未提交修改以第一条成功保存的用户问题更新会话标题，空白归一化、最多 80 字符，后续问题不覆盖。
+- 用量与计费：
+  - 超级管理员官方配置调用仍统计费用和 Token，但余额不扣减。
+  - 使用日志关联模型配置名称；管理员表和个人表增加“模型名称”列。
+  - 个人使用日志增加每页 10 条分页，筛选变化时回到第 1 页。
+- 交互与品牌：
+  - 管理中心用户、邀请码、兑换码、模型管理及个人中心保存/失败反馈统一为全局 Toast。
+  - Toast 层级提高到 `z-[100]`，Popover 定位层设为 `z-50`，避免被对话框遮罩遮挡。
+  - 中英文副标题统一为“AI工作台”/“AI Workspace”。
+- 协议：
+  - 新增中英双语非商用源码可用协议；非盈利用途可按协议使用，商用须联系作者书面授权。
+  - 新增免责声明，覆盖 AI 输出、内容合规、第三方服务、凭据/数据安全和责任限制。
+
+### Repository Privacy Verification
+
+- `backend/sceneflow.db`、`backend/generated/`、`backend/private_generated/` 当前均未被 Git 跟踪。
+- `git log --all` 与 `git rev-list --objects --all` 已找不到上述数据库或生成目录对象，当前可达 Git 历史已清理。
+- 本地 `main` 与 `origin/main` 同步在 `227b677`；当前仓库没有标签需要额外核对。
+- `.gitignore` 的 `backend/*.db` 只影响尚未跟踪的文件；已经提交过的文件即使匹配规则仍会继续显示改动，必须先从 Git 索引/历史中移除。当前目标文件已完成移除。
+
 ## Session 2026-07-21: Admin User Role Selection
 
 - User creation now accepts only `user` or `superAdmin`; omitted role defaults to `user`.

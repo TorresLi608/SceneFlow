@@ -171,7 +171,8 @@ def test_user_config_pricing_round_trip() -> None:
                 user_id = conn.execute(
                     "INSERT INTO users (username, password, role, is_disabled) VALUES ('pricing-user', 'x', 'user', 0)"
                 ).lastrowid
-            with patch("app.api.v1.settings.validate_provider", new=AsyncMock()):
+            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
+            with patch("app.services.config_service.models.validate_image_model", new=validator):
                 created = asyncio.run(
                     create_config(
                         {
@@ -187,9 +188,13 @@ def test_user_config_pricing_round_trip() -> None:
                         int(user_id),
                     )
                 )["config"]
-                updated = asyncio.run(update_config(created["id"], {"unitPrice": 0.25}, int(user_id)))["config"]
+                updated = asyncio.run(
+                    update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": 0.25}, int(user_id))
+                )["config"]
+            validator.assert_not_awaited()
             assert created["pricingMultiplier"] == 1.5
             assert created["unitName"] == "image"
+            assert updated["modelSeries"] == "gpt-image-2"
             assert updated["unitPrice"] == 0.25
         finally:
             database.DB_PATH = original_path
@@ -211,8 +216,8 @@ def test_price_only_admin_edit_skips_model_revalidation() -> None:
                     (encrypt("source-secret-key"),),
                 ).lastrowid)
 
-            validator = AsyncMock()
-            with patch("app.api.v1.admin.validate_provider", new=validator):
+            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
+            with patch("app.services.config_service.models.validate_image_model", new=validator):
                 updated = asyncio.run(update_model_config(config_id, {
                     "source": "official",
                     "name": "Image",
@@ -257,14 +262,16 @@ def test_model_config_source_switch_preserves_id_and_key() -> None:
                 "purpose": "script",
                 "provider": "openai",
                 "baseUrl": "https://api.openai.com/v1",
-                "modelSeries": "gpt-test",
+                "modelSeries": "gpt-updated",
                 "isActive": True,
                 "isEnabled": True,
             }
-            with patch("app.api.v1.admin.validate_provider", new=AsyncMock()):
+            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
+            with patch("app.services.config_service.models.validate_chat_model", new=validator):
                 created_official = asyncio.run(create_default_model({**payload, "apiKey": "official-secret-key"}, admin_id))["config"]
                 official = asyncio.run(update_model_config(config_id, {**payload, "source": "official"}, admin_id))["config"]
                 personal = asyncio.run(update_model_config(config_id, {**payload, "source": "user"}, admin_id))["config"]
+            validator.assert_not_awaited()
 
             with db() as conn:
                 converted = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
