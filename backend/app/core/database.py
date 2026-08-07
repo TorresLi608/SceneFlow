@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import bcrypt
@@ -301,6 +302,9 @@ def init_db() -> None:
             "CREATE UNIQUE INDEX idx_generation_jobs_idempotency ON generation_jobs(user_id, project_id, idempotency_key) WHERE idempotency_key IS NOT NULL"
         )
         seed_super_admin(conn)
+    path = Path(DB_PATH)
+    if DB_PATH != ":memory:" and path.is_file():
+        path.chmod(0o600)
 
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:

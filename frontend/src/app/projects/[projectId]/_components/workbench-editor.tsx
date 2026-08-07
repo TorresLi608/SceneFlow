@@ -408,8 +408,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       return;
     }
 
-    const wsURL = `${wsBaseURL}/ws/projects/${selectedProjectId}?token=${encodeURIComponent(token)}`;
-    const socket = new WebSocket(wsURL);
+    const wsURL = `${wsBaseURL}/ws/projects/${selectedProjectId}`;
+    const socket = new WebSocket(wsURL, [`sceneflow-auth.${token}`]);
     wsRef.current = socket;
 
     socket.onmessage = (event) => {

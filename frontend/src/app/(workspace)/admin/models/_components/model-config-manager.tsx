@@ -16,6 +16,7 @@ import {
   activateOfficialConfigAction,
   createUserConfigAction,
   deleteUserConfigAction,
+  discoverModelsAction,
   listUserConfigsAction,
   updateUserConfigAction,
 } from "@/actions/settings-actions";
@@ -34,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ModelSeriesCombobox } from "@/components/model-series-combobox";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -112,6 +114,8 @@ export function ModelConfigManager() {
   const [baseUrl, setBaseUrl] = useState(defaultOption.baseUrl ?? "");
   const [modelSeries, setModelSeries] = useState(defaultOption.modelSeries);
   const [apiKey, setApiKey] = useState("");
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelFetchMessage, setModelFetchMessage] = useState<string | null>(null);
   const [isEnabled, setIsEnabled] = useState(true);
   const [isDefault, setIsDefault] = useState(false);
   const [pricingMultiplier, setPricingMultiplier] = useState("1");
@@ -209,6 +213,8 @@ export function ModelConfigManager() {
     setBaseUrl(option.baseUrl ?? "");
     setModelSeries(option.modelSeries);
     setApiKey("");
+    setModelOptions([]);
+    setModelFetchMessage(null);
     setIsEnabled(true);
     setIsDefault(false);
     setPricingMultiplier("1");
@@ -236,6 +242,8 @@ export function ModelConfigManager() {
     setBaseUrl(config.baseUrl || baseUrlForConnection(config.purpose, config.provider, mode));
     setModelSeries(config.modelSeries);
     setApiKey("");
+    setModelOptions([]);
+    setModelFetchMessage(null);
     setIsEnabled(config.isEnabled);
     setIsDefault(isDefaultConfig(config, activeUserByPurpose));
     setPricingMultiplier(String(config.pricingMultiplier));
@@ -257,6 +265,8 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
     setModelSeries(option.modelSeries);
+    setModelOptions([]);
+    setModelFetchMessage(null);
     setUnitPrice("0");
   };
 
@@ -269,6 +279,8 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, value, mode));
     setModelSeries(option.modelSeries);
+    setModelOptions([]);
+    setModelFetchMessage(null);
     if (["edge", "system"].includes(value)) setApiKey("");
   };
 
@@ -276,7 +288,26 @@ export function ModelConfigManager() {
     const mode = provider === "custom" ? "relay" : (value as ConnectionMode | null) ?? "direct";
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, provider, mode));
+    setModelOptions([]);
+    setModelFetchMessage(null);
   };
+
+  const discoverModelsMutation = useMutation({
+    mutationFn: () => {
+      if (!apiKey.trim()) {
+        throw new Error(t("admin.enterApiKeyBeforeFetchModels"));
+      }
+      if (isRelay && !baseUrl.trim()) {
+        throw new Error(t("admin.enterRelayBaseUrl"));
+      }
+      return discoverModelsAction({ provider, baseUrl: baseUrl.trim(), apiKey: apiKey.trim() });
+    },
+    onSuccess: ({ models }) => {
+      setModelOptions(models);
+      setModelFetchMessage(t("admin.modelsFetched", { count: models.length }));
+    },
+    onError: (error) => setModelFetchMessage(resolveRequestError(error, error instanceof Error ? error.message : t("admin.fetchModelsFailed"))),
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -672,36 +703,61 @@ export function ModelConfigManager() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="adminConfigModel">{t("settings.modelSeries")}</Label>
-                <Input
-                  id="adminConfigModel"
-                  value={modelSeries}
-                  onChange={(event) => setModelSeries(event.target.value)}
-                  placeholder={selectedProviderOption?.modelPlaceholder}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="adminConfigBaseUrl">Base URL</Label>
                 <Input
                   id="adminConfigBaseUrl"
                   value={baseUrl}
-                  onChange={(event) => setBaseUrl(event.target.value)}
+                  onChange={(event) => {
+                    setBaseUrl(event.target.value);
+                    setModelOptions([]);
+                    setModelFetchMessage(null);
+                  }}
                   disabled={!isRelay || ["edge", "system"].includes(provider)}
                   placeholder="https://api.example.com/v1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adminConfigKey">API Key</Label>
+                <Input
+                  id="adminConfigKey"
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setModelOptions([]);
+                    setModelFetchMessage(null);
+                  }}
+                  placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
+                  disabled={["edge", "system"].includes(provider)}
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="adminConfigKey">API Key</Label>
-              <Input
-                id="adminConfigKey"
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
-                disabled={["edge", "system"].includes(provider)}
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="adminConfigModel">{t("settings.modelSeries")}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => discoverModelsMutation.mutate()}
+                  disabled={discoverModelsMutation.isPending || ["edge", "system"].includes(provider)}
+                >
+                  {discoverModelsMutation.isPending ? t("admin.fetchingModels") : t("admin.fetchModels")}
+                </Button>
+              </div>
+              <ModelSeriesCombobox
+                id="adminConfigModel"
+                value={modelSeries}
+                options={modelOptions}
+                onChange={setModelSeries}
+                placeholder={selectedProviderOption?.modelPlaceholder}
+                selectLabel={t("admin.selectModelSeries")}
+                emptyLabel={t("admin.noMatchingModels")}
               />
+              {modelFetchMessage ? (
+                <p className={`text-xs ${discoverModelsMutation.isError ? "text-destructive" : "text-muted-foreground"}`}>{modelFetchMessage}</p>
+              ) : null}
             </div>
 
             <div className="space-y-2">

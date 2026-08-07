@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
+from anthropic import AsyncAnthropic
 from google import genai
 from langchain_anthropic import ChatAnthropic
 from langchain_core.callbacks import get_usage_metadata_callback
@@ -180,9 +181,21 @@ def _content_text(content: Any) -> str:
             if isinstance(item, str):
                 parts.append(item)
             elif isinstance(item, dict):
-                parts.append(str(item.get("text") or item.get("thinking") or ""))
+                if item.get("type") not in {"reasoning", "reasoning_content", "thinking"}:
+                    parts.append(str(item.get("text") or ""))
         return "".join(parts)
     return str(content or "")
+
+
+def _reasoning_text(content: Any, additional_kwargs: dict[str, Any] | None = None) -> str:
+    parts = [str((additional_kwargs or {}).get("reasoning_content") or (additional_kwargs or {}).get("reasoning") or "")]
+    if isinstance(content, list):
+        parts.extend(
+            str(item.get("thinking") or item.get("reasoning") or item.get("text") or item.get("content") or "")
+            for item in content
+            if isinstance(item, dict) and item.get("type") in {"reasoning", "reasoning_content", "thinking"}
+        )
+    return "".join(parts)
 
 
 def _image_format_from_mime(mime_type: str) -> str:
@@ -233,6 +246,28 @@ class ModelRouter:
             max_retries=1,
             **kwargs,
         )
+
+    async def list_models(self, provider: str, api_key: str, base_url: str = "") -> list[str]:
+        provider = provider.strip().lower()
+        if provider == "anthropic":
+            async with AsyncAnthropic(
+                api_key=api_key.strip(),
+                base_url=base_url_for(provider, base_url) if base_url.strip() else None,
+                timeout=20,
+                max_retries=1,
+            ) as client:
+                response = await client.models.list(limit=100)
+        else:
+            if provider == "gemini" and base_url.strip() and not base_url.rstrip("/").endswith("/openai"):
+                base_url = base_url.rstrip("/") + "/openai"
+            async with AsyncOpenAI(
+                api_key=api_key.strip(),
+                base_url=base_url_for(provider, base_url),
+                timeout=20,
+                max_retries=1,
+            ) as client:
+                response = await client.models.list()
+        return sorted({str(item.id).strip() for item in response.data if str(item.id).strip()})
 
     async def validate_chat_model(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
         response = await self.chat(provider, api_key, model, [{"role": "user", "content": "reply with ok"}], base_url)
@@ -335,7 +370,7 @@ class ModelRouter:
     async def chat_stream(self, provider: str, api_key: str, model: str, messages: list[dict[str, Any]], base_url: str = ""):
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.4, max_tokens=2048)
         async for chunk in llm.astream(_lc_messages(messages, provider)):
-            reasoning = str(chunk.additional_kwargs.get("reasoning_content") or chunk.additional_kwargs.get("reasoning") or "")
+            reasoning = _reasoning_text(chunk.content, chunk.additional_kwargs)
             content = _content_text(chunk.content)
             if reasoning:
                 yield {"type": "reasoning_delta", "content": reasoning}

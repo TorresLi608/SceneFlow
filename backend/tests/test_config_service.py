@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 
 from app.api.v1.admin import create_default_model, update_model_config
-from app.api.v1.settings import create_config, update_config
+from app.api.v1.settings import create_config, discover_models, update_config
 from app.core import database
 from app.core.database import db, init_db, row, rows
 from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
-from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload
+from app.services.config_service import config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload
 
 
 def _conn() -> sqlite3.Connection:
@@ -61,6 +61,29 @@ def test_config_create_fields_rejects_disabled_default() -> None:
         assert exc.detail == "disabled config cannot be default"
     else:
         raise AssertionError("disabled default config should fail")
+
+
+def test_discover_models_uses_submitted_connection() -> None:
+    with patch("app.api.v1.settings.models.list_models", new=AsyncMock(return_value=["gpt-4.1", "o3"])) as list_models:
+        result = asyncio.run(
+            discover_models(
+                {"provider": "openai", "baseUrl": "https://relay.example.com/v1/", "apiKey": "secret-key"},
+                1,
+            )
+        )
+
+    assert result == {"models": ["gpt-4.1", "o3"]}
+    list_models.assert_awaited_once_with("openai", "secret-key", "https://relay.example.com/v1")
+
+
+def test_base_url_rejects_private_networks() -> None:
+    for value in ("http://127.0.0.1:8000/v1", "http://10.0.0.2/v1", "http://localhost/v1"):
+        try:
+            normalize_base_url(value)
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        else:
+            raise AssertionError(f"private base URL should fail: {value}")
 
 
 def test_config_update_fields_disables_active_config() -> None:

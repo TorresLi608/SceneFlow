@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import db, row, rows
 from app.api.deps import current_user_id
 from app.schemas.serializers import config_json, official_config_json
-from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
+from app.services.config_service import config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_provider
+from app.llms.registry import models
 from app.services.usage_service import normalize_pricing, pricing_updates
 from app.utils.common import now
 
@@ -42,6 +43,26 @@ def list_configs(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
             for config in official_configs
         ],
     }
+
+
+@router.post("/models")
+async def discover_models(payload: dict[str, Any], _: int = Depends(current_user_id)) -> dict[str, list[str]]:
+    provider = normalize_provider(str(payload.get("provider", "")))
+    base_url = normalize_base_url(str(payload.get("baseUrl", "")))
+    api_key = str(payload.get("apiKey", "")).strip()
+    if provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic", "custom"}:
+        raise HTTPException(400, "provider does not support model discovery")
+    if provider == "custom" and not base_url:
+        raise HTTPException(400, "custom provider requires baseUrl")
+    if not 8 <= len(api_key) <= 512:
+        raise HTTPException(400, "apiKey length must be between 8 and 512")
+    try:
+        model_names = await models.list_models(provider, api_key, base_url)
+    except Exception as exc:
+        raise HTTPException(400, f"failed to fetch model list: {str(exc).strip()[:180]}") from exc
+    if not model_names:
+        raise HTTPException(400, "provider returned no models")
+    return {"models": model_names}
 
 
 @router.post("/keys/validate")

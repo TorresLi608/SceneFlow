@@ -39,7 +39,6 @@ cd backend
 - `SCENEFLOW_MAX_CONTEXT_TOKENS` (default `100000`)
 - `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
 - `SCENEFLOW_CORS_ORIGINS` (comma-separated; defaults to the two local frontend origins)
-- `SCENEFLOW_GENERATED_DIR` (default `./generated`)
 - `SCENEFLOW_PRIVATE_GENERATED_DIR` (default `./private_generated`)
 - `SCENEFLOW_CJK_FONT_PATH` (optional PDF Chinese TTF/TTC path; common macOS/Linux paths are auto-detected)
 - `SCENEFLOW_CJK_FONT_NAME` (default `Arial Unicode MS`, used by generated Word documents)
@@ -118,14 +117,15 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 - LangGraph is already installed through LangChain; no extra dependency is needed.
 
 ### WebSocket
-- `GET /ws/projects/:id?token=<JWT>`
+- `GET /ws/projects/:id`, with `sceneflow-auth.<JWT>` in `Sec-WebSocket-Protocol`
   - heartbeat enabled
   - project-scoped broadcast stream
   - event types include `WS_CONNECTED`, `PROJECT_UPDATE`, `SCENE_UPDATE`
 
 ## Notes
 
-- Passwords are stored by bcrypt hash.
+- Passwords are stored by bcrypt hash; model API keys are encrypted with AES-GCM.
+- Generated media is stored under `private_generated` and served only through expiring signed URLs.
 - Provider API keys are encrypted by AES-256-GCM before persisting.
 - Existing SQLite data is kept compatible with the old GORM table names and columns.
 - Generate flow streams per-scene progress events over WebSocket (`SCENE_UPDATE`).

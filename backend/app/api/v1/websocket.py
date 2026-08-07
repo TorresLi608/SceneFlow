@@ -11,9 +11,14 @@ from app.utils.common import now
 router = APIRouter(tags=["websocket"])
 
 
+def protocol_token(value: str) -> tuple[str, str]:
+    protocol = next((item.strip() for item in value.split(",") if item.strip().startswith("sceneflow-auth.")), "")
+    return protocol.removeprefix("sceneflow-auth."), protocol
+
+
 @router.websocket("/ws/projects/{project_id}")
-async def project_ws(websocket: WebSocket, project_id: str, token: str = "") -> None:
-    token = token.strip()
+async def project_ws(websocket: WebSocket, project_id: str) -> None:
+    token, protocol = protocol_token(websocket.headers.get("sec-websocket-protocol") or "")
     if not token:
         token = (websocket.headers.get("authorization") or "").replace("Bearer", "").strip()
     try:
@@ -23,10 +28,10 @@ async def project_ws(websocket: WebSocket, project_id: str, token: str = "") -> 
         return
     with db() as conn:
         project = row(conn, "SELECT user_id FROM projects WHERE id=? AND deleted_at IS NULL", (project_id,))
-        if project and project["user_id"] != user_id:
+        if not project or project["user_id"] != user_id:
             await websocket.close(code=1008)
             return
-    await websocket.accept()
+    await websocket.accept(subprotocol=protocol or None)
     clients.setdefault(project_id, set()).add(websocket)
     await broadcast(project_id, {"type": "WS_CONNECTED", "projectId": project_id, "data": {"connectedAt": now()}})
     try:

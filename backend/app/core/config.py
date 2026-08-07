@@ -24,7 +24,6 @@ CORS_ORIGINS = [
     for origin in os.getenv("SCENEFLOW_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
     if origin.strip()
 ]
-GENERATED_DIR = Path(os.getenv("SCENEFLOW_GENERATED_DIR", "./generated"))
 PRIVATE_GENERATED_DIR = Path(os.getenv("SCENEFLOW_PRIVATE_GENERATED_DIR", "./private_generated"))
 CJK_FONT_PATH = os.getenv("SCENEFLOW_CJK_FONT_PATH", "").strip()
 CJK_FONT_NAME = os.getenv("SCENEFLOW_CJK_FONT_NAME", "Arial Unicode MS").strip() or "Arial Unicode MS"

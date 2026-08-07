@@ -5,24 +5,19 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.config import GENERATED_DIR, PUBLIC_BASE_URL
 from app.core.database import db
 from app.api.deps import current_user_id
+from app.services.artifact_service import save_binary_artifact
 from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video, parse_reference, resolve_video_settings
-from app.utils.common import new_id
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 
 def persist_video(data: bytes) -> str:
-    video_dir = GENERATED_DIR / "videos"
-    video_dir.mkdir(parents=True, exist_ok=True)
-    path = video_dir / f"{new_id('video')}.mp4"
-    path.write_bytes(data)
-    return f"{PUBLIC_BASE_URL}/generated/videos/{path.name}"
+    return save_binary_artifact("videos", "generated-video.mp4", data, "video/mp4")
 
 
 @router.post("/generate")

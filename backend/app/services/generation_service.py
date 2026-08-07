@@ -4,10 +4,11 @@ import asyncio
 import time
 from typing import Any
 
-from app.core.config import GENERATED_DIR, PUBLIC_BASE_URL
+from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
 from app.core.realtime import broadcast
 from app.llms.registry import models
+from app.services.artifact_service import save_binary_artifact, signed_file_url
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.tts_service import synthesize
 from app.utils.common import now
@@ -43,12 +44,17 @@ async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: 
             try:
                 await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "generating", "audioProgress": 20, "errorMsg": ""}})
                 extension = "mp3" if audio_config["provider"] == "edge" else "wav"
-                audio_path = GENERATED_DIR / "projects" / project_id / f"{scene['id']}.{extension}"
+                audio_path = PRIVATE_GENERATED_DIR / "projects" / project_id / f"{scene['id']}.{extension}"
                 audio_started_at = time.monotonic()
                 audio_path, duration = await synthesize(str(scene.get("narration") or ""), audio_config, audio_path)
+                audio_path.chmod(0o600)
                 if audio_config["provider"] not in {"edge", "system"}:
                     record_usage(user_id, audio_config, "scene_tts", audio_started_at, quantity=duration)
-                audio_url = f"{PUBLIC_BASE_URL}/generated/projects/{project_id}/{audio_path.name}"
+                audio_url = signed_file_url(
+                    audio_path,
+                    audio_path.name,
+                    "audio/mpeg" if extension == "mp3" else "audio/wav",
+                )
                 with db() as conn:
                     conn.execute("UPDATE scenes SET audio_status='success', audio_url=?, audio_duration=?, updated_at=? WHERE id=?", (audio_url, duration, now(), scene["id"]))
                 await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"audioStatus": "success", "audioProgress": 100, "audioUrl": audio_url, "audioDuration": duration, "errorMsg": ""}})
@@ -70,12 +76,10 @@ def build_image_prompt(scene: dict[str, Any]) -> str:
 
 
 def persist_scene_image(project_id: str, scene_id: str, data: bytes, ext: str) -> str:
-    scene_dir = GENERATED_DIR / "projects" / project_id
-    scene_dir.mkdir(parents=True, exist_ok=True)
     ext = (ext or "png").strip().lower()
-    path = scene_dir / f"{scene_id}.{ext}"
-    path.write_bytes(data)
-    return f"{PUBLIC_BASE_URL}/generated/projects/{project_id}/{path.name}"
+    ext = "jpg" if ext in {"jpg", "jpeg"} else ext if ext in {"png", "webp"} else "png"
+    media_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
+    return save_binary_artifact(project_id, f"{scene_id}.{ext}", data, media_type)
 
 
 async def run_video_generation(project_id: str, model: str) -> None:

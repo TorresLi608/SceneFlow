@@ -280,6 +280,18 @@ def _signed_url(path: Path, filename: str, media_type: str, inline: bool) -> str
     return f"{PUBLIC_BASE_URL}/api/chat/artifacts/{token}"
 
 
+def signed_file_url(path: Path, filename: str, media_type: str, inline: bool = True) -> str:
+    return _signed_url(path, Path(filename).name[:180], media_type[:120], inline)
+
+
+def save_binary_artifact(scope: str, filename: str, data: bytes, media_type: str, inline: bool = True) -> str:
+    extension = Path(filename).suffix.lower().removeprefix(".") or "bin"
+    path = _artifact_path(scope, extension)
+    path.write_bytes(data)
+    path.chmod(0o600)
+    return signed_file_url(path, filename, media_type, inline)
+
+
 def artifact_from_token(token: str) -> tuple[Path, str, str, bool]:
     try:
         payload = jwt.decode(token, ARTIFACT_SIGNING_KEY, algorithms=["HS256"])
@@ -303,6 +315,7 @@ def save_image_artifact(session_id: str, title: str, data: bytes, extension: str
         extension = "png"
     path = _artifact_path(session_id, extension)
     path.write_bytes(data)
+    path.chmod(0o600)
     media_type = "image/jpeg" if extension == "jpg" else f"image/{extension}"
     filename = _download_name(title or "generated-image", extension)
     url = _signed_url(path, filename, media_type, True)
@@ -317,6 +330,7 @@ def save_document_artifact(session_id: str, kind: Literal["pdf", "docx"], title:
     else:
         create_docx(path, title, content)
         media_type, label, inline = "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "下载 Word 文档", False
+    path.chmod(0o600)
     filename = _download_name(title, kind)
     url = _signed_url(path, filename, media_type, inline)
     return {"kind": kind, "url": url, "filename": filename, "markdown": f"[{_markdown_label(f'{label}：{title}')}]({url})"}

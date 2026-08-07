@@ -9,6 +9,7 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage
 
 from app.services import agent_service, artifact_service
+from app.llms.router import _content_text, _reasoning_text
 
 
 class ToolFakeModel(FakeMessagesListChatModel):
@@ -62,5 +63,17 @@ def test_agent_tool_loop() -> None:
     asyncio.run(_run())
 
 
+def test_reasoning_blocks_are_separate_from_answer() -> None:
+    content = [
+        {"type": "thinking", "thinking": "先分析"},
+        {"type": "text", "text": "最终答案"},
+        {"type": "reasoning", "text": "再验证"},
+    ]
+
+    assert _content_text(content) == "最终答案"
+    assert _reasoning_text(content, {"reasoning_content": "准备："}) == "准备：先分析再验证"
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
+    test_reasoning_blocks_are_separate_from_answer()

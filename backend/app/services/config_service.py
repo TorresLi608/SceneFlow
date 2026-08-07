@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from ipaddress import ip_address
 from typing import Any, Sequence
 from urllib.parse import urlparse
 
@@ -33,8 +34,18 @@ def normalize_base_url(value: str) -> str:
     if not value:
         return ""
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise HTTPException(400, "baseUrl must be a valid http(s) URL")
+    hostname = (parsed.hostname or "").lower()
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        raise HTTPException(400, "baseUrl must not target a private network")
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            raise HTTPException(400, "baseUrl must not target a private network")
     return value
 
 

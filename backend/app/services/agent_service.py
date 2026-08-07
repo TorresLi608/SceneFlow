@@ -12,7 +12,7 @@ from langchain_core.tools import StructuredTool, ToolException
 
 from app.core.database import db
 from app.llms.registry import models
-from app.llms.router import _content_text, _lc_messages, _openai_image_size
+from app.llms.router import _content_text, _lc_messages, _openai_image_size, _reasoning_text
 from app.services.artifact_service import save_document_artifact, save_image_artifact, tool_result
 from app.services.usage_service import aggregate_token_usage, record_usage, require_model_balance
 
@@ -198,7 +198,7 @@ async def stream_chat_agent(
             event_type = event["event"]
             if event_type == "on_chat_model_stream":
                 chunk = event["data"]["chunk"]
-                reasoning = str(chunk.additional_kwargs.get("reasoning_content") or chunk.additional_kwargs.get("reasoning") or "")
+                reasoning = _reasoning_text(chunk.content, chunk.additional_kwargs)
                 content = _content_text(chunk.content)
                 if reasoning:
                     yield {"type": "reasoning_delta", "content": reasoning}

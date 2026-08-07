@@ -6,10 +6,9 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import admin, auth, chat, images, jobs, projects, settings, usage, users, videos, websocket
-from app.core.config import CORS_ORIGINS, GENERATED_DIR
+from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
 from app.core.database import init_db
 
 
@@ -29,8 +28,8 @@ app.add_middleware(
     allow_headers=["Origin", "Content-Type", "Authorization"],
 )
 
-GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/generated", StaticFiles(directory=GENERATED_DIR), name="generated")
+PRIVATE_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+PRIVATE_GENERATED_DIR.chmod(0o700)
 
 app.include_router(auth.router)
 app.include_router(users.router)

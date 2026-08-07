@@ -7,13 +7,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.config import GENERATED_DIR, PUBLIC_BASE_URL
 from app.core.database import db
 from app.api.deps import current_user_id
 from app.llms.registry import models
+from app.services.artifact_service import save_binary_artifact
 from app.services.config_service import active_model_config, official_model_config_any, user_model_config_any
 from app.services.usage_service import record_usage, require_model_balance
-from app.utils.common import new_id
 
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -50,11 +49,10 @@ def parse_reference(value: dict[str, Any], index: int) -> tuple[str, bytes, str]
 
 
 def persist_image(data: bytes, ext: str) -> str:
-    image_dir = GENERATED_DIR / "images"
-    image_dir.mkdir(parents=True, exist_ok=True)
-    path = image_dir / f"{new_id('image')}.{(ext or 'png').strip().lower()}"
-    path.write_bytes(data)
-    return f"{PUBLIC_BASE_URL}/generated/images/{path.name}"
+    ext = "jpg" if ext.lower() in {"jpg", "jpeg"} else ext.lower()
+    ext = ext if ext in {"png", "jpg", "webp"} else "png"
+    media_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
+    return save_binary_artifact("images", f"generated-image.{ext}", data, media_type)
 
 
 @router.post("/generate")

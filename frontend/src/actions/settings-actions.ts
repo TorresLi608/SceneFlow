@@ -1,6 +1,7 @@
 import { httpClient } from "@/lib/http/client";
 import type {
   CreateUserConfigInput,
+  ModelListResponse,
   UpdateUserConfigInput,
   UserConfigItemResponse,
   UserConfigListResponse,
@@ -8,6 +9,11 @@ import type {
 
 export async function listUserConfigsAction() {
   const response = await httpClient.get<UserConfigListResponse>("/api/bff/settings/keys");
+  return response.data;
+}
+
+export async function discoverModelsAction(payload: { provider: string; baseUrl: string; apiKey: string }) {
+  const response = await httpClient.post<ModelListResponse>("/api/bff/settings/models", payload);
   return response.data;
 }
 
