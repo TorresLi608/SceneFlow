@@ -32,11 +32,7 @@ export function ModelSeriesCombobox({ id, value, options, placeholder, selectLab
           id={id}
           value={value}
           placeholder={placeholder}
-          onFocus={() => setOpen(true)}
-          onChange={(event) => {
-            onChange(event.target.value);
-            setOpen(true);
-          }}
+          onChange={(event) => onChange(event.target.value)}
         />
         <PopoverTrigger
           render={<Button type="button" variant="outline" size="icon" aria-label={selectLabel} />}

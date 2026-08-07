@@ -1,6 +1,7 @@
 {
   "name": "sceneflow",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=22",
     "pnpm": ">=10"

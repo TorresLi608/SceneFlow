@@ -16,6 +16,7 @@ import type {
   RedemptionCodeStatus,
   UpdateOfficialConfigInput,
 } from "@/types/admin";
+import type { ModelSecretResponse } from "@/types/auth";
 
 export async function listAdminUsersAction() {
   const response = await httpClient.get<AdminUserListResponse>("/api/bff/admin/users");
@@ -68,6 +69,11 @@ export async function createInvitationCodeAction(days: InvitationCodeDays) {
 
 export async function listOfficialConfigsAction() {
   const response = await httpClient.get<AdminDefaultModelListResponse>("/api/bff/admin/default-models");
+  return response.data;
+}
+
+export async function getModelConfigSecretAction(id: number) {
+  const response = await httpClient.post<ModelSecretResponse>(`/api/bff/admin/model-configs/${id}/secret`);
   return response.data;
 }
 

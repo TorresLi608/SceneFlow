@@ -1,0 +1,77 @@
+SceneFlow 非商用源码可用协议 1.0
+SceneFlow Source-Available Non-Commercial License 1.0
+
+版权所有 (c) 2026 TorresLi608。保留所有权利。
+Copyright (c) 2026 TorresLi608. All rights reserved.
+
+一、适用范围与定义
+
+本协议仅适用于 SceneFlow 项目中由版权所有者原创并有权许可的代码、文档及其他材料（以下简称“本软件”）。第三方依赖、模型及其权重、第三方 API、用户内容和生成内容不在本协议授权范围内，分别受其各自条款约束。
+
+“非商用”是指使用本软件的主要目的不在于直接或间接获得收入、报酬、收费服务、商业利益或经营优势。营利组织的内部业务使用，以及收费服务、SaaS、咨询、转售、商业托管、与付费产品捆绑或广告支持的使用，均属于商用。主体是否登记为非营利组织不单独决定其使用性质。
+
+“商用”是指不符合上述非商用定义的任何使用。
+
+二、非商用授权
+
+在遵守本协议的前提下，版权所有者授予你一项全球性、免许可费、非独占、不可转授权、可撤销的许可，允许你仅为非商用目的使用、研究、复制、修改和再分发本软件。
+
+三、使用条件
+
+1. 你必须在本软件及其副本、修改版或衍生版本中保留版权声明、本协议和 DISCLAIMER.md。
+2. 你必须清楚标明你所作的实质性修改，不得暗示该修改获得版权所有者认可。
+3. 你再分发的本软件、修改版或衍生版本必须继续受本协议约束，不得附加与本协议冲突的条款。
+4. 本协议不授予任何商标、项目名称、标识或品牌使用权。
+
+四、商用授权
+
+任何商用均须事先取得 TorresLi608 的书面授权。请通过本项目 GitHub 仓库所有者的公开联系渠道洽谈商用许可。未经书面授权，不得销售、转售、收费提供、商业托管、转授权本软件，或将其用于其他商用场景。
+
+五、终止
+
+一旦违反本协议，你依据本协议取得的权利将自动终止。停止违规并不自动恢复许可；恢复许可须经版权所有者书面确认。
+
+六、免责声明与责任限制
+
+本软件按“原样”提供，不附带任何明示或默示保证，包括但不限于适销性、特定用途适用性、不侵权、安全性、准确性和持续可用性的保证。在适用法律允许的最大范围内，版权所有者及贡献者不对因使用或无法使用本软件产生的任何直接、间接、附带、特殊、惩罚性或后果性损失承担责任。更完整的风险说明见 DISCLAIMER.md，并视为本协议的一部分。
+
+七、其他
+
+本协议未明确授予的权利均由版权所有者保留。任何条款被认定为无效，不影响其他条款的效力。本协议中英文版本意图一致；如有冲突，以中文版本为准。
+
+---
+
+1. Scope and Definitions
+
+This License applies only to code, documentation, and other materials in the SceneFlow project that are authored by and licensable by the copyright holder (the “Software”). Third-party dependencies, models and model weights, third-party APIs, user content, and generated content are outside this License and remain subject to their respective terms.
+
+“Non-Commercial Use” means use whose primary purpose is not to obtain, directly or indirectly, revenue, compensation, paid services, commercial benefit, or operational advantage. Internal business use by a for-profit entity, paid services, SaaS, consulting, resale, commercial hosting, bundling with a paid product, and advertising-supported use are Commercial Use. An entity's nonprofit registration alone does not determine whether a use is Non-Commercial.
+
+“Commercial Use” means any use that does not meet the definition of Non-Commercial Use above.
+
+2. Non-Commercial Grant
+
+Subject to this License, the copyright holder grants you a worldwide, royalty-free, non-exclusive, non-sublicensable, revocable license to use, study, copy, modify, and redistribute the Software solely for Non-Commercial Use.
+
+3. Conditions
+
+1. You must retain the copyright notice, this License, and DISCLAIMER.md in the Software and all copies, modifications, or derivative versions.
+2. You must clearly identify your material modifications and must not imply endorsement by the copyright holder.
+3. Any redistribution, modification, or derivative version must remain under this License without additional conflicting terms.
+4. No trademark, project-name, logo, or branding rights are granted.
+
+4. Commercial Licensing
+
+Any Commercial Use requires prior written authorization from TorresLi608. Contact the owner through the public contact channels of this project's GitHub repository to discuss a commercial license. Without written authorization, you may not sell, resell, provide for a fee, commercially host, sublicense, or otherwise commercially use the Software.
+
+5. Termination
+
+Your rights under this License terminate automatically upon breach. Curing a breach does not automatically reinstate the license; reinstatement requires written confirmation from the copyright holder.
+
+6. Disclaimer and Limitation of Liability
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT EXPRESS OR IMPLIED WARRANTIES, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, SECURITY, ACCURACY, OR CONTINUOUS AVAILABILITY. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER AND CONTRIBUTORS ARE NOT LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, PUNITIVE, OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF OR INABILITY TO USE THE SOFTWARE. DISCLAIMER.md contains additional risk terms and forms part of this License.
+
+7. Miscellaneous
+
+All rights not expressly granted are reserved. If any provision is unenforceable, the remaining provisions remain effective. The Chinese and English versions are intended to be consistent; if they conflict, the Chinese version controls.

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import db, row, rows
 from app.api.deps import current_user_id
 from app.schemas.serializers import config_json, official_config_json
-from app.services.config_service import config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_provider
+from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_provider
 from app.llms.registry import models
 from app.services.usage_service import normalize_pricing, pricing_updates
 from app.utils.common import now
@@ -92,6 +92,15 @@ def get_config(config_id: int, user_id: int = Depends(current_user_id)) -> dict[
     if not config:
         raise HTTPException(404, "config not found")
     return {"config": config_json(config)}
+
+
+@router.post("/keys/{config_id}/secret")
+def get_config_secret(config_id: int, user_id: int = Depends(current_user_id)) -> dict[str, str]:
+    with db() as conn:
+        config = row(conn, "SELECT encrypted_key FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+    if not config:
+        raise HTTPException(404, "config not found")
+    return {"apiKey": config_api_key(config)}
 
 
 @router.post("/keys", status_code=201)

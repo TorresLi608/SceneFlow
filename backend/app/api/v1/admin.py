@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.database import db, row, rows
 from app.api.deps import current_super_admin_id
 from app.schemas.serializers import config_json, official_config_json, user_json
-from app.services.config_service import config_create_fields, config_update_fields, normalize_config_payload, validate_provider
+from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_provider
 from app.services.usage_service import normalize_pricing, pricing_updates, usage_log_json
 from app.utils.common import now
 
@@ -343,6 +343,19 @@ def list_default_models(_: int = Depends(current_super_admin_id)) -> dict[str, A
     with db() as conn:
         configs = rows(conn, "SELECT * FROM model_configs WHERE source='official' AND deleted_at IS NULL ORDER BY updated_at DESC")
     return {"configs": [official_config_json(config) for config in configs]}
+
+
+@router.post("/model-configs/{config_id}/secret")
+def get_model_config_secret(config_id: int, admin_id: int = Depends(current_super_admin_id)) -> dict[str, str]:
+    with db() as conn:
+        config = row(
+            conn,
+            "SELECT encrypted_key FROM model_configs WHERE id=? AND deleted_at IS NULL AND (source='official' OR user_id=?)",
+            (config_id, admin_id),
+        )
+    if not config:
+        raise HTTPException(404, "config not found")
+    return {"apiKey": config_api_key(config)}
 
 
 @router.patch("/model-configs/{config_id}")

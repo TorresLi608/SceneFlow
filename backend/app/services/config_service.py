@@ -17,6 +17,13 @@ def normalize_purpose(value: str) -> str:
     return (value or "script").strip().lower() or "script"
 
 
+def config_api_key(config: sqlite3.Row) -> str:
+    try:
+        return decrypt(config["encrypted_key"])
+    except Exception as exc:
+        raise HTTPException(400, "stored API key cannot be decrypted") from exc
+
+
 def normalize_provider(value: str) -> str:
     provider = (value or "").strip().lower()
     return {

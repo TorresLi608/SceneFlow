@@ -80,6 +80,10 @@ export interface ModelListResponse {
   models: string[];
 }
 
+export interface ModelSecretResponse {
+  apiKey: string;
+}
+
 export interface CreateUserConfigInput extends Partial<ModelPricing> {
   name?: string;
   description?: string;

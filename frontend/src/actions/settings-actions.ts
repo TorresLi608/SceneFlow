@@ -2,6 +2,7 @@ import { httpClient } from "@/lib/http/client";
 import type {
   CreateUserConfigInput,
   ModelListResponse,
+  ModelSecretResponse,
   UpdateUserConfigInput,
   UserConfigItemResponse,
   UserConfigListResponse,
@@ -14,6 +15,11 @@ export async function listUserConfigsAction() {
 
 export async function discoverModelsAction(payload: { provider: string; baseUrl: string; apiKey: string }) {
   const response = await httpClient.post<ModelListResponse>("/api/bff/settings/models", payload);
+  return response.data;
+}
+
+export async function getUserConfigSecretAction(id: number) {
+  const response = await httpClient.post<ModelSecretResponse>(`/api/bff/settings/keys/${id}/secret`);
   return response.data;
 }
 

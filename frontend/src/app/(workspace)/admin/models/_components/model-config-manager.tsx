@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
   createOfficialConfigAction,
   deleteOfficialConfigAction,
+  getModelConfigSecretAction,
   listOfficialConfigsAction,
   updateModelConfigAction,
   updateOfficialConfigAction,
@@ -17,6 +18,7 @@ import {
   createUserConfigAction,
   deleteUserConfigAction,
   discoverModelsAction,
+  getUserConfigSecretAction,
   listUserConfigsAction,
   updateUserConfigAction,
 } from "@/actions/settings-actions";
@@ -114,6 +116,7 @@ export function ModelConfigManager() {
   const [baseUrl, setBaseUrl] = useState(defaultOption.baseUrl ?? "");
   const [modelSeries, setModelSeries] = useState(defaultOption.modelSeries);
   const [apiKey, setApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelFetchMessage, setModelFetchMessage] = useState<string | null>(null);
   const [isEnabled, setIsEnabled] = useState(true);
@@ -213,6 +216,7 @@ export function ModelConfigManager() {
     setBaseUrl(option.baseUrl ?? "");
     setModelSeries(option.modelSeries);
     setApiKey("");
+    setShowApiKey(false);
     setModelOptions([]);
     setModelFetchMessage(null);
     setIsEnabled(true);
@@ -230,7 +234,16 @@ export function ModelConfigManager() {
     setFormOpen(true);
   };
 
-  const openEdit = (config: UserConfig) => {
+  const openEdit = async (config: UserConfig) => {
+    try {
+      const secret = isSuperAdmin
+        ? await getModelConfigSecretAction(config.id)
+        : await getUserConfigSecretAction(config.id);
+      setApiKey(secret.apiKey);
+    } catch (error) {
+      setMessage(resolveRequestError(error, t("admin.loadApiKeyFailed")));
+      return;
+    }
     setEditingConfig(config);
     setIsOfficial(config.source === "official");
     setName(config.name);
@@ -241,7 +254,7 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(config.baseUrl || baseUrlForConnection(config.purpose, config.provider, mode));
     setModelSeries(config.modelSeries);
-    setApiKey("");
+    setShowApiKey(false);
     setModelOptions([]);
     setModelFetchMessage(null);
     setIsEnabled(config.isEnabled);
@@ -603,7 +616,7 @@ export function ModelConfigManager() {
                       <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title={t("admin.view")}>
                         <Eye className="size-4" />
                       </Button>
-                      <Button size="icon-sm" variant="ghost" disabled={!canManageConfig} onClick={() => openEdit(config)} title={t("common.edit")}>
+                      <Button size="icon-sm" variant="ghost" disabled={!canManageConfig} onClick={() => void openEdit(config)} title={t("common.edit")}>
                         <Pencil className="size-4" />
                       </Button>
                       <Switch
@@ -718,18 +731,32 @@ export function ModelConfigManager() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="adminConfigKey">API Key</Label>
-                <Input
-                  id="adminConfigKey"
-                  type="password"
-                  value={apiKey}
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setModelOptions([]);
-                    setModelFetchMessage(null);
-                  }}
-                  placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
-                  disabled={["edge", "system"].includes(provider)}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="adminConfigKey"
+                    type={showApiKey ? "text" : "password"}
+                    value={apiKey}
+                    autoComplete="off"
+                    onChange={(event) => {
+                      setApiKey(event.target.value);
+                      setModelOptions([]);
+                      setModelFetchMessage(null);
+                    }}
+                    placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
+                    disabled={["edge", "system"].includes(provider)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label={showApiKey ? t("admin.hideApiKey") : t("admin.showApiKey")}
+                    title={showApiKey ? t("admin.hideApiKey") : t("admin.showApiKey")}
+                    disabled={["edge", "system"].includes(provider)}
+                    onClick={() => setShowApiKey((value) => !value)}
+                  >
+                    {showApiKey ? <EyeOff data-icon="inline-start" /> : <Eye data-icon="inline-start" />}
+                  </Button>
+                </div>
               </div>
             </div>
 

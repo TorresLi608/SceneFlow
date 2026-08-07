@@ -14,7 +14,7 @@ from app.core import database
 from app.core.database import db, init_db, row, rows
 from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
-from app.services.config_service import config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload
+from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload
 
 
 def _conn() -> sqlite3.Connection:
@@ -96,6 +96,12 @@ def test_config_update_fields_disables_active_config() -> None:
     assert updates["is_enabled"] == 0
     assert updates["is_active"] == 0
     assert "is_verified" not in updates
+
+
+def test_config_api_key_decrypts_stored_secret() -> None:
+    config = row(_conn(), "SELECT encrypted_key FROM model_configs WHERE id=1")
+
+    assert config_api_key(config) == "old-secret-key"
 
 
 def test_image_openai_relay_config_is_valid() -> None:
