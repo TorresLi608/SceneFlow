@@ -13,7 +13,6 @@ import {
 } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -21,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toast } from "@/components/ui/toast";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import type { AuthUser } from "@/types/auth";
@@ -37,7 +37,6 @@ export function AdminUsersManager() {
   const [roleFilter, setRoleFilter] = useState<UserRoleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
   const [page, setPage] = useState(1);
-  const [message, setMessage] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -54,10 +53,10 @@ export function AdminUsersManager() {
   const updateUserMutation = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: { isDisabled?: boolean; level?: 1 | 2 | 3 } }) => updateAdminUserAction(id, payload),
     onSuccess: async () => {
-      setMessage(t("admin.userStatusUpdated"));
+      toast.add({ title: t("admin.userStatusUpdated"), type: "success" });
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.updateUserFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.updateUserFailed")), type: "error", priority: "high" }),
   });
 
   const createUserMutation = useMutation({
@@ -68,25 +67,28 @@ export function AdminUsersManager() {
       setPassword("");
       setRole("user");
       setLevel(1);
-      setMessage(t("admin.userCreated"));
+      toast.add({ title: t("admin.userCreated"), type: "success" });
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.createUserFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.createUserFailed")), type: "error", priority: "high" }),
   });
 
   const resetPasswordMutation = useMutation({
     mutationFn: ({ id }: { id: number; username: string }) => resetAdminUserPasswordAction(id),
-    onSuccess: (data, user) => setResetResult({ username: user.username, password: data.password }),
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.resetPasswordFailed"))),
+    onSuccess: (data, user) => {
+      setResetResult({ username: user.username, password: data.password });
+      toast.add({ title: t("admin.passwordReset"), type: "success" });
+    },
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.resetPasswordFailed")), type: "error", priority: "high" }),
   });
 
   const deleteUserMutation = useMutation({
     mutationFn: deleteAdminUserAction,
     onSuccess: async () => {
-      setMessage(t("admin.userDeleted"));
+      toast.add({ title: t("admin.userDeleted"), type: "success" });
       await queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.deleteUserFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.deleteUserFailed")), type: "error", priority: "high" }),
   });
 
   const users = usersQuery.data?.users ?? emptyUsers;
@@ -296,8 +298,6 @@ export function AdminUsersManager() {
           </Button>
         </div>
       </div>
-
-      {message ? <Alert><AlertDescription>{message}</AlertDescription></Alert> : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>

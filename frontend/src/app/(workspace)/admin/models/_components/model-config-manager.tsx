@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { ModelSeriesCombobox } from "@/components/model-series-combobox";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
@@ -101,7 +102,6 @@ export function ModelConfigManager() {
   const [defaultFilter, setDefaultFilter] = useState<DefaultFilter>("all");
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
   const [page, setPage] = useState(1);
-  const [message, setMessage] = useState<string | null>(null);
   const [viewingConfig, setViewingConfig] = useState<UserConfig | null>(null);
   const [editingConfig, setEditingConfig] = useState<UserConfig | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -118,7 +118,6 @@ export function ModelConfigManager() {
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [modelFetchMessage, setModelFetchMessage] = useState<string | null>(null);
   const [isEnabled, setIsEnabled] = useState(true);
   const [isDefault, setIsDefault] = useState(false);
   const [pricingMultiplier, setPricingMultiplier] = useState("1");
@@ -218,7 +217,6 @@ export function ModelConfigManager() {
     setApiKey("");
     setShowApiKey(false);
     setModelOptions([]);
-    setModelFetchMessage(null);
     setIsEnabled(true);
     setIsDefault(false);
     setPricingMultiplier("1");
@@ -241,7 +239,7 @@ export function ModelConfigManager() {
         : await getUserConfigSecretAction(config.id);
       setApiKey(secret.apiKey);
     } catch (error) {
-      setMessage(resolveRequestError(error, t("admin.loadApiKeyFailed")));
+      toast.add({ title: resolveRequestError(error, t("admin.loadApiKeyFailed")), type: "error", priority: "high" });
       return;
     }
     setEditingConfig(config);
@@ -256,7 +254,6 @@ export function ModelConfigManager() {
     setModelSeries(config.modelSeries);
     setShowApiKey(false);
     setModelOptions([]);
-    setModelFetchMessage(null);
     setIsEnabled(config.isEnabled);
     setIsDefault(isDefaultConfig(config, activeUserByPurpose));
     setPricingMultiplier(String(config.pricingMultiplier));
@@ -279,7 +276,6 @@ export function ModelConfigManager() {
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
     setModelSeries(option.modelSeries);
     setModelOptions([]);
-    setModelFetchMessage(null);
     setUnitPrice("0");
   };
 
@@ -293,7 +289,6 @@ export function ModelConfigManager() {
     setBaseUrl(baseUrlForConnection(purpose, value, mode));
     setModelSeries(option.modelSeries);
     setModelOptions([]);
-    setModelFetchMessage(null);
     if (["edge", "system"].includes(value)) setApiKey("");
   };
 
@@ -302,7 +297,6 @@ export function ModelConfigManager() {
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, provider, mode));
     setModelOptions([]);
-    setModelFetchMessage(null);
   };
 
   const discoverModelsMutation = useMutation({
@@ -317,9 +311,9 @@ export function ModelConfigManager() {
     },
     onSuccess: ({ models }) => {
       setModelOptions(models);
-      setModelFetchMessage(t("admin.modelsFetched", { count: models.length }));
+      toast.add({ title: t("admin.modelsFetched", { count: models.length }), type: "success" });
     },
-    onError: (error) => setModelFetchMessage(resolveRequestError(error, error instanceof Error ? error.message : t("admin.fetchModelsFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, error instanceof Error ? error.message : t("admin.fetchModelsFailed")), type: "error", priority: "high" }),
   });
 
   const saveMutation = useMutation({
@@ -383,10 +377,10 @@ export function ModelConfigManager() {
     onSuccess: async () => {
       setFormOpen(false);
       resetForm();
-      setMessage(t("admin.saveConfigSuccess"));
+      toast.add({ title: t("admin.saveConfigSuccess"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, error instanceof Error ? error.message : t("admin.saveConfigFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, error instanceof Error ? error.message : t("admin.saveConfigFailed")), type: "error", priority: "high" }),
   });
 
   const defaultMutation = useMutation({
@@ -413,10 +407,10 @@ export function ModelConfigManager() {
       }
     },
     onSuccess: async () => {
-      setMessage(t("admin.defaultUpdated"));
+      toast.add({ title: t("admin.defaultUpdated"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, error instanceof Error ? error.message : t("admin.updateDefaultFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, error instanceof Error ? error.message : t("admin.updateDefaultFailed")), type: "error", priority: "high" }),
   });
 
   const enabledMutation = useMutation({
@@ -432,10 +426,10 @@ export function ModelConfigManager() {
         : updateUserConfigAction(config.id, { isEnabled: !config.isEnabled });
     },
     onSuccess: async () => {
-      setMessage(t("admin.enabledUpdated"));
+      toast.add({ title: t("admin.enabledUpdated"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.updateEnabledFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.updateEnabledFailed")), type: "error", priority: "high" }),
   });
 
   const deleteMutation = useMutation({
@@ -447,10 +441,10 @@ export function ModelConfigManager() {
     },
     onSuccess: async () => {
       setDeletingConfig(null);
-      setMessage(t("admin.configDeleted"));
+      toast.add({ title: t("admin.configDeleted"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.deleteConfigFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.deleteConfigFailed")), type: "error", priority: "high" }),
   });
 
   const busy = saveMutation.isPending || defaultMutation.isPending || enabledMutation.isPending || deleteMutation.isPending || isMutating;
@@ -656,8 +650,6 @@ export function ModelConfigManager() {
         </div>
       </div>
 
-      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
-
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
@@ -723,7 +715,6 @@ export function ModelConfigManager() {
                   onChange={(event) => {
                     setBaseUrl(event.target.value);
                     setModelOptions([]);
-                    setModelFetchMessage(null);
                   }}
                   disabled={!isRelay || ["edge", "system"].includes(provider)}
                   placeholder="https://api.example.com/v1"
@@ -740,7 +731,6 @@ export function ModelConfigManager() {
                     onChange={(event) => {
                       setApiKey(event.target.value);
                       setModelOptions([]);
-                      setModelFetchMessage(null);
                     }}
                     placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
                     disabled={["edge", "system"].includes(provider)}
@@ -782,9 +772,6 @@ export function ModelConfigManager() {
                 selectLabel={t("admin.selectModelSeries")}
                 emptyLabel={t("admin.noMatchingModels")}
               />
-              {modelFetchMessage ? (
-                <p className={`text-xs ${discoverModelsMutation.isError ? "text-destructive" : "text-muted-foreground"}`}>{modelFetchMessage}</p>
-              ) : null}
             </div>
 
             <div className="space-y-2">

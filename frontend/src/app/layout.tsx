@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { Toaster } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { AppPreferencesProvider } from "@/providers/app-preferences-provider";
 import { QueryProvider } from "@/providers/query-provider";
@@ -31,7 +32,7 @@ export default function RootLayout({
     <html lang="zh-CN" className={cn(geistSans.variable, geistMono.variable, "h-full antialiased")}>
       <body className="min-h-full flex flex-col">
         <AppPreferencesProvider>
-          <QueryProvider>{children}</QueryProvider>
+          <QueryProvider><Toaster>{children}</Toaster></QueryProvider>
         </AppPreferencesProvider>
       </body>
     </html>

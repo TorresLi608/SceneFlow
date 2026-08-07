@@ -6,13 +6,13 @@ import { useState } from "react";
 
 import { queryKeys } from "@/actions/query-keys";
 import { changePasswordAction, getMeAction, redeemCodeAction, updateMeAction } from "@/actions/user-actions";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { formatMoney } from "@/lib/money";
@@ -27,7 +27,6 @@ export default function ProfilePage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
   const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: getMeAction });
   const user = meQuery.data?.user;
   const usernameValue = username ?? user?.username ?? "";
@@ -38,9 +37,9 @@ export default function ProfilePage() {
       setUser(data.user);
       queryClient.setQueryData(queryKeys.me, data);
       setUsername(null);
-      setMessage({ title: t("profile.saveSuccess"), description: data.user.username });
+      toast.add({ title: t("profile.saveSuccess"), description: data.user.username, type: "success" });
     },
-    onError: (error) => setMessage({ title: t("profile.saveFailed"), description: resolveRequestError(error, t("profile.saveFailed")) }),
+    onError: (error) => toast.add({ title: t("profile.saveFailed"), description: resolveRequestError(error, t("profile.saveFailed")), type: "error", priority: "high" }),
   });
   const redeemMutation = useMutation({
     mutationFn: () => redeemCodeAction(code.trim()),
@@ -48,12 +47,13 @@ export default function ProfilePage() {
       setUser(data.user);
       queryClient.setQueryData(queryKeys.me, { user: data.user });
       setCode("");
-      setMessage({
+      toast.add({
         title: t("profile.redeemSuccess", { amount: (data.amountMicros / 1_000_000).toFixed(2) }),
         description: formatMoney(data.user.balanceMicros),
+        type: "success",
       });
     },
-    onError: (error) => setMessage({ title: t("profile.redeemFailed"), description: resolveRequestError(error, t("profile.redeemFailed")) }),
+    onError: (error) => toast.add({ title: t("profile.redeemFailed"), description: resolveRequestError(error, t("profile.redeemFailed")), type: "error", priority: "high" }),
   });
   const passwordMutation = useMutation({
     mutationFn: () => changePasswordAction(currentPassword, newPassword),
@@ -61,9 +61,9 @@ export default function ProfilePage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setMessage({ title: t("profile.passwordSuccess"), description: t("profile.passwordSuccessDescription") });
+      toast.add({ title: t("profile.passwordSuccess"), description: t("profile.passwordSuccessDescription"), type: "success" });
     },
-    onError: (error) => setMessage({ title: t("profile.passwordFailed"), description: resolveRequestError(error, t("profile.passwordFailed")) }),
+    onError: (error) => toast.add({ title: t("profile.passwordFailed"), description: resolveRequestError(error, t("profile.passwordFailed")), type: "error", priority: "high" }),
   });
 
   return (
@@ -96,13 +96,6 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        {message ? (
-          <Alert>
-            <AlertTitle>{message.title}</AlertTitle>
-            <AlertDescription>{message.description}</AlertDescription>
-          </Alert>
-        ) : null}
-
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader>
@@ -112,14 +105,13 @@ export default function ProfilePage() {
             <CardContent>
               <form onSubmit={(event) => { event.preventDefault(); redeemMutation.mutate(); }}>
                 <FieldGroup>
-                  <Field data-invalid={Boolean(message?.title === t("profile.redeemFailed")) || undefined}>
+                  <Field>
                     <FieldLabel htmlFor="redemptionCode">{t("profile.redeemCode")}</FieldLabel>
                     <Input
                       id="redemptionCode"
                       value={code}
                       onChange={(event) => setCode(event.target.value.toUpperCase())}
                       placeholder={t("profile.redeemPlaceholder")}
-                      aria-invalid={Boolean(message?.title === t("profile.redeemFailed")) || undefined}
                       maxLength={64}
                       required
                     />
@@ -164,7 +156,7 @@ export default function ProfilePage() {
               <form onSubmit={(event) => {
                 event.preventDefault();
                 if (newPassword !== confirmPassword) {
-                  setMessage({ title: t("profile.passwordFailed"), description: t("auth.passwordMismatch") });
+                  toast.add({ title: t("profile.passwordFailed"), description: t("auth.passwordMismatch"), type: "error", priority: "high" });
                   return;
                 }
                 passwordMutation.mutate();

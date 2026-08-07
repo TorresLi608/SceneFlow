@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 
 import { createRedemptionCodeAction, listRedemptionCodesAction } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +13,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toast } from "@/components/ui/toast";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { formatMoney } from "@/lib/money";
@@ -34,7 +34,6 @@ export function RedemptionCodeManager() {
   const [createOpen, setCreateOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [days, setDays] = useState<InvitationCodeDays>(7);
-  const [message, setMessage] = useState<string | null>(null);
   const statusItems = useMemo(
     () => [
       { value: "all", label: t("common.all") },
@@ -57,10 +56,10 @@ export function RedemptionCodeManager() {
     onSuccess: async () => {
       setCreateOpen(false);
       setAmount("");
-      setMessage(t("admin.redemptionCodeCreated"));
+      toast.add({ title: t("admin.redemptionCodeCreated"), type: "success" });
       await queryClient.invalidateQueries({ queryKey: ["redemption-codes"] });
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("admin.createRedemptionCodeFailed"))),
+    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.createRedemptionCodeFailed")), type: "error", priority: "high" }),
   });
   const pagination = codesQuery.data?.pagination ?? { total: 0, page, pageSize, pageCount: 1 };
 
@@ -127,8 +126,6 @@ export function RedemptionCodeManager() {
           <Button variant="outline" size="sm" disabled={page >= pagination.pageCount} onClick={() => setPage((value) => value + 1)}>{t("common.next")}</Button>
         </div>
       </div>
-
-      {message ? <Alert><AlertDescription>{message}</AlertDescription></Alert> : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
