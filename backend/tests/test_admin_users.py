@@ -4,11 +4,13 @@ import tempfile
 from pathlib import Path
 
 import bcrypt
+from sqlmodel import select
 
 from app.api.v1.admin import create_user, reset_user_password, update_user
 from app.api.v1.users import update_me
 from app.core import database
-from app.core.database import db, init_db, row
+from app.core.database import db, init_db
+from app.models import User
 
 
 def test_admin_create_and_reset_user() -> None:
@@ -39,10 +41,10 @@ def test_admin_create_and_reset_user() -> None:
 
             reset = reset_user_password(created["id"], 1)["password"]
             assert len(reset) >= 6
-            with db() as conn:
-                saved = row(conn, "SELECT * FROM users WHERE id=?", (created["id"],))
-            assert bcrypt.checkpw(reset.encode(), saved["password"].encode())
-            assert not bcrypt.checkpw(b"initial-password", saved["password"].encode())
+            with db() as session:
+                saved_password = session.exec(select(User.password).where(User.id == created["id"])).one()
+            assert bcrypt.checkpw(reset.encode(), saved_password.encode())
+            assert not bcrypt.checkpw(b"initial-password", saved_password.encode())
 
             try:
                 update_me({"currentPassword": "wrong-password", "password": "changed-password"}, created["id"])
@@ -51,9 +53,9 @@ def test_admin_create_and_reset_user() -> None:
                 assert getattr(exc, "status_code", None) == 400
 
             update_me({"currentPassword": reset, "password": "changed-password"}, created["id"])
-            with db() as conn:
-                saved = row(conn, "SELECT * FROM users WHERE id=?", (created["id"],))
-            assert bcrypt.checkpw(b"changed-password", saved["password"].encode())
+            with db() as session:
+                saved_password = session.exec(select(User.password).where(User.id == created["id"])).one()
+            assert bcrypt.checkpw(b"changed-password", saved_password.encode())
         finally:
             database.DB_PATH = original_path
 

@@ -67,14 +67,14 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
 
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
-    with db() as conn:
+    with db() as session:
         if official_config_id:
-            config = official_model_config_any(conn, int(official_config_id), ("image", "general"), "图片生成")
+            config = official_model_config_any(session, int(official_config_id), ("image", "general"), "图片生成")
         elif config_id:
-            config = user_model_config_any(conn, user_id, int(config_id), ("image", "general"), "图片生成")
+            config = user_model_config_any(session, user_id, int(config_id), ("image", "general"), "图片生成")
         else:
-            config = active_model_config(conn, user_id, "image", "图片生成")
-        require_model_balance(conn, user_id, config)
+            config = active_model_config(session, user_id, "image", "图片生成")
+        require_model_balance(session, user_id, config)
 
     if config["provider"] not in {"openai", "gemini"}:
         raise HTTPException(400, "image generation currently only supports provider openai/gemini")

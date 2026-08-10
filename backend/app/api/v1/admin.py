@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import secrets
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Annotated, Any
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import delete, func, or_, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
+from sqlmodel import Session, select
 
-from app.core.database import db, row, rows
+from app.core.database import db
 from app.api.deps import current_super_admin_id
+from app.models import ChatSession, InvitationCode, ModelConfig, RedemptionCode, UsageLog, User, UserOfficialConfigDefault
 from app.schemas.serializers import config_json, official_config_json, user_json
 from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_api_key
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates, usage_log_json
@@ -20,55 +24,65 @@ from app.utils.common import now
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def editable_user(conn: sqlite3.Connection, target_user_id: int, admin_id: int) -> sqlite3.Row:
-    user = row(conn, "SELECT * FROM users WHERE id=? AND deleted_at IS NULL", (target_user_id,))
+def editable_user(session: Session, target_user_id: int, admin_id: int) -> User:
+    user = session.exec(select(User).where(User.id == target_user_id, User.deleted_at.is_(None))).first()
     if not user:
         raise HTTPException(404, "user not found")
-    if target_user_id == admin_id or user["role"] == "superAdmin":
+    if target_user_id == admin_id or user.role == "superAdmin":
         raise HTTPException(400, "cannot modify superAdmin")
     return user
 
 
-def invitation_code_json(invitation: sqlite3.Row, stamp: str | None = None) -> dict[str, Any]:
-    status = "used" if invitation["used_at"] else "expired" if invitation["expires_at"] <= (stamp or now()) else "unused"
+def invitation_code_json(
+    invitation: InvitationCode,
+    used_by_username: str | None = None,
+    created_by_username: str | None = None,
+    stamp: str | None = None,
+) -> dict[str, Any]:
+    status = "used" if invitation.used_at else "expired" if invitation.expires_at <= (stamp or now()) else "unused"
     return {
-        "id": invitation["id"],
-        "code": invitation["code"],
+        "id": invitation.id,
+        "code": invitation.code,
         "status": status,
-        "createdAt": invitation["created_at"],
-        "expiresAt": invitation["expires_at"],
-        "usedAt": invitation["used_at"],
+        "createdAt": invitation.created_at,
+        "expiresAt": invitation.expires_at,
+        "usedAt": invitation.used_at,
         "usedBy": (
-            {"id": invitation["used_by_user_id"], "username": invitation["used_by_username"]}
-            if invitation["used_by_user_id"]
+            {"id": invitation.used_by_user_id, "username": used_by_username}
+            if invitation.used_by_user_id
             else None
         ),
         "createdBy": (
-            {"id": invitation["created_by_user_id"], "username": invitation["created_by_username"]}
-            if invitation["created_by_user_id"]
+            {"id": invitation.created_by_user_id, "username": created_by_username}
+            if invitation.created_by_user_id
             else None
         ),
     }
 
 
-def redemption_code_json(redemption: sqlite3.Row, stamp: str | None = None) -> dict[str, Any]:
-    status = "redeemed" if redemption["redeemed_at"] else "expired" if redemption["expires_at"] <= (stamp or now()) else "unused"
+def redemption_code_json(
+    redemption: RedemptionCode,
+    redeemed_by_username: str | None = None,
+    created_by_username: str | None = None,
+    stamp: str | None = None,
+) -> dict[str, Any]:
+    status = "redeemed" if redemption.redeemed_at else "expired" if redemption.expires_at <= (stamp or now()) else "unused"
     return {
-        "id": redemption["id"],
-        "code": redemption["code"],
+        "id": redemption.id,
+        "code": redemption.code,
         "status": status,
-        "amountMicros": str(redemption["amount_micros"]),
-        "createdAt": redemption["created_at"],
-        "expiresAt": redemption["expires_at"],
-        "redeemedAt": redemption["redeemed_at"],
+        "amountMicros": str(redemption.amount_micros),
+        "createdAt": redemption.created_at,
+        "expiresAt": redemption.expires_at,
+        "redeemedAt": redemption.redeemed_at,
         "redeemedBy": (
-            {"id": redemption["redeemed_by_user_id"], "username": redemption["redeemed_by_username"]}
-            if redemption["redeemed_by_user_id"]
+            {"id": redemption.redeemed_by_user_id, "username": redeemed_by_username}
+            if redemption.redeemed_by_user_id
             else None
         ),
         "createdBy": (
-            {"id": redemption["created_by_user_id"], "username": redemption["created_by_username"]}
-            if redemption["created_by_user_id"]
+            {"id": redemption.created_by_user_id, "username": created_by_username}
+            if redemption.created_by_user_id
             else None
         ),
     }
@@ -100,8 +114,8 @@ def user_level(value: Any) -> int:
 
 @router.get("/users")
 def list_users(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
-    with db() as conn:
-        users = rows(conn, "SELECT * FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC")
+    with db() as session:
+        users = session.exec(select(User).where(User.deleted_at.is_(None)).order_by(User.created_at.desc())).all()
     return {"users": [user_json(user) for user in users]}
 
 
@@ -112,31 +126,31 @@ def list_all_usage_logs(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
 ) -> dict[str, Any]:
-    args: list[Any] = []
-    where = ""
+    conditions = []
     if search.strip():
-        where = " WHERE users.username LIKE ?"
-        args.append(f"%{search.strip()}%")
+        conditions.append(User.username.like(f"%{search.strip()}%"))
     offset = (page - 1) * page_size
-    with db() as conn:
-        total = row(
-            conn,
-            f"SELECT COUNT(*) AS total FROM usage_logs JOIN users ON users.id=usage_logs.user_id{where}",
-            tuple(args),
-        )["total"]
-        logs = rows(
-            conn,
-            f"""SELECT usage_logs.*, users.username, model_configs.name AS config_name
-            FROM usage_logs JOIN users ON users.id=usage_logs.user_id
-            LEFT JOIN model_configs ON model_configs.id=usage_logs.config_id AND model_configs.source=usage_logs.config_source
-            {where}
-            ORDER BY usage_logs.created_at DESC LIMIT ? OFFSET ?""",
-            (*args, page_size, offset),
-        )
+    with db() as session:
+        total = session.exec(
+            select(func.count()).select_from(UsageLog).join(User, User.id == UsageLog.user_id).where(*conditions)
+        ).one()
+        logs = session.exec(
+            select(UsageLog, User.username, ModelConfig.name)
+            .join(User, User.id == UsageLog.user_id)
+            .join(
+                ModelConfig,
+                (ModelConfig.id == UsageLog.config_id) & (ModelConfig.source == UsageLog.config_source),
+                isouter=True,
+            )
+            .where(*conditions)
+            .order_by(UsageLog.created_at.desc())
+            .limit(page_size)
+            .offset(offset)
+        ).all()
     return {
         "usageLogs": [
-            {**usage_log_json(item), "user": {"id": item["user_id"], "username": item["username"]}}
-            for item in logs
+            {**usage_log_json(item, config_name), "user": {"id": item.user_id, "username": username}}
+            for item, username, config_name in logs
         ],
         "pagination": pagination(total, page, page_size),
     }
@@ -154,22 +168,28 @@ def create_user(payload: dict[str, Any], _: int = Depends(current_super_admin_id
     level = user_level(payload.get("level", 1))
     stamp = now()
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    with db() as conn:
+    with db() as session:
+        user = User(
+            created_at=stamp,
+            updated_at=stamp,
+            username=username,
+            password=hashed,
+            role=role,
+            is_disabled=False,
+            level=level,
+        )
+        session.add(user)
         try:
-            cur = conn.execute(
-                "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled, level) VALUES (?, ?, ?, ?, ?, 0, ?)",
-                (stamp, stamp, username, hashed, role, level),
-            )
-        except sqlite3.IntegrityError as exc:
+            session.flush()
+        except IntegrityError as exc:
             raise HTTPException(409, "username already exists") from exc
-        user = row(conn, "SELECT * FROM users WHERE id=?", (cur.lastrowid,))
-    return {"user": user_json(user)}
+        return {"user": user_json(user)}
 
 
 @router.patch("/users/{target_user_id}")
 def update_user(target_user_id: int, payload: dict[str, Any], admin_id: int = Depends(current_super_admin_id)) -> dict[str, Any]:
-    with db() as conn:
-        editable_user(conn, target_user_id, admin_id)
+    with db() as session:
+        user = editable_user(session, target_user_id, admin_id)
         updates: dict[str, Any] = {}
         if "isDisabled" in payload:
             updates["is_disabled"] = 1 if payload["isDisabled"] else 0
@@ -177,29 +197,33 @@ def update_user(target_user_id: int, payload: dict[str, Any], admin_id: int = De
             updates["level"] = user_level(payload["level"])
         if not updates:
             raise HTTPException(400, "no fields to update")
-        conn.execute(
-            f"UPDATE users SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
-            (*updates.values(), now(), target_user_id),
-        )
-        user = row(conn, "SELECT * FROM users WHERE id=?", (target_user_id,))
-    return {"user": user_json(user)}
+        for key, value in updates.items():
+            setattr(user, key, value)
+        user.updated_at = now()
+        session.add(user)
+        session.flush()
+        return {"user": user_json(user)}
 
 
 @router.post("/users/{target_user_id}")
 def reset_user_password(target_user_id: int, admin_id: int = Depends(current_super_admin_id)) -> dict[str, str]:
     password = secrets.token_urlsafe(12)
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    with db() as conn:
-        editable_user(conn, target_user_id, admin_id)
-        conn.execute("UPDATE users SET password=?, updated_at=? WHERE id=?", (hashed, now(), target_user_id))
+    with db() as session:
+        user = editable_user(session, target_user_id, admin_id)
+        user.password = hashed
+        user.updated_at = now()
+        session.add(user)
     return {"password": password}
 
 
 @router.delete("/users/{target_user_id}", status_code=204)
 def delete_user(target_user_id: int, admin_id: int = Depends(current_super_admin_id)) -> None:
-    with db() as conn:
-        editable_user(conn, target_user_id, admin_id)
-        conn.execute("UPDATE users SET deleted_at=?, updated_at=? WHERE id=?", (now(), now(), target_user_id))
+    with db() as session:
+        user = editable_user(session, target_user_id, admin_id)
+        user.deleted_at = now()
+        user.updated_at = now()
+        session.add(user)
 
 
 @router.get("/invitation-codes")
@@ -211,41 +235,40 @@ def list_invitation_codes(
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 10,
 ) -> dict[str, Any]:
     stamp = now()
+    used_users = aliased(User)
+    creator_users = aliased(User)
     conditions = []
-    args: list[Any] = []
     if status == "used":
-        conditions.append("invitation_codes.used_at IS NOT NULL")
+        conditions.append(InvitationCode.used_at.is_not(None))
     elif status == "expired":
-        conditions.append("invitation_codes.used_at IS NULL AND invitation_codes.expires_at<=?")
-        args.append(stamp)
+        conditions.append(InvitationCode.used_at.is_(None))
+        conditions.append(InvitationCode.expires_at <= stamp)
     elif status == "unused":
-        conditions.append("invitation_codes.used_at IS NULL AND invitation_codes.expires_at>?")
-        args.append(stamp)
+        conditions.append(InvitationCode.used_at.is_(None))
+        conditions.append(InvitationCode.expires_at > stamp)
     if search.strip():
-        conditions.append("used_users.username LIKE ?")
-        args.append(f"%{search.strip()}%")
-    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        conditions.append(used_users.username.like(f"%{search.strip()}%"))
     offset = (page - 1) * page_size
-    with db() as conn:
-        total = row(
-            conn,
-            f"""SELECT COUNT(*) AS total FROM invitation_codes
-            LEFT JOIN users AS used_users ON used_users.id=invitation_codes.used_by_user_id{where}""",
-            tuple(args),
-        )["total"]
-        invitations = rows(
-            conn,
-            f"""SELECT invitation_codes.*, used_users.username AS used_by_username,
-            creator_users.username AS created_by_username
-            FROM invitation_codes
-            LEFT JOIN users AS used_users ON used_users.id=invitation_codes.used_by_user_id
-            LEFT JOIN users AS creator_users ON creator_users.id=invitation_codes.created_by_user_id
-            {where}
-            ORDER BY invitation_codes.created_at DESC LIMIT ? OFFSET ?""",
-            (*args, page_size, offset),
-        )
+    with db() as session:
+        total = session.exec(
+            select(func.count())
+            .select_from(InvitationCode)
+            .join(used_users, used_users.id == InvitationCode.used_by_user_id, isouter=True)
+            .where(*conditions)
+        ).one()
+        invitations = session.exec(
+            select(InvitationCode, used_users.username, creator_users.username)
+            .join(used_users, used_users.id == InvitationCode.used_by_user_id, isouter=True)
+            .join(creator_users, creator_users.id == InvitationCode.created_by_user_id, isouter=True)
+            .where(*conditions)
+            .order_by(InvitationCode.created_at.desc())
+            .limit(page_size)
+            .offset(offset)
+        ).all()
     return {
-        "invitationCodes": [invitation_code_json(invitation, stamp) for invitation in invitations],
+        "invitationCodes": [
+            invitation_code_json(invitation, used_by, created_by, stamp) for invitation, used_by, created_by in invitations
+        ],
         "pagination": pagination(total, page, page_size),
     }
 
@@ -260,19 +283,17 @@ def create_invitation_code(payload: dict[str, Any], admin_id: int = Depends(curr
         raise HTTPException(400, "validity must be 1, 7, or 30 days")
 
     created = datetime.now(timezone.utc)
-    code = secrets.token_hex(6).upper()
-    with db() as conn:
-        cur = conn.execute(
-            "INSERT INTO invitation_codes (created_at, expires_at, code, created_by_user_id) VALUES (?, ?, ?, ?)",
-            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code, admin_id),
+    with db() as session:
+        invitation = InvitationCode(
+            created_at=created.isoformat(),
+            expires_at=(created + timedelta(days=days)).isoformat(),
+            code=secrets.token_hex(6).upper(),
+            created_by_user_id=admin_id,
         )
-        invitation = row(
-            conn,
-            """SELECT invitation_codes.*, NULL AS used_by_username, users.username AS created_by_username
-            FROM invitation_codes LEFT JOIN users ON users.id=invitation_codes.created_by_user_id WHERE invitation_codes.id=?""",
-            (cur.lastrowid,),
-        )
-    return {"invitationCode": invitation_code_json(invitation, created.isoformat())}
+        session.add(invitation)
+        session.flush()
+        created_by = session.exec(select(User.username).where(User.id == admin_id)).first()
+        return {"invitationCode": invitation_code_json(invitation, None, created_by, created.isoformat())}
 
 
 @router.get("/redemption-codes")
@@ -283,33 +304,33 @@ def list_redemption_codes(
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 10,
 ) -> dict[str, Any]:
     stamp = now()
+    redeemer_users = aliased(User)
+    creator_users = aliased(User)
     conditions = []
-    args: list[Any] = []
     if status == "redeemed":
-        conditions.append("redemption_codes.redeemed_at IS NOT NULL")
+        conditions.append(RedemptionCode.redeemed_at.is_not(None))
     elif status == "expired":
-        conditions.append("redemption_codes.redeemed_at IS NULL AND redemption_codes.expires_at<=?")
-        args.append(stamp)
+        conditions.append(RedemptionCode.redeemed_at.is_(None))
+        conditions.append(RedemptionCode.expires_at <= stamp)
     elif status == "unused":
-        conditions.append("redemption_codes.redeemed_at IS NULL AND redemption_codes.expires_at>?")
-        args.append(stamp)
-    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        conditions.append(RedemptionCode.redeemed_at.is_(None))
+        conditions.append(RedemptionCode.expires_at > stamp)
     offset = (page - 1) * page_size
-    with db() as conn:
-        total = row(conn, f"SELECT COUNT(*) AS total FROM redemption_codes{where}", tuple(args))["total"]
-        redemptions = rows(
-            conn,
-            f"""SELECT redemption_codes.*, redeemer_users.username AS redeemed_by_username,
-            creator_users.username AS created_by_username
-            FROM redemption_codes
-            LEFT JOIN users AS redeemer_users ON redeemer_users.id=redemption_codes.redeemed_by_user_id
-            LEFT JOIN users AS creator_users ON creator_users.id=redemption_codes.created_by_user_id
-            {where}
-            ORDER BY redemption_codes.created_at DESC LIMIT ? OFFSET ?""",
-            (*args, page_size, offset),
-        )
+    with db() as session:
+        total = session.exec(select(func.count()).select_from(RedemptionCode).where(*conditions)).one()
+        redemptions = session.exec(
+            select(RedemptionCode, redeemer_users.username, creator_users.username)
+            .join(redeemer_users, redeemer_users.id == RedemptionCode.redeemed_by_user_id, isouter=True)
+            .join(creator_users, creator_users.id == RedemptionCode.created_by_user_id, isouter=True)
+            .where(*conditions)
+            .order_by(RedemptionCode.created_at.desc())
+            .limit(page_size)
+            .offset(offset)
+        ).all()
     return {
-        "redemptionCodes": [redemption_code_json(item, stamp) for item in redemptions],
+        "redemptionCodes": [
+            redemption_code_json(item, redeemed_by, created_by, stamp) for item, redeemed_by, created_by in redemptions
+        ],
         "pagination": pagination(total, page, page_size),
     }
 
@@ -324,36 +345,45 @@ def create_redemption_code(payload: dict[str, Any], admin_id: int = Depends(curr
         raise HTTPException(400, "validity must be 1, 7, or 30 days")
     micros = amount_micros(payload.get("amount"))
     created = datetime.now(timezone.utc)
-    code = "RC-" + secrets.token_hex(8).upper()
-    with db() as conn:
-        cur = conn.execute(
-            "INSERT INTO redemption_codes (created_at, expires_at, code, amount_micros, created_by_user_id) VALUES (?, ?, ?, ?, ?)",
-            (created.isoformat(), (created + timedelta(days=days)).isoformat(), code, micros, admin_id),
+    with db() as session:
+        redemption = RedemptionCode(
+            created_at=created.isoformat(),
+            expires_at=(created + timedelta(days=days)).isoformat(),
+            code="RC-" + secrets.token_hex(8).upper(),
+            amount_micros=micros,
+            created_by_user_id=admin_id,
         )
-        redemption = row(
-            conn,
-            """SELECT redemption_codes.*, NULL AS redeemed_by_username, users.username AS created_by_username
-            FROM redemption_codes LEFT JOIN users ON users.id=redemption_codes.created_by_user_id WHERE redemption_codes.id=?""",
-            (cur.lastrowid,),
-        )
-    return {"redemptionCode": redemption_code_json(redemption, created.isoformat())}
+        session.add(redemption)
+        session.flush()
+        created_by = session.exec(select(User.username).where(User.id == admin_id)).first()
+        return {"redemptionCode": redemption_code_json(redemption, None, created_by, created.isoformat())}
 
 
 @router.get("/default-models")
 def list_default_models(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
-    with db() as conn:
-        configs = rows(conn, "SELECT * FROM model_configs WHERE source='official' AND deleted_at IS NULL ORDER BY updated_at DESC")
+    with db() as session:
+        configs = session.exec(
+            select(ModelConfig)
+            .where(ModelConfig.source == "official", ModelConfig.deleted_at.is_(None))
+            .order_by(ModelConfig.updated_at.desc())
+        ).all()
     return {"configs": [official_config_json(config) for config in configs]}
+
+
+def _admin_visible_config(session: Session, config_id: int, admin_id: int) -> ModelConfig | None:
+    return session.exec(
+        select(ModelConfig).where(
+            ModelConfig.id == config_id,
+            ModelConfig.deleted_at.is_(None),
+            or_(ModelConfig.source == "official", ModelConfig.user_id == admin_id),
+        )
+    ).first()
 
 
 @router.post("/model-configs/{config_id}/secret")
 def get_model_config_secret(config_id: int, admin_id: int = Depends(current_super_admin_id)) -> dict[str, str]:
-    with db() as conn:
-        config = row(
-            conn,
-            "SELECT encrypted_key FROM model_configs WHERE id=? AND deleted_at IS NULL AND (source='official' OR user_id=?)",
-            (config_id, admin_id),
-        )
+    with db() as session:
+        config = _admin_visible_config(session, config_id, admin_id)
     if not config:
         raise HTTPException(404, "config not found")
     return {"apiKey": config_api_key(config)}
@@ -365,15 +395,11 @@ async def update_model_config(
     payload: dict[str, Any],
     admin_id: int = Depends(current_super_admin_id),
 ) -> dict[str, Any]:
-    with db() as conn:
-        config = row(
-            conn,
-            "SELECT * FROM model_configs WHERE id=? AND deleted_at IS NULL AND (source='official' OR user_id=?)",
-            (config_id, admin_id),
-        )
+    with db() as session:
+        config = _admin_visible_config(session, config_id, admin_id)
     if not config:
         raise HTTPException(404, "config not found")
-    target_source = str(payload.get("source", config["source"]))
+    target_source = str(payload.get("source", config.source))
     if target_source not in {"user", "official"}:
         raise HTTPException(400, "invalid config source")
 
@@ -385,48 +411,76 @@ async def update_model_config(
         updates.update(pricing_updates(payload, config))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    source_changed = target_source != config["source"]
+    source_changed = target_source != config.source
     if source_changed:
         updates.update(source=target_source, user_id=None if target_source == "official" else admin_id)
     if not updates:
         raise HTTPException(400, "no fields to update")
 
     stamp = now()
-    with db() as conn:
-        is_active = bool(updates.get("is_active", config["is_active"]))
-        purpose = updates.get("purpose", config["purpose"])
+    with db() as session:
+        is_active = bool(updates.get("is_active", config.is_active))
+        purpose = updates.get("purpose", config.purpose)
         if is_active and target_source == "official":
-            conn.execute(
-                "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='official' AND purpose=? AND id<>? AND deleted_at IS NULL",
-                (stamp, purpose, config_id),
+            session.execute(
+                update(ModelConfig)
+                .where(
+                    ModelConfig.source == "official",
+                    ModelConfig.purpose == purpose,
+                    ModelConfig.id != config_id,
+                    ModelConfig.deleted_at.is_(None),
+                )
+                .values(is_active=0, updated_at=stamp),
+                execution_options={"synchronize_session": False},
             )
         elif is_active:
-            conn.execute(
-                "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND id<>? AND deleted_at IS NULL",
-                (stamp, admin_id, purpose, config_id),
+            session.execute(
+                update(ModelConfig)
+                .where(
+                    ModelConfig.source == "user",
+                    ModelConfig.user_id == admin_id,
+                    ModelConfig.purpose == purpose,
+                    ModelConfig.id != config_id,
+                    ModelConfig.deleted_at.is_(None),
+                )
+                .values(is_active=0, updated_at=stamp),
+                execution_options={"synchronize_session": False},
             )
-            conn.execute(
-                "DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?",
-                (admin_id, purpose),
+            session.execute(
+                delete(UserOfficialConfigDefault).where(
+                    UserOfficialConfigDefault.user_id == admin_id,
+                    UserOfficialConfigDefault.purpose == purpose,
+                ),
+                execution_options={"synchronize_session": False},
             )
         if source_changed and target_source == "official":
-            conn.execute(
-                "UPDATE chat_sessions SET config_id=NULL, official_config_id=? WHERE user_id=? AND config_id=?",
-                (config_id, admin_id, config_id),
+            session.execute(
+                update(ChatSession)
+                .where(ChatSession.user_id == admin_id, ChatSession.config_id == config_id)
+                .values(config_id=None, official_config_id=config_id),
+                execution_options={"synchronize_session": False},
             )
         elif source_changed:
-            conn.execute("DELETE FROM user_official_config_defaults WHERE official_config_id=?", (config_id,))
-            conn.execute(
-                "UPDATE chat_sessions SET config_id=?, official_config_id=NULL WHERE user_id=? AND official_config_id=?",
-                (config_id, admin_id, config_id),
+            session.execute(
+                delete(UserOfficialConfigDefault).where(UserOfficialConfigDefault.official_config_id == config_id),
+                execution_options={"synchronize_session": False},
             )
-            conn.execute("UPDATE chat_sessions SET official_config_id=NULL WHERE official_config_id=?", (config_id,))
-        conn.execute(
-            f"UPDATE model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
-            (*updates.values(), stamp, config_id),
+            session.execute(
+                update(ChatSession)
+                .where(ChatSession.user_id == admin_id, ChatSession.official_config_id == config_id)
+                .values(config_id=config_id, official_config_id=None),
+                execution_options={"synchronize_session": False},
+            )
+            session.execute(
+                update(ChatSession).where(ChatSession.official_config_id == config_id).values(official_config_id=None),
+                execution_options={"synchronize_session": False},
+            )
+        session.execute(
+            update(ModelConfig).where(ModelConfig.id == config_id).values(**updates, updated_at=stamp),
+            execution_options={"synchronize_session": False},
         )
-        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
-    return {"config": config_json(config)}
+        updated = session.exec(select(ModelConfig).where(ModelConfig.id == config_id)).first()
+        return {"config": config_json(updated)}
 
 
 @router.post("/default-models", status_code=201)
@@ -442,46 +496,43 @@ async def create_default_model(payload: dict[str, Any], _: int = Depends(current
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     stamp = now()
-    with db() as conn:
+    with db() as session:
         if bool(payload.get("isActive")):
-            conn.execute("UPDATE model_configs SET is_active=0, updated_at=? WHERE source='official' AND purpose=? AND deleted_at IS NULL", (stamp, fields["purpose"]))
-        cur = conn.execute(
-            """INSERT INTO model_configs
-            (created_at, updated_at, user_id, source, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
-             pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
-             cache_write_price_per_million, unit_price, unit_name, pricing_json)
-            VALUES (?, ?, NULL, 'official', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                stamp,
-                stamp,
-                fields["name"],
-                fields["description"],
-                fields["purpose"],
-                fields["provider"],
-                fields["base_url"],
-                fields["model_name"],
-                fields["encrypted_key"],
-                fields["is_active"],
-                fields["is_enabled"],
-                fields["is_verified"],
-                pricing["pricing_multiplier"],
-                pricing["input_price_per_million"],
-                pricing["output_price_per_million"],
-                pricing["cache_read_price_per_million"],
-                pricing["cache_write_price_per_million"],
-                pricing["unit_price"],
-                pricing["unit_name"],
-                pricing_snapshot(pricing),
-            ),
+            session.execute(
+                update(ModelConfig)
+                .where(
+                    ModelConfig.source == "official",
+                    ModelConfig.purpose == fields["purpose"],
+                    ModelConfig.deleted_at.is_(None),
+                )
+                .values(is_active=0, updated_at=stamp),
+                execution_options={"synchronize_session": False},
+            )
+        config = ModelConfig(
+            created_at=stamp,
+            updated_at=stamp,
+            user_id=None,
+            source="official",
+            **fields,
+            **pricing,
+            pricing_json=pricing_snapshot(pricing),
         )
-        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (cur.lastrowid,))
-    return {"config": official_config_json(config)}
+        session.add(config)
+        session.flush()
+        session.refresh(config)
+        return {"config": official_config_json(config)}
 
 
 @router.patch("/default-models/{config_id}")
 async def update_default_model(config_id: int, payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
-    with db() as conn:
-        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='official' AND deleted_at IS NULL", (config_id,))
+    with db() as session:
+        config = session.exec(
+            select(ModelConfig).where(
+                ModelConfig.id == config_id,
+                ModelConfig.source == "official",
+                ModelConfig.deleted_at.is_(None),
+            )
+        ).first()
     if not config:
         raise HTTPException(404, "official config not found")
 
@@ -497,24 +548,39 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
         raise HTTPException(400, "no fields to update")
 
     stamp = now()
-    with db() as conn:
+    with db() as session:
         if payload.get("isActive"):
-            conn.execute(
-                "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='official' AND purpose=? AND id<>? AND deleted_at IS NULL",
-                (stamp, normalized["purpose"], config_id),
+            session.execute(
+                update(ModelConfig)
+                .where(
+                    ModelConfig.source == "official",
+                    ModelConfig.purpose == normalized["purpose"],
+                    ModelConfig.id != config_id,
+                    ModelConfig.deleted_at.is_(None),
+                )
+                .values(is_active=0, updated_at=stamp),
+                execution_options={"synchronize_session": False},
             )
-        conn.execute(
-            f"UPDATE model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND source='official'",
-            (*updates.values(), stamp, config_id),
+        session.execute(
+            update(ModelConfig)
+            .where(ModelConfig.id == config_id, ModelConfig.source == "official")
+            .values(**updates, updated_at=stamp),
+            execution_options={"synchronize_session": False},
         )
-        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
-    return {"config": official_config_json(config)}
+        updated = session.exec(select(ModelConfig).where(ModelConfig.id == config_id)).first()
+        return {"config": official_config_json(updated)}
 
 
 @router.delete("/default-models/{config_id}", status_code=204)
 def delete_default_model(config_id: int, _: int = Depends(current_super_admin_id)) -> None:
-    with db() as conn:
-        conn.execute(
-            "UPDATE model_configs SET deleted_at=?, updated_at=? WHERE id=? AND source='official' AND deleted_at IS NULL",
-            (now(), now(), config_id),
+    with db() as session:
+        session.execute(
+            update(ModelConfig)
+            .where(
+                ModelConfig.id == config_id,
+                ModelConfig.source == "official",
+                ModelConfig.deleted_at.is_(None),
+            )
+            .values(deleted_at=now(), updated_at=now()),
+            execution_options={"synchronize_session": False},
         )

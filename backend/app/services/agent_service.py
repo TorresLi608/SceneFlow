@@ -60,8 +60,8 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
         try:
             started_at = time.monotonic()
             if user_id is not None:
-                with db() as conn:
-                    require_model_balance(conn, user_id, image_config)
+                with db() as session:
+                    require_model_balance(session, user_id, image_config)
             provider = image_config["provider"]
             size = aspect_ratio if provider == "gemini" else _openai_image_size(aspect_ratio)
             quality = "2K" if provider == "gemini" else "medium"

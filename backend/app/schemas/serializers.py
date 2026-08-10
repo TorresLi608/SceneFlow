@@ -1,67 +1,66 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from typing import Any
 
+from app.models import ChatMessage, ChatSession, ModelConfig, Project, Scene, User
 
-def user_json(user: sqlite3.Row) -> dict[str, Any]:
-    keys = user.keys()
+
+def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int = 0) -> dict[str, Any]:
     return {
-        "id": user["id"],
-        "username": user["username"],
-        "role": user["role"] or "user",
-        "isDisabled": bool(user["is_disabled"]),
-        "balanceMicros": str(user["balance_micros"] if "balance_micros" in keys else 0),
-        "level": user["level"] if "level" in keys else 1,
-        "group": user["user_group"] if "user_group" in keys else "default",
-        "historicalCostMicros": str(user["historical_cost_micros"] if "historical_cost_micros" in keys else 0),
-        "requestCount": user["request_count"] if "request_count" in keys else 0,
-        "createdAt": user["created_at"],
-        "updatedAt": user["updated_at"],
+        "id": user.id,
+        "username": user.username,
+        "role": user.role or "user",
+        "isDisabled": bool(user.is_disabled),
+        "balanceMicros": str(user.balance_micros),
+        "level": user.level,
+        "group": user.user_group,
+        "historicalCostMicros": str(historical_cost_micros),
+        "requestCount": request_count,
+        "createdAt": user.created_at,
+        "updatedAt": user.updated_at,
     }
 
 
-def config_json(config: sqlite3.Row) -> dict[str, Any]:
-    keys = config.keys()
+def config_json(config: ModelConfig) -> dict[str, Any]:
     pricing: dict[str, Any] = {}
-    if "pricing_json" in keys and config["pricing_json"]:
+    if config.pricing_json:
         try:
-            parsed = json.loads(config["pricing_json"])
+            parsed = json.loads(config.pricing_json)
             pricing = parsed if isinstance(parsed, dict) else {}
         except (TypeError, ValueError):
             pass
 
     def price(name: str, default: str) -> str:
-        value = pricing.get(name, config[name] if name in keys else default)
+        value = pricing.get(name, getattr(config, name))
         return str(default if value is None else value)
 
     return {
-        "id": config["id"],
-        "source": config["source"] if "source" in keys else "user",
-        "name": config["name"] or "",
-        "description": config["description"] or "",
-        "purpose": config["purpose"],
-        "provider": config["provider"],
-        "baseUrl": config["base_url"] or "",
-        "modelSeries": config["model_name"] or "",
-        "model": config["model_name"] or "",
-        "isActive": bool(config["is_active"]),
-        "isEnabled": bool(config["is_enabled"]) if "is_enabled" in config.keys() else True,
-        "isVerified": bool(config["is_verified"]),
-        "createdAt": config["created_at"],
-        "updatedAt": config["updated_at"],
+        "id": config.id,
+        "source": config.source,
+        "name": config.name or "",
+        "description": config.description or "",
+        "purpose": config.purpose,
+        "provider": config.provider,
+        "baseUrl": config.base_url or "",
+        "modelSeries": config.model_name or "",
+        "model": config.model_name or "",
+        "isActive": bool(config.is_active),
+        "isEnabled": bool(config.is_enabled),
+        "isVerified": bool(config.is_verified),
+        "createdAt": config.created_at,
+        "updatedAt": config.updated_at,
         "pricingMultiplier": price("pricing_multiplier", "1"),
         "inputPricePerMillion": price("input_price_per_million", "0"),
         "outputPricePerMillion": price("output_price_per_million", "0"),
         "cacheReadPricePerMillion": price("cache_read_price_per_million", "0"),
         "cacheWritePricePerMillion": price("cache_write_price_per_million", "0"),
         "unitPrice": price("unit_price", "0"),
-        "unitName": config["unit_name"] if "unit_name" in keys else "token",
+        "unitName": config.unit_name,
     }
 
 
-def official_config_json(config: sqlite3.Row, is_active: bool | None = None) -> dict[str, Any]:
+def official_config_json(config: ModelConfig, is_active: bool | None = None) -> dict[str, Any]:
     data = config_json(config)
     data["source"] = "official"
     if is_active is not None:
@@ -69,78 +68,76 @@ def official_config_json(config: sqlite3.Row, is_active: bool | None = None) -> 
     return data
 
 
-def scene_json(scene: sqlite3.Row) -> dict[str, Any]:
-    keys = scene.keys()
+def scene_json(scene: Scene) -> dict[str, Any]:
     return {
-        "id": scene["id"],
-        "order": scene["order_num"],
-        "narration": scene["narration"],
-        "visualPrompt": scene["visual_prompt"],
-        "image": {"url": scene["image_url"] or None, "status": scene["image_status"], "progress": 0},
+        "id": scene.id,
+        "order": scene.order_num,
+        "narration": scene.narration,
+        "visualPrompt": scene.visual_prompt,
+        "image": {"url": scene.image_url or None, "status": scene.image_status, "progress": 0},
         "audio": {
-            "url": scene["audio_url"] or None,
-            "status": scene["audio_status"],
+            "url": scene.audio_url or None,
+            "status": scene.audio_status,
             "progress": 0,
-            "duration": (scene["audio_duration"] if "audio_duration" in keys else 0) or 0,
+            "duration": scene.audio_duration or 0,
         },
     }
 
 
-def project_json(project: sqlite3.Row, scenes: list[sqlite3.Row]) -> dict[str, Any]:
-    keys = project.keys()
+def project_json(project: Project, scenes: list[Scene]) -> dict[str, Any]:
     return {
-        "id": project["id"],
-        "title": project["title"] or "未命名项目",
-        "originalScript": project["original_script"] or "",
-        "status": project["status"] or "idle",
-        "videoStatus": project["video_status"] or "idle",
-        "videoProgress": project["video_progress"] or 0,
-        "videoUrl": project["video_url"] or None,
+        "id": project.id,
+        "title": project.title or "未命名项目",
+        "originalScript": project.original_script or "",
+        "status": project.status or "idle",
+        "videoStatus": project.video_status or "idle",
+        "videoProgress": project.video_progress or 0,
+        "videoUrl": project.video_url or None,
         "productionSettings": {
-            "mode": project["mode"] if "mode" in keys else "comic",
-            "aspectRatio": project["aspect_ratio"] if "aspect_ratio" in keys else "9:16",
-            "width": project["width"] if "width" in keys else 1080,
-            "height": project["height"] if "height" in keys else 1920,
-            "fps": project["fps"] if "fps" in keys else 24,
-            "targetDurationMs": project["target_duration_ms"] if "target_duration_ms" in keys else 60000,
-            "language": project["language"] if "language" in keys else "zh-CN",
-            "stylePrompt": project["style_prompt"] if "style_prompt" in keys else "",
-            "negativePrompt": project["negative_prompt"] if "negative_prompt" in keys else "",
+            "mode": project.mode,
+            "aspectRatio": project.aspect_ratio,
+            "width": project.width,
+            "height": project.height,
+            "fps": project.fps,
+            "targetDurationMs": project.target_duration_ms,
+            "language": project.language,
+            "stylePrompt": project.style_prompt,
+            "negativePrompt": project.negative_prompt,
         },
-        "currentStage": project["current_stage"] if "current_stage" in keys else "script",
-        "updatedAt": project["updated_at"],
+        "currentStage": project.current_stage,
+        "updatedAt": project.updated_at,
         "scenes": [scene_json(scene) for scene in scenes],
     }
 
 
-def chat_session_json(session: sqlite3.Row) -> dict[str, Any]:
+def chat_session_json(session: ChatSession) -> dict[str, Any]:
     return {
-        "id": session["id"],
-        "title": session["title"],
-        "configId": session["config_id"],
-        "officialConfigId": session["official_config_id"],
-        "provider": session["provider"] or "",
-        "model": session["model_name"] or "",
-        "createdAt": session["created_at"],
-        "updatedAt": session["updated_at"],
+        "id": session.id,
+        "title": session.title,
+        "configId": session.config_id,
+        "officialConfigId": session.official_config_id,
+        "provider": session.provider or "",
+        "model": session.model_name or "",
+        "createdAt": session.created_at,
+        "updatedAt": session.updated_at,
     }
 
 
-def chat_message_json(message: sqlite3.Row) -> dict[str, Any]:
+def chat_message_json(message: ChatMessage) -> dict[str, Any]:
     attachments = []
-    if "attachments" in message.keys() and message["attachments"]:
+    if message.attachments:
         try:
-            attachments = json.loads(message["attachments"])
+            attachments = json.loads(message.attachments)
         except json.JSONDecodeError:
             attachments = []
     return {
-        "id": message["id"],
-        "sessionId": message["session_id"],
-        "role": message["role"],
-        "content": message["content"],
+        "id": message.id,
+        "sessionId": message.session_id,
+        "role": message.role,
+        "content": message.content,
         "attachments": attachments,
-        "reasoning": message["reasoning"] or "",
-        "provider": message["provider"] or "",
-        "model": message["model_name"] or "",
-        "createdAt": message["created_at"],
+        "reasoning": message.reasoning or "",
+        "provider": message.provider or "",
+        "model": message.model_name or "",
+        "createdAt": message.created_at,
     }

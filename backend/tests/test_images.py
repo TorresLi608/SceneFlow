@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
+from app.models import User
 from app.utils.common import now
 
 
@@ -42,13 +43,11 @@ def test_official_image_requires_balance_but_personal_config_does_not() -> None:
         try:
             init_db()
             stamp = now()
-            with db() as conn:
-                user_id = int(
-                    conn.execute(
-                        "INSERT INTO users (created_at, updated_at, username, password, role, is_disabled) VALUES (?, ?, 'image-user', 'x', 'user', 0)",
-                        (stamp, stamp),
-                    ).lastrowid
-                )
+            with db() as session:
+                user = User(created_at=stamp, updated_at=stamp, username="image-user", password="x", role="user", is_disabled=False)
+                session.add(user)
+                session.flush()
+                user_id = int(user.id)
             config = {"source": "official", "provider": "openai", "apiKey": "test-key", "model": "gpt-image-1"}
             generate = AsyncMock(return_value=SimpleNamespace(data=b"png", format="png"))
             with (
@@ -64,8 +63,8 @@ def test_official_image_requires_balance_but_personal_config_does_not() -> None:
                     assert getattr(exc, "status_code", None) == 402
                 assert generate.await_count == 0
 
-                with db() as conn:
-                    conn.execute("UPDATE users SET balance_micros=1 WHERE id=?", (user_id,))
+                with db() as session:
+                    session.get(User, user_id).balance_micros = 1
                 result = asyncio.run(generate_image({"prompt": "a fox"}, user_id))
                 assert result["image"]["url"] == "http://example.test/image.png"
                 assert generate.await_count == 1

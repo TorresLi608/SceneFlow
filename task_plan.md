@@ -1,5 +1,43 @@
 # Task Plan: Project Continuity + Chat Attachments
 
+## Session 2026-08-10: 后端 ORM 重构未提交变更归档
+
+### Goal
+
+- 盘点当前已暂存但尚未提交的代码，完整记录后端从手写 SQL 重构为 ORM 的范围、兼容策略与验证结果。
+
+### Phases
+
+#### Phase 1: 审计已暂存差异
+
+- [x] 核对 Git 文件清单、依赖、数据库会话、ORM 模型及主要调用链。
+- [x] 区分已 ORM 化的运行时 CRUD 与仍需保留的初始化/兼容迁移 SQL。
+- **Status:** complete
+
+#### Phase 2: 核对测试与文档
+
+- [x] 检查测试和 README 对 ORM 重构的覆盖。
+- [x] 运行后端全量测试及 Git 差异检查。
+- **Status:** complete
+
+#### Phase 3: 完成持久化记录
+
+- [x] 在 `findings.md` 记录架构、关键决策、兼容性和残余风险。
+- [x] 在 `progress.md` 记录文件范围、行为变化与验证结果。
+- **Status:** complete
+
+### Verification
+
+- `cd backend && .venv/bin/python tests/run_all.py`：通过，退出码 0。
+- `git diff --cached --check`：通过，已暂存 ORM 代码无空白错误。
+- `git diff --check`：通过，本次三份日志无空白错误。
+
+### Errors Encountered
+
+| Error | Attempt | Resolution |
+|---|---:|---|
+| 无 | - | 本次审计、测试和文档检查均未遇到错误。 |
+
 ## Goal
 Summarize the current SceneFlow project so future AI sessions can resume development quickly and safely, then improve intelligent chat attachments and composer UI.
 

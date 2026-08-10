@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import json
-import sqlite3
 import time
 from typing import Any, Mapping
 
 from fastapi import HTTPException
+from sqlalchemy import func, update
+from sqlmodel import Session, select
 
-from app.core.database import db, row, rows
+from app.core.database import db
+from app.models import ModelConfig, UsageLog, User
 from app.utils.common import new_id, now
 
 
@@ -37,11 +39,11 @@ def pricing_snapshot(pricing: Mapping[str, Any]) -> str:
     return json.dumps(dict(pricing), ensure_ascii=False, separators=(",", ":"))
 
 
-def normalize_pricing(payload: Mapping[str, Any], current: sqlite3.Row | None = None) -> dict[str, Any]:
+def normalize_pricing(payload: Mapping[str, Any], current: ModelConfig | UsageLog | None = None) -> dict[str, Any]:
     stored: Mapping[str, Any] = {}
-    if current is not None and "pricing_json" in current.keys() and current["pricing_json"]:
+    if current is not None and current.pricing_json:
         try:
-            parsed = json.loads(current["pricing_json"])
+            parsed = json.loads(current.pricing_json)
             stored = parsed if isinstance(parsed, dict) else {}
         except (TypeError, ValueError):
             stored = {}
@@ -51,8 +53,8 @@ def normalize_pricing(payload: Mapping[str, Any], current: sqlite3.Row | None = 
             return payload[api_key]
         if db_key in stored:
             return stored[db_key]
-        if current is not None and db_key in current.keys():
-            return current[db_key]
+        if current is not None and hasattr(current, db_key):
+            return getattr(current, db_key)
         return default
 
     unit_name = str(value("unitName", "unit_name", "token") or "token").strip().lower()
@@ -72,7 +74,7 @@ def normalize_pricing(payload: Mapping[str, Any], current: sqlite3.Row | None = 
     }
 
 
-def pricing_updates(payload: Mapping[str, Any], current: sqlite3.Row) -> dict[str, Any]:
+def pricing_updates(payload: Mapping[str, Any], current: ModelConfig) -> dict[str, Any]:
     pricing = normalize_pricing(payload, current)
     updates = {db_key: pricing[db_key] for api_key, db_key in PRICE_FIELDS.items() if api_key in payload}
     if updates:
@@ -117,14 +119,14 @@ def calculate_cost_micros(pricing: Mapping[str, Any], usage: Mapping[str, int], 
     return int((cost * Decimal(1_000_000)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def require_model_balance(conn: sqlite3.Connection, user_id: int, config: Mapping[str, Any]) -> None:
+def require_model_balance(session: Session, user_id: int, config: Mapping[str, Any]) -> None:
     source = str(config.get("source") or ("official" if config.get("officialConfigId") else "user"))
     if source != "official":
         return
-    user = row(conn, "SELECT role, balance_micros FROM users WHERE id=? AND deleted_at IS NULL", (user_id,))
+    user = session.exec(select(User).where(User.id == user_id, User.deleted_at.is_(None))).first()
     if not user:
         raise HTTPException(401, "user not found")
-    if (user["role"] or "user") != "superAdmin" and int(user["balance_micros"] or 0) <= 0:
+    if (user.role or "user") != "superAdmin" and int(user.balance_micros or 0) <= 0:
         raise HTTPException(402, "当前余额不足，请先兑换额度后再使用官方模型。")
 
 
@@ -141,105 +143,109 @@ def record_usage(
     config_id = config.get("officialConfigId") if source == "official" else config.get("configId")
     pricing = normalize_pricing({})
     if config_id:
-        with db() as conn:
-            stored_config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source=?", (int(config_id), source))
+        with db() as session:
+            stored_config = session.exec(
+                select(ModelConfig).where(ModelConfig.id == int(config_id), ModelConfig.source == source)
+            ).first()
         if stored_config:
             pricing = normalize_pricing({}, stored_config)
     cost_micros = calculate_cost_micros(pricing, token_usage, quantity)
-    with db() as conn:
-        conn.execute(
-            """INSERT INTO usage_logs
-            (id, created_at, user_id, feature, config_source, config_id, provider, model_name, duration_ms,
-             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, quantity, cost_micros,
-             pricing_multiplier, input_price_per_million, output_price_per_million,
-             cache_read_price_per_million, cache_write_price_per_million, unit_price, unit_name, pricing_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                new_id("usage"),
-                now(),
-                user_id,
-                feature[:40],
-                source,
-                int(config_id) if config_id else None,
-                str(config.get("provider") or "")[:40],
-                str(config.get("model") or "")[:160],
-                max(0, int((time.monotonic() - started_at) * 1000)),
-                token_usage["inputTokens"],
-                token_usage["outputTokens"],
-                token_usage["cacheReadTokens"],
-                token_usage["cacheWriteTokens"],
-                max(0, float(quantity)),
-                cost_micros,
-                pricing["pricing_multiplier"],
-                pricing["input_price_per_million"],
-                pricing["output_price_per_million"],
-                pricing["cache_read_price_per_million"],
-                pricing["cache_write_price_per_million"],
-                pricing["unit_price"],
-                pricing["unit_name"],
-                pricing_snapshot(pricing),
-            ),
+    with db() as session:
+        session.add(
+            UsageLog(
+                id=new_id("usage"),
+                created_at=now(),
+                user_id=user_id,
+                feature=feature[:40],
+                config_source=source,
+                config_id=int(config_id) if config_id else None,
+                provider=str(config.get("provider") or "")[:40],
+                model_name=str(config.get("model") or "")[:160],
+                duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+                input_tokens=token_usage["inputTokens"],
+                output_tokens=token_usage["outputTokens"],
+                cache_read_tokens=token_usage["cacheReadTokens"],
+                cache_write_tokens=token_usage["cacheWriteTokens"],
+                quantity=max(0, float(quantity)),
+                cost_micros=cost_micros,
+                pricing_multiplier=pricing["pricing_multiplier"],
+                input_price_per_million=pricing["input_price_per_million"],
+                output_price_per_million=pricing["output_price_per_million"],
+                cache_read_price_per_million=pricing["cache_read_price_per_million"],
+                cache_write_price_per_million=pricing["cache_write_price_per_million"],
+                unit_price=pricing["unit_price"],
+                unit_name=pricing["unit_name"],
+                pricing_json=pricing_snapshot(pricing),
+            )
         )
         if source == "official" and cost_micros:
-            conn.execute(
-                "UPDATE users SET balance_micros=MAX(0, balance_micros-?), updated_at=? WHERE id=? AND role<>'superAdmin'",
-                (cost_micros, now(), user_id),
+            # Kept as a SQL-side atomic decrement so concurrent requests cannot clobber each other.
+            session.execute(
+                update(User)
+                .where(User.id == user_id, User.role != "superAdmin")
+                .values(balance_micros=func.max(0, User.balance_micros - cost_micros), updated_at=now())
+                .execution_options(synchronize_session=False)
             )
 
 
-def usage_logs(conn: sqlite3.Connection, user_id: int, feature: str = "all", days: int = 30, source: str = "all") -> dict[str, Any]:
-    conditions = ["usage_logs.user_id=?", "usage_logs.created_at>=datetime('now', ?)"]
-    args: list[Any] = [user_id, f"-{max(1, min(days, 365))} days"]
+def usage_logs(session: Session, user_id: int, feature: str = "all", days: int = 30, source: str = "all") -> dict[str, Any]:
+    conditions = [
+        UsageLog.user_id == user_id,
+        UsageLog.created_at >= func.datetime("now", f"-{max(1, min(days, 365))} days"),
+    ]
     if feature != "all":
-        conditions.append("usage_logs.feature=?")
-        args.append(feature)
+        conditions.append(UsageLog.feature == feature)
     if source != "all":
-        conditions.append("usage_logs.config_source=?")
-        args.append(source)
-    where = " AND ".join(conditions)
-    items = rows(
-        conn,
-        f"""SELECT usage_logs.*, model_configs.name AS config_name
-        FROM usage_logs
-        LEFT JOIN model_configs ON model_configs.id=usage_logs.config_id AND model_configs.source=usage_logs.config_source
-        WHERE {where} ORDER BY usage_logs.created_at DESC LIMIT 500""",
-        tuple(args),
-    )
-    summary = row(
-        conn,
-        f"""SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input_tokens,
-        COALESCE(SUM(output_tokens),0) AS output_tokens, COALESCE(SUM(cost_micros),0) AS cost_micros
-        FROM usage_logs WHERE {where}""",
-        tuple(args),
-    )
+        conditions.append(UsageLog.config_source == source)
+    items = session.exec(
+        select(UsageLog, ModelConfig.name)
+        .join(
+            ModelConfig,
+            (ModelConfig.id == UsageLog.config_id) & (ModelConfig.source == UsageLog.config_source),
+            isouter=True,
+        )
+        .where(*conditions)
+        .order_by(UsageLog.created_at.desc())
+        .limit(500)
+    ).all()
+    calls, input_tokens, output_tokens, cost_micros = session.exec(
+        select(
+            func.count(),
+            func.coalesce(func.sum(UsageLog.input_tokens), 0),
+            func.coalesce(func.sum(UsageLog.output_tokens), 0),
+            func.coalesce(func.sum(UsageLog.cost_micros), 0),
+        )
+        .select_from(UsageLog)
+        .where(*conditions)
+    ).one()
     return {
         "summary": {
-            "calls": summary["calls"],
-            "inputTokens": summary["input_tokens"],
-            "outputTokens": summary["output_tokens"],
-            "costMicros": str(summary["cost_micros"]),
+            "calls": calls,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "costMicros": str(cost_micros),
         },
-        "logs": [usage_log_json(item) for item in items],
+        "logs": [usage_log_json(item, config_name) for item, config_name in items],
     }
 
 
-def usage_log_json(item: sqlite3.Row) -> dict[str, Any]:
+def usage_log_json(item: UsageLog, config_name: str | None = "") -> dict[str, Any]:
     pricing = normalize_pricing({}, item)
     return {
-        "id": item["id"],
-        "createdAt": item["created_at"],
-        "feature": item["feature"],
-        "source": item["config_source"],
-        "provider": item["provider"],
-        "configName": (item["config_name"] or "") if "config_name" in item.keys() else "",
-        "model": item["model_name"],
-        "durationMs": item["duration_ms"],
-        "inputTokens": item["input_tokens"],
-        "outputTokens": item["output_tokens"],
-        "cacheReadTokens": item["cache_read_tokens"],
-        "cacheWriteTokens": item["cache_write_tokens"],
-        "quantity": item["quantity"],
-        "costMicros": str(item["cost_micros"]),
+        "id": item.id,
+        "createdAt": item.created_at,
+        "feature": item.feature,
+        "source": item.config_source,
+        "provider": item.provider,
+        "configName": config_name or "",
+        "model": item.model_name,
+        "durationMs": item.duration_ms,
+        "inputTokens": item.input_tokens,
+        "outputTokens": item.output_tokens,
+        "cacheReadTokens": item.cache_read_tokens,
+        "cacheWriteTokens": item.cache_write_tokens,
+        "quantity": item.quantity,
+        "costMicros": str(item.cost_micros),
         "pricingMultiplier": pricing["pricing_multiplier"],
         "inputPricePerMillion": pricing["input_price_per_million"],
         "outputPricePerMillion": pricing["output_price_per_million"],

@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlmodel import Session
 
 from app.core.database import db
 from app.api.deps import current_user_id
@@ -21,9 +22,9 @@ from app.services.usage_service import record_usage
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
-def _image_config(conn, user_id: int) -> dict[str, Any] | None:
+def _image_config(session: Session, user_id: int) -> dict[str, Any] | None:
     try:
-        return active_model_config(conn, user_id, "image", "Agent 图片生成")
+        return active_model_config(session, user_id, "image", "Agent 图片生成")
     except HTTPException:
         return None
 
@@ -45,36 +46,36 @@ def get_artifact(token: str) -> FileResponse:
 
 @router.get("/sessions")
 def get_sessions(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        return {"sessions": list_chat_sessions(conn, user_id)}
+    with db() as session:
+        return {"sessions": list_chat_sessions(session, user_id)}
 
 
 @router.post("/sessions", status_code=201)
 def post_session(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
-    with db() as conn:
-        session = create_chat_session(
-            conn,
+    with db() as session:
+        chat = create_chat_session(
+            session,
             user_id,
             str(payload.get("title", "")),
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )
-    return {"session": session}
+    return {"session": chat}
 
 
 @router.delete("/sessions/{session_id}")
 def delete_session(session_id: str, user_id: int = Depends(current_user_id)) -> dict[str, bool]:
-    with db() as conn:
-        delete_chat_session(conn, session_id, user_id)
+    with db() as session:
+        delete_chat_session(session, session_id, user_id)
     return {"ok": True}
 
 
 @router.get("/sessions/{session_id}/messages")
 def get_messages(session_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        return {"messages": list_chat_messages(conn, session_id, user_id)}
+    with db() as session:
+        return {"messages": list_chat_messages(session, session_id, user_id)}
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -83,9 +84,9 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
     attachments = payload.get("attachments")
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
-    with db() as conn:
+    with db() as session:
         config, user_message, messages = await prepare_chat_turn(
-            conn,
+            session,
             session_id,
             user_id,
             content,
@@ -93,7 +94,7 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )
-        image_config = _image_config(conn, user_id)
+        image_config = _image_config(session, user_id)
 
     started_at = time.monotonic()
     try:
@@ -101,8 +102,8 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
     except Exception as exc:
         raise HTTPException(502, "failed to chat: " + str(exc)) from exc
 
-    with db() as conn:
-        assistant_message = save_chat_message(conn, session_id, "assistant", result.content, config["provider"], config["model"])
+    with db() as session:
+        assistant_message = save_chat_message(session, session_id, "assistant", result.content, config["provider"], config["model"])
     record_usage(user_id, config, "chat", started_at, result.usage)
 
     return {
@@ -117,9 +118,9 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
     attachments = payload.get("attachments")
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
-    with db() as conn:
+    with db() as session:
         config, user_message = begin_chat_turn(
-            conn,
+            session,
             session_id,
             user_id,
             content,
@@ -127,7 +128,7 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
             int(config_id) if config_id else None,
             int(official_config_id) if official_config_id else None,
         )
-        image_config = _image_config(conn, user_id)
+        image_config = _image_config(session, user_id)
 
     async def events():
         started_at = time.monotonic()
@@ -137,8 +138,8 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
         messages: list[dict[str, str]] = []
         usage: dict[str, int] = {}
         try:
-            with db() as conn:
-                async for event in stream_context_messages(conn, session_id, config):
+            with db() as session:
+                async for event in stream_context_messages(session, session_id, config):
                     if event["type"] == "context_ready":
                         messages = event["messages"]
                         continue
@@ -163,9 +164,9 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
             ) + "\n"
             if not answer.strip():
                 raise ValueError("empty content from agent")
-            with db() as conn:
+            with db() as session:
                 assistant_message = save_chat_message(
-                    conn,
+                    session,
                     session_id,
                     "assistant",
                     answer.strip(),

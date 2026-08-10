@@ -7,40 +7,39 @@ import tempfile
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.api.v1.admin import create_default_model, update_model_config
-from app.api.v1.settings import create_config, discover_models, update_config
+from app.api.v1.admin import create_default_model, delete_default_model, update_model_config
+from app.api.v1.settings import activate_official_config, create_config, deactivate_official_config, discover_models, list_configs, update_config
 from app.core import database
-from app.core.database import db, init_db, row, rows
+from app.core.database import db, init_db
 from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
-from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload
+from app.models import ChatMessage, ChatSession, ModelConfig, User, UserOfficialConfigDefault
+from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload
 
 
-def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE model_configs (
-            id integer PRIMARY KEY,
-            user_id integer,
-            source text,
-            purpose text,
-            provider text,
-            base_url text,
-            model_name text,
-            encrypted_key text,
-            is_active numeric,
-            is_enabled numeric
-        )
-        """
+def _stored_config() -> ModelConfig:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    session = Session(engine, expire_on_commit=False)
+    session.add(User(id=1, username="config-user", password="x"))
+    config = ModelConfig(
+        id=1,
+        user_id=1,
+        source="user",
+        purpose="script",
+        provider="qwen",
+        base_url="",
+        model_name="qwen-max",
+        encrypted_key=encrypt("old-secret-key"),
+        is_active=True,
+        is_enabled=True,
     )
-    conn.execute(
-        "INSERT INTO model_configs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (1, 1, "user", "script", "qwen", "", "qwen-max", encrypt("old-secret-key"), 1, 1),
-    )
-    return conn
+    session.add(config)
+    session.flush()
+    return config
 
 
 def test_config_create_fields_rejects_disabled_default() -> None:
@@ -87,7 +86,7 @@ def test_base_url_rejects_private_networks() -> None:
 
 
 def test_config_update_fields_disables_active_config() -> None:
-    current = row(_conn(), "SELECT * FROM model_configs WHERE id=1")
+    current = _stored_config()
     payload = {"isEnabled": False}
     normalized = normalize_config_payload(payload, current)
 
@@ -99,9 +98,7 @@ def test_config_update_fields_disables_active_config() -> None:
 
 
 def test_config_api_key_decrypts_stored_secret() -> None:
-    config = row(_conn(), "SELECT encrypted_key FROM model_configs WHERE id=1")
-
-    assert config_api_key(config) == "old-secret-key"
+    assert config_api_key(_stored_config()) == "old-secret-key"
 
 
 def test_image_openai_relay_config_is_valid() -> None:
@@ -167,10 +164,11 @@ def test_user_config_pricing_round_trip() -> None:
         database.DB_PATH = str(Path(directory) / "config.db")
         try:
             init_db()
-            with db() as conn:
-                user_id = conn.execute(
-                    "INSERT INTO users (username, password, role, is_disabled) VALUES ('pricing-user', 'x', 'user', 0)"
-                ).lastrowid
+            with db() as session:
+                user = User(username="pricing-user", password="x", role="user", is_disabled=False)
+                session.add(user)
+                session.flush()
+                user_id = int(user.id)
             validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
             with patch("app.services.config_service.models.validate_image_model", new=validator):
                 created = asyncio.run(
@@ -186,11 +184,11 @@ def test_user_config_pricing_round_trip() -> None:
                             "unitPrice": "0.100000000000000009",
                             "unitName": "image",
                         },
-                        int(user_id),
+                        user_id,
                     )
                 )["config"]
                 updated = asyncio.run(
-                    update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": "0.250000000000000001"}, int(user_id))
+                    update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": "0.250000000000000001"}, user_id)
                 )["config"]
             validator.assert_not_awaited()
             assert created["pricingMultiplier"] == "1.500000000000000001"
@@ -208,15 +206,16 @@ def test_price_only_admin_edit_skips_model_revalidation() -> None:
         database.DB_PATH = str(Path(directory) / "pricing-edit.db")
         try:
             init_db()
-            with db() as conn:
-                config_id = int(conn.execute(
-                    """INSERT INTO model_configs
-                    (created_at, updated_at, user_id, source, name, purpose, provider, base_url, model_name, encrypted_key,
-                     is_active, is_enabled, is_verified, unit_price, unit_name)
-                    VALUES ('now', 'now', NULL, 'official', 'Image', 'image', 'openai', 'https://relay.example.com/v1',
-                            'gpt-image-2', ?, 1, 1, 1, 0, 'image')""",
-                    (encrypt("source-secret-key"),),
-                ).lastrowid)
+            with db() as session:
+                config = ModelConfig(
+                    created_at="now", updated_at="now", user_id=None, source="official", name="Image", purpose="image",
+                    provider="openai", base_url="https://relay.example.com/v1", model_name="gpt-image-2",
+                    encrypted_key=encrypt("source-secret-key"), is_active=True, is_enabled=True, is_verified=True,
+                    unit_price=0, unit_name="image",
+                )
+                session.add(config)
+                session.flush()
+                config_id = int(config.id)
 
             validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
             with patch("app.services.config_service.models.validate_image_model", new=validator):
@@ -247,17 +246,19 @@ def test_model_config_source_switch_preserves_id_and_key() -> None:
         database.DB_PATH = str(Path(directory) / "config.db")
         try:
             init_db()
-            with db() as conn:
-                admin_id = int(conn.execute(
-                    "INSERT INTO users (username, password, role, is_disabled) VALUES ('source-admin', 'x', 'superAdmin', 0)"
-                ).lastrowid)
-                config_id = int(conn.execute(
-                    """INSERT INTO model_configs
-                    (created_at, updated_at, user_id, source, name, purpose, provider, base_url, model_name, encrypted_key,
-                     is_active, is_enabled, is_verified)
-                    VALUES ('now', 'now', ?, 'user', 'Personal', 'script', 'openai', 'https://api.openai.com/v1', 'gpt-test', ?, 1, 1, 1)""",
-                    (admin_id, encrypt("source-secret-key")),
-                ).lastrowid)
+            with db() as session:
+                admin = User(username="source-admin", password="x", role="superAdmin", is_disabled=False)
+                session.add(admin)
+                session.flush()
+                admin_id = int(admin.id)
+                config = ModelConfig(
+                    created_at="now", updated_at="now", user_id=admin_id, source="user", name="Personal", purpose="script",
+                    provider="openai", base_url="https://api.openai.com/v1", model_name="gpt-test",
+                    encrypted_key=encrypt("source-secret-key"), is_active=True, is_enabled=True, is_verified=True,
+                )
+                session.add(config)
+                session.flush()
+                config_id = int(config.id)
 
             payload = {
                 "name": "Converted",
@@ -275,13 +276,14 @@ def test_model_config_source_switch_preserves_id_and_key() -> None:
                 personal = asyncio.run(update_model_config(config_id, {**payload, "source": "user"}, admin_id))["config"]
             validator.assert_not_awaited()
 
-            with db() as conn:
-                converted = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
+            with db() as session:
+                converted = session.exec(select(ModelConfig).where(ModelConfig.id == config_id)).one()
+                converted_key = converted.encrypted_key
             assert official["source"] == "official"
             assert created_official["source"] == "official"
             assert personal["source"] == "user"
             assert official["id"] == personal["id"] == config_id
-            assert decrypt(converted["encrypted_key"]) == "source-secret-key"
+            assert decrypt(converted_key) == "source-secret-key"
         finally:
             database.DB_PATH = original_path
 
@@ -291,8 +293,8 @@ def test_legacy_model_config_tables_merge_without_losing_references() -> None:
         original_path = database.DB_PATH
         database.DB_PATH = str(Path(directory) / "legacy.db")
         try:
-            conn = sqlite3.connect(database.DB_PATH)
-            conn.executescript(
+            legacy = sqlite3.connect(database.DB_PATH)
+            legacy.executescript(
                 """
                 CREATE TABLE users (
                     id integer PRIMARY KEY AUTOINCREMENT, created_at datetime, updated_at datetime, deleted_at datetime,
@@ -329,25 +331,93 @@ def test_legacy_model_config_tables_merge_without_losing_references() -> None:
                 INSERT INTO chat_messages VALUES ('legacy-message', 'now', 'legacy-chat', 'user', 'hello', 'openai', 'user-model');
                 """
             )
-            conn.commit()
-            conn.close()
+            legacy.commit()
+            legacy.close()
 
             init_db()
 
-            with db() as conn:
-                tables = {item["name"] for item in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                configs = rows(conn, "SELECT * FROM model_configs ORDER BY source")
-                defaults = row(conn, "SELECT * FROM user_official_config_defaults WHERE user_id=1")
-                session = row(conn, "SELECT * FROM chat_sessions WHERE id='legacy-chat'")
-                message = row(conn, "SELECT * FROM chat_messages WHERE id='legacy-message'")
-                foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+            with db() as session:
+                configs = session.exec(select(ModelConfig).order_by(ModelConfig.source)).all()
+                defaults = session.exec(
+                    select(UserOfficialConfigDefault).where(UserOfficialConfigDefault.user_id == 1)
+                ).first()
+                chat = session.exec(select(ChatSession).where(ChatSession.id == "legacy-chat")).one()
+                message = session.exec(select(ChatMessage).where(ChatMessage.id == "legacy-message")).one()
+
+            check = sqlite3.connect(database.DB_PATH)
+            tables = {item[0] for item in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            foreign_key_errors = check.execute("PRAGMA foreign_key_check").fetchall()
+            check.close()
+
             assert "user_configs" not in tables
             assert "official_model_configs" not in tables
-            assert {config["source"] for config in configs} == {"user", "official"}
-            assert session["config_id"] != session["official_config_id"]
-            assert defaults["official_config_id"] == session["official_config_id"]
-            assert message["content"] == "hello"
+            assert {config.source for config in configs} == {"user", "official"}
+            assert chat.config_id != chat.official_config_id
+            assert defaults.official_config_id == chat.official_config_id
+            assert message.content == "hello"
             assert foreign_key_errors == []
+        finally:
+            database.DB_PATH = original_path
+
+
+def test_official_default_overrides_personal_config_and_is_reversible() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original_path = database.DB_PATH
+        database.DB_PATH = str(Path(directory) / "precedence.db")
+        try:
+            init_db()
+            with db() as session:
+                user = User(username="precedence-user", password="x", role="user", is_disabled=False)
+                session.add(user)
+                session.flush()
+                user_id = int(user.id)
+
+            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
+            with patch("app.services.config_service.models.validate_chat_model", new=validator):
+                personal = asyncio.run(create_config({
+                    "purpose": "script", "provider": "openai", "modelSeries": "personal-model",
+                    "apiKey": "personal-secret-key", "isActive": True, "name": "Personal",
+                }, user_id))["config"]
+                official = asyncio.run(create_default_model({
+                    "purpose": "script", "provider": "openai", "modelSeries": "official-model",
+                    "apiKey": "official-secret-key", "isActive": True, "name": "Official", "isEnabled": True,
+                }, 1))["config"]
+
+            def resolved() -> dict[str, str]:
+                with db() as session:
+                    return active_model_config(session, user_id, "script", "测试")
+
+            def listed() -> tuple[dict[int, bool], dict[int, bool]]:
+                payload = list_configs(user_id)
+                return (
+                    {item["id"]: item["isActive"] for item in payload["configs"]},
+                    {item["id"]: item["isActive"] for item in payload["officialConfigs"]},
+                )
+
+            assert resolved()["model"] == "personal-model"
+            mine, theirs = listed()
+            assert mine[personal["id"]] is True and theirs[official["id"]] is False
+
+            activate_official_config(official["id"], user_id)
+            assert resolved()["model"] == "official-model"
+            mine, theirs = listed()
+            assert mine[personal["id"]] is False and theirs[official["id"]] is True
+            with db() as session:
+                stored = session.exec(select(ModelConfig).where(ModelConfig.id == personal["id"])).one()
+                assert bool(stored.is_active) is True, "the personal choice must be preserved, not destroyed"
+
+            deactivate_official_config(official["id"], user_id)
+            assert resolved()["model"] == "personal-model"
+            mine, theirs = listed()
+            assert mine[personal["id"]] is True and theirs[official["id"]] is False
+
+            # An override pointing at a config that is no longer usable must not strand the user.
+            activate_official_config(official["id"], user_id)
+            assert resolved()["model"] == "official-model"
+            delete_default_model(official["id"], 1)
+            assert resolved()["model"] == "personal-model"
+            mine, _ = listed()
+            assert mine[personal["id"]] is True
         finally:
             database.DB_PATH = original_path
 
@@ -362,4 +432,5 @@ if __name__ == "__main__":
     test_user_config_pricing_round_trip()
     test_price_only_admin_edit_skips_model_revalidation()
     test_model_config_source_switch_preserves_id_and_key()
+    test_official_default_overrides_personal_config_and_is_reversible()
     test_legacy_model_config_tables_merge_without_losing_references()

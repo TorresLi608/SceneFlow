@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from typing import Any
 
+from sqlalchemy import update
+from sqlmodel import Session, select
+
 from app.core.config import MAX_CONTEXT_TOKENS
-from app.core.database import row, rows
 from app.llms.registry import models
+from app.models import ChatMessage, ChatSession
 from app.utils.common import now
 
 
@@ -47,25 +49,18 @@ def estimate_messages(messages: list[dict[str, Any]]) -> int:
     return sum(estimate_tokens(message["role"]) + estimate_tokens(_content_text(message["content"])) for message in messages)
 
 
-def _message_rows_after(conn: sqlite3.Connection, session_id: str, created_after: str) -> list[sqlite3.Row]:
+def _message_rows_after(session: Session, session_id: str, created_after: str) -> list[ChatMessage]:
+    conditions = [ChatMessage.session_id == session_id]
     if created_after:
-        return rows(
-            conn,
-            "SELECT role, content, attachments, created_at FROM chat_messages WHERE session_id=? AND created_at>? ORDER BY created_at ASC",
-            (session_id, created_after),
-        )
-    return rows(
-        conn,
-        "SELECT role, content, attachments, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at ASC",
-        (session_id,),
-    )
+        conditions.append(ChatMessage.created_at > created_after)
+    return list(session.exec(select(ChatMessage).where(*conditions).order_by(ChatMessage.created_at.asc())).all())
 
 
-def _attachment_parts(item: sqlite3.Row) -> list[dict[str, Any]]:
-    if item["role"] != "user" or not item["attachments"]:
+def _attachment_parts(item: ChatMessage) -> list[dict[str, Any]]:
+    if item.role != "user" or not item.attachments:
         return []
     try:
-        attachments = json.loads(item["attachments"])
+        attachments = json.loads(item.attachments)
     except json.JSONDecodeError:
         return []
     parts: list[dict[str, Any]] = []
@@ -90,8 +85,8 @@ def _attachment_parts(item: sqlite3.Row) -> list[dict[str, Any]]:
     return parts
 
 
-def _message_content(item: sqlite3.Row) -> Any:
-    content = item["content"] or ""
+def _message_content(item: ChatMessage) -> Any:
+    content = item.content or ""
     parts = _attachment_parts(item)
     if not parts:
         return content
@@ -102,7 +97,7 @@ def _message_content(item: sqlite3.Row) -> Any:
     return result
 
 
-def _as_messages(summary: str, history: list[sqlite3.Row]) -> list[dict[str, Any]]:
+def _as_messages(summary: str, history: list[ChatMessage]) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     if summary.strip():
         messages.append(
@@ -112,32 +107,32 @@ def _as_messages(summary: str, history: list[sqlite3.Row]) -> list[dict[str, Any
                 + summary.strip(),
             }
         )
-    messages.extend({"role": item["role"], "content": _message_content(item)} for item in history)
+    messages.extend({"role": item.role, "content": _message_content(item)} for item in history)
     return messages
 
 
-def _format_history(summary: str, history: list[sqlite3.Row]) -> str:
+def _format_history(summary: str, history: list[ChatMessage]) -> str:
     parts = []
     if summary.strip():
         parts.append("Existing summary:\n" + summary.strip())
-    parts.extend(f"{item['role']}: {_content_text(_message_content(item))}" for item in history)
+    parts.extend(f"{item.role}: {_content_text(_message_content(item))}" for item in history)
     return "\n\n".join(parts)
 
 
-def _load_context(conn: sqlite3.Connection, session_id: str) -> tuple[str, list[sqlite3.Row], list[dict[str, Any]]]:
-    session = row(conn, "SELECT context_summary, context_summary_until FROM chat_sessions WHERE id=?", (session_id,))
-    summary = (session["context_summary"] or "") if session else ""
-    summary_until = (session["context_summary_until"] or "") if session else ""
-    history = _message_rows_after(conn, session_id, summary_until)
+def _load_context(session: Session, session_id: str) -> tuple[str, list[ChatMessage], list[dict[str, Any]]]:
+    chat = session.exec(select(ChatSession).where(ChatSession.id == session_id)).first()
+    summary = (chat.context_summary or "") if chat else ""
+    summary_until = (chat.context_summary_until or "") if chat else ""
+    history = _message_rows_after(session, session_id, summary_until)
     return summary, history, _as_messages(summary, history)
 
 
 async def _compress_context(
-    conn: sqlite3.Connection,
+    session: Session,
     session_id: str,
     config: dict[str, Any],
     summary: str,
-    history: list[sqlite3.Row],
+    history: list[ChatMessage],
 ) -> tuple[list[dict[str, Any]], int] | None:
     if estimate_messages(_as_messages(summary, history)) <= MAX_CONTEXT_TOKENS or len(history) <= RECENT_MESSAGES_TO_KEEP:
         return None
@@ -150,30 +145,32 @@ async def _compress_context(
         _format_history(summary, old_messages),
         config.get("baseUrl", ""),
     )
-    conn.execute(
-        "UPDATE chat_sessions SET context_summary=?, context_summary_until=?, updated_at=? WHERE id=?",
-        (summary, old_messages[-1]["created_at"], now(), session_id),
+    session.execute(
+        update(ChatSession)
+        .where(ChatSession.id == session_id)
+        .values(context_summary=summary, context_summary_until=old_messages[-1].created_at, updated_at=now()),
+        execution_options={"synchronize_session": "fetch"},
     )
     return _as_messages(summary, recent_messages), len(recent_messages)
 
 
 async def build_context_messages(
-    conn: sqlite3.Connection,
+    session: Session,
     session_id: str,
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    summary, history, messages = _load_context(conn, session_id)
-    compressed = await _compress_context(conn, session_id, config, summary, history)
+    summary, history, messages = _load_context(session, session_id)
+    compressed = await _compress_context(session, session_id, config, summary, history)
     return compressed[0] if compressed else messages
 
 
 async def stream_context_messages(
-    conn: sqlite3.Connection,
+    session: Session,
     session_id: str,
     config: dict[str, Any],
 ):
     yield _step("load_context", "加载历史上下文", "running")
-    summary, history, messages = _load_context(conn, session_id)
+    summary, history, messages = _load_context(session, session_id)
     yield _step(
         "load_context",
         "加载历史上下文",
@@ -182,7 +179,7 @@ async def stream_context_messages(
     )
     if estimate_messages(messages) > MAX_CONTEXT_TOKENS and len(history) > RECENT_MESSAGES_TO_KEEP:
         yield _step("compress_context", "压缩长期记忆", "running", f"上下文超过 {MAX_CONTEXT_TOKENS} token 预算")
-        compressed = await _compress_context(conn, session_id, config, summary, history)
+        compressed = await _compress_context(session, session_id, config, summary, history)
         if compressed:
             messages, recent_count = compressed
             yield _step("compress_context", "压缩长期记忆", "done", f"保留最近 {recent_count} 条明细消息")

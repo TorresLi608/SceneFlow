@@ -1,5 +1,71 @@
 # Progress Log
 
+## Session: 2026-08-10 — 后端 ORM 重构未提交变更归档
+
+### Phase 1: 审计已暂存差异
+
+- **Status:** complete
+- Actions taken:
+  - 完整读取 `planning-with-files` 技能说明。
+  - 读取既有 `task_plan.md`、`findings.md`、`progress.md`，采用顶部追加方式保留历史。
+  - 确认本次只记录已暂存的 ORM 重构，不修改业务代码、不提交、不推送。
+  - 统计已暂存差异：38 个文件，约 2293 行新增、1694 行删除。
+  - 确认新增 `sqlmodel>=0.0.26`，并审计 Engine、Session、SQLite 连接参数及初始化/兼容迁移路径。
+  - 审计 10 个 SQLModel 表模型及其约束、索引和外键策略。
+  - 确认鉴权依赖和序列化边界已改为类型明确的 ORM 实体，同时保持现有 API 输出结构。
+  - 全局检索残余 SQL，确认运行时 API/服务使用 ORM/Core 表达式，字符串 SQL 仅保留在数据库初始化和旧库迁移。
+  - 核对注册、兑换、额度扣减、默认模型 upsert、任务领取和外部模型调用的事务/并发策略。
+  - 检查后端 README 与 8 个测试文件，确认文档明确 ORM/原生 SQL 边界，测试数据准备和断言也已迁移到 SQLModel。
+  - 记录新增的官方默认模型可逆覆盖与旧配置表无损合并回归测试。
+  - 完成 Phase 1；确认旧 `row()`/`rows()` 数据访问助手已无调用，进入全量验证阶段。
+- Files modified by this documentation task:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### Phase 2: 未提交代码明细
+
+- **Status:** complete
+- Dependency and database core:
+  - `backend/requirements.txt`：新增 `sqlmodel>=0.0.26`。
+  - `backend/app/core/database.py`：以 SQLAlchemy Engine + SQLModel Session 替换直接 SQLite 连接和 `row()/rows()` 助手；增加模型元数据建表、连接 PRAGMA、按路径缓存 Engine，并保留旧库升级 SQL。
+- New ORM schema modules:
+  - `backend/app/models/__init__.py`
+  - `backend/app/models/user.py`
+  - `backend/app/models/config.py`
+  - `backend/app/models/chat.py`
+  - `backend/app/models/project.py`
+  - `backend/app/models/usage.py`
+- API and dependency migration:
+  - `backend/app/api/deps.py`
+  - `backend/app/api/v1/{admin,auth,chat,images,jobs,projects,settings,usage,users,videos,websocket}.py`
+  - 用户、配置、聊天、项目、任务、用量及媒体接口由 SQL 字符串和行对象改为模型查询、实体新增、Core 批量更新/删除及 ORM 聚合/联表。
+- Services, Graph, and serialization:
+  - `backend/app/services/{agent,chat,config,generation,job,project,usage}_service.py`
+  - `backend/app/graph/graphs/context_graph.py`
+  - `backend/app/schemas/serializers.py`
+  - 服务函数参数/返回值改为 `Session` 和 ORM 实体；并发敏感更新继续使用条件化 SQLAlchemy 表达式，序列化器保持既有 API 契约。
+- Documentation and tests:
+  - `backend/README.md`：说明模型目录、SQLModel 数据访问、字符串时间戳和保留原生迁移 SQL 的原因。
+  - `backend/tests/{test_admin_usage_logs,test_admin_users,test_chat_balance,test_config_service,test_database,test_images,test_job_service,test_usage_service}.py`：测试准备和断言改用 ORM。
+  - 配置测试额外覆盖官方默认模型的可逆覆盖、删除回退及旧配置表无损合并。
+
+### Phase 3: Verification and Documentation
+
+- **Status:** complete
+
+| Check | Result | Status |
+|---|---|---|
+| 后端全量自测：`cd backend && .venv/bin/python tests/run_all.py` | 无错误，退出码 0 | Pass |
+| 已暂存代码空白检查：`git diff --cached --check` | 无输出，退出码 0 | Pass |
+| 本次日志空白检查：`git diff --check` | 无输出，退出码 0 | Pass |
+
+- Documentation result:
+  - `task_plan.md`：记录目标、三个阶段、验证和错误状态。
+  - `findings.md`：记录 ORM 架构、模型范围、事务/并发、兼容迁移、测试和残余风险。
+  - `progress.md`：记录 38 个已暂存文件的分组、行为边界和验证结果。
+- Error log: 本次无错误。
+
 ## Session: 2026-08-07 — 当日修改日志归档
 
 ### Phase 1: 盘点当日修改

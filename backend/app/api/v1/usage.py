@@ -19,5 +19,5 @@ def get_usage_logs(
     source: str = Query("all", pattern="^(all|official|user)$"),
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    with db() as conn:
-        return usage_logs(conn, user_id, feature, days, source)
+    with db() as session:
+        return usage_logs(session, user_id, feature, days, source)

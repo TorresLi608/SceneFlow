@@ -32,14 +32,14 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
 
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
-    with db() as conn:
+    with db() as session:
         if official_config_id:
-            config = official_model_config(conn, int(official_config_id), "video", "视频生成")
+            config = official_model_config(session, int(official_config_id), "video", "视频生成")
         elif config_id:
-            config = user_model_config(conn, user_id, int(config_id), "video", "视频生成")
+            config = user_model_config(session, user_id, int(config_id), "video", "视频生成")
         else:
-            config = active_model_config(conn, user_id, "video", "视频生成")
-        require_model_balance(conn, user_id, config)
+            config = active_model_config(session, user_id, "video", "视频生成")
+        require_model_balance(session, user_id, config)
 
     resolution = str(payload.get("resolution") or "1280x720")
     started_at = time.monotonic()

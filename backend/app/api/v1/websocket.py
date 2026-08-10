@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlmodel import select
 
-from app.core.database import db, row
+from app.core.database import db
 from app.core.realtime import broadcast, clients
 from app.core.security import user_id_from_token
+from app.models import Project
 from app.utils.common import now
 
 
@@ -26,9 +28,11 @@ async def project_ws(websocket: WebSocket, project_id: str) -> None:
     except Exception:
         await websocket.close(code=1008)
         return
-    with db() as conn:
-        project = row(conn, "SELECT user_id FROM projects WHERE id=? AND deleted_at IS NULL", (project_id,))
-        if not project or project["user_id"] != user_id:
+    with db() as session:
+        owner_id = session.exec(
+            select(Project.user_id).where(Project.id == project_id, Project.deleted_at.is_(None))
+        ).first()
+        if owner_id != user_id:
             await websocket.close(code=1008)
             return
     await websocket.accept(subprotocol=protocol or None)

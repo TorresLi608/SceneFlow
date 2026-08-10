@@ -1,5 +1,67 @@
 # Findings & Decisions
 
+## Session 2026-08-10: 后端 ORM 重构未提交变更归档
+
+### Requirements
+
+- 仅总结当前已暂存、尚未提交的代码，不改动 ORM 业务实现。
+- 重点说明后端如何由手写 SQL 迁移到 ORM，并记录依赖、模型、会话/事务、兼容迁移、测试和风险。
+- 保留既有历史，本节随审计进度追加。
+
+### Initial Findings
+
+- 当前未提交变更集中在后端，新增 `backend/app/models/` 并修改数据库核心、主要 API、服务、Graph、序列化器、测试和后端 README。
+- Git 状态显示这些变更已暂存，因此本次以 `git diff --cached` 为唯一代码差异基准。
+
+### Change Inventory and ORM Foundation
+
+- 已暂存差异共 38 个文件，约 2293 行新增、1694 行删除；本次日志文件本身尚未暂存，不计入 ORM 代码清单。
+- `backend/requirements.txt` 新增 `sqlmodel>=0.0.26`，ORM 基于 SQLModel，并直接使用 SQLAlchemy 的 `Engine`、连接事件和底层驱动 SQL 能力。
+- `backend/app/core/database.py` 按当前 `DB_PATH` 延迟创建并缓存 Engine；普通 SQLite 使用 `check_same_thread=False` 和 30 秒超时，内存数据库使用 `StaticPool` 保证多个 Session 共享同一数据库。
+- 每次连接统一启用 SQLite 外键约束和 `busy_timeout=30000`。`db()` 现在产出 `Session`，正常退出时提交并始终关闭；`expire_on_commit=False` 保持 ORM 实体离开上下文后仍可读取，兼容旧 `sqlite3.Row` 的快照式调用习惯。
+- `SQLModel.metadata.create_all()` 负责新库建表；原生 SQL 只保留在 ORM 不适合覆盖的数据库初始化与兼容迁移层，包括 PRAGMA、旧库补列、部分索引、旧模型配置表数据搬迁和表结构重建。
+- 旧 `user_configs`、`official_model_configs` 会在 SAVEPOINT 内合并至统一的 `model_configs`，并同步聊天会话、默认配置和用量日志外键；成功后删除旧表，异常时回滚迁移。
+- 数据库文件初始化后继续收紧为 `0600`，超级管理员密码继续使用 bcrypt 哈希写入。
+
+### ORM Model and Boundary Design
+
+- 新增 6 个模型模块，共映射 10 张业务表：
+  - `user.py`：`User`、`InvitationCode`、`RedemptionCode`。
+  - `config.py`：统一的 `ModelConfig`、`UserOfficialConfigDefault`。
+  - `chat.py`：`ChatSession`、`ChatMessage`。
+  - `project.py`：`Project`、`Scene`、`GenerationJob`。
+  - `usage.py`：`UsageLog`。
+- 模型复用原表名、字段名、默认值、索引、唯一约束、检查约束和主要外键删除策略，避免 ORM 重构改变既有 SQLite 数据格式；`model_configs` 通过检查约束区分个人与官方来源。
+- 当前模型使用显式外键字段和查询组合，没有引入 `Relationship` 对象图；这让迁移范围保持在数据访问层，也避免隐式懒加载和级联行为改变。
+- FastAPI 鉴权依赖已从 SQL 字符串查询改为 `select(User)`，仍在依赖内部打开短 Session，并保持原有 401/403 行为。
+- 序列化器现在接收明确的 ORM 实体类型，不再依赖 `sqlite3.Row`/字典下标；API 字段名、空值回退、十进制价格快照和附件 JSON 解析等外部契约保持不变。
+
+### CRUD, Transactions, and Concurrency
+
+- 运行时业务查询已统一为 SQLModel/SQLAlchemy 表达式：读取使用 `select()`、聚合/联表使用 `func` 和显式 `join`，新增使用实体加 `session.add/add_all`，批量更新/软删除使用 `update()`/`delete()`。
+- 搜索到的运行时 `session.execute(...)` 均执行 SQLAlchemy Core 表达式，不是拼接 SQL 字符串；手写 SQL 字符串集中在 `core/database.py` 的 SQLite 初始化/迁移层。
+- 一个 `with db()` 块构成一个事务，适合注册并占用邀请码、兑换码入账、模型启用状态切换、解析结果替换场景列表等需要原子提交的流程；异常离开上下文时 Session 关闭并回滚未提交事务。
+- 并发安全逻辑没有因 ORM 化而退化：邀请码/兑换码使用带当前状态条件的原子 `UPDATE` 并检查 `rowcount`；额度扣减仍为数据库侧原子表达式；任务领取采用“读候选 + 比较 id/attempt/status 的乐观更新”，只有更新一行的 Worker 获得租约。
+- SQLite 特有的默认官方模型写入继续使用 SQLAlchemy SQLite dialect 的 `INSERT ... ON CONFLICT DO UPDATE`，保留原有 upsert 语义。
+- 长耗时外部模型调用与数据库事务分离：先在短 Session 中鉴权/取配置，调用完成后再用新的短 Session 写结果和用量，减少 SQLite 写锁持有时间。
+
+### Documentation and Test Adaptation
+
+- `backend/README.md` 已把 `app/models/` 标为数据库结构单一事实来源，并明确 SQLModel/SQLAlchemy 2.x Session、ISO-8601 字符串时间戳以及必须保留原生 SQL 的兼容迁移边界。
+- 8 个后端测试文件随实现从临时 `sqlite3.Connection`、手写建表/插入和行下标访问迁移为 `SQLModel.metadata.create_all()`、`Session`、模型实体及 `select()`；只有构造旧版本数据库和执行 `PRAGMA foreign_key_check` 的迁移测试继续直接使用 `sqlite3`。
+- 回归范围覆盖管理员用量分页/搜索、用户密码创建与重置、聊天余额门禁和首问标题、模型配置价格/来源切换/旧表合并、图片余额门禁、任务生命周期与租约、用量计费和余额扣减。
+- 配置测试新增官方默认模型优先级及可逆性：官方覆盖启用时不会销毁个人模型的 active 标记；停用或删除官方配置后会回退到此前个人配置。
+- 旧表合并测试同时核对模型来源、聊天会话/默认配置引用、消息数据保留以及 SQLite 外键检查为空。
+- 旧数据库辅助函数 `row()`/`rows()` 已无应用或测试调用；后端测试入口会按文件名执行全部 `test_*.py` 的 `__main__` 自测。
+
+### Compatibility and Residual Risk
+
+- 这次是数据访问层重构，API 路径、请求/响应字段、密码 bcrypt 哈希、API Key AES-GCM 加密、软删除、计费微单位和任务状态语义均保持不变。
+- `SQLModel.metadata.create_all()` 只负责创建缺失表，不会自动演进现有表；后续每次模型字段变更仍必须同步维护 `_add_missing_columns()` 或引入正式迁移工具，避免模型与旧数据库结构漂移。
+- 旧模型配置表迁移属于一次性结构重建。测试已覆盖引用和外键完整性，但在包含真实历史数据的生产库首次升级前仍应备份数据库，并在副本上运行一次 `init_db()`。
+- 数据库仍为 SQLite；当前短事务、busy timeout 和原子更新适合现有单机规模。只有出现多实例或持续写竞争时，才需要评估 PostgreSQL/正式迁移体系，不属于本次 ORM 重构范围。
+- 本次未发现阻断提交的问题；后端全量自测、已暂存差异检查和日志差异检查均通过。
+
 ## Session 2026-08-07: 当日修改日志归档
 
 ### Requirements

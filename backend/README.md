@@ -14,6 +14,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 - `app/api/v1/`: FastAPI endpoints and request/response orchestration.
 - `app/core/`: configuration, database, security, and realtime infrastructure.
+- `app/models/`: SQLModel table definitions; the single source of truth for the schema.
 - `app/schemas/`: response serialization shared by API modules.
 - `app/services/`: model, usage, chat, artifact, project, and generation business logic.
 - `app/graph/`: context and agent workflow orchestration.
@@ -124,6 +125,9 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 
 ## Notes
 
+- Data access goes through SQLModel (SQLAlchemy 2.x) sessions; `app/models/` owns the schema and `init_db()` creates it with `SQLModel.metadata.create_all()`.
+- Timestamp columns stay ISO-8601 strings (not `datetime`) because the code compares them as strings and the API passes them straight through.
+- The hand-written `ALTER TABLE` compatibility steps and the `user_configs`/`official_model_configs` -> `model_configs` data migration in `app/core/database.py` deliberately remain raw SQL; they operate on tables that no longer have models.
 - Passwords are stored by bcrypt hash; model API keys are encrypted with AES-GCM.
 - Generated media is stored under `private_generated` and served only through expiring signed URLs.
 - Provider API keys are encrypted by AES-256-GCM before persisting.

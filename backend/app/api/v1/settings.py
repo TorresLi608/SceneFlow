@@ -3,9 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import delete, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import select
 
-from app.core.database import db, row, rows
+from app.core.database import db
 from app.api.deps import current_user_id
+from app.models import ModelConfig, UserOfficialConfigDefault
 from app.schemas.serializers import config_json, official_config_json
 from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_api_key, validate_provider
 from app.llms.registry import models
@@ -18,30 +22,52 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 @router.get("/keys")
 def list_configs(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        configs = rows(conn, "SELECT * FROM model_configs WHERE source='user' AND user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC", (user_id,))
-        active_user_purposes = {config["purpose"] for config in configs if config["is_active"] and config["is_enabled"]}
-        active_official = {
-            config["purpose"]: config["official_config_id"]
-            for config in rows(conn, "SELECT purpose, official_config_id FROM user_official_config_defaults WHERE user_id=?", (user_id,))
-        }
-        official_configs = rows(
-            conn,
-            "SELECT * FROM model_configs WHERE source='official' AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL ORDER BY purpose, updated_at DESC",
+    with db() as session:
+        configs = session.exec(
+            select(ModelConfig)
+            .where(ModelConfig.source == "user", ModelConfig.user_id == user_id, ModelConfig.deleted_at.is_(None))
+            .order_by(ModelConfig.updated_at.desc())
+        ).all()
+        active_official = dict(
+            session.exec(
+                select(UserOfficialConfigDefault.purpose, UserOfficialConfigDefault.official_config_id).where(
+                    UserOfficialConfigDefault.user_id == user_id
+                )
+            ).all()
         )
-    return {
-        "configs": [config_json(config) for config in configs],
-        "officialConfigs": [
-            official_config_json(
-                config,
-                False
-                if config["purpose"] in active_user_purposes
-                else active_official.get(config["purpose"]) == config["id"]
-                if config["purpose"] in active_official
-                else None,
+        official_configs = session.exec(
+            select(ModelConfig)
+            .where(
+                ModelConfig.source == "official",
+                ModelConfig.is_enabled.is_(True),
+                ModelConfig.is_verified.is_(True),
+                ModelConfig.deleted_at.is_(None),
             )
-            for config in official_configs
+            .order_by(ModelConfig.purpose, ModelConfig.updated_at.desc())
+        ).all()
+
+    # `isActive` reports the *effective* default so at most one config per purpose is active across
+    # both lists, mirroring app.services.config_service.active_model_config. An override whose target
+    # is gone or unusable does not count, which is what lets the personal config take over again.
+    usable_official_ids = {config.id for config in official_configs}
+    overridden = {purpose for purpose, config_id in active_official.items() if config_id in usable_official_ids}
+    active_user_purposes = {
+        config.purpose for config in configs if config.is_active and config.is_enabled and config.purpose not in overridden
+    }
+
+    def official_is_active(config: ModelConfig) -> bool | None:
+        if config.purpose in overridden:
+            return active_official[config.purpose] == config.id
+        if config.purpose in active_user_purposes:
+            return False
+        return None  # no user-level choice for this purpose: the system-wide default flag decides
+
+    return {
+        "configs": [
+            {**config_json(config), "isActive": bool(config.is_active) and config.purpose not in overridden}
+            for config in configs
         ],
+        "officialConfigs": [official_config_json(config, official_is_active(config)) for config in official_configs],
     }
 
 
@@ -85,10 +111,21 @@ async def validate_config(payload: dict[str, Any], user_id: int = Depends(curren
     }
 
 
+def _own_config(session, config_id: int, user_id: int) -> ModelConfig | None:
+    return session.exec(
+        select(ModelConfig).where(
+            ModelConfig.id == config_id,
+            ModelConfig.source == "user",
+            ModelConfig.user_id == user_id,
+            ModelConfig.deleted_at.is_(None),
+        )
+    ).first()
+
+
 @router.get("/keys/{config_id}")
 def get_config(config_id: int, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+    with db() as session:
+        config = _own_config(session, config_id, user_id)
     if not config:
         raise HTTPException(404, "config not found")
     return {"config": config_json(config)}
@@ -96,8 +133,8 @@ def get_config(config_id: int, user_id: int = Depends(current_user_id)) -> dict[
 
 @router.post("/keys/{config_id}/secret")
 def get_config_secret(config_id: int, user_id: int = Depends(current_user_id)) -> dict[str, str]:
-    with db() as conn:
-        config = row(conn, "SELECT encrypted_key FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+    with db() as session:
+        config = _own_config(session, config_id, user_id)
     if not config:
         raise HTTPException(404, "config not found")
     return {"apiKey": config_api_key(config)}
@@ -113,47 +150,45 @@ async def create_config(payload: dict[str, Any], user_id: int = Depends(current_
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     stamp = now()
-    with db() as conn:
+    with db() as session:
         if bool(payload.get("isActive")):
-            conn.execute("UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND deleted_at IS NULL", (stamp, user_id, fields["purpose"]))
-            conn.execute("DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?", (user_id, fields["purpose"]))
-        cur = conn.execute(
-            """INSERT INTO model_configs
-            (created_at, updated_at, user_id, source, name, description, purpose, provider, base_url, model_name, encrypted_key, is_active, is_enabled, is_verified,
-             pricing_multiplier, input_price_per_million, output_price_per_million, cache_read_price_per_million,
-             cache_write_price_per_million, unit_price, unit_name, pricing_json)
-            VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                stamp,
-                stamp,
-                user_id,
-                fields["name"],
-                fields["description"],
-                fields["purpose"],
-                fields["provider"],
-                fields["base_url"],
-                fields["model_name"],
-                fields["encrypted_key"],
-                fields["is_active"],
-                fields["is_enabled"],
-                pricing["pricing_multiplier"],
-                pricing["input_price_per_million"],
-                pricing["output_price_per_million"],
-                pricing["cache_read_price_per_million"],
-                pricing["cache_write_price_per_million"],
-                pricing["unit_price"],
-                pricing["unit_name"],
-                pricing_snapshot(pricing),
-            ),
+            session.execute(
+                update(ModelConfig)
+                .where(
+                    ModelConfig.source == "user",
+                    ModelConfig.user_id == user_id,
+                    ModelConfig.purpose == fields["purpose"],
+                    ModelConfig.deleted_at.is_(None),
+                )
+                .values(is_active=0, updated_at=stamp),
+                execution_options={"synchronize_session": False},
+            )
+            session.execute(
+                delete(UserOfficialConfigDefault).where(
+                    UserOfficialConfigDefault.user_id == user_id,
+                    UserOfficialConfigDefault.purpose == fields["purpose"],
+                ),
+                execution_options={"synchronize_session": False},
+            )
+        config = ModelConfig(
+            created_at=stamp,
+            updated_at=stamp,
+            user_id=user_id,
+            source="user",
+            **fields,
+            **pricing,
+            pricing_json=pricing_snapshot(pricing),
         )
-        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (cur.lastrowid,))
-    return {"config": config_json(config)}
+        session.add(config)
+        session.flush()
+        session.refresh(config)
+        return {"config": config_json(config)}
 
 
 @router.patch("/keys/{config_id}")
 async def update_config(config_id: int, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        config = row(conn, "SELECT * FROM model_configs WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (config_id, user_id))
+    with db() as session:
+        config = _own_config(session, config_id, user_id)
     if not config:
         raise HTTPException(404, "config not found")
 
@@ -169,52 +204,93 @@ async def update_config(config_id: int, payload: dict[str, Any], user_id: int = 
         raise HTTPException(400, "no fields to update")
 
     stamp = now()
-    with db() as conn:
+    with db() as session:
         if payload.get("isActive"):
-            conn.execute("UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND id<>? AND deleted_at IS NULL", (stamp, user_id, normalized["purpose"], config_id))
-            conn.execute("DELETE FROM user_official_config_defaults WHERE user_id=? AND purpose=?", (user_id, normalized["purpose"]))
-        conn.execute(
-            f"UPDATE model_configs SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND source='user' AND user_id=?",
-            (*updates.values(), stamp, config_id, user_id),
+            session.execute(
+                update(ModelConfig)
+                .where(
+                    ModelConfig.source == "user",
+                    ModelConfig.user_id == user_id,
+                    ModelConfig.purpose == normalized["purpose"],
+                    ModelConfig.id != config_id,
+                    ModelConfig.deleted_at.is_(None),
+                )
+                .values(is_active=0, updated_at=stamp),
+                execution_options={"synchronize_session": False},
+            )
+            session.execute(
+                delete(UserOfficialConfigDefault).where(
+                    UserOfficialConfigDefault.user_id == user_id,
+                    UserOfficialConfigDefault.purpose == normalized["purpose"],
+                ),
+                execution_options={"synchronize_session": False},
+            )
+        session.execute(
+            update(ModelConfig)
+            .where(ModelConfig.id == config_id, ModelConfig.source == "user", ModelConfig.user_id == user_id)
+            .values(**updates, updated_at=stamp),
+            execution_options={"synchronize_session": False},
         )
-        config = row(conn, "SELECT * FROM model_configs WHERE id=?", (config_id,))
-    return {"config": config_json(config)}
+        updated = session.exec(select(ModelConfig).where(ModelConfig.id == config_id)).first()
+        return {"config": config_json(updated)}
 
 
 @router.delete("/keys/{config_id}", status_code=204)
 def delete_config(config_id: int, user_id: int = Depends(current_user_id)) -> None:
-    with db() as conn:
-        conn.execute("UPDATE model_configs SET deleted_at=?, updated_at=? WHERE id=? AND source='user' AND user_id=? AND deleted_at IS NULL", (now(), now(), config_id, user_id))
+    with db() as session:
+        session.execute(
+            update(ModelConfig)
+            .where(
+                ModelConfig.id == config_id,
+                ModelConfig.source == "user",
+                ModelConfig.user_id == user_id,
+                ModelConfig.deleted_at.is_(None),
+            )
+            .values(deleted_at=now(), updated_at=now()),
+            execution_options={"synchronize_session": False},
+        )
 
 
 @router.post("/official/{config_id}/activate")
 def activate_official_config(config_id: int, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     stamp = now()
-    with db() as conn:
-        config = row(
-            conn,
-            "SELECT * FROM model_configs WHERE id=? AND source='official' AND is_enabled=1 AND is_verified=1 AND deleted_at IS NULL",
-            (config_id,),
-        )
+    with db() as session:
+        config = session.exec(
+            select(ModelConfig).where(
+                ModelConfig.id == config_id,
+                ModelConfig.source == "official",
+                ModelConfig.is_enabled.is_(True),
+                ModelConfig.is_verified.is_(True),
+                ModelConfig.deleted_at.is_(None),
+            )
+        ).first()
         if not config:
             raise HTTPException(404, "official config not found")
-        conn.execute(
-            "UPDATE model_configs SET is_active=0, updated_at=? WHERE source='user' AND user_id=? AND purpose=? AND deleted_at IS NULL",
-            (stamp, user_id, config["purpose"]),
+        # The user's personal is_active flags are left untouched: the override below outranks them,
+        # so removing the override (or losing the official config) restores the previous choice.
+        upsert = sqlite_insert(UserOfficialConfigDefault).values(
+            user_id=user_id,
+            purpose=config.purpose,
+            official_config_id=config_id,
+            created_at=stamp,
+            updated_at=stamp,
         )
-        conn.execute(
-            """INSERT INTO user_official_config_defaults (user_id, purpose, official_config_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, purpose) DO UPDATE SET official_config_id=excluded.official_config_id, updated_at=excluded.updated_at""",
-            (user_id, config["purpose"], config_id, stamp, stamp),
+        session.execute(
+            upsert.on_conflict_do_update(
+                index_elements=["user_id", "purpose"],
+                set_={"official_config_id": upsert.excluded.official_config_id, "updated_at": upsert.excluded.updated_at},
+            )
         )
-    return {"config": official_config_json(config, True)}
+        return {"config": official_config_json(config, True)}
 
 
 @router.delete("/official/{config_id}/activate", status_code=204)
 def deactivate_official_config(config_id: int, user_id: int = Depends(current_user_id)) -> None:
-    with db() as conn:
-        conn.execute(
-            "DELETE FROM user_official_config_defaults WHERE user_id=? AND official_config_id=?",
-            (user_id, config_id),
+    with db() as session:
+        session.execute(
+            delete(UserOfficialConfigDefault).where(
+                UserOfficialConfigDefault.user_id == user_id,
+                UserOfficialConfigDefault.official_config_id == config_id,
+            ),
+            execution_options={"synchronize_session": False},
         )

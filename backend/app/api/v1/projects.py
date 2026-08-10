@@ -5,11 +5,14 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import update
+from sqlmodel import select
 
-from app.core.database import db, row, rows
+from app.core.database import db
 from app.core.realtime import broadcast
 from app.api.deps import current_user_id
 from app.llms.registry import models
+from app.models import Project, Scene
 from app.schemas.serializers import project_json, scene_json
 from app.services.config_service import active_model_config
 from app.services.generation_service import run_generation, run_video_generation
@@ -24,16 +27,22 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 @router.get("")
 def list_projects(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        projects = rows(
-            conn,
-            "SELECT * FROM projects WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC",
-            (user_id,),
-        )
+    with db() as session:
+        projects = session.exec(
+            select(Project)
+            .where(Project.user_id == user_id, Project.deleted_at.is_(None))
+            .order_by(Project.updated_at.desc())
+        ).all()
         data = [
             project_json(
                 project,
-                rows(conn, "SELECT * FROM scenes WHERE project_id=? AND deleted_at IS NULL ORDER BY order_num ASC", (project["id"],)),
+                list(
+                    session.exec(
+                        select(Scene)
+                        .where(Scene.project_id == project.id, Scene.deleted_at.is_(None))
+                        .order_by(Scene.order_num.asc())
+                    ).all()
+                ),
             )
             for project in projects
         ]
@@ -43,24 +52,23 @@ def list_projects(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
 @router.post("", status_code=201)
 def create_project(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     stamp = now()
-    title = str(payload.get("title", "")).strip()[:80] or "新项目"
-    script = str(payload.get("originalScript", "")).strip()
     settings = production_settings(payload.get("productionSettings", {}), defaults=True)
-    project_id = new_id("proj")
-    with db() as conn:
-        conn.execute(
-            """INSERT INTO projects
-            (id, created_at, updated_at, user_id, title, original_script, status, video_status, video_progress,
-             mode, aspect_ratio, width, height, fps, target_duration_ms, language, style_prompt, negative_prompt, current_stage)
-            VALUES (?, ?, ?, ?, ?, ?, 'idle', 'idle', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                project_id, stamp, stamp, user_id, title, script, settings["mode"], settings["aspect_ratio"],
-                settings["width"], settings["height"], settings["fps"], settings["target_duration_ms"],
-                settings["language"], settings["style_prompt"], settings["negative_prompt"], settings["current_stage"],
-            ),
+    with db() as session:
+        project = Project(
+            id=new_id("proj"),
+            created_at=stamp,
+            updated_at=stamp,
+            user_id=user_id,
+            title=str(payload.get("title", "")).strip()[:80] or "新项目",
+            original_script=str(payload.get("originalScript", "")).strip(),
+            status="idle",
+            video_status="idle",
+            video_progress=0,
+            **settings,
         )
-        project = row(conn, "SELECT * FROM projects WHERE id=?", (project_id,))
-    return {"project": project_json(project, [])}
+        session.add(project)
+        session.flush()
+        return {"project": project_json(project, [])}
 
 
 @router.patch("/{project_id}")
@@ -74,15 +82,16 @@ async def update_project(project_id: str, payload: dict[str, Any], user_id: int 
     if not updates:
         raise HTTPException(400, "no fields to update")
 
-    with db() as conn:
-        project, _ = project_and_scenes(conn, project_id, user_id)
-        conn.execute(
-            f"UPDATE projects SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
-            (*updates.values(), stamp, project["id"]),
-        )
-        project, scenes = project_and_scenes(conn, project_id, user_id)
+    with db() as session:
+        project, scenes = project_and_scenes(session, project_id, user_id)
+        for key, value in updates.items():
+            setattr(project, key, value)
+        project.updated_at = stamp
+        session.add(project)
+        session.flush()
+        data = project_json(project, scenes)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": payload})
-    return {"project": project_json(project, scenes)}
+    return {"project": data}
 
 
 @router.patch("/{project_id}/production-settings")
@@ -94,30 +103,30 @@ async def update_production_settings(
     if not payload:
         raise HTTPException(400, "no production settings to update")
     stamp = now()
-    with db() as conn:
-        project, _ = project_and_scenes(conn, project_id, user_id)
+    with db() as session:
+        project, scenes = project_and_scenes(session, project_id, user_id)
         updates = production_settings(
             {
-                "mode": project["mode"],
-                "aspectRatio": project["aspect_ratio"],
-                "width": project["width"],
-                "height": project["height"],
-                "fps": project["fps"],
-                "targetDurationMs": project["target_duration_ms"],
-                "language": project["language"],
-                "stylePrompt": project["style_prompt"],
-                "negativePrompt": project["negative_prompt"],
-                "currentStage": project["current_stage"],
+                "mode": project.mode,
+                "aspectRatio": project.aspect_ratio,
+                "width": project.width,
+                "height": project.height,
+                "fps": project.fps,
+                "targetDurationMs": project.target_duration_ms,
+                "language": project.language,
+                "stylePrompt": project.style_prompt,
+                "negativePrompt": project.negative_prompt,
+                "currentStage": project.current_stage,
                 **payload,
             },
             defaults=True,
         )
-        conn.execute(
-            f"UPDATE projects SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=?",
-            (*updates.values(), stamp, project_id),
-        )
-        project, scenes = project_and_scenes(conn, project_id, user_id)
-    serialized = project_json(project, scenes)
+        for key, value in updates.items():
+            setattr(project, key, value)
+        project.updated_at = stamp
+        session.add(project)
+        session.flush()
+        serialized = project_json(project, scenes)
     data = {
         "productionSettings": serialized["productionSettings"],
         "currentStage": serialized["currentStage"],
@@ -129,8 +138,8 @@ async def update_production_settings(
 
 @router.get("/{project_id}/jobs")
 def list_jobs(project_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        jobs = list_project_jobs(conn, user_id, project_id)
+    with db() as session:
+        jobs = list_project_jobs(session, user_id, project_id)
     return {"jobs": jobs}
 
 
@@ -140,17 +149,23 @@ async def reorder_project_scenes(project_id: str, payload: dict[str, Any], user_
     if not scene_ids:
         raise HTTPException(400, "sceneIds is required")
     stamp = now()
-    with db() as conn:
-        project, scenes = project_and_scenes(conn, project_id, user_id)
-        existing_ids = {scene["id"] for scene in scenes}
-        if set(scene_ids) != existing_ids:
+    with db() as session:
+        project, scenes = project_and_scenes(session, project_id, user_id)
+        by_id = {scene.id: scene for scene in scenes}
+        if set(scene_ids) != set(by_id):
             raise HTTPException(400, "sceneIds must match current project scenes")
         for index, scene_id in enumerate(scene_ids, start=1):
-            conn.execute("UPDATE scenes SET order_num=?, updated_at=? WHERE id=? AND project_id=?", (index, stamp, scene_id, project_id))
-        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (stamp, project["id"]))
-        project, scenes = project_and_scenes(conn, project_id, user_id)
+            scene = by_id[scene_id]
+            scene.order_num = index
+            scene.updated_at = stamp
+            session.add(scene)
+        project.updated_at = stamp
+        session.add(project)
+        session.flush()
+        project, scenes = project_and_scenes(session, project_id, user_id)
+        data = project_json(project, scenes)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"updatedAt": stamp}})
-    return {"project": project_json(project, scenes)}
+    return {"project": data}
 
 
 @router.patch("/{project_id}/scenes/{scene_id}")
@@ -164,27 +179,31 @@ async def update_project_scene(project_id: str, scene_id: str, payload: dict[str
     if not updates:
         raise HTTPException(400, "no fields to update")
 
-    with db() as conn:
-        project_and_scenes(conn, project_id, user_id)
-        scene = row(conn, "SELECT * FROM scenes WHERE id=? AND project_id=? AND deleted_at IS NULL", (scene_id, project_id))
+    with db() as session:
+        project, _ = project_and_scenes(session, project_id, user_id)
+        scene = session.exec(
+            select(Scene).where(Scene.id == scene_id, Scene.project_id == project_id, Scene.deleted_at.is_(None))
+        ).first()
         if not scene:
             raise HTTPException(404, "scene not found")
-        conn.execute(
-            f"UPDATE scenes SET {', '.join(f'{key}=?' for key in updates)}, updated_at=? WHERE id=? AND project_id=?",
-            (*updates.values(), stamp, scene_id, project_id),
-        )
-        conn.execute("UPDATE projects SET updated_at=? WHERE id=?", (stamp, project_id))
-        scene = row(conn, "SELECT * FROM scenes WHERE id=?", (scene_id,))
+        for key, value in updates.items():
+            setattr(scene, key, value)
+        scene.updated_at = stamp
+        project.updated_at = stamp
+        session.add(scene)
+        session.add(project)
+        session.flush()
+        data = scene_json(scene)
     await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene_id, "data": payload})
-    return {"scene": scene_json(scene)}
+    return {"scene": data}
 
 
 @router.post("/{project_id}/parse")
 async def parse_project(project_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     if not project_id.strip():
         raise HTTPException(400, "invalid project id")
-    with db() as conn:
-        data = await parse_project_model(conn, user_id, project_id, payload)
+    with db() as session:
+        data = await parse_project_model(session, user_id, project_id, payload)
 
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "parsing"}})
     config = data["config"]
@@ -198,44 +217,67 @@ async def parse_project(project_id: str, payload: dict[str, Any], user_id: int =
             config.get("baseUrl", ""),
         )
     except Exception as exc:
-        with db() as conn:
-            conn.execute("UPDATE projects SET status='idle', updated_at=? WHERE id=?", (now(), project_id))
+        with db() as session:
+            session.execute(
+                update(Project).where(Project.id == project_id).values(status="idle", updated_at=now()),
+                execution_options={"synchronize_session": False},
+            )
         raise HTTPException(502, "failed to parse script: " + str(exc)) from exc
     record_usage(user_id, config, "script_parse", started_at, result.usage)
 
     stamp = now()
-    with db() as conn:
-        conn.execute(
-            "UPDATE projects SET original_script=?, status='idle', video_status='idle', video_progress=0, video_url=NULL, updated_at=? WHERE id=?",
-            (data["script"], stamp, project_id),
+    with db() as session:
+        session.execute(
+            update(Project)
+            .where(Project.id == project_id)
+            .values(
+                original_script=data["script"],
+                status="idle",
+                video_status="idle",
+                video_progress=0,
+                video_url=None,
+                updated_at=stamp,
+            ),
+            execution_options={"synchronize_session": False},
         )
-        conn.execute("UPDATE scenes SET deleted_at=?, updated_at=? WHERE project_id=? AND deleted_at IS NULL", (stamp, stamp, project_id))
-        scene_rows = []
-        for index, draft in enumerate(result.scenes, start=1):
-            scene_id = new_id("scene")
-            conn.execute(
-                """INSERT INTO scenes
-                (id, created_at, updated_at, project_id, order_num, narration, visual_prompt, image_status, audio_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'idle', 'idle')""",
-                (scene_id, stamp, stamp, project_id, index, draft.narration, draft.visualPrompt),
+        session.execute(
+            update(Scene)
+            .where(Scene.project_id == project_id, Scene.deleted_at.is_(None))
+            .values(deleted_at=stamp, updated_at=stamp),
+            execution_options={"synchronize_session": False},
+        )
+        scene_rows = [
+            Scene(
+                id=new_id("scene"),
+                created_at=stamp,
+                updated_at=stamp,
+                project_id=project_id,
+                order_num=index,
+                narration=draft.narration,
+                visual_prompt=draft.visualPrompt,
+                image_status="idle",
+                audio_status="idle",
             )
-            scene_rows.append(row(conn, "SELECT * FROM scenes WHERE id=?", (scene_id,)))
+            for index, draft in enumerate(result.scenes, start=1)
+        ]
+        session.add_all(scene_rows)
+        session.flush()
 
     for scene in scene_rows:
-        await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene["id"], "data": {"order": scene["order_num"], "narration": scene["narration"], "visualPrompt": scene["visual_prompt"], "parseStatus": "ready"}})
+        await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene.id, "data": {"order": scene.order_num, "narration": scene.narration, "visualPrompt": scene.visual_prompt, "parseStatus": "ready"}})
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "sceneCount": len(scene_rows), "source": result.source, "warning": result.warning}})
     return {"projectId": project_id, "status": "idle", "source": result.source, "warning": result.warning, "scenes": [scene_json(scene) for scene in scene_rows]}
 
 
 @router.post("/{project_id}/optimize")
 async def optimize_project(project_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        project, _ = project_and_scenes(conn, project_id, user_id)
-        script = str(payload.get("script") or project["original_script"] or "").strip()
+    with db() as session:
+        project, _ = project_and_scenes(session, project_id, user_id)
+        script = str(payload.get("script") or project.original_script or "").strip()
         if not script:
             raise HTTPException(400, "script is required")
-        config = active_model_config(conn, user_id, "script", "故事生成/剧本优化")
-        require_model_balance(conn, user_id, config)
+        config = active_model_config(session, user_id, "script", "故事生成/剧本优化")
+        require_model_balance(session, user_id, config)
     started_at = time.monotonic()
     try:
         result = await models.optimize_script(
@@ -248,47 +290,59 @@ async def optimize_project(project_id: str, payload: dict[str, Any], user_id: in
     except Exception as exc:
         raise HTTPException(502, "failed to optimize script: " + str(exc)) from exc
     record_usage(user_id, config, "script_optimize", started_at, result.usage)
-    with db() as conn:
-        conn.execute("UPDATE projects SET original_script=?, status='idle', updated_at=? WHERE id=?", (result.optimizedScript, now(), project_id))
+    with db() as session:
+        session.execute(
+            update(Project)
+            .where(Project.id == project_id)
+            .values(original_script=result.optimizedScript, status="idle", updated_at=now()),
+            execution_options={"synchronize_session": False},
+        )
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "optimizedScript": result.optimizedScript, "warning": result.warning}})
     return {"projectId": project_id, "optimizedScript": result.optimizedScript, "tips": result.tips, "source": result.source, "warning": result.warning, "appliedToProject": True}
 
 
 @router.post("/{project_id}/generate", status_code=202)
 async def generate_project(project_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        project, scenes = project_and_scenes(conn, project_id, user_id)
+    with db() as session:
+        project, scenes = project_and_scenes(session, project_id, user_id)
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
-        if project["status"] == "generating":
+        if project.status == "generating":
             raise HTTPException(409, "project is already generating")
-        config = active_model_config(conn, user_id, "image", "分镜图片生成")
+        config = active_model_config(session, user_id, "image", "分镜图片生成")
         warning = ""
-        require_model_balance(conn, user_id, config)
+        require_model_balance(session, user_id, config)
         try:
-            audio_config = active_model_config(conn, user_id, "audio", "场景配音")
+            audio_config = active_model_config(session, user_id, "audio", "场景配音")
         except HTTPException:
             audio_config = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
         if audio_config["provider"] not in {"edge", "system"}:
-            require_model_balance(conn, user_id, audio_config)
-        conn.execute("UPDATE projects SET status='generating', updated_at=? WHERE id=?", (now(), project_id))
+            require_model_balance(session, user_id, audio_config)
+        project.status = "generating"
+        project.updated_at = now()
+        session.add(project)
+        scene_payloads = [scene.model_dump() for scene in scenes]
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating"}})
-    asyncio.create_task(run_generation(project_id, [dict(scene) for scene in scenes], config, audio_config, user_id))
-    return {"projectId": project_id, "status": "generating", "model": str(payload.get("model") or config["model"]), "provider": config["provider"], "imageModel": config["model"], "warning": warning, "sceneCount": len(scenes)}
+    asyncio.create_task(run_generation(project_id, scene_payloads, config, audio_config, user_id))
+    return {"projectId": project_id, "status": "generating", "model": str(payload.get("model") or config["model"]), "provider": config["provider"], "imageModel": config["model"], "warning": warning, "sceneCount": len(scene_payloads)}
 
 
 @router.post("/{project_id}/generate-video", status_code=202)
 async def generate_video(project_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    with db() as conn:
-        project, scenes = project_and_scenes(conn, project_id, user_id)
+    with db() as session:
+        project, scenes = project_and_scenes(session, project_id, user_id)
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
-        if project["status"] == "video_generating":
+        if project.status == "video_generating":
             raise HTTPException(409, "project video is already generating")
-        config = active_model_config(conn, user_id, "video", "视频生成")
-        require_model_balance(conn, user_id, config)
+        config = active_model_config(session, user_id, "video", "视频生成")
+        require_model_balance(session, user_id, config)
         model = str(payload.get("model") or config["model"]).strip()
-        conn.execute("UPDATE projects SET status='video_generating', video_status='generating', video_progress=0, updated_at=? WHERE id=?", (now(), project_id))
+        project.status = "video_generating"
+        project.video_status = "generating"
+        project.video_progress = 0
+        project.updated_at = now()
+        session.add(project)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "video_generating", "videoStatus": "generating", "videoModel": model}})
     asyncio.create_task(run_video_generation(project_id, model))
     return {"projectId": project_id, "status": "video_generating", "model": model}
@@ -296,11 +350,13 @@ async def generate_video(project_id: str, payload: dict[str, Any], user_id: int 
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: str, user_id: int = Depends(current_user_id)) -> None:
-    with db() as conn:
-        project = row(conn, "SELECT * FROM projects WHERE id=? AND deleted_at IS NULL", (project_id,))
+    with db() as session:
+        project = session.exec(select(Project).where(Project.id == project_id, Project.deleted_at.is_(None))).first()
         if not project:
             return
-        if project["user_id"] != user_id:
+        if project.user_id != user_id:
             raise HTTPException(403, "project does not belong to current user")
-        conn.execute("UPDATE projects SET deleted_at=?, updated_at=? WHERE id=?", (now(), now(), project_id))
+        project.deleted_at = now()
+        project.updated_at = now()
+        session.add(project)
     await broadcast(project_id, {"type": "PROJECT_DELETED", "projectId": project_id})

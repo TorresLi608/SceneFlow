@@ -1,5 +1,6 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
+sqlmodel>=0.0.26
 bcrypt>=4.2
 PyJWT>=2.9
 cryptography>=43
