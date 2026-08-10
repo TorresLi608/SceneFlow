@@ -80,6 +80,12 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {scene.errorMessage ? (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            {scene.errorMessage}
+          </p>
+        ) : null}
+
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{t("scene.imageProgress")}</span>

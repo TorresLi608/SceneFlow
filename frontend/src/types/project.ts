@@ -16,9 +16,19 @@ export interface Scene {
     progress: number;
     duration: number;
   };
+  /** Last failure reason, persisted so it survives a reload. Empty when the scene is healthy. */
+  errorMessage: string;
 }
 
-export type ProjectStatus = "idle" | "parsing" | "generating" | "video_generating" | "done";
+export type ProjectStatus =
+  | "idle"
+  | "parsing"
+  | "generating"
+  | "video_generating"
+  | "done"
+  /** Some shots landed and some failed; retry the failed ones rather than rerunning everything. */
+  | "partial"
+  | "failed";
 export type ProjectMode = "comic" | "drama";
 export type ProjectStage = "script" | "bible" | "storyboard" | "audio" | "timeline" | "export";
 
@@ -106,6 +116,18 @@ export interface ReorderScenesInput {
 export interface ParseProjectInput {
   script: string;
   model?: string;
+  /**
+   * Reparsing discards generated shots. Without this the backend returns a preview
+   * (`applied: false`) so the user can confirm before losing rendered work.
+   */
+  replaceAll?: boolean;
+}
+
+/** A parsed shot that has not been written to the project yet. */
+export interface PendingScene {
+  order: number;
+  narration: string;
+  visualPrompt: string;
 }
 
 export interface ParseProjectResponse {
@@ -113,6 +135,9 @@ export interface ParseProjectResponse {
   status: ProjectStatus;
   source: "llm" | "fallback";
   warning?: string;
+  applied: boolean;
+  discardsGeneratedScenes: number;
+  pendingScenes: PendingScene[];
   scenes: Scene[];
 }
 
@@ -127,7 +152,6 @@ export interface GenerateProjectResponse {
   model?: string;
   provider?: string;
   imageModel?: string;
-  warning?: string;
 }
 
 export interface OptimizeProjectInput {

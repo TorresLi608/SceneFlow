@@ -13,9 +13,9 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ## Structure
 
 - `app/api/v1/`: FastAPI endpoints and request/response orchestration.
-- `app/core/`: configuration, database, security, and realtime infrastructure.
+- `app/core/`: configuration, database, logging, security, and realtime infrastructure.
 - `app/models/`: SQLModel table definitions; the single source of truth for the schema.
-- `app/schemas/`: response serialization shared by API modules.
+- `app/schemas/`: `requests.py` holds the Pydantic request bodies, `serializers.py` the response shaping.
 - `app/services/`: model, usage, chat, artifact, project, and generation business logic.
 - `app/graph/`: context and agent workflow orchestration.
 - `app/llms/`: provider routing and model registry.
@@ -38,6 +38,7 @@ cd backend
 - `SCENEFLOW_AES_KEY` (default `dev-aes-key-change-me`, internally SHA-256 -> 32 bytes)
 - `SCENEFLOW_SUPER_ADMIN_PASSWORD` (default `superAdmin@123` in development)
 - `SCENEFLOW_MAX_CONTEXT_TOKENS` (default `100000`)
+- `SCENEFLOW_LOG_LEVEL` (default `INFO`)
 - `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
 - `SCENEFLOW_CORS_ORIGINS` (comma-separated; defaults to the two local frontend origins)
 - `SCENEFLOW_PRIVATE_GENERATED_DIR` (default `./private_generated`)
@@ -95,20 +96,39 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 
 ### Project Parse (JWT required)
 - `POST /api/projects/:id/parse`
-  - request body: `{ "script": "...", "model": "gpt-4o" }`
+  - request body: `{ "script": "...", "model": "gpt-4o", "replaceAll": false }`
   - parses script to scenes and persists to DB
+  - Re-splitting is destructive. When the project already has shots carrying a generated
+    image or voice track, the response comes back with `applied: false`,
+    `discardsGeneratedScenes: N`, and the parsed shots under `pendingScenes` instead of
+    overwriting them. The client confirms, then repeats the call with `replaceAll: true`.
 
 ### Project Generate (JWT required)
 - `POST /api/projects/:id/generate`
   - requires an active image configuration
   - generates real storyboard images and TTS audio concurrently
   - TTS supports Edge/System/OpenAI audio configurations
+  - the terminal status reflects what landed: `done`, `partial`, or `failed`
 - `PATCH /api/projects/:id/production-settings`
 - `GET /api/projects/:id/jobs`
 - `POST /api/jobs/:id/cancel`
 - `POST /api/jobs/:id/retry`
 
 `generation_jobs` currently provides persistence, idempotency, leases, cancel, and retry services. The worker processor and project job UI are still pending; existing image/audio generation still starts in the API process.
+
+## Data model
+
+`Project` is a series. Its content hangs off `Episode` rows, and each `Scene` is one shot
+inside an episode. `Character` plus `CharacterVariant` form the series bible that keeps a
+cast member's look, image model, and voice stable across episodes; `SceneCharacter` records
+who appears in a shot. `ExportJob` tracks a merged render of up to
+`MAX_EXPORT_EPISODES` (10) episodes.
+
+Generated media is referenced by a path relative to `SCENEFLOW_PRIVATE_GENERATED_DIR`, never
+by URL. Signed links expire after 30 days, so a URL stored in a row would turn every asset in
+a long-running series into a 404; `schemas/serializers.py` mints a fresh link per response
+instead. `_migrate_scene_assets` in `app/core/database.py` upgrades older rows in place and
+drops references whose token no longer decodes, since those links were already dead.
 
 ## Short-drama orchestration
 
@@ -126,8 +146,11 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 ## Notes
 
 - Data access goes through SQLModel (SQLAlchemy 2.x) sessions; `app/models/` owns the schema and `init_db()` creates it with `SQLModel.metadata.create_all()`.
+- Request bodies are Pydantic models in `app/schemas/requests.py`, all extending `CamelModel`: the frontend sends camelCase, the backend reads snake_case, and an unknown field is a 422 rather than a silently dropped value.
 - Timestamp columns stay ISO-8601 strings (not `datetime`) because the code compares them as strings and the API passes them straight through.
 - The hand-written `ALTER TABLE` compatibility steps and the `user_configs`/`official_model_configs` -> `model_configs` data migration in `app/core/database.py` deliberately remain raw SQL; they operate on tables that no longer have models.
+- Databases created before the episode layer keep unused `scenes.image_url`/`audio_url` columns only if the rename could not run; the current column names are `image_path`/`audio_path`.
+- Starting work on a project takes a conditional UPDATE on `projects.status` (`claim_project_status`), so a double-clicked button cannot start two runs over the same rows.
 - Passwords are stored by bcrypt hash; model API keys are encrypted with AES-GCM.
 - Generated media is stored under `private_generated` and served only through expiring signed URLs.
 - Provider API keys are encrypted by AES-256-GCM before persisting.

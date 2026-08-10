@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from app.models import ChatMessage, ChatSession, ModelConfig, Project, Scene, User
+from app.services.artifact_service import signed_url_for_stored
 
 
 def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int = 0) -> dict[str, Any]:
@@ -68,19 +69,39 @@ def official_config_json(config: ModelConfig, is_active: bool | None = None) -> 
     return data
 
 
+def scene_asset_url(stored_path: str | None, download_stem: str) -> str | None:
+    """Sign a short-lived link for an asset the row tracks by path.
+
+    Returns None when the file is gone or the path is unreadable so the client renders
+    "not generated yet" instead of a broken image.
+    """
+    if not stored_path:
+        return None
+    try:
+        return signed_url_for_stored(stored_path, download_stem)
+    except (ValueError, OSError):
+        return None
+
+
 def scene_json(scene: Scene) -> dict[str, Any]:
+    stem = f"scene-{scene.order_num or 0}"
     return {
         "id": scene.id,
         "order": scene.order_num,
         "narration": scene.narration,
         "visualPrompt": scene.visual_prompt,
-        "image": {"url": scene.image_url or None, "status": scene.image_status, "progress": 0},
+        "image": {
+            "url": scene_asset_url(scene.image_path, stem),
+            "status": scene.image_status,
+            "progress": 0,
+        },
         "audio": {
-            "url": scene.audio_url or None,
+            "url": scene_asset_url(scene.audio_path, stem),
             "status": scene.audio_status,
             "progress": 0,
             "duration": scene.audio_duration or 0,
         },
+        "errorMessage": scene.error_message or "",
     }
 
 

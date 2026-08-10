@@ -1,0 +1,40 @@
+"""Merged delivery of several finished episodes as one file."""
+
+from __future__ import annotations
+
+from sqlalchemy import CheckConstraint, Index, text
+from sqlmodel import Field, SQLModel
+
+
+# Concatenating a whole series in one pass would tie up the worker and produce a file nobody
+# can upload; ten episodes is the documented ceiling for a single export.
+MAX_EXPORT_EPISODES = 10
+
+
+class ExportJob(SQLModel, table=True):
+    __tablename__ = "export_jobs"
+    __table_args__ = (
+        CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')"),
+        Index("idx_export_jobs_project_created", "project_id", text("created_at DESC")),
+        Index("idx_export_jobs_user_id", "user_id"),
+    )
+
+    id: str = Field(primary_key=True)
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
+    project_id: str = Field(foreign_key="projects.id", ondelete="CASCADE")
+    # JSON array of episode ids, in output order.
+    episode_ids: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
+    # Human-facing range such as "1-3", kept so the history list reads the way the user asked.
+    range_label: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    status: str = Field(default="queued", sa_column_kwargs={"server_default": text("'queued'")})
+    progress: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})
+    output_path: str | None = None
+    file_size: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})
+    include_subtitles: bool = Field(default=True, sa_column_kwargs={"server_default": text("1")})
+    title_cards: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
+    transition: str = Field(default="none", sa_column_kwargs={"server_default": text("'none'")})
+    error_message: str | None = None

@@ -55,6 +55,7 @@ function normalizeScene(scene: Scene): Scene {
       progress: typeof scene.audio?.progress === "number" ? scene.audio.progress : 0,
       duration: typeof scene.audio?.duration === "number" ? scene.audio.duration : 0,
     },
+    errorMessage: scene.errorMessage ?? "",
   };
 }
 
@@ -243,6 +244,9 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
           }
           if (typeof data.audioDuration === "number") {
             nextScene.audio.duration = data.audioDuration;
+          }
+          if (typeof data.errorMsg === "string") {
+            nextScene.errorMessage = data.errorMsg;
           }
 
           return nextScene;

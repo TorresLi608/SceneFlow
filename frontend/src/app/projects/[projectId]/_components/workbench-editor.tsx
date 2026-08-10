@@ -112,6 +112,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  // Set when a reparse would discard rendered shots; the backend held off until the user confirms.
+  const [reparsePrompt, setReparsePrompt] = useState<{ discards: number; pending: number } | null>(null);
 
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
@@ -189,16 +191,27 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const hasUsableImageConfig = Boolean(activeImageConfig);
 
   const parseProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; script: string; model?: string }) =>
+    mutationFn: (params: { projectId: string; script: string; model?: string; replaceAll?: boolean }) =>
       parseProjectAction(params.projectId, {
         script: params.script,
         model: params.model,
+        replaceAll: params.replaceAll,
       }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       setProjectStatus(projectId, "parsing");
     },
     onSuccess: (response) => {
+      if (!response.applied) {
+        setProjectStatus(response.projectId, "idle");
+        setReparsePrompt({
+          discards: response.discardsGeneratedScenes,
+          pending: response.pendingScenes.length,
+        });
+        return;
+      }
+
+      setReparsePrompt(null);
       applyParsedScenes(
         response.projectId,
         response.status,
@@ -298,9 +311,10 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       setStatusMessage(null);
     },
     onSuccess: (response, variables) => {
+      // Only the script changed. Forcing status back to idle here used to hide a run that
+      // was still in flight.
       updateProjectFields(variables.projectId, {
         originalScript: response.optimizedScript,
-        status: "idle",
       });
 
       if (response.warning) {
@@ -468,6 +482,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
           if (status === "done") {
             setStatusMessage(t("home.status.generationDone"));
+          }
+
+          if (status === "partial") {
+            setStatusMessage(t("home.status.generationPartial"));
+          }
+
+          if (status === "failed") {
+            setStatusMessage(t("home.status.generationFailed"));
           }
 
           if (videoStatus === "success") {
@@ -1008,6 +1030,49 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
         </section>
       </div>
+
+      <Dialog
+        open={reparsePrompt !== null}
+        onOpenChange={(open) => {
+          if (!open && !parseProjectMutation.isPending) setReparsePrompt(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("home.reparseTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("home.reparseConfirm", {
+                count: reparsePrompt?.discards ?? 0,
+                pending: reparsePrompt?.pending ?? 0,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setReparsePrompt(null)}
+              disabled={parseProjectMutation.isPending}
+            >
+              {t("home.reparseKeep")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!currentProject) return;
+                parseProjectMutation.mutate({
+                  projectId: currentProject.id,
+                  script: currentProject.originalScript,
+                  model: activeScriptConfig?.modelSeries,
+                  replaceAll: true,
+                });
+              }}
+              disabled={!currentProject || parseProjectMutation.isPending}
+            >
+              {t("home.reparseReplace")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteProjectOpen}
