@@ -2,7 +2,22 @@ import { create } from "zustand";
 import { arrayMove } from "@dnd-kit/sortable";
 
 import { normalizeOrder, nowISO } from "@/lib/project-factory";
-import type { Project, Scene, SceneUpdatePayload } from "@/types/project";
+import type { Episode, EpisodeSummary, Project, Scene, SceneUpdatePayload } from "@/types/project";
+
+/** The scene fields a user can edit directly; the pipeline owns everything else. */
+export type SceneEdit = Partial<
+  Pick<
+    Scene,
+    | "narration"
+    | "dialogue"
+    | "visualPrompt"
+    | "shotType"
+    | "cameraMove"
+    | "durationMs"
+    | "subtitleText"
+    | "isLocked"
+  >
+>;
 
 interface ProjectStoreState {
   projects: Project[];
@@ -20,6 +35,7 @@ interface ProjectStoreState {
         Project,
         | "status"
         | "originalScript"
+        | "seriesBible"
         | "videoStatus"
         | "videoProgress"
         | "videoUrl"
@@ -28,6 +44,10 @@ interface ProjectStoreState {
       >
     >
   ) => void;
+  /** Switch which episode the workbench is editing, and load its shots. */
+  openEpisode: (projectID: string, episodeId: string, scenes: Scene[]) => void;
+  upsertEpisode: (projectID: string, episode: EpisodeSummary | Episode) => void;
+  removeEpisode: (projectID: string, episodeId: string) => void;
   applyParsedScenes: (
     projectID: string,
     status: Project["status"],
@@ -37,13 +57,21 @@ interface ProjectStoreState {
   ) => void;
   applySceneStreamUpdate: (projectID: string, sceneID: string, data: SceneUpdatePayload) => void;
   updateCurrentScript: (script: string) => void;
-  updateScene: (sceneId: string, patch: Partial<Pick<Scene, "narration" | "visualPrompt">>) => void;
+  updateScene: (sceneId: string, patch: SceneEdit) => void;
   reorderScenes: (activeId: string, overId: string) => void;
 }
 
 function normalizeScene(scene: Scene): Scene {
   return {
     ...scene,
+    episodeId: scene.episodeId ?? null,
+    dialogue: scene.dialogue ?? "",
+    speakerCharacterId: scene.speakerCharacterId ?? null,
+    shotType: scene.shotType ?? "",
+    cameraMove: scene.cameraMove ?? "",
+    durationMs: typeof scene.durationMs === "number" ? scene.durationMs : 0,
+    subtitleText: scene.subtitleText ?? "",
+    isLocked: Boolean(scene.isLocked),
     image: {
       url: scene.image?.url ?? null,
       status: scene.image?.status ?? "idle",
@@ -55,6 +83,11 @@ function normalizeScene(scene: Scene): Scene {
       progress: typeof scene.audio?.progress === "number" ? scene.audio.progress : 0,
       duration: typeof scene.audio?.duration === "number" ? scene.audio.duration : 0,
     },
+    video: {
+      url: scene.video?.url ?? null,
+      status: scene.video?.status ?? "idle",
+      progress: typeof scene.video?.progress === "number" ? scene.video.progress : 0,
+    },
     errorMessage: scene.errorMessage ?? "",
   };
 }
@@ -62,6 +95,7 @@ function normalizeScene(scene: Scene): Scene {
 function normalizeProject(project: Project): Project {
   return {
     ...project,
+    seriesBible: project.seriesBible ?? "",
     videoStatus: project.videoStatus ?? "idle",
     videoProgress: typeof project.videoProgress === "number" ? project.videoProgress : 0,
     videoUrl: project.videoUrl ?? null,
@@ -77,7 +111,37 @@ function normalizeProject(project: Project): Project {
       negativePrompt: "",
     },
     currentStage: project.currentStage ?? "script",
-    scenes: normalizeOrder(project.scenes.map(normalizeScene)),
+    currentEpisodeId: project.currentEpisodeId ?? null,
+    episodes: project.episodes ?? [],
+    scenes: normalizeOrder((project.scenes ?? []).map(normalizeScene)),
+  };
+}
+
+/** Keep an episode's shot count honest after the storyboard under it changes. */
+function withSceneCount(episodes: EpisodeSummary[], episodeId: string | null, count: number) {
+  if (!episodeId) {
+    return episodes;
+  }
+  return episodes.map((episode) =>
+    episode.id === episodeId ? { ...episode, sceneCount: count } : episode
+  );
+}
+
+/** Drop the script and shots an episode detail carries: the switcher list holds summaries. */
+function toSummary(episode: EpisodeSummary | Episode): EpisodeSummary {
+  return {
+    id: episode.id,
+    projectId: episode.projectId,
+    episodeNumber: episode.episodeNumber,
+    title: episode.title,
+    synopsis: episode.synopsis,
+    status: episode.status,
+    videoStatus: episode.videoStatus,
+    videoProgress: episode.videoProgress,
+    durationMs: episode.durationMs,
+    sceneCount: episode.sceneCount,
+    errorMessage: episode.errorMessage,
+    updatedAt: episode.updatedAt,
   };
 }
 
@@ -174,6 +238,62 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
     }));
   },
 
+  openEpisode: (projectID, episodeId, scenes) => {
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectID
+          ? {
+              ...project,
+              currentEpisodeId: episodeId,
+              episodes: withSceneCount(project.episodes, episodeId, scenes.length),
+              scenes: normalizeOrder(scenes.map(normalizeScene)),
+            }
+          : project
+      ),
+    }));
+  },
+
+  upsertEpisode: (projectID, episode) => {
+    const summary = toSummary(episode);
+    set((state) => ({
+      projects: state.projects.map((project) => {
+        if (project.id !== projectID) {
+          return project;
+        }
+
+        const known = project.episodes.some((item) => item.id === summary.id);
+        const episodes = known
+          ? project.episodes.map((item) => (item.id === summary.id ? summary : item))
+          : [...project.episodes, summary].sort((a, b) => a.episodeNumber - b.episodeNumber);
+
+        return { ...project, episodes, updatedAt: nowISO() };
+      }),
+    }));
+  },
+
+  removeEpisode: (projectID, episodeId) => {
+    set((state) => ({
+      projects: state.projects.map((project) => {
+        if (project.id !== projectID) {
+          return project;
+        }
+
+        const episodes = project.episodes.filter((item) => item.id !== episodeId);
+        const stillOpen = project.currentEpisodeId !== episodeId;
+
+        return {
+          ...project,
+          episodes,
+          updatedAt: nowISO(),
+          // The open episode just went away, so fall back to the newest one that is left.
+          // Its shots arrive with the follow-up load; showing the deleted one's would lie.
+          currentEpisodeId: stillOpen ? project.currentEpisodeId : episodes.at(-1)?.id ?? null,
+          scenes: stillOpen ? project.scenes : [],
+        };
+      }),
+    }));
+  },
+
   applyParsedScenes: (projectID, status, scenes, source, warning) => {
     set((state) => ({
       projects: state.projects.map((project) =>
@@ -185,6 +305,7 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
               videoProgress: 0,
               videoUrl: null,
               updatedAt: nowISO(),
+              episodes: withSceneCount(project.episodes, project.currentEpisodeId, scenes.length),
               scenes: normalizeOrder(scenes.map(normalizeScene)),
             }
           : project
@@ -211,6 +332,7 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
             ...scene,
             image: { ...scene.image },
             audio: { ...scene.audio },
+            video: { ...scene.video },
           };
 
           if (typeof data.order === "number") {
@@ -219,8 +341,29 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
           if (typeof data.narration === "string") {
             nextScene.narration = data.narration;
           }
+          if (typeof data.dialogue === "string") {
+            nextScene.dialogue = data.dialogue;
+          }
+          if ("speakerCharacterId" in data) {
+            nextScene.speakerCharacterId = data.speakerCharacterId ?? null;
+          }
           if (typeof data.visualPrompt === "string") {
             nextScene.visualPrompt = data.visualPrompt;
+          }
+          if (typeof data.shotType === "string") {
+            nextScene.shotType = data.shotType;
+          }
+          if (typeof data.cameraMove === "string") {
+            nextScene.cameraMove = data.cameraMove;
+          }
+          if (typeof data.durationMs === "number") {
+            nextScene.durationMs = data.durationMs;
+          }
+          if (typeof data.subtitleText === "string") {
+            nextScene.subtitleText = data.subtitleText;
+          }
+          if (typeof data.isLocked === "boolean") {
+            nextScene.isLocked = data.isLocked;
           }
 
           if (typeof data.imageStatus === "string") {

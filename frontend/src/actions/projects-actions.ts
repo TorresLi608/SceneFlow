@@ -1,5 +1,8 @@
 import { httpClient } from "@/lib/http/client";
 import type {
+  CreateEpisodeInput,
+  EpisodeItemResponse,
+  EpisodeListResponse,
   GenerateProjectInput,
   GenerateProjectResponse,
   GenerateVideoInput,
@@ -13,6 +16,7 @@ import type {
   ProjectListResponse,
   GenerationJobListResponse,
   ReorderScenesInput,
+  UpdateEpisodeInput,
   UpdateProjectInput,
   UpdateProductionSettingsInput,
   UpdateSceneInput,
@@ -87,4 +91,36 @@ export async function generateVideoAction(projectID: string, payload: GenerateVi
 
 export async function deleteProjectAction(projectID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}`);
+}
+
+export async function listEpisodesAction(projectID: string) {
+  const response = await httpClient.get<EpisodeListResponse>(`/api/bff/projects/${projectID}/episodes`);
+  return response.data;
+}
+
+export async function getEpisodeAction(projectID: string, episodeID: string) {
+  const response = await httpClient.get<EpisodeItemResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}`
+  );
+  return response.data;
+}
+
+export async function createEpisodeAction(projectID: string, payload: CreateEpisodeInput) {
+  const response = await httpClient.post<EpisodeItemResponse>(
+    `/api/bff/projects/${projectID}/episodes`,
+    payload
+  );
+  return response.data;
+}
+
+export async function updateEpisodeAction(projectID: string, episodeID: string, payload: UpdateEpisodeInput) {
+  const response = await httpClient.patch<EpisodeItemResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}`,
+    payload
+  );
+  return response.data;
+}
+
+export async function deleteEpisodeAction(projectID: string, episodeID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/episodes/${episodeID}`);
 }

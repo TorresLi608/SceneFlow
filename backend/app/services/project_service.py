@@ -140,15 +140,25 @@ def prepare_parse(session: Session, user_id: int, project_id: str, script: str, 
 
 def scenes_with_assets(scenes: list[Scene]) -> list[Scene]:
     """Scenes that cost money or manual effort, and so must not be discarded silently."""
-    return [scene for scene in scenes if scene.image_path or scene.audio_path]
+    return [scene for scene in scenes if scene.image_path or scene.audio_path or scene.video_path]
 
 
-def project_and_scenes(session: Session, project_id: str, user_id: int) -> tuple[Project, list[Scene]]:
+def owned_project(session: Session, project_id: str, user_id: int) -> Project:
     project = session.exec(select(Project).where(Project.id == project_id, Project.deleted_at.is_(None))).first()
     if not project:
         raise HTTPException(404, "project not found")
     if project.user_id != user_id:
         raise HTTPException(403, "project does not belong to current user")
+    return project
+
+
+def project_and_scenes(session: Session, project_id: str, user_id: int) -> tuple[Project, list[Scene]]:
+    """The project and every shot in it, across all episodes.
+
+    Only for whole-series work. Anything that renders or reorders wants one episode's
+    shots, since order numbers restart each episode; use `episode_service.episode_scenes`.
+    """
+    project = owned_project(session, project_id, user_id)
     scenes = session.exec(
         select(Scene).where(Scene.project_id == project_id, Scene.deleted_at.is_(None)).order_by(Scene.order_num.asc())
     ).all()

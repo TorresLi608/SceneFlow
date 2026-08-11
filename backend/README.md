@@ -96,19 +96,31 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 
 ### Project Parse (JWT required)
 - `POST /api/projects/:id/parse`
-  - request body: `{ "script": "...", "model": "gpt-4o", "replaceAll": false }`
-  - parses script to scenes and persists to DB
-  - Re-splitting is destructive. When the project already has shots carrying a generated
-    image or voice track, the response comes back with `applied: false`,
+  - request body: `{ "script": "...", "model": "gpt-4o", "episodeId": null, "replaceAll": false }`
+  - parses script to scenes and persists them into one episode; `episodeId` omitted targets
+    the current (highest-numbered) episode
+  - Re-splitting is destructive. When the target episode already has shots carrying a
+    generated image or voice track, the response comes back with `applied: false`,
     `discardsGeneratedScenes: N`, and the parsed shots under `pendingScenes` instead of
     overwriting them. The client confirms, then repeats the call with `replaceAll: true`.
+
+### Episodes (JWT required)
+- `GET /api/projects/:id/episodes` — summaries (no script, no shots) plus a shot count each
+- `POST /api/projects/:id/episodes` — append the next episode; the number comes from the
+  highest live one, so a soft-deleted number is reused
+- `GET /api/projects/:id/episodes/:episodeId` — the episode with its script and ordered shots
+- `PATCH /api/projects/:id/episodes/:episodeId` — title, synopsis, source text, status
+- `DELETE /api/projects/:id/episodes/:episodeId` — soft-deletes the episode and its shots;
+  refused with 409 while the project is busy, since a run holds those rows open
 
 ### Project Generate (JWT required)
 - `POST /api/projects/:id/generate`
   - requires an active image configuration
+  - renders one episode's shots; `episodeId` omitted targets the current episode
   - generates real storyboard images and TTS audio concurrently
   - TTS supports Edge/System/OpenAI audio configurations
-  - the terminal status reflects what landed: `done`, `partial`, or `failed`
+  - the terminal status reflects what landed: `done`, `partial`, or `failed`, written to both
+    the project (which holds the busy lock) and the episode that was rendered
 - `PATCH /api/projects/:id/production-settings`
 - `GET /api/projects/:id/jobs`
 - `POST /api/jobs/:id/cancel`
@@ -124,11 +136,20 @@ cast member's look, image model, and voice stable across episodes; `SceneCharact
 who appears in a shot. `ExportJob` tracks a merged render of up to
 `MAX_EXPORT_EPISODES` (10) episodes.
 
+Order numbers restart at 1 in every episode, so a serialized project carries **one episode's**
+shots under `scenes` — never the whole series' merged together — alongside `episodes` (summaries)
+and `currentEpisodeId`. Anything that renders or reorders resolves a target episode first;
+`episode_service.resolve_episode` defaults an unnamed one to the highest-numbered episode.
+`project_service.project_and_scenes` still spans the whole series and is only for series-wide work.
+
 Generated media is referenced by a path relative to `SCENEFLOW_PRIVATE_GENERATED_DIR`, never
 by URL. Signed links expire after 30 days, so a URL stored in a row would turn every asset in
 a long-running series into a 404; `schemas/serializers.py` mints a fresh link per response
 instead. `_migrate_scene_assets` in `app/core/database.py` upgrades older rows in place and
 drops references whose token no longer decodes, since those links were already dead.
+
+`Character`, `CharacterVariant`, `SceneCharacter`, and `ExportJob` are still schema only —
+no service or endpoint reads them yet.
 
 ## Short-drama orchestration
 
@@ -150,7 +171,8 @@ drops references whose token no longer decodes, since those links were already d
 - Timestamp columns stay ISO-8601 strings (not `datetime`) because the code compares them as strings and the API passes them straight through.
 - The hand-written `ALTER TABLE` compatibility steps and the `user_configs`/`official_model_configs` -> `model_configs` data migration in `app/core/database.py` deliberately remain raw SQL; they operate on tables that no longer have models.
 - Databases created before the episode layer keep unused `scenes.image_url`/`audio_url` columns only if the rename could not run; the current column names are `image_path`/`audio_path`.
-- Starting work on a project takes a conditional UPDATE on `projects.status` (`claim_project_status`), so a double-clicked button cannot start two runs over the same rows.
+- `_backfill_first_episode` gives every episode-less project an episode 1 that adopts its shots, then attaches any remaining episode-less shot to its project's earliest episode. Listing projects never creates one: a GET has no business writing rows.
+- Starting work on a project takes a conditional UPDATE on `projects.status` (`claim_project_status`), so a double-clicked button cannot start two runs over the same rows. The lock stays at project level even though rendering is per episode, so one run owns the series at a time.
 - Passwords are stored by bcrypt hash; model API keys are encrypted with AES-GCM.
 - Generated media is stored under `private_generated` and served only through expiring signed URLs.
 - Provider API keys are encrypted by AES-256-GCM before persisting.

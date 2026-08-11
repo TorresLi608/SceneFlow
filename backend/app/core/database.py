@@ -209,6 +209,22 @@ def _backfill_first_episode(connection: Connection) -> None:
             (episode_id, project["id"]),
         )
 
+    # Shots written before their project had an episode: a build that predates the episode
+    # layer, or a project created between two startups. They belong to the earliest episode,
+    # which is the one already holding that project's original storyboard.
+    connection.exec_driver_sql(
+        """UPDATE scenes SET episode_id = (
+               SELECT e.id FROM episodes e
+               WHERE e.project_id = scenes.project_id AND e.deleted_at IS NULL
+               ORDER BY e.episode_number ASC LIMIT 1
+           )
+           WHERE episode_id IS NULL
+             AND deleted_at IS NULL
+             AND EXISTS (
+               SELECT 1 FROM episodes e WHERE e.project_id = scenes.project_id AND e.deleted_at IS NULL
+             )"""
+    )
+
 
 def _migrate_scene_assets(connection: Connection) -> None:
     """Move scene assets off stored signed URLs and onto stable relative paths.

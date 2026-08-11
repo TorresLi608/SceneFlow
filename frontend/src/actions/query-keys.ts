@@ -2,6 +2,8 @@ export const queryKeys = {
   me: ["me"] as const,
   userConfigs: ["user-configs"] as const,
   projects: ["projects"] as const,
+  episodes: (projectId: string) => ["episodes", projectId] as const,
+  episode: (projectId: string, episodeId: string) => ["episode", projectId, episodeId] as const,
   adminUsers: ["admin-users"] as const,
   adminUsageLogs: (search: string, page: number) => ["admin-usage-logs", search, page] as const,
   invitationCodes: (status: string, search: string, page: number) => ["invitation-codes", status, search, page] as const,

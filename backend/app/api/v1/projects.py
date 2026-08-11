@@ -7,13 +7,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app.core.database import db
 from app.core.realtime import broadcast
 from app.api.deps import current_user_id
 from app.llms.registry import models
-from app.models import Project, Scene
+from app.models import Episode, Project, Scene
 from app.schemas.requests import (
     CreateProjectRequest,
     GenerateProjectRequest,
@@ -25,16 +25,25 @@ from app.schemas.requests import (
     UpdateProjectRequest,
     UpdateSceneRequest,
 )
-from app.schemas.serializers import project_json, scene_json
+from app.schemas.serializers import episode_summary_json, project_json, scene_json
 from app.services.config_service import active_model_config
+from app.services.episode_service import (
+    ensure_episode,
+    episode_scenes,
+    episodes_by_project,
+    episodes_for,
+    resolve_episode,
+    scene_counts,
+    touch_episode,
+)
 from app.services.generation_service import run_generation, run_video_generation
 from app.services.job_service import list_project_jobs
 from app.services.project_service import (
     IDLE_STATUSES,
     claim_project_status,
+    owned_project,
     prepare_parse,
     production_settings,
-    project_and_scenes,
     release_project_status,
     scenes_with_assets,
 )
@@ -52,24 +61,57 @@ def _settings_payload(request: ProductionSettingsRequest) -> dict[str, Any]:
     return request.model_dump(by_alias=True, exclude_unset=True, exclude_none=True)
 
 
+def _serialized(session: Session, project: Project, *, episode: Episode | None = None) -> dict[str, Any]:
+    """Serialize a series around one episode: its shots, plus a summary of its siblings."""
+    target = episode or ensure_episode(session, project.id)
+    counts = scene_counts(session, [project.id])
+    return project_json(
+        project,
+        episode_scenes(session, target.id),
+        episodes=[episode_summary_json(item, counts.get(item.id, 0)) for item in episodes_for(session, project.id)],
+        current_episode_id=target.id,
+    )
+
+
 @router.get("")
 def list_projects(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Every series, each carrying its current episode's shots and a summary of the rest.
+
+    Batched rather than serialized one project at a time: a list of series would otherwise
+    run two queries per row. A project with no episode yet reads as empty here — creating
+    one is a write, and a GET has no business doing that.
+    """
     with db() as session:
-        projects = session.exec(
-            select(Project)
-            .where(Project.user_id == user_id, Project.deleted_at.is_(None))
-            .order_by(Project.updated_at.desc())
-        ).all()
+        projects = list(
+            session.exec(
+                select(Project)
+                .where(Project.user_id == user_id, Project.deleted_at.is_(None))
+                .order_by(Project.updated_at.desc())
+            ).all()
+        )
+        project_ids = [project.id for project in projects]
+        grouped = episodes_by_project(session, project_ids)
+        counts = scene_counts(session, project_ids)
+        # Episodes come back ascending, so the last one is the current episode.
+        current = {project_id: (items[-1] if items else None) for project_id, items in grouped.items()}
+        shots: dict[str, list[Scene]] = {}
+        current_ids = [episode.id for episode in current.values() if episode]
+        if current_ids:
+            for scene in session.exec(
+                select(Scene)
+                .where(Scene.episode_id.in_(current_ids), Scene.deleted_at.is_(None))
+                .order_by(Scene.order_num.asc())
+            ).all():
+                shots.setdefault(scene.episode_id, []).append(scene)
         data = [
             project_json(
                 project,
-                list(
-                    session.exec(
-                        select(Scene)
-                        .where(Scene.project_id == project.id, Scene.deleted_at.is_(None))
-                        .order_by(Scene.order_num.asc())
-                    ).all()
-                ),
+                shots.get(current[project.id].id, []) if current.get(project.id) else [],
+                episodes=[
+                    episode_summary_json(episode, counts.get(episode.id, 0))
+                    for episode in grouped.get(project.id, [])
+                ],
+                current_episode_id=current[project.id].id if current.get(project.id) else None,
             )
             for project in projects
         ]
@@ -95,7 +137,10 @@ def create_project(body: CreateProjectRequest, user_id: int = Depends(current_us
         )
         session.add(project)
         session.flush()
-        return {"project": project_json(project, [])}
+        # A series with no episode can hold no shots, so episode 1 exists from the start
+        # rather than appearing on whichever write happens to need it first.
+        episode = ensure_episode(session, project.id)
+        return {"project": _serialized(session, project, episode=episode)}
 
 
 @router.patch("/{project_id}")
@@ -108,18 +153,21 @@ async def update_project(project_id: str, body: UpdateProjectRequest, user_id: i
     if body.original_script is not None:
         updates["original_script"] = body.original_script
         broadcast_data["originalScript"] = body.original_script
+    if body.series_bible is not None:
+        updates["series_bible"] = body.series_bible
+        broadcast_data["seriesBible"] = body.series_bible
     if not updates:
         raise HTTPException(400, "no fields to update")
 
     stamp = now()
     with db() as session:
-        project, scenes = project_and_scenes(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         for key, value in updates.items():
             setattr(project, key, value)
         project.updated_at = stamp
         session.add(project)
         session.flush()
-        data = project_json(project, scenes)
+        data = _serialized(session, project)
     # camelCase on the wire: every other realtime payload is camelCase, and the client reads it directly.
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {**broadcast_data, "updatedAt": stamp}})
     return {"project": data}
@@ -136,7 +184,7 @@ async def update_production_settings(
         raise HTTPException(400, "no production settings to update")
     stamp = now()
     with db() as session:
-        project, scenes = project_and_scenes(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         updates = production_settings(
             {
                 "mode": project.mode,
@@ -158,7 +206,7 @@ async def update_production_settings(
         project.updated_at = stamp
         session.add(project)
         session.flush()
-        serialized = project_json(project, scenes)
+        serialized = _serialized(session, project)
     data = {
         "productionSettings": serialized["productionSettings"],
         "currentStage": serialized["currentStage"],
@@ -182,10 +230,13 @@ async def reorder_project_scenes(project_id: str, body: ReorderScenesRequest, us
         raise HTTPException(400, "sceneIds is required")
     stamp = now()
     with db() as session:
-        project, scenes = project_and_scenes(session, project_id, user_id)
-        by_id = {scene.id: scene for scene in scenes}
+        project = owned_project(session, project_id, user_id)
+        episode = resolve_episode(session, project_id, body.episode_id)
+        by_id = {scene.id: scene for scene in episode_scenes(session, episode.id)}
+        # Order numbers restart each episode, so a partial list would renumber shots the
+        # caller never saw. The set has to match the episode exactly.
         if set(scene_ids) != set(by_id):
-            raise HTTPException(400, "sceneIds must match current project scenes")
+            raise HTTPException(400, "sceneIds must match the episode's current scenes")
         for index, scene_id in enumerate(scene_ids, start=1):
             scene = by_id[scene_id]
             scene.order_num = index
@@ -194,25 +245,38 @@ async def reorder_project_scenes(project_id: str, body: ReorderScenesRequest, us
         project.updated_at = stamp
         session.add(project)
         session.flush()
-        project, scenes = project_and_scenes(session, project_id, user_id)
-        data = project_json(project, scenes)
+        data = _serialized(session, project, episode=episode)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"updatedAt": stamp}})
     return {"project": data}
 
 
+# Request field -> column, for the fields a client may edit directly. Anything absent here
+# is owned by the pipeline (asset paths, statuses) and is not writable over PATCH.
+_SCENE_COLUMNS = (
+    ("narration", "narration"),
+    ("dialogue", "dialogue"),
+    ("speaker_character_id", "speaker_character_id"),
+    ("visual_prompt", "visual_prompt"),
+    ("shot_type", "shot_type"),
+    ("camera_move", "camera_move"),
+    ("duration_ms", "duration_ms"),
+    ("subtitle_text", "subtitle_text"),
+    ("is_locked", "is_locked"),
+)
+
+
 @router.patch("/{project_id}/scenes/{scene_id}")
 async def update_project_scene(project_id: str, scene_id: str, body: UpdateSceneRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    updates: dict[str, Any] = {}
-    if body.narration is not None:
-        updates["narration"] = body.narration
-    if body.visual_prompt is not None:
-        updates["visual_prompt"] = body.visual_prompt
+    # exclude_unset, not "is not None": clearing a field to "" or unlocking a shot are both
+    # real edits, and only an absent key means "leave it alone".
+    sent = body.model_dump(exclude_unset=True)
+    updates = {column: sent[field] for field, column in _SCENE_COLUMNS if field in sent and sent[field] is not None}
     if not updates:
         raise HTTPException(400, "no fields to update")
 
     stamp = now()
     with db() as session:
-        project, _ = project_and_scenes(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         scene = session.exec(
             select(Scene).where(Scene.id == scene_id, Scene.project_id == project_id, Scene.deleted_at.is_(None))
         ).first()
@@ -232,13 +296,19 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
             "type": "SCENE_UPDATE",
             "projectId": project_id,
             "sceneId": scene_id,
-            "data": {"narration": body.narration, "visualPrompt": body.visual_prompt},
+            # Only what changed, in the same camelCase shape the serializer uses.
+            "data": {key: data[key] for key in body.model_dump(by_alias=True, exclude_unset=True) if key in data},
         },
     )
     return {"scene": data}
 
 
-def _replace_scenes(project_id: str, drafts: list[Any]) -> list[Scene]:
+def _replace_scenes(project_id: str, episode_id: str, drafts: list[Any], source_text: str) -> list[Scene]:
+    """Swap one episode's storyboard for a freshly parsed one.
+
+    Scoped to the episode, so the rest of the series is untouched. Any render of this
+    episode describes shots that no longer exist, so it is cleared along with them.
+    """
     stamp = now()
     with db() as session:
         session.execute(
@@ -248,8 +318,21 @@ def _replace_scenes(project_id: str, drafts: list[Any]) -> list[Scene]:
             execution_options={"synchronize_session": False},
         )
         session.execute(
+            update(Episode)
+            .where(Episode.id == episode_id)
+            .values(
+                status="storyboard",
+                source_text=source_text,
+                video_status="idle",
+                video_progress=0,
+                video_path=None,
+                updated_at=stamp,
+            ),
+            execution_options={"synchronize_session": False},
+        )
+        session.execute(
             update(Scene)
-            .where(Scene.project_id == project_id, Scene.deleted_at.is_(None))
+            .where(Scene.episode_id == episode_id, Scene.deleted_at.is_(None))
             .values(deleted_at=stamp, updated_at=stamp),
             execution_options={"synchronize_session": False},
         )
@@ -259,6 +342,7 @@ def _replace_scenes(project_id: str, drafts: list[Any]) -> list[Scene]:
                 created_at=stamp,
                 updated_at=stamp,
                 project_id=project_id,
+                episode_id=episode_id,
                 order_num=index,
                 narration=draft.narration,
                 visual_prompt=draft.visualPrompt,
@@ -296,8 +380,13 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
     record_usage(user_id, config, "script_parse", started_at, result.usage)
 
     with db() as session:
-        project, existing = project_and_scenes(session, project_id, user_id)
+        owned_project(session, project_id, user_id)
+        episode = resolve_episode(session, project_id, body.episode_id)
+        episode_id = episode.id
+        existing = episode_scenes(session, episode_id)
         at_risk = scenes_with_assets(existing)
+        # Serialized inside the session: the rows are detached once it closes.
+        existing_payload = [scene_json(scene) for scene in existing]
 
     # Reparsing is destructive: the old flow silently deleted every generated image and voice
     # track. When there is something to lose, hand back a preview and let the user decide.
@@ -305,6 +394,7 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
         release_project_status(project_id)
         return {
             "projectId": project_id,
+            "episodeId": episode_id,
             "status": "idle",
             "source": result.source,
             "warning": result.warning,
@@ -314,10 +404,10 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
                 {"order": index, "narration": draft.narration, "visualPrompt": draft.visualPrompt}
                 for index, draft in enumerate(result.scenes, start=1)
             ],
-            "scenes": [scene_json(scene) for scene in existing],
+            "scenes": existing_payload,
         }
 
-    scene_rows = _replace_scenes(project_id, result.scenes)
+    scene_rows = _replace_scenes(project_id, episode_id, result.scenes, body.script)
     for scene in scene_rows:
         await broadcast(
             project_id,
@@ -326,6 +416,7 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
                 "projectId": project_id,
                 "sceneId": scene.id,
                 "data": {
+                    "episodeId": episode_id,
                     "order": scene.order_num,
                     "narration": scene.narration,
                     "visualPrompt": scene.visual_prompt,
@@ -338,11 +429,18 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
         {
             "type": "PROJECT_UPDATE",
             "projectId": project_id,
-            "data": {"status": "idle", "sceneCount": len(scene_rows), "source": result.source, "warning": result.warning},
+            "data": {
+                "status": "idle",
+                "episodeId": episode_id,
+                "sceneCount": len(scene_rows),
+                "source": result.source,
+                "warning": result.warning,
+            },
         },
     )
     return {
         "projectId": project_id,
+        "episodeId": episode_id,
         "status": "idle",
         "source": result.source,
         "warning": result.warning,
@@ -356,7 +454,7 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
 @router.post("/{project_id}/optimize")
 async def optimize_project(project_id: str, body: OptimizeProjectRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
-        project, _ = project_and_scenes(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         script = (body.script or project.original_script or "").strip()
         if not script:
             raise HTTPException(400, "script is required")
@@ -403,7 +501,9 @@ async def optimize_project(project_id: str, body: OptimizeProjectRequest, user_i
 @router.post("/{project_id}/generate", status_code=202)
 async def generate_project(project_id: str, body: GenerateProjectRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
-        project, scenes = project_and_scenes(session, project_id, user_id)
+        owned_project(session, project_id, user_id)
+        episode = resolve_episode(session, project_id, body.episode_id)
+        scenes = episode_scenes(session, episode.id)
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
         config = active_model_config(session, user_id, "image", "分镜图片生成")
@@ -414,12 +514,20 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
             audio_config = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
         if audio_config["provider"] not in {"edge", "system"}:
             require_model_balance(session, user_id, audio_config)
+        # The lock stays on the project: one run owns the series, so a second episode
+        # cannot start rendering into the same worker pool while this one is going.
         claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="generating")
+        episode_id = episode.id
+        touch_episode(session, episode, status="generating")
         scene_payloads = [scene.model_dump() for scene in scenes]
-    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating"}})
-    asyncio.create_task(run_generation(project_id, scene_payloads, config, audio_config, user_id))
+    await broadcast(
+        project_id,
+        {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
+    )
+    asyncio.create_task(run_generation(project_id, scene_payloads, config, audio_config, user_id, episode_id=episode_id))
     return {
         "projectId": project_id,
+        "episodeId": episode_id,
         "status": "generating",
         "model": body.model or config["model"],
         "provider": config["provider"],
@@ -431,8 +539,9 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
 @router.post("/{project_id}/generate-video", status_code=202)
 async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
-        project, scenes = project_and_scenes(session, project_id, user_id)
-        if not scenes:
+        owned_project(session, project_id, user_id)
+        episode = resolve_episode(session, project_id, None)
+        if not episode_scenes(session, episode.id):
             raise HTTPException(400, "no scenes available, parse script first")
         config = active_model_config(session, user_id, "video", "视频生成")
         require_model_balance(session, user_id, config)

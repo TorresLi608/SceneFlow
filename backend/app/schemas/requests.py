@@ -55,20 +55,53 @@ class CreateProjectRequest(CamelModel):
 class UpdateProjectRequest(CamelModel):
     title: str | None = Field(default=None, max_length=80)
     original_script: str | None = Field(default=None, max_length=200_000)
+    series_bible: str | None = Field(default=None, max_length=200_000)
+
+
+EpisodeStatus = Literal["draft", "storyboard", "generating", "done", "partial", "failed"]
+
+
+class CreateEpisodeRequest(CamelModel):
+    """Everything optional: the common case is "add the next episode" with nothing else."""
+
+    title: str = Field(default="", max_length=80)
+    synopsis: str = Field(default="", max_length=4000)
+    source_text: str = Field(default="", max_length=200_000)
+
+
+class UpdateEpisodeRequest(CamelModel):
+    title: str | None = Field(default=None, max_length=80)
+    synopsis: str | None = Field(default=None, max_length=4000)
+    source_text: str | None = Field(default=None, max_length=200_000)
+    status: EpisodeStatus | None = None
 
 
 class UpdateSceneRequest(CamelModel):
     narration: str | None = Field(default=None, max_length=4000)
+    dialogue: str | None = Field(default=None, max_length=4000)
+    speaker_character_id: str | None = Field(default=None, max_length=64)
     visual_prompt: str | None = Field(default=None, max_length=4000)
+    # Free text rather than an enum: the column carries no vocabulary and directors write
+    # their own ("过肩", "handheld push-in"). Length is the only thing worth enforcing.
+    shot_type: str | None = Field(default=None, max_length=80)
+    camera_move: str | None = Field(default=None, max_length=80)
+    # 0 hands the shot's length back to its voice track.
+    duration_ms: int | None = Field(default=None, ge=0, le=600_000)
+    subtitle_text: str | None = Field(default=None, max_length=4000)
+    is_locked: bool | None = None
 
 
 class ReorderScenesRequest(CamelModel):
     scene_ids: list[str] = Field(min_length=1)
+    # Order numbers restart each episode, so a reorder is always within one.
+    episode_id: str | None = Field(default=None, max_length=64)
 
 
 class ParseProjectRequest(CamelModel):
     script: str = Field(min_length=1, max_length=200_000)
     model: str | None = Field(default=None, max_length=160)
+    # Which episode the shots land in. Omitted means the current one.
+    episode_id: str | None = Field(default=None, max_length=64)
     # Reparsing replaces the storyboard the user may have edited and paid to render, so it
     # stays opt-in: without this flag a parse that would discard generated shots returns a
     # preview for confirmation instead of overwriting them.
@@ -82,6 +115,7 @@ class OptimizeProjectRequest(CamelModel):
 
 class GenerateProjectRequest(CamelModel):
     model: str | None = Field(default=None, max_length=160)
+    episode_id: str | None = Field(default=None, max_length=64)
 
 
 class GenerateVideoRequest(CamelModel):

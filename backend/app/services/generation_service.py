@@ -11,7 +11,7 @@ from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
 from app.core.realtime import broadcast
 from app.llms.registry import models
-from app.models import Project, Scene
+from app.models import Episode, Project, Scene
 from app.services.artifact_service import artifact_relative_path, signed_url_for_stored, store_artifact
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.tts_service import synthesize
@@ -36,6 +36,14 @@ def _update_project(project_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
             update(Project).where(Project.id == project_id).values(updated_at=now(), **values),
+            execution_options={"synchronize_session": False},
+        )
+
+
+def _update_episode(episode_id: str, **values: Any) -> None:
+    with db() as session:
+        session.execute(
+            update(Episode).where(Episode.id == episode_id).values(updated_at=now(), **values),
             execution_options={"synchronize_session": False},
         )
 
@@ -127,7 +135,14 @@ def terminal_status(outcomes: list[bool]) -> str:
     return "partial" if any(outcomes) else "failed"
 
 
-async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: dict[str, Any], audio_config: dict[str, Any], user_id: int) -> None:
+async def run_generation(
+    project_id: str,
+    scenes: list[dict[str, Any]],
+    config: dict[str, Any],
+    audio_config: dict[str, Any],
+    user_id: int,
+    episode_id: str | None = None,
+) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCENES)
 
     async def one(scene: dict[str, Any]) -> list[bool]:
@@ -138,9 +153,18 @@ async def run_generation(project_id: str, scenes: list[dict[str, Any]], config: 
 
     results = await asyncio.gather(*(one(scene) for scene in scenes))
     status = terminal_status([outcome for scene_result in results for outcome in scene_result])
-    logger.info("generation finished project=%s scenes=%d status=%s", project_id, len(scenes), status)
+    logger.info(
+        "generation finished project=%s episode=%s scenes=%d status=%s", project_id, episode_id, len(scenes), status
+    )
+    # Both levels carry the outcome: the project because it holds the busy lock, the
+    # episode because that is what the user was actually rendering.
     _update_project(project_id, status=status)
-    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status}})
+    if episode_id:
+        _update_episode(episode_id, status=status)
+    await broadcast(
+        project_id,
+        {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "episodeId": episode_id}},
+    )
 
 
 def build_image_prompt(scene: dict[str, Any]) -> str:

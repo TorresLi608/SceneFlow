@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.models import ChatMessage, ChatSession, ModelConfig, Project, Scene, User
+from app.models import ChatMessage, ChatSession, Episode, ModelConfig, Project, Scene, User
 from app.services.artifact_service import signed_url_for_stored
 
 
@@ -87,9 +87,18 @@ def scene_json(scene: Scene) -> dict[str, Any]:
     stem = f"scene-{scene.order_num or 0}"
     return {
         "id": scene.id,
+        "episodeId": scene.episode_id,
         "order": scene.order_num,
         "narration": scene.narration,
+        "dialogue": scene.dialogue or "",
+        "speakerCharacterId": scene.speaker_character_id,
         "visualPrompt": scene.visual_prompt,
+        "shotType": scene.shot_type or "",
+        "cameraMove": scene.camera_move or "",
+        # 0 means "follow the voice track"; the client shows the audio duration instead.
+        "durationMs": scene.duration_ms or 0,
+        "subtitleText": scene.subtitle_text or "",
+        "isLocked": bool(scene.is_locked),
         "image": {
             "url": scene_asset_url(scene.image_path, stem),
             "status": scene.image_status,
@@ -101,15 +110,65 @@ def scene_json(scene: Scene) -> dict[str, Any]:
             "progress": 0,
             "duration": scene.audio_duration or 0,
         },
+        "video": {
+            "url": scene_asset_url(scene.video_path, stem),
+            "status": scene.video_status or "idle",
+            "progress": 0,
+        },
         "errorMessage": scene.error_message or "",
     }
 
 
-def project_json(project: Project, scenes: list[Scene]) -> dict[str, Any]:
+def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, Any]:
+    """An episode without its script or shots, for switchers and series lists.
+
+    `source_text` is a full script and there is one per episode, so a series list that
+    inlined it would ship megabytes to render a dropdown.
+    """
+    return {
+        "id": episode.id,
+        "projectId": episode.project_id,
+        "episodeNumber": episode.episode_number,
+        "title": episode.title or f"第 {episode.episode_number} 集",
+        "synopsis": episode.synopsis or "",
+        "status": episode.status or "draft",
+        "videoStatus": episode.video_status or "idle",
+        "videoProgress": episode.video_progress or 0,
+        "durationMs": episode.duration_ms or 0,
+        "sceneCount": scene_count,
+        "errorMessage": episode.error_message or "",
+        "updatedAt": episode.updated_at,
+    }
+
+
+def episode_json(episode: Episode, scenes: list[Scene]) -> dict[str, Any]:
+    stem = f"episode-{episode.episode_number}"
+    return {
+        **episode_summary_json(episode, len(scenes)),
+        "sourceText": episode.source_text or "",
+        "videoUrl": scene_asset_url(episode.video_path, stem),
+        "scenes": [scene_json(scene) for scene in scenes],
+    }
+
+
+def project_json(
+    project: Project,
+    scenes: list[Scene],
+    *,
+    episodes: list[dict[str, Any]] | None = None,
+    current_episode_id: str | None = None,
+) -> dict[str, Any]:
+    """Serialize a series.
+
+    `scenes` is one episode's ordered shots, not the whole series': order numbers restart
+    each episode, so a merged list would be meaningless. Callers pass the current
+    episode's shots and use `episodes` for everything else.
+    """
     return {
         "id": project.id,
         "title": project.title or "未命名项目",
         "originalScript": project.original_script or "",
+        "seriesBible": project.series_bible or "",
         "status": project.status or "idle",
         "videoStatus": project.video_status or "idle",
         "videoProgress": project.video_progress or 0,
@@ -126,6 +185,8 @@ def project_json(project: Project, scenes: list[Scene]) -> dict[str, Any]:
             "negativePrompt": project.negative_prompt,
         },
         "currentStage": project.current_stage,
+        "currentEpisodeId": current_episode_id,
+        "episodes": episodes or [],
         "updatedAt": project.updated_at,
         "scenes": [scene_json(scene) for scene in scenes],
     }

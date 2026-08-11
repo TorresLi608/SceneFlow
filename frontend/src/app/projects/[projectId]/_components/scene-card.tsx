@@ -2,26 +2,31 @@
 
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
-import { GripVertical, Image as ImageIcon, Mic } from "lucide-react";
+import { GripVertical, Image as ImageIcon, Lock, LockOpen, Mic } from "lucide-react";
 import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { backendBaseURL } from "@/lib/http/backend-client";
 import { cn } from "@/lib/utils";
+import type { SceneEdit } from "@/store/project-store";
 import type { Scene } from "@/types/project";
 
 interface SceneCardProps {
   scene: Scene;
   onNarrationChange: (value: string) => void;
   onPromptChange: (value: string) => void;
+  /** The storyboard fields beyond narration and prompt: dialogue, framing, timing, lock. */
+  onFieldChange: (patch: SceneEdit) => void;
 }
 
-export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCardProps) {
+export function SceneCard({ scene, onNarrationChange, onPromptChange, onFieldChange }: SceneCardProps) {
   const { t } = useI18n();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scene.id,
@@ -76,6 +81,22 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
             <Mic className="size-3.5" />
             {t("scene.audioStatus", { status: statusLabel[scene.audio.status] })}
           </Badge>
+          {scene.isLocked ? (
+            <Badge variant="outline" className="gap-1">
+              <Lock className="size-3.5" />
+              {t("scene.locked")}
+            </Badge>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+            onClick={() => onFieldChange({ isLocked: !scene.isLocked })}
+          >
+            {scene.isLocked ? <LockOpen className="mr-1 size-3.5" /> : <Lock className="mr-1 size-3.5" />}
+            {scene.isLocked ? t("scene.unlock") : t("scene.lock")}
+          </Button>
         </div>
       </CardHeader>
 
@@ -154,6 +175,66 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
             value={scene.visualPrompt}
             onChange={(event) => onPromptChange(event.target.value)}
             className="min-h-24"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`dialogue_${scene.id}`}>{t("scene.dialogue")}</Label>
+          <Textarea
+            id={`dialogue_${scene.id}`}
+            value={scene.dialogue}
+            onChange={(event) => onFieldChange({ dialogue: event.target.value })}
+            className="min-h-16"
+            placeholder={t("scene.dialoguePlaceholder")}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor={`shot_${scene.id}`}>{t("scene.shotType")}</Label>
+            <Input
+              id={`shot_${scene.id}`}
+              value={scene.shotType}
+              onChange={(event) => onFieldChange({ shotType: event.target.value })}
+              placeholder={t("scene.shotTypePlaceholder")}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`camera_${scene.id}`}>{t("scene.cameraMove")}</Label>
+            <Input
+              id={`camera_${scene.id}`}
+              value={scene.cameraMove}
+              onChange={(event) => onFieldChange({ cameraMove: event.target.value })}
+              placeholder={t("scene.cameraMovePlaceholder")}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`duration_${scene.id}`}>{t("scene.durationMs")}</Label>
+            <Input
+              id={`duration_${scene.id}`}
+              type="number"
+              min={0}
+              max={600000}
+              step={100}
+              value={scene.durationMs}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                onFieldChange({ durationMs: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0 });
+              }}
+            />
+            {/* 0 is not "no length" — it hands the shot back to its voice track. */}
+            <p className="text-xs text-muted-foreground">{t("scene.durationHint")}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`subtitle_${scene.id}`}>{t("scene.subtitleText")}</Label>
+          <Textarea
+            id={`subtitle_${scene.id}`}
+            value={scene.subtitleText}
+            onChange={(event) => onFieldChange({ subtitleText: event.target.value })}
+            className="min-h-16"
+            placeholder={t("scene.subtitlePlaceholder")}
           />
         </div>
       </CardContent>

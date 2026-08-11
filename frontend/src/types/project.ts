@@ -1,10 +1,22 @@
 export type SceneTaskStatus = "idle" | "generating" | "success" | "error";
 
+/** One shot inside an episode. Order numbers restart at 1 in every episode. */
 export interface Scene {
   id: string;
+  episodeId: string | null;
   order: number;
   narration: string;
+  /** Spoken by `speakerCharacterId`; `narration` stays the narrator's line. */
+  dialogue: string;
+  speakerCharacterId: string | null;
   visualPrompt: string;
+  shotType: string;
+  cameraMove: string;
+  /** Manual screen-time override in ms. 0 means follow the voice track's length. */
+  durationMs: number;
+  subtitleText: string;
+  /** An approved shot that a batch rerun must leave alone. */
+  isLocked: boolean;
   image: {
     url: string | null;
     status: SceneTaskStatus;
@@ -16,8 +28,37 @@ export interface Scene {
     progress: number;
     duration: number;
   };
+  video: {
+    url: string | null;
+    status: SceneTaskStatus | "idle";
+    progress: number;
+  };
   /** Last failure reason, persisted so it survives a reload. Empty when the scene is healthy. */
   errorMessage: string;
+}
+
+export type EpisodeStatus = "draft" | "storyboard" | "generating" | "done" | "partial" | "failed";
+
+/** An episode without its script or shots: enough to render a switcher or a series list. */
+export interface EpisodeSummary {
+  id: string;
+  projectId: string;
+  episodeNumber: number;
+  title: string;
+  synopsis: string;
+  status: EpisodeStatus;
+  videoStatus: SceneTaskStatus | "idle";
+  videoProgress: number;
+  durationMs: number;
+  sceneCount: number;
+  errorMessage: string;
+  updatedAt: string;
+}
+
+export interface Episode extends EpisodeSummary {
+  sourceText: string;
+  videoUrl: string | null;
+  scenes: Scene[];
 }
 
 export type ProjectStatus =
@@ -48,13 +89,19 @@ export interface Project {
   id: string;
   title: string;
   originalScript: string;
+  /** World, tone, and running plot threads, carried into later episodes. */
+  seriesBible: string;
   status: ProjectStatus;
   videoStatus: SceneTaskStatus | "idle";
   videoProgress: number;
   videoUrl: string | null;
   productionSettings: ProductionSettings;
   currentStage: ProjectStage;
+  /** The episode `scenes` belongs to. Null only for a series with no episode yet. */
+  currentEpisodeId: string | null;
+  episodes: EpisodeSummary[];
   updatedAt: string;
+  /** The current episode's shots, never the whole series': order numbers restart each episode. */
   scenes: Scene[];
 }
 
@@ -75,6 +122,28 @@ export interface CreateProjectInput {
 export interface UpdateProjectInput {
   title?: string;
   originalScript?: string;
+  seriesBible?: string;
+}
+
+export interface CreateEpisodeInput {
+  title?: string;
+  synopsis?: string;
+  sourceText?: string;
+}
+
+export interface UpdateEpisodeInput {
+  title?: string;
+  synopsis?: string;
+  sourceText?: string;
+  status?: EpisodeStatus;
+}
+
+export interface EpisodeListResponse {
+  episodes: EpisodeSummary[];
+}
+
+export interface EpisodeItemResponse {
+  episode: Episode;
 }
 
 export type UpdateProductionSettingsInput = Partial<ProductionSettings> & {
@@ -106,16 +175,27 @@ export interface GenerationJobListResponse {
 
 export interface UpdateSceneInput {
   narration?: string;
+  dialogue?: string;
+  speakerCharacterId?: string;
   visualPrompt?: string;
+  shotType?: string;
+  cameraMove?: string;
+  durationMs?: number;
+  subtitleText?: string;
+  isLocked?: boolean;
 }
 
 export interface ReorderScenesInput {
   sceneIds: string[];
+  /** Order numbers restart each episode, so a reorder is always within one. */
+  episodeId?: string;
 }
 
 export interface ParseProjectInput {
   script: string;
   model?: string;
+  /** Which episode the parsed shots land in. Omitted means the current one. */
+  episodeId?: string;
   /**
    * Reparsing discards generated shots. Without this the backend returns a preview
    * (`applied: false`) so the user can confirm before losing rendered work.
@@ -132,6 +212,7 @@ export interface PendingScene {
 
 export interface ParseProjectResponse {
   projectId: string;
+  episodeId: string;
   status: ProjectStatus;
   source: "llm" | "fallback";
   warning?: string;
@@ -143,10 +224,12 @@ export interface ParseProjectResponse {
 
 export interface GenerateProjectInput {
   model?: string;
+  episodeId?: string;
 }
 
 export interface GenerateProjectResponse {
   projectId: string;
+  episodeId: string;
   status: ProjectStatus;
   sceneCount: number;
   model?: string;
@@ -179,8 +262,16 @@ export interface GenerateVideoResponse {
 }
 
 export interface SceneUpdatePayload {
+  episodeId?: string;
   narration?: string;
+  dialogue?: string;
+  speakerCharacterId?: string | null;
   visualPrompt?: string;
+  shotType?: string;
+  cameraMove?: string;
+  durationMs?: number;
+  subtitleText?: string;
+  isLocked?: boolean;
   order?: number;
   parseStatus?: string;
   imageStatus?: SceneTaskStatus;
