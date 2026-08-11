@@ -6,9 +6,6 @@
         "-y",
         "@assistant-ui/mcp-docs-server"
       ]
-    },
-    "registries": {
-      "@acme": "https://acme.com/r/{name}.json"
     }
   }
 }
