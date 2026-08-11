@@ -97,6 +97,58 @@ class ReorderScenesRequest(CamelModel):
     episode_id: str | None = Field(default=None, max_length=64)
 
 
+class CreateCharacterRequest(CamelModel):
+    name: str = Field(min_length=1, max_length=80)
+    # Comma-separated, so a script writing both "小满" and "林小满" resolves to one card.
+    aliases: str = Field(default="", max_length=400)
+    description: str = Field(default="", max_length=4000)
+    appearance_prompt: str = Field(default="", max_length=4000)
+    voice_provider: str = Field(default="", max_length=40)
+    voice_model: str = Field(default="", max_length=160)
+    order_num: int = Field(default=0, ge=0, le=9999)
+
+
+class UpdateCharacterRequest(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    aliases: str | None = Field(default=None, max_length=400)
+    description: str | None = Field(default=None, max_length=4000)
+    appearance_prompt: str | None = Field(default=None, max_length=4000)
+    voice_provider: str | None = Field(default=None, max_length=40)
+    voice_model: str | None = Field(default=None, max_length=160)
+    # Approving a portrait; a locked card is left alone by bulk regeneration.
+    is_locked: bool | None = None
+    order_num: int | None = Field(default=None, ge=0, le=9999)
+
+
+class CreateCharacterVariantRequest(CamelModel):
+    """A deliberate change of look or voice over a range of episodes.
+
+    Every override is optional and an empty one means "unchanged", so a variant that only
+    swaps the voice keeps the established look.
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    appearance_prompt: str = Field(default="", max_length=4000)
+    voice_model: str = Field(default="", max_length=160)
+    from_episode: int = Field(default=1, ge=1)
+    # Omitted means the variant stays in effect for every later episode.
+    to_episode: int | None = Field(default=None, ge=1)
+
+
+class UpdateCharacterVariantRequest(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    appearance_prompt: str | None = Field(default=None, max_length=4000)
+    voice_model: str | None = Field(default=None, max_length=160)
+    from_episode: int | None = Field(default=None, ge=1)
+    to_episode: int | None = Field(default=None, ge=1)
+
+
+class SetSceneCastRequest(CamelModel):
+    """The full cast of a shot; sending an empty list clears it."""
+
+    character_ids: list[str] = Field(default_factory=list, max_length=32)
+
+
 class ParseProjectRequest(CamelModel):
     script: str = Field(min_length=1, max_length=200_000)
     model: str | None = Field(default=None, max_length=160)

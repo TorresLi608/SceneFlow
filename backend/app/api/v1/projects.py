@@ -27,6 +27,7 @@ from app.schemas.requests import (
 )
 from app.schemas.serializers import episode_summary_json, project_json, scene_json
 from app.services.config_service import active_model_config
+from app.services.character_service import cast_for_episode, scene_cast
 from app.services.episode_service import (
     ensure_episode,
     episode_scenes,
@@ -65,12 +66,41 @@ def _serialized(session: Session, project: Project, *, episode: Episode | None =
     """Serialize a series around one episode: its shots, plus a summary of its siblings."""
     target = episode or ensure_episode(session, project.id)
     counts = scene_counts(session, [project.id])
+    scenes = episode_scenes(session, target.id)
+    cast = scene_cast(session, [scene.id for scene in scenes])
     return project_json(
         project,
-        episode_scenes(session, target.id),
+        scenes,
+        cast=cast,
         episodes=[episode_summary_json(item, counts.get(item.id, 0)) for item in episodes_for(session, project.id)],
         current_episode_id=target.id,
     )
+
+
+def _scene_payloads(
+    session: Session,
+    project_id: str,
+    episode_number: int,
+    scenes: list[Scene],
+) -> list[dict[str, Any]]:
+    """Scene rows plus the cast as it stands in this episode, ready for a background run.
+
+    Resolved here rather than in the worker: variants depend on the episode number, and the
+    task runs after this session closes.
+    """
+    cast = cast_for_episode(session, project_id, episode_number)
+    links = scene_cast(session, [scene.id for scene in scenes])
+    payloads = []
+    for scene in scenes:
+        payload = scene.model_dump()
+        payload["characters"] = [
+            cast[character_id].as_payload() for character_id in links.get(scene.id, []) if character_id in cast
+        ]
+        # The speaker need not be on screen, so it is resolved independently of the cast.
+        speaker = cast.get(scene.speaker_character_id or "")
+        payload["speaker"] = speaker.as_payload() if speaker else None
+        payloads.append(payload)
+    return payloads
 
 
 @router.get("")
@@ -103,10 +133,12 @@ def list_projects(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
                 .order_by(Scene.order_num.asc())
             ).all():
                 shots.setdefault(scene.episode_id, []).append(scene)
+        cast = scene_cast(session, [scene.id for episode_shots in shots.values() for scene in episode_shots])
         data = [
             project_json(
                 project,
                 shots.get(current[project.id].id, []) if current.get(project.id) else [],
+                cast=cast,
                 episodes=[
                     episode_summary_json(episode, counts.get(episode.id, 0))
                     for episode in grouped.get(project.id, [])
@@ -506,6 +538,10 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         scenes = episode_scenes(session, episode.id)
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
+        # A locked shot is one the user approved; a batch rerun leaves it alone.
+        pending = [scene for scene in scenes if not scene.is_locked]
+        if not pending:
+            raise HTTPException(400, "every scene in this episode is locked, unlock one to regenerate")
         config = active_model_config(session, user_id, "image", "分镜图片生成")
         require_model_balance(session, user_id, config)
         try:
@@ -519,7 +555,7 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="generating")
         episode_id = episode.id
         touch_episode(session, episode, status="generating")
-        scene_payloads = [scene.model_dump() for scene in scenes]
+        scene_payloads = _scene_payloads(session, project_id, episode.episode_number, pending)
     await broadcast(
         project_id,
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},

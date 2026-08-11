@@ -8,7 +8,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, auth, chat, episodes, images, jobs, projects, settings, usage, users, videos, websocket
+from app.api.v1 import (
+    admin,
+    auth,
+    characters,
+    chat,
+    episodes,
+    images,
+    jobs,
+    projects,
+    settings,
+    usage,
+    users,
+    videos,
+    websocket,
+)
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
 from app.core.database import init_db
 from app.core.logging import configure_logging
@@ -44,6 +58,7 @@ app.include_router(videos.router)
 app.include_router(usage.router)
 app.include_router(projects.router)
 app.include_router(episodes.router)
+app.include_router(characters.router)
 app.include_router(jobs.router)
 app.include_router(websocket.router)
 

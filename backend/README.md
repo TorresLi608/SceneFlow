@@ -113,10 +113,23 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 - `DELETE /api/projects/:id/episodes/:episodeId` — soft-deletes the episode and its shots;
   refused with 409 while the project is busy, since a run holds those rows open
 
+### Characters (JWT required)
+- `GET /api/projects/:id/characters` — the series bible, each card with its variants
+- `POST /api/projects/:id/characters`, `PATCH .../:characterId`, `DELETE .../:characterId`
+  - deleting soft-deletes the card and its variants and drops it from every shot's cast,
+    since a deleted character left in a cast would keep steering prompts
+- `POST /api/projects/:id/characters/:characterId/portrait`
+  - renders the reference portrait and freezes the provider/model that produced it, so
+    changing the account default later cannot restyle an established character
+  - synchronous, and refused with 409 on a locked card
+- `POST /api/projects/:id/characters/:characterId/variants`, `PATCH .../:variantId`, `DELETE .../:variantId`
+- `PUT /api/projects/:id/scenes/:sceneId/characters` — replace a shot's cast; `[]` clears it
+
 ### Project Generate (JWT required)
 - `POST /api/projects/:id/generate`
   - requires an active image configuration
   - renders one episode's shots; `episodeId` omitted targets the current episode
+  - shots with `isLocked` are skipped; all of them locked is a 400 rather than a silent no-op
   - generates real storyboard images and TTS audio concurrently
   - TTS supports Edge/System/OpenAI audio configurations
   - the terminal status reflects what landed: `done`, `partial`, or `failed`, written to both
@@ -148,11 +161,19 @@ a long-running series into a 404; `schemas/serializers.py` mints a fresh link pe
 instead. `_migrate_scene_assets` in `app/core/database.py` upgrades older rows in place and
 drops references whose token no longer decodes, since those links were already dead.
 
-`Character`, `CharacterVariant`, `SceneCharacter`, and `ExportJob` are still schema only —
-no service or endpoint reads them yet.
+A character card pins a look, an image model, and a voice; a `CharacterVariant` is how a
+series says "this one changed in episode 5" without the drift being accidental.
+`character_service.resolve_character` folds the variant covering an episode over the card,
+and a variant only overrides the fields it actually sets — an empty appearance prompt means
+"the look did not change". Overlapping ranges resolve to the latest change.
+
+At render time a shot's cast contributes two things: the appearance prompts, which work on
+every provider, and the reference portraits, which are passed image-to-image through
+`edit_image` and are what actually holds a face steady. A voice override is honoured only on
+the configured audio provider, because a card stores a provider and a model but never
+credentials. `ExportJob` is still schema only — no service or endpoint reads it yet.
 
 ## Short-drama orchestration
-
 - LangGraph is reserved for checkpointed LLM decisions and human approval, such as script structure and continuity review.
 - `generation_jobs` plus a worker owns deterministic image, TTS, video, and FFmpeg tasks.
 - Rollback means selecting an earlier asset version and marking downstream results stale, not deleting generated assets.

@@ -3,7 +3,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.models import ChatMessage, ChatSession, Episode, ModelConfig, Project, Scene, User
+from app.models import (
+    Character,
+    CharacterVariant,
+    ChatMessage,
+    ChatSession,
+    Episode,
+    ModelConfig,
+    Project,
+    Scene,
+    User,
+)
 from app.services.artifact_service import signed_url_for_stored
 
 
@@ -83,7 +93,7 @@ def scene_asset_url(stored_path: str | None, download_stem: str) -> str | None:
         return None
 
 
-def scene_json(scene: Scene) -> dict[str, Any]:
+def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str, Any]:
     stem = f"scene-{scene.order_num or 0}"
     return {
         "id": scene.id,
@@ -92,6 +102,8 @@ def scene_json(scene: Scene) -> dict[str, Any]:
         "narration": scene.narration,
         "dialogue": scene.dialogue or "",
         "speakerCharacterId": scene.speaker_character_id,
+        # Who appears in the shot. Empty when the caller did not load the cast.
+        "characterIds": character_ids or [],
         "visualPrompt": scene.visual_prompt,
         "shotType": scene.shot_type or "",
         "cameraMove": scene.camera_move or "",
@@ -141,13 +153,48 @@ def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, An
     }
 
 
-def episode_json(episode: Episode, scenes: list[Scene]) -> dict[str, Any]:
+def episode_json(episode: Episode, scenes: list[Scene], cast: dict[str, list[str]] | None = None) -> dict[str, Any]:
     stem = f"episode-{episode.episode_number}"
     return {
         **episode_summary_json(episode, len(scenes)),
         "sourceText": episode.source_text or "",
         "videoUrl": scene_asset_url(episode.video_path, stem),
-        "scenes": [scene_json(scene) for scene in scenes],
+        "scenes": [scene_json(scene, (cast or {}).get(scene.id)) for scene in scenes],
+    }
+
+
+def character_variant_json(variant: CharacterVariant) -> dict[str, Any]:
+    return {
+        "id": variant.id,
+        "characterId": variant.character_id,
+        "name": variant.name,
+        "appearancePrompt": variant.appearance_prompt or "",
+        "referenceImageUrl": scene_asset_url(variant.reference_image_path, f"variant-{variant.id}"),
+        "voiceModel": variant.voice_model or "",
+        "fromEpisode": variant.from_episode,
+        # Null means the variant stays in effect for every later episode.
+        "toEpisode": variant.to_episode,
+        "updatedAt": variant.updated_at,
+    }
+
+
+def character_json(character: Character, variants: list[CharacterVariant] | None = None) -> dict[str, Any]:
+    return {
+        "id": character.id,
+        "projectId": character.project_id,
+        "name": character.name,
+        "aliases": character.aliases or "",
+        "description": character.description or "",
+        "appearancePrompt": character.appearance_prompt or "",
+        "referenceImageUrl": scene_asset_url(character.reference_image_path, f"character-{character.id}"),
+        "imageProvider": character.image_provider or "",
+        "imageModel": character.image_model or "",
+        "voiceProvider": character.voice_provider or "",
+        "voiceModel": character.voice_model or "",
+        "isLocked": bool(character.is_locked),
+        "orderNum": character.order_num or 0,
+        "variants": [character_variant_json(variant) for variant in variants or []],
+        "updatedAt": character.updated_at,
     }
 
 
@@ -155,6 +202,7 @@ def project_json(
     project: Project,
     scenes: list[Scene],
     *,
+    cast: dict[str, list[str]] | None = None,
     episodes: list[dict[str, Any]] | None = None,
     current_episode_id: str | None = None,
 ) -> dict[str, Any]:
@@ -188,7 +236,7 @@ def project_json(
         "currentEpisodeId": current_episode_id,
         "episodes": episodes or [],
         "updatedAt": project.updated_at,
-        "scenes": [scene_json(scene) for scene in scenes],
+        "scenes": [scene_json(scene, (cast or {}).get(scene.id)) for scene in scenes],
     }
 
 

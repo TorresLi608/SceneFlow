@@ -11,6 +11,7 @@ from app.core.database import db
 from app.core.realtime import broadcast
 from app.schemas.requests import CreateEpisodeRequest, UpdateEpisodeRequest
 from app.schemas.serializers import episode_json, episode_summary_json
+from app.services.character_service import scene_cast
 from app.services.episode_service import (
     create_episode,
     delete_episode,
@@ -24,6 +25,12 @@ from app.services.project_service import IDLE_STATUSES, owned_project
 
 
 router = APIRouter(prefix="/api/projects", tags=["episodes"])
+
+
+def _detail(session, episode) -> dict[str, Any]:
+    """One episode with its ordered shots and the cast of each."""
+    scenes = episode_scenes(session, episode.id)
+    return episode_json(episode, scenes, scene_cast(session, [scene.id for scene in scenes]))
 
 
 @router.get("/{project_id}/episodes")
@@ -61,7 +68,7 @@ def get_episode(project_id: str, episode_id: str, user_id: int = Depends(current
     with db() as session:
         owned_project(session, project_id, user_id)
         episode = resolve_episode(session, project_id, episode_id)
-        data = episode_json(episode, episode_scenes(session, episode.id))
+        data = _detail(session, episode)
     return {"episode": data}
 
 
@@ -89,7 +96,7 @@ async def update_episode(
         owned_project(session, project_id, user_id)
         episode = resolve_episode(session, project_id, episode_id)
         touch_episode(session, episode, **updates)
-        data = episode_json(episode, episode_scenes(session, episode.id))
+        data = _detail(session, episode)
     await broadcast(project_id, {"type": "EPISODE_UPDATE", "projectId": project_id, "episodeId": episode_id, "data": data})
     return {"episode": data}
 
