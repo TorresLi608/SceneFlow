@@ -71,12 +71,12 @@ pnpm install
 pnpm dev            # or `npm run dev:frontend` from the repo root
 ```
 
-`http://localhost:3000`
+`http://localhost:4000`
 
 ## 4. Verify
 
 1. Backend first — `http://127.0.0.1:8080/healthz` returns `{"status":"ok"}`.
-2. Then the frontend — open `http://localhost:3000`.
+2. Then the frontend — open `http://localhost:4000`.
 3. Log in as `superAdmin` / `superAdmin@123`, or register a new account (registration consumes an invitation code — create one from the admin pages).
 
 ## Troubleshooting

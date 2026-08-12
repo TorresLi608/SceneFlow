@@ -5,7 +5,7 @@ SceneFlow turns a script into a storyboarded short-drama series: parse text into
 Two processes, one repo. Neither is a library of the other; they talk over HTTP and one WebSocket.
 
 ```
-browser ──▶ Next.js (port 3000)  ──▶ FastAPI (port 8080) ──▶ SQLite (backend/sceneflow.db)
+browser ──▶ Next.js (port 4000)  ──▶ FastAPI (port 8080) ──▶ SQLite (backend/sceneflow.db)
              app + BFF proxy            API + services         private_generated/ (media)
                    ▲                          │
                    └────── ws://…/ws/projects/:id ──────┘
@@ -69,7 +69,7 @@ A `Project` is a **series** and owns no shots directly. Content hangs off `Episo
 
 ## Operational facts
 
-- Ports: backend 8080, frontend 3000. Health check: `GET /healthz` → `{"status":"ok"}`.
+- Ports: backend 8080, frontend 4000. Health check: `GET /healthz` → `{"status":"ok"}`.
 - Startup creates `superAdmin` if missing (dev password `superAdmin@123`) and runs compatibility migrations.
 - Production startup **refuses to boot** on the development JWT, AES, or super-admin secrets.
 - Env vars are listed in `backend/README.md`; setup, ports, and troubleshooting in `../reference/local-setup.md`.

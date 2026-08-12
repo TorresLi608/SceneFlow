@@ -21,7 +21,7 @@ AES_KEY = hashlib.sha256(AES_SECRET.encode()).digest()
 PUBLIC_BASE_URL = os.getenv("SCENEFLOW_PUBLIC_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
 CORS_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("SCENEFLOW_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    for origin in os.getenv("SCENEFLOW_CORS_ORIGINS", "http://localhost:4000,http://127.0.0.1:4000").split(",")
     if origin.strip()
 ]
 PRIVATE_GENERATED_DIR = Path(os.getenv("SCENEFLOW_PRIVATE_GENERATED_DIR", "./private_generated"))
