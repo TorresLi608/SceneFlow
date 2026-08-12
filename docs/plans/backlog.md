@@ -1,0 +1,41 @@
+# Backlog
+
+> Verified gaps in the code as of 2026-08-12, not a commitment or a priority order. Each item says what is true today and why it matters. Promote to `current-sprint.md` when someone picks it up; delete when it stops being true.
+
+## Correctness and reliability
+
+- **`tests/run_all.py` is not isolated.** One process, `runpy` per file, state leaks between files, and the first failure aborts the rest. Currently fails in `test_characters_api.py` though every file passes alone. Until fixed, the full suite is not a usable gate. *(Also in the sprint file — highest value.)*
+- **Generation is not restart-safe.** `asyncio.create_task(run_generation(...))` runs in the API process. A deploy or crash mid-run leaves the project holding its busy lock with no worker to resume; `generation_jobs` exists to solve exactly this but has no consumer.
+- **Realtime is single-process.** `app/core/realtime.py` keeps an in-memory `dict[project_id, set[WebSocket]]`. A second uvicorn worker would silently deliver `SCENE_UPDATE` to only the clients on the same process. Needs a shared broker before horizontal scaling.
+- **No token revocation.** JWTs live 24h; disabling an account is the only revocation, and it works only because `current_user` re-reads the user on every request. Do not move role or state into token claims.
+- **Schema drift risk.** `SQLModel.metadata.create_all()` only creates missing tables. Every new column on an existing table needs a matching `_add_missing_columns()` entry; nothing enforces this. A migration tool (or a startup assertion comparing model columns to `PRAGMA table_info`) would catch it.
+
+## Product gaps
+
+- **Export is schema only.** `ExportJob` and `MAX_EXPORT_EPISODES` (10) exist in `app/models/export.py`; no service or endpoint reads them. Merging up to ten episodes into one render is designed but unbuilt.
+- **Project jobs are invisible.** Cancel and retry endpoints have no UI.
+- **No search over domain content.** Scripts, shots, characters, and chat messages are not searchable; only admin lists have filters. See `../design/feature-search.md`.
+- **No sort controls** on any list; each has one fixed order.
+- **Project list has no server-side paging** — it fetches everything and filters client-side.
+
+## Security and operations
+
+- **No rate limiting** on login, registration, or code redemption.
+- **No spend controls** beyond the `402` at zero balance; a long run can outspend the remaining balance because the decrement floors at zero rather than blocking mid-run.
+- **Secrets rotation is destructive to artifacts.** Signed URLs are keyed off `SCENEFLOW_JWT_SECRET`; rotating it invalidates every outstanding link (existing rows are cleaned up by `_migrate_scene_assets`). There is no key-versioning scheme.
+- **No health signal beyond `/healthz`**, which does not check the database or the artifact directory.
+
+## Developer experience
+
+- **No frontend component testing.** Only pure `.ts` modules are testable (`node --test` with type stripping). Logic worth testing has to be extracted from components — `user-list.ts` is the model to follow, but most logic still lives inline.
+- **`pnpm build` has hung in this project before** (Turbopack, no output for minutes). `tsc --noEmit` is the practical type gate; the build is not part of a reliable loop.
+- **Working logs are stale and partly orphaned.** `progress.md` and `task_plan.md` remain in the repo, are written in Chinese, and cite paths that have since moved (chat components now live under `src/app/(workspace)/chat/_components/`). Decide whether they are history or reference; if history, say so at the top of each.
+- **Two ID styles** (prefixed strings for business rows, integer PKs for accounts and configs) are load-bearing for existing data but undocumented outside `../conventions/naming.md`.
+
+## Explicitly not planned
+
+Recorded so they are not re-litigated:
+
+- Replacing `google-genai` with `langchain-google-genai` — the native SDK is kept for Gemini image generation; swap only if Gemini chat needs to be a native LangChain provider.
+- Unifying the two ID styles.
+- Removing the raw SQL in `app/core/database.py` — it operates on legacy tables that no longer have models.

@@ -1,0 +1,59 @@
+# Boundaries
+
+Which layer may call which, and the crossings that have caused bugs here before. When a change forces you to violate one of these, that is a design signal — raise it rather than routing around it.
+
+## Backend call direction
+
+```
+api/v1/  ──▶  services/  ──▶  models/          (+ core/ available to all)
+   │             │
+   │             └──▶ llms/ (providers)   graph/ (context + agents)
+   └──▶ schemas/ (requests in, serializers out)
+```
+
+**Rules**
+
+1. **Endpoints orchestrate; services decide.** An endpoint may validate, resolve the current user, call services, and shape a response. Business rules that another caller would need go in `app/services/`.
+2. **`app/llms/router.py` owns provider switching and nothing else.** It knows base URLs, adapters, and per-provider quirks. It must not know about projects, episodes, or billing. Services call it.
+3. **`app/models/` is the only schema definition.** Do not declare columns anywhere else. Adding a column to an existing table also requires an entry in `_add_missing_columns()` in `app/core/database.py` — `SQLModel.metadata.create_all()` only creates *missing tables*, so without that step existing databases silently drift.
+4. **Raw SQL is confined to `app/core/database.py`.** It survives there for the compatibility migrations and the legacy `user_configs`/`official_model_configs` → `model_configs` merge, which operate on tables that no longer have models. Runtime queries use SQLModel/SQLAlchemy expressions.
+5. **Do not hold a database session across a provider call.** SQLite has one writer. The established shape is: short session to authorise and load config → `await` the provider → new short session to write results and usage.
+6. **Serializers own the wire shape.** Never return an ORM entity directly; `app/schemas/serializers.py` is where signed URLs get minted and fields get renamed.
+
+## Frontend call direction
+
+```
+page / _components  ──▶  actions/  ──▶  /api/bff/*  ──▶  backend /api/*
+        │                                  ▲
+        └──▶ store/ (client state)         └── rewrite in next.config.ts (fallback)
+```
+
+**Rules**
+
+1. **Components never call `axios`/`fetch` against the backend directly.** Every request goes through `src/actions/*`, which uses the shared `httpClient` that injects the JWT and logs out on 401.
+2. **The rewrite is a `fallback`, so any file you add under `src/app/api/bff/**` silently takes that path over from the proxy.** Add a route file only when you must transform the payload — today the only one is the chat stream, which converts backend NDJSON into an AI SDK UI stream. If you add one, it is now responsible for auth forwarding and error shape.
+3. **Server state belongs to React Query, client state to Zustand.** Do not mirror fetched data into a store "so it is easier to read" — the exception is the project/episode working copy, which exists because the workbench edits optimistically and reconciles over WebSocket.
+4. **No user-facing string literals in components.** Add the key to both `zh` and `en` in `src/lib/i18n.ts` and read it through `useI18n()`.
+5. **Route-local components live in `_components/` beside their page.** Promote to `src/components/ui/` only when a second route needs it.
+
+## The frontend/backend contract
+
+- **The frontend speaks camelCase; the backend speaks snake_case.** `CamelModel` bridges both directions automatically, so neither side translates by hand.
+- **`extra="forbid"`**: an unknown field is a 422, not a silently dropped value. A typo in a request body fails loudly — keep it that way.
+- **`null` means "leave alone" in a PATCH.** To clear a value the client sends `""` or `false`. Backend code that filters with `is not None` will drop legitimate `false` values; this has already broken `isLocked: false` once.
+- **Money crosses the wire as strings** (micros). Never parse a price into a JS number.
+- **Timestamps are ISO-8601 strings on both sides**, never `datetime` objects — the code compares them as strings and the API passes them through.
+
+## Media boundary
+
+Generated media is referenced by a **path relative to `SCENEFLOW_PRIVATE_GENERATED_DIR`**, never by URL. Signed links expire after 30 days, so a URL stored in a row would turn every asset in a long-running series into a 404. `serializers.py` mints a fresh signed link per response. The columns are `image_path`/`audio_path`; older databases may retain unused `image_url`/`audio_url` columns.
+
+## Orchestration boundary
+
+- **LangGraph** is reserved for checkpointed LLM decisions and human approval (script structure, continuity review).
+- **`generation_jobs`** is the intended home for deterministic image/TTS/video/FFmpeg work, and today provides persistence, idempotency, leases, cancel, and retry.
+- **Not yet true:** there is no worker process. Generation still starts in the API process via `asyncio.create_task`. Treat the jobs table as the destination, not the current path.
+
+## Concurrency boundary
+
+Starting work takes a conditional UPDATE on `projects.status` (`claim_project_status`), so a double-clicked button cannot start two runs over the same rows. **The lock is project-level even though rendering is per-episode** — one run owns the series at a time. Anything that would let two runs touch one series concurrently needs a new locking story, not a wider status value.
