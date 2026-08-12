@@ -19,7 +19,8 @@ Consequences worth knowing before building on it: shot order restarts per episod
 
 ## In flight
 
-- [ ] **Documentation harness.** `CLAUDE.md` and this `docs/` tree replace the previous scattered notes. Six older docs (`AI_HANDOFF.md`, `AI_SHORT_DRAMA_{PRODUCT,TECHNICAL,ORCHESTRATION}.md`, `findings.md`, `frontend/AGENTS.md`) were deleted from the working tree on 2026-08-12 and are **not yet committed as deletions** — decide whether their content is fully absorbed here before committing, and note that `frontend/CLAUDE.md` imported `AGENTS.md`.
+- [x] **Documentation harness.** `CLAUDE.md` plus this `docs/` tree are now the knowledge base. The earlier scattered notes (`AI_HANDOFF.md`, the three `AI_SHORT_DRAMA_*.md` specs, `findings.md`) and the per-directory `frontend/AGENTS.md` / `frontend/CLAUDE.md` were folded in and removed — the chat stack landed in `../design/feature-chat.md`, the Next.js 16 warning in `../architecture/overview.md`.
+- [ ] **Decide the fate of `progress.md` and `task_plan.md`.** Currently kept as history, in Chinese, with paths that predate later refactors. Either absorb what is still true into `docs/` or mark them explicitly as an archive.
 
 ## Ready to pick up
 

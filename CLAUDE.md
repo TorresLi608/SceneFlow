@@ -94,10 +94,10 @@ Backend env vars, the full endpoint list, and provider support are documented in
 
 ## Repo docs
 
-`docs/` (indexed at the top of this file) is the maintained knowledge base. Alongside it:
+`docs/` (indexed at the top of this file) is the maintained knowledge base — architecture, conventions, feature designs, plans, and generated reference. Keep it current; it is the only place where a rule change belongs. Alongside it:
 
 - `RUNNING.md` — setup, ports, troubleshooting. Accurate.
 - `backend/README.md` — env vars, full endpoint list, provider support, data-model notes. Accurate except one stale line: it says image generation is OpenAI-only, but `app/llms/router.py` supports `openai` and `gemini`.
-- `progress.md`, `task_plan.md` — an append-only working log in Chinese. Useful for *why* a decision was made; unreliable for *where* code lives, since they predate later refactors (chat components now live under `src/app/(workspace)/chat/_components/`). Verify any path against the code.
+- `progress.md`, `task_plan.md` — an append-only working log in Chinese, kept as history. Useful for *why* a decision was made; unreliable for *where* code lives, since they predate later refactors (chat components now live under `src/app/(workspace)/chat/_components/`). Verify any path against the code.
 
-Six older docs (`AI_HANDOFF.md`, `AI_SHORT_DRAMA_{PRODUCT,TECHNICAL,ORCHESTRATION}.md`, `findings.md`, `frontend/AGENTS.md`) were deleted from the working tree on 2026-08-12 and the deletions are not yet committed. Their still-relevant content lives in `docs/`; recover anything missing with `git show HEAD:<path>`.
+Earlier design notes (`AI_HANDOFF.md`, the `AI_SHORT_DRAMA_*.md` specs, `findings.md`) and the per-directory `AGENTS.md`/`CLAUDE.md` files were folded into `docs/` and removed. Their history is still in git — `git log --diff-filter=D --name-only` finds them, `git show <commit>^:<path>` reads one.
