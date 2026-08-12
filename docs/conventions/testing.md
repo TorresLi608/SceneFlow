@@ -67,6 +67,17 @@ cd frontend && pnpm exec tsc --noEmit && pnpm lint
 
 `pnpm build` is slow and has hung in this project before; `tsc --noEmit` is the type gate. If you do run a build, do not report it as passing unless it finished.
 
+### Build and tooling gotchas
+
+Each of these has cost time in this repo already:
+
+- **Turbopack production builds have hung** at `Creating an optimized production build ...` with no output for minutes. `pnpm build -- --webpack` (the webpack path) has completed when Turbopack did not. An interrupted build is **not** a pass.
+- **`next build` needs network** for `next/font` — a sandboxed run fails with `getaddrinfo ENOTFOUND fonts.googleapis.com`. Nothing is wrong with the code.
+- **`.next/types` goes stale after deleting or moving a route.** `tsc` will report errors about files that no longer exist; run a successful build once to regenerate route types, then re-run `tsc`.
+- **Run backend Python from `backend/`.** From the repo root you get `ModuleNotFoundError: No module named 'app'`. `PYTHONPATH=. .venv/bin/python tests/x.py` and `.venv/bin/python -m tests.x` both work from there.
+- **Quote bracketed route paths in zsh** — `src/app/projects/[projectId]/page.tsx` is a glob and fails with `no matches found`.
+- **`npm install` does nothing useful here.** This is a pnpm project; use `pnpm add` or the lockfile silently diverges.
+
 ## Reporting
 
-State what you ran and what happened. A skipped check is reported as skipped, not implied by silence — this repo's working log (`progress.md`) has an explicit entry for a build that was interrupted and must not be counted as a pass.
+State what you ran and what happened. A skipped check is reported as skipped, not implied by silence — an interrupted build that is reported as green is worse than no build at all.

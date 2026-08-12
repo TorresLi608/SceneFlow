@@ -35,6 +35,14 @@ page / _components  ──▶  actions/  ──▶  /api/bff/*  ──▶  backe
 3. **Server state belongs to React Query, client state to Zustand.** Do not mirror fetched data into a store "so it is easier to read" — the exception is the project/episode working copy, which exists because the workbench edits optimistically and reconciles over WebSocket.
 4. **No user-facing string literals in components.** Add the key to both `zh` and `en` in `src/lib/i18n.ts` and read it through `useI18n()`.
 5. **Route-local components live in `_components/` beside their page.** Promote to `src/components/ui/` only when a second route needs it.
+6. **Fetch per route, not globally.** Projects load on `/ai-script`; model configs load on `/chat` and `/images`. Nothing hoists a query into the shared layout "so it is ready" — that pulls unrelated data and client modules onto every route.
+
+### Route structure
+
+- `(workspace)` is a **route group**: a shared authenticated layout with no URL segment. Use native Next.js composition rather than wrapper components that fake a layout.
+- **Active navigation derives from `usePathname()`**, never from a duplicated `activeView` state.
+- `AppSidebar` is deliberately concrete. There is one sidebar in this app; a configurable navigation framework would be abstraction without a second caller.
+- `/admin` is a `redirect()` to `/admin/models`, keeping the old address alive without a second admin shell.
 
 ## The frontend/backend contract
 

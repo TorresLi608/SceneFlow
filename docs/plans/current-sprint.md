@@ -19,8 +19,7 @@ Consequences worth knowing before building on it: shot order restarts per episod
 
 ## In flight
 
-- [x] **Documentation harness.** `CLAUDE.md` plus this `docs/` tree are now the knowledge base. The earlier scattered notes (`AI_HANDOFF.md`, the three `AI_SHORT_DRAMA_*.md` specs, `findings.md`) and the per-directory `frontend/AGENTS.md` / `frontend/CLAUDE.md` were folded in and removed — the chat stack landed in `../design/feature-chat.md`, the Next.js 16 warning in `../architecture/overview.md`.
-- [ ] **Decide the fate of `progress.md` and `task_plan.md`.** Currently kept as history, in Chinese, with paths that predate later refactors. Either absorb what is still true into `docs/` or mark them explicitly as an archive.
+- [x] **Documentation harness.** `CLAUDE.md` plus this `docs/` tree are now the knowledge base. Everything that used to live in root-level notes and per-directory agent files was folded in and removed: the chat stack to `../design/feature-chat.md`, setup and troubleshooting to `../reference/local-setup.md`, the frontend routing rules to `../architecture/boundaries.md`, and the build/tooling gotchas to `../conventions/testing.md`.
 
 ## Ready to pick up
 

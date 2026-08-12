@@ -15,6 +15,7 @@ SceneFlow turns a script into a storyboarded short-drama series: parse text into
 | A feature's design and known gaps | `docs/design/feature-{auth,chat,search,billing}.md` |
 | What is being worked on / what is open | `docs/plans/current-sprint.md`, `docs/plans/backlog.md` |
 | Endpoint contracts, error inventory | `docs/reference/api-spec.yaml` (generated), `docs/reference/error-codes.md` |
+| First-time setup, ports, troubleshooting | `docs/reference/local-setup.md` |
 
 Before changing the chat surface, read `docs/design/feature-chat.md` — assistant-ui and the AI SDK split ownership there in a way that a framework quickstart will tell you to undo.
 
@@ -94,10 +95,8 @@ Backend env vars, the full endpoint list, and provider support are documented in
 
 ## Repo docs
 
-`docs/` (indexed at the top of this file) is the maintained knowledge base — architecture, conventions, feature designs, plans, and generated reference. Keep it current; it is the only place where a rule change belongs. Alongside it:
+`docs/` (indexed at the top of this file) is the maintained knowledge base — architecture, conventions, feature designs, plans, and generated reference. Keep it current; it is the only place where a rule change belongs.
 
-- `RUNNING.md` — setup, ports, troubleshooting. Accurate.
-- `backend/README.md` — env vars, full endpoint list, provider support, data-model notes. Accurate except one stale line: it says image generation is OpenAI-only, but `app/llms/router.py` supports `openai` and `gemini`.
-- `progress.md`, `task_plan.md` — an append-only working log in Chinese, kept as history. Useful for *why* a decision was made; unreliable for *where* code lives, since they predate later refactors (chat components now live under `src/app/(workspace)/chat/_components/`). Verify any path against the code.
+The one doc outside it is `backend/README.md` — env vars, full endpoint list, provider support, data-model notes. Accurate except one stale line: it says image generation is OpenAI-only, but `app/llms/router.py` supports `openai` and `gemini`.
 
-Earlier design notes (`AI_HANDOFF.md`, the `AI_SHORT_DRAMA_*.md` specs, `findings.md`) and the per-directory `AGENTS.md`/`CLAUDE.md` files were folded into `docs/` and removed. Their history is still in git — `git log --diff-filter=D --name-only` finds them, `git show <commit>^:<path>` reads one.
+Earlier notes (`AI_HANDOFF.md`, the `AI_SHORT_DRAMA_*.md` specs, `findings.md`, `RUNNING.md`, `progress.md`, `task_plan.md`) and the per-directory `AGENTS.md`/`CLAUDE.md` files were folded into `docs/` and removed. Their history is still in git — `git log --diff-filter=D --name-only` finds them, `git show <commit>^:<path>` reads one.

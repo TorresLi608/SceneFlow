@@ -72,4 +72,4 @@ A `Project` is a **series** and owns no shots directly. Content hangs off `Episo
 - Ports: backend 8080, frontend 3000. Health check: `GET /healthz` → `{"status":"ok"}`.
 - Startup creates `superAdmin` if missing (dev password `superAdmin@123`) and runs compatibility migrations.
 - Production startup **refuses to boot** on the development JWT, AES, or super-admin secrets.
-- Env vars are listed in `backend/README.md`; setup and troubleshooting in `RUNNING.md`.
+- Env vars are listed in `backend/README.md`; setup, ports, and troubleshooting in `../reference/local-setup.md`.

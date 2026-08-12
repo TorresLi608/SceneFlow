@@ -25,8 +25,10 @@ Violating any of these produces a bug that does not show up until production dat
 ## Working agreements
 
 - **Check for an existing library before hand-rolling.** A standing instruction from the project owner: prefer mature open source or a dependency already in the tree; write custom code only when nothing fits or the library would clearly add complexity. LangChain/LangGraph on the backend, `@base-ui/react` + shadcn-style organisation and `@assistant-ui/react` on the frontend.
+- **Wrap a replaced library rather than churning every call site.** `useI18n()` stayed as a thin facade when the hand-rolled interpolation engine was swapped for `i18next` + `react-i18next`, so no page component had to change. Reach for the same move when replacing infrastructure under a wide API.
+- **pnpm, not npm.** `npm install` does not update `pnpm-lock.yaml`; a dependency added that way is invisible to everyone else.
 - **Comments explain *why*.** This codebase's comments encode constraints that are expensive to rediscover (see `project-store.ts`, `generation_service.py`, `main.py`). Match that register, and do not strip them while refactoring.
-- **Prefer fewer, sharper abstractions.** Reuse existing module boundaries rather than introducing one-off indirection.
+- **Prefer fewer, sharper abstractions.** Reuse existing module boundaries rather than introducing one-off indirection. `AppSidebar` is concrete because there is one sidebar; do not build a framework for a single caller.
 
 ## Keeping generated docs current
 

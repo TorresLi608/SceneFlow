@@ -28,8 +28,8 @@
 ## Developer experience
 
 - **No frontend component testing.** Only pure `.ts` modules are testable (`node --test` with type stripping). Logic worth testing has to be extracted from components — `user-list.ts` is the model to follow, but most logic still lives inline.
-- **`pnpm build` has hung in this project before** (Turbopack, no output for minutes). `tsc --noEmit` is the practical type gate; the build is not part of a reliable loop.
-- **Working logs are stale and partly orphaned.** `progress.md` and `task_plan.md` remain in the repo, are written in Chinese, and cite paths that have since moved (chat components now live under `src/app/(workspace)/chat/_components/`). Decide whether they are history or reference; if history, say so at the top of each.
+- **`pnpm build` has hung in this project before** (Turbopack, no output for minutes). `tsc --noEmit` is the practical type gate; the build is not part of a reliable loop. The webpack path has completed when Turbopack did not — see `../conventions/testing.md`.
+- **`.env.example` is incomplete.** It ships only the legacy `NEXT_PUBLIC_API_BASE_URL`; three other variables the code reads are undocumented there and rely on defaults. See `../reference/local-setup.md`.
 - **Two ID styles** (prefixed strings for business rows, integer PKs for accounts and configs) are load-bearing for existing data but undocumented outside `../conventions/naming.md`.
 
 ## Explicitly not planned
