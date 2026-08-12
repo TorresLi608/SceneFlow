@@ -7,6 +7,9 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
+from openai import RateLimitError
+
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
@@ -106,7 +109,29 @@ def test_gemini_image_uses_generate_content_without_duplicate_api_version() -> N
     assert request["contents"][1].inline_data.data == b"jpeg"
 
 
+def test_openai_image_does_not_retry_provider_errors() -> None:
+    request = httpx.Request("POST", "https://images.example.test/v1/images/generations")
+    error = RateLimitError(
+        "No available image quota. Please try again later.",
+        response=httpx.Response(429, request=request),
+        body={"error": "No available image quota. Please try again later."},
+    )
+    generate = AsyncMock(side_effect=error)
+    client = Mock(return_value=SimpleNamespace(images=SimpleNamespace(generate=generate)))
+
+    with patch("app.llms.router.AsyncOpenAI", client):
+        try:
+            asyncio.run(ModelRouter().generate_image("test-key", "image-model", "draw it"))
+            raise AssertionError("provider error must be returned")
+        except ValueError as exc:
+            assert "provider status 429" in str(exc)
+
+    assert generate.await_count == 1
+    assert client.call_args.kwargs["max_retries"] == 0
+
+
 if __name__ == "__main__":
     test_generate_image_records_usage_without_references()
     test_official_image_requires_balance_but_personal_config_does_not()
     test_gemini_image_uses_generate_content_without_duplicate_api_version()
+    test_openai_image_does_not_retry_provider_errors()

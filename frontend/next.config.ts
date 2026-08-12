@@ -7,6 +7,9 @@ const backendBaseURL =
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  experimental: {
+    proxyTimeout: 15 * 60 * 1000,
+  },
   async rewrites() {
     return {
       fallback: [

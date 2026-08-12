@@ -424,6 +424,7 @@ class ModelRouter:
             api_key=api_key.strip(),
             base_url=image_base_url_for("openai", base_url),
             timeout=GENERATION_TIMEOUT_SECONDS,
+            max_retries=0,
         )
         try:
             response = await client.images.generate(
@@ -461,6 +462,7 @@ class ModelRouter:
             api_key=api_key.strip(),
             base_url=image_base_url_for("openai", base_url),
             timeout=GENERATION_TIMEOUT_SECONDS,
+            max_retries=0,
         )
         files = []
         for name, data, mime_type in images:
