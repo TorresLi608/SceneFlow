@@ -44,7 +44,8 @@ A standing product rule: project and shot CRUD always goes to the backend. Do no
 |---|---|
 | `app/api/v1/` | Endpoints, request/response orchestration, auth dependencies |
 | `app/services/` | Business logic (project, episode, character, generation, chat, usage, job, artifact, tts, video, config, agent) |
-| `app/models/` | SQLModel tables — the single source of truth for the schema |
+| `app/models/` | SQLModel tables — the schema source used by Alembic autogenerate |
+| `migrations/` | Alembic schema versions and historical data migrations |
 | `app/schemas/` | `requests.py` (Pydantic bodies), `serializers.py` (response shaping) |
 | `app/llms/` | Provider routing and the model registry; provider switching lives here and nowhere else |
 | `app/graph/` | Context assembly and agent orchestration |
@@ -70,6 +71,6 @@ A `Project` is a **series** and owns no shots directly. Content hangs off `Episo
 ## Operational facts
 
 - Ports: backend 8080, frontend 4000. Health check: `GET /healthz` → `{"status":"ok"}`.
-- Startup creates `superAdmin` if missing (dev password `superAdmin@123`) and runs compatibility migrations.
+- Startup upgrades Alembic to `head`, then creates `superAdmin` if missing (dev password `superAdmin@123`).
 - Production startup **refuses to boot** on the development JWT, AES, or super-admin secrets.
 - Env vars are listed in `backend/README.md`; setup, ports, and troubleshooting in `../reference/local-setup.md`.

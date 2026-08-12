@@ -18,7 +18,7 @@ Violating any of these produces a bug that does not show up until production dat
 3. **Media is stored as a relative path, never a URL.** Signed links expire in 30 days; serializers mint a fresh one per response.
 4. **Money is `Decimal`/string end to end**, in micros. A price must never become a JS `number`.
 5. **Timestamps are ISO-8601 strings.** Not `datetime`, not epoch.
-6. **A new column on an existing table needs `_add_missing_columns()`** in `app/core/database.py`, or existing databases drift.
+6. **Every schema change needs a reviewed Alembic revision.** Change SQLModel first and run `alembic check`; never add runtime schema mutation to `app/core/database.py`.
 7. **All user-facing strings live in `frontend/src/lib/i18n.ts`**, in both `zh` and `en`.
 8. **Never log or return a secret** — API keys are AES-GCM encrypted at rest and stay that way in transit except through the explicit reveal endpoint.
 

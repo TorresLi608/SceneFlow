@@ -15,8 +15,8 @@ api/v1/  ──▶  services/  ──▶  models/          (+ core/ available to
 
 1. **Endpoints orchestrate; services decide.** An endpoint may validate, resolve the current user, call services, and shape a response. Business rules that another caller would need go in `app/services/`.
 2. **`app/llms/router.py` owns provider switching and nothing else.** It knows base URLs, adapters, and per-provider quirks. It must not know about projects, episodes, or billing. Services call it.
-3. **`app/models/` is the only schema definition.** Do not declare columns anywhere else. Adding a column to an existing table also requires an entry in `_add_missing_columns()` in `app/core/database.py` — `SQLModel.metadata.create_all()` only creates *missing tables*, so without that step existing databases silently drift.
-4. **Raw SQL is confined to `app/core/database.py`.** It survives there for the compatibility migrations and the legacy `user_configs`/`official_model_configs` → `model_configs` merge, which operate on tables that no longer have models. Runtime queries use SQLModel/SQLAlchemy expressions.
+3. **`app/models/` is the schema source; Alembic versions it.** Change the SQLModel first, generate and review a revision under `backend/migrations/versions/`, then run `alembic check`. `init_db()` upgrades to `head`; it does not mutate schema itself.
+4. **Historical compatibility belongs in migrations, not runtime startup code.** Runtime queries and data backfills use SQLModel/SQLAlchemy expressions where the mapped schema permits it.
 5. **Do not hold a database session across a provider call.** SQLite has one writer. The established shape is: short session to authorise and load config → `await` the provider → new short session to write results and usage.
 6. **Serializers own the wire shape.** Never return an ORM entity directly; `app/schemas/serializers.py` is where signed URLs get minted and fields get renamed.
 

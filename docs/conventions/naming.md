@@ -10,7 +10,7 @@
 | Table name | `snake_case`, plural | `episodes`, `scene_characters`, `generation_jobs` |
 | Column | `snake_case` | `image_path`, `balance_micros`, `episode_number` |
 | Constant | `UPPER_SNAKE` at module top | `MAX_CONCURRENT_SCENES`, `ARTIFACT_TTL_DAYS` |
-| Private helper | leading underscore | `_update_scene`, `_add_missing_columns` |
+| Private helper | leading underscore | `_update_scene`, `_resolve_config` |
 
 **Service function names read as domain verbs**, not CRUD noise: `resolve_character`, `claim_project_status`, `require_model_balance`, `record_usage`. Prefer that over `get_*`/`handle_*` when the function encodes a rule.
 

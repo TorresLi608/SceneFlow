@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sqlite3
+import stat
 import tempfile
 
 from app.core import database
@@ -144,7 +145,28 @@ def test_upgrade_is_idempotent() -> None:
         database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR = original_db, original_dir
 
 
+def test_upgrade_records_revision_and_preserves_sqlite_settings() -> None:
+    original_db, original_dir = database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            connection, _, _ = _upgrade_legacy_database(Path(directory))
+            revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            connection.close()
+
+            with database.engine().connect() as connection:
+                foreign_keys = connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
+                busy_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
+
+            assert revision == "345000649eb5"
+            assert foreign_keys == 1
+            assert busy_timeout == 30_000
+            assert stat.S_IMODE(Path(database.DB_PATH).stat().st_mode) == 0o600
+    finally:
+        database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR = original_db, original_dir
+
+
 if __name__ == "__main__":
     test_legacy_project_gains_episode_one_and_keeps_its_shots()
     test_legacy_signed_urls_become_paths_that_still_resolve()
     test_upgrade_is_idempotent()
+    test_upgrade_records_revision_and_preserves_sqlite_settings()

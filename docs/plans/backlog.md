@@ -8,7 +8,6 @@
 - **Generation is not restart-safe.** `asyncio.create_task(run_generation(...))` runs in the API process. A deploy or crash mid-run leaves the project holding its busy lock with no worker to resume; `generation_jobs` exists to solve exactly this but has no consumer.
 - **Realtime is single-process.** `app/core/realtime.py` keeps an in-memory `dict[project_id, set[WebSocket]]`. A second uvicorn worker would silently deliver `SCENE_UPDATE` to only the clients on the same process. Needs a shared broker before horizontal scaling.
 - **No token revocation.** JWTs live 24h; disabling an account is the only revocation, and it works only because `current_user` re-reads the user on every request. Do not move role or state into token claims.
-- **Schema drift risk.** `SQLModel.metadata.create_all()` only creates missing tables. Every new column on an existing table needs a matching `_add_missing_columns()` entry; nothing enforces this. A migration tool (or a startup assertion comparing model columns to `PRAGMA table_info`) would catch it.
 
 ## Product gaps
 
@@ -38,4 +37,3 @@ Recorded so they are not re-litigated:
 
 - Replacing `google-genai` with `langchain-google-genai` — the native SDK is kept for Gemini image generation; swap only if Gemini chat needs to be a native LangChain provider.
 - Unifying the two ID styles.
-- Removing the raw SQL in `app/core/database.py` — it operates on legacy tables that no longer have models.
