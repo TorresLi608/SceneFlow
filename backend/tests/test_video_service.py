@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 
-from app.services.video_service import VideoSettings, build_doubao_payload, resolve_video_settings
+from app.services.video_service import VideoSettings, build_doubao_payload, gemini_video_base_url, resolve_video_settings
 
 
 REFERENCE = {"name": "first.png", "data": "data:image/png;base64," + base64.b64encode(b"image").decode("ascii")}
@@ -40,6 +40,12 @@ def test_doubao_payload_with_and_without_reference() -> None:
     assert image_payload["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_gemini_video_base_url_does_not_duplicate_api_version() -> None:
+    assert gemini_video_base_url("https://generativelanguage.googleapis.com/v1beta") == "https://generativelanguage.googleapis.com"
+    assert gemini_video_base_url("https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com"
+
+
 if __name__ == "__main__":
     test_resolution_mapping_and_provider_limits()
     test_doubao_payload_with_and_without_reference()
+    test_gemini_video_base_url_does_not_duplicate_api_version()

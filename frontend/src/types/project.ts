@@ -15,6 +15,8 @@ export interface Scene {
   /** Manual screen-time override in ms. 0 means follow the voice track's length. */
   durationMs: number;
   subtitleText: string;
+  /** Who appears in the shot; drives prompt assembly and reference portraits. */
+  characterIds: string[];
   /** An approved shot that a batch rerun must leave alone. */
   isLocked: boolean;
   image: {
@@ -146,6 +148,93 @@ export interface EpisodeItemResponse {
   episode: Episode;
 }
 
+/** A deliberate change of look or voice over a range of episodes. */
+export interface CharacterVariant {
+  id: string;
+  characterId: string;
+  name: string;
+  /** Empty means "the look did not change"; the card's own prompt still applies. */
+  appearancePrompt: string;
+  referenceImageUrl: string | null;
+  voiceModel: string;
+  fromEpisode: number;
+  /** Null means the variant stays in effect for every later episode. */
+  toEpisode: number | null;
+  updatedAt: string;
+}
+
+/** A recurring cast member, pinned to one look, one image model, and one voice. */
+export interface Character {
+  id: string;
+  projectId: string;
+  name: string;
+  /** Comma-separated names the script also uses for this character. */
+  aliases: string;
+  description: string;
+  appearancePrompt: string;
+  referenceImageUrl: string | null;
+  /** Frozen when the portrait was drawn, so a later default change cannot restyle them. */
+  imageProvider: string;
+  imageModel: string;
+  voiceProvider: string;
+  voiceModel: string;
+  /** Set once the portrait is approved; a locked card is never redrawn. */
+  isLocked: boolean;
+  orderNum: number;
+  variants: CharacterVariant[];
+  updatedAt: string;
+}
+
+export interface CreateCharacterInput {
+  name: string;
+  aliases?: string;
+  description?: string;
+  appearancePrompt?: string;
+  voiceProvider?: string;
+  voiceModel?: string;
+  orderNum?: number;
+}
+
+export interface UpdateCharacterInput {
+  name?: string;
+  aliases?: string;
+  description?: string;
+  appearancePrompt?: string;
+  voiceProvider?: string;
+  voiceModel?: string;
+  isLocked?: boolean;
+  orderNum?: number;
+}
+
+export interface CreateCharacterVariantInput {
+  name: string;
+  appearancePrompt?: string;
+  voiceModel?: string;
+  fromEpisode?: number;
+  toEpisode?: number | null;
+}
+
+export interface CharacterListResponse {
+  characters: Character[];
+}
+
+export interface CharacterItemResponse {
+  character: Character;
+}
+
+export interface CharacterVariantItemResponse {
+  variant: CharacterVariant;
+}
+
+export interface SetSceneCastInput {
+  characterIds: string[];
+}
+
+export interface SetSceneCastResponse {
+  sceneId: string;
+  characterIds: string[];
+}
+
 export type UpdateProductionSettingsInput = Partial<ProductionSettings> & {
   currentStage?: ProjectStage;
 };
@@ -184,7 +273,6 @@ export interface UpdateSceneInput {
   subtitleText?: string;
   isLocked?: boolean;
 }
-
 export interface ReorderScenesInput {
   sceneIds: string[];
   /** Order numbers restart each episode, so a reorder is always within one. */
@@ -266,6 +354,7 @@ export interface SceneUpdatePayload {
   narration?: string;
   dialogue?: string;
   speakerCharacterId?: string | null;
+  characterIds?: string[];
   visualPrompt?: string;
   shotType?: string;
   cameraMove?: string;

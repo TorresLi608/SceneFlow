@@ -64,7 +64,7 @@ def _system_tts(text: str, voice: str, output: Path) -> None:
 
 async def _openai_tts(text: str, config: dict[str, str], output: Path) -> None:
     base_url = (config.get("baseUrl") or "https://api.openai.com/v1").rstrip("/")
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=15 * 60) as client:
         response = await client.post(
             f"{base_url}/audio/speech",
             headers={"Authorization": f"Bearer {config['apiKey']}"},

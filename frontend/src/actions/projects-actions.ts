@@ -1,5 +1,10 @@
-import { httpClient } from "@/lib/http/client";
+import { generationRequestTimeout, httpClient } from "@/lib/http/client";
 import type {
+  CharacterItemResponse,
+  CharacterListResponse,
+  CharacterVariantItemResponse,
+  CreateCharacterInput,
+  CreateCharacterVariantInput,
   CreateEpisodeInput,
   EpisodeItemResponse,
   EpisodeListResponse,
@@ -16,6 +21,9 @@ import type {
   ProjectListResponse,
   GenerationJobListResponse,
   ReorderScenesInput,
+  SetSceneCastInput,
+  SetSceneCastResponse,
+  UpdateCharacterInput,
   UpdateEpisodeInput,
   UpdateProjectInput,
   UpdateProductionSettingsInput,
@@ -61,7 +69,9 @@ export async function reorderProjectScenesAction(projectID: string, payload: Reo
 }
 
 export async function parseProjectAction(projectID: string, payload: ParseProjectInput) {
-  const response = await httpClient.post<ParseProjectResponse>(`/api/bff/projects/${projectID}/parse`, payload);
+  const response = await httpClient.post<ParseProjectResponse>(`/api/bff/projects/${projectID}/parse`, payload, {
+    timeout: generationRequestTimeout,
+  });
   return response.data;
 }
 
@@ -76,7 +86,8 @@ export async function generateProjectAction(projectID: string, payload: Generate
 export async function optimizeProjectAction(projectID: string, payload: OptimizeProjectInput) {
   const response = await httpClient.post<OptimizeProjectResponse>(
     `/api/bff/projects/${projectID}/optimize`,
-    payload
+    payload,
+    { timeout: generationRequestTimeout }
   );
   return response.data;
 }
@@ -123,4 +134,63 @@ export async function updateEpisodeAction(projectID: string, episodeID: string, 
 
 export async function deleteEpisodeAction(projectID: string, episodeID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/episodes/${episodeID}`);
+}
+
+export async function listCharactersAction(projectID: string) {
+  const response = await httpClient.get<CharacterListResponse>(`/api/bff/projects/${projectID}/characters`);
+  return response.data;
+}
+
+export async function createCharacterAction(projectID: string, payload: CreateCharacterInput) {
+  const response = await httpClient.post<CharacterItemResponse>(
+    `/api/bff/projects/${projectID}/characters`,
+    payload
+  );
+  return response.data;
+}
+
+export async function updateCharacterAction(projectID: string, characterID: string, payload: UpdateCharacterInput) {
+  const response = await httpClient.patch<CharacterItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}`,
+    payload
+  );
+  return response.data;
+}
+
+export async function deleteCharacterAction(projectID: string, characterID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/characters/${characterID}`);
+}
+
+/** Draws the reference portrait; slow enough that callers should show a pending state. */
+export async function generateCharacterPortraitAction(projectID: string, characterID: string) {
+  const response = await httpClient.post<CharacterItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/portrait`,
+    undefined,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function createCharacterVariantAction(
+  projectID: string,
+  characterID: string,
+  payload: CreateCharacterVariantInput
+) {
+  const response = await httpClient.post<CharacterVariantItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/variants`,
+    payload
+  );
+  return response.data;
+}
+
+export async function deleteCharacterVariantAction(projectID: string, characterID: string, variantID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/characters/${characterID}/variants/${variantID}`);
+}
+
+export async function setSceneCastAction(projectID: string, sceneID: string, payload: SetSceneCastInput) {
+  const response = await httpClient.put<SetSceneCastResponse>(
+    `/api/bff/projects/${projectID}/scenes/${sceneID}/characters`,
+    payload
+  );
+  return response.data;
 }

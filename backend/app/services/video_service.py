@@ -13,7 +13,7 @@ from google.genai import types
 
 
 DOUBAO_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-GEMINI_VIDEO_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_VIDEO_BASE_URL = "https://generativelanguage.googleapis.com"
 DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpeg|jpg|webp));base64,(.+)$", re.DOTALL)
 MAX_REFERENCE_BYTES = 10 * 1024 * 1024
 POLL_INTERVAL_SECONDS = 5
@@ -114,6 +114,10 @@ def _response_payload(response: httpx.Response) -> Any:
         return response.text or f"HTTP {response.status_code}"
 
 
+def gemini_video_base_url(base_url: str = "") -> str:
+    return (base_url or GEMINI_VIDEO_BASE_URL).strip().rstrip("/").removesuffix("/openai").removesuffix("/v1beta")
+
+
 async def _generate_doubao_video(
     api_key: str,
     model: str,
@@ -178,7 +182,7 @@ async def _generate_gemini_video(
     client = genai.Client(
         api_key=api_key.strip(),
         http_options={
-            "base_url": (base_url or GEMINI_VIDEO_BASE_URL).rstrip("/").removesuffix("/openai"),
+            "base_url": gemini_video_base_url(base_url),
             "timeout": GENERATION_TIMEOUT_SECONDS * 1000,
         },
     )
@@ -196,7 +200,6 @@ async def _generate_gemini_video(
                 duration_seconds=duration,
                 aspect_ratio=settings.ratio,
                 resolution=settings.resolution,
-                enhance_prompt=True,
             ),
         )
         deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS

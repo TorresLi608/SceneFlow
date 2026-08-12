@@ -3,6 +3,7 @@ import axios, { AxiosHeaders } from "axios";
 import { useUserStore } from "@/store/user-store";
 
 const BFF_BASE_URL = process.env.NEXT_PUBLIC_BFF_BASE_URL?.trim() || "";
+export const generationRequestTimeout = 15 * 60 * 1000;
 
 export const httpClient = axios.create({
   baseURL: BFF_BASE_URL,

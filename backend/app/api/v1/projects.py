@@ -27,7 +27,7 @@ from app.schemas.requests import (
 )
 from app.schemas.serializers import episode_summary_json, project_json, scene_json
 from app.services.config_service import active_model_config
-from app.services.character_service import cast_for_episode, scene_cast
+from app.services.character_service import cast_for_episode, owned_character, scene_cast
 from app.services.episode_service import (
     ensure_episode,
     episode_scenes,
@@ -305,6 +305,10 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
     updates = {column: sent[field] for field, column in _SCENE_COLUMNS if field in sent and sent[field] is not None}
     if not updates:
         raise HTTPException(400, "no fields to update")
+    # "Nobody in particular" arrives as an empty string, because a JSON null would be
+    # indistinguishable from an absent field above. The column stores it as NULL.
+    if updates.get("speaker_character_id") == "":
+        updates["speaker_character_id"] = None
 
     stamp = now()
     with db() as session:
@@ -314,6 +318,10 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
         ).first()
         if not scene:
             raise HTTPException(404, "scene not found")
+        speaker_id = updates.get("speaker_character_id")
+        if speaker_id:
+            # A speaker from another show would silently resolve to no voice at render time.
+            owned_character(session, project_id, speaker_id)
         for key, value in updates.items():
             setattr(scene, key, value)
         scene.updated_at = stamp

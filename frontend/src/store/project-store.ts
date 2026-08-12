@@ -17,7 +17,13 @@ export type SceneEdit = Partial<
     | "subtitleText"
     | "isLocked"
   >
->;
+> & {
+  /**
+   * An empty string clears the speaker. Not null: the backend drops null fields so it can
+   * tell "leave this alone" from "set it", so null would silently do nothing.
+   */
+  speakerCharacterId?: string;
+};
 
 interface ProjectStoreState {
   projects: Project[];
@@ -58,6 +64,10 @@ interface ProjectStoreState {
   applySceneStreamUpdate: (projectID: string, sceneID: string, data: SceneUpdatePayload) => void;
   updateCurrentScript: (script: string) => void;
   updateScene: (sceneId: string, patch: SceneEdit) => void;
+  /** Cast lives in its own join table, so it is set through its own endpoint and action. */
+  setSceneCast: (sceneId: string, characterIds: string[]) => void;
+  /** A deleted character has to leave every shot it was cast in. */
+  dropCharacter: (characterId: string) => void;
   reorderScenes: (activeId: string, overId: string) => void;
 }
 
@@ -66,11 +76,13 @@ function normalizeScene(scene: Scene): Scene {
     ...scene,
     episodeId: scene.episodeId ?? null,
     dialogue: scene.dialogue ?? "",
-    speakerCharacterId: scene.speakerCharacterId ?? null,
+    // The backend clears a speaker by storing NULL, but an older row may hold "".
+    speakerCharacterId: scene.speakerCharacterId || null,
     shotType: scene.shotType ?? "",
     cameraMove: scene.cameraMove ?? "",
     durationMs: typeof scene.durationMs === "number" ? scene.durationMs : 0,
     subtitleText: scene.subtitleText ?? "",
+    characterIds: scene.characterIds ?? [],
     isLocked: Boolean(scene.isLocked),
     image: {
       url: scene.image?.url ?? null,
@@ -347,6 +359,9 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
           if ("speakerCharacterId" in data) {
             nextScene.speakerCharacterId = data.speakerCharacterId ?? null;
           }
+          if (Array.isArray(data.characterIds)) {
+            nextScene.characterIds = data.characterIds;
+          }
           if (typeof data.visualPrompt === "string") {
             nextScene.visualPrompt = data.visualPrompt;
           }
@@ -428,12 +443,46 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
               updatedAt: nowISO(),
               scenes: project.scenes.map((scene) =>
                 scene.id === sceneId
-                  ? {
-                      ...scene,
-                      ...patch,
-                    }
+                  ? // Through normalize so a cleared speaker ("" on the wire) lands as null
+                    // here too, rather than the store and the server disagreeing.
+                    normalizeScene({ ...scene, ...patch } as Scene)
                   : scene
               ),
+            }
+      ),
+    }));
+  },
+
+  setSceneCast: (sceneId, characterIds) => {
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id !== state.selectedProjectId
+          ? project
+          : {
+              ...project,
+              updatedAt: nowISO(),
+              scenes: project.scenes.map((scene) =>
+                scene.id === sceneId ? { ...scene, characterIds } : scene
+              ),
+            }
+      ),
+    }));
+  },
+
+  dropCharacter: (characterId) => {
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id !== state.selectedProjectId
+          ? project
+          : {
+              ...project,
+              scenes: project.scenes.map((scene) => ({
+                ...scene,
+                characterIds: scene.characterIds.filter((id) => id !== characterId),
+                // The speaker is not part of the cast, so it has to be cleared separately.
+                speakerCharacterId:
+                  scene.speakerCharacterId === characterId ? null : scene.speakerCharacterId,
+              })),
             }
       ),
     }));

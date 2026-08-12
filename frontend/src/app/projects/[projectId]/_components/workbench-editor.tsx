@@ -33,10 +33,12 @@ import {
   generateProjectAction,
   generateVideoAction,
   getEpisodeAction,
+  listCharactersAction,
   listProjectsAction,
   optimizeProjectAction,
   parseProjectAction,
   reorderProjectScenesAction,
+  setSceneCastAction,
   updateProjectAction,
   updateProductionSettingsAction,
   updateProjectSceneAction,
@@ -75,6 +77,7 @@ import type {
   SceneUpdatePayload,
 } from "@/types/project";
 import { ProductionSettingsForm } from "./production-settings";
+import { CharacterPanel } from "./character-panel";
 import { SceneCard } from "./scene-card";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -143,6 +146,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const openEpisode = useProjectStore((state) => state.openEpisode);
   const upsertEpisode = useProjectStore((state) => state.upsertEpisode);
   const removeEpisode = useProjectStore((state) => state.removeEpisode);
+  const setSceneCast = useProjectStore((state) => state.setSceneCast);
+  const dropCharacter = useProjectStore((state) => state.dropCharacter);
 
   const currentProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId),
@@ -172,6 +177,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     enabled: hydrated && Boolean(token),
     staleTime: 30_000,
   });
+
+  // Shares a cache entry with the character panel, which owns the writes.
+  const charactersQuery = useQuery({
+    queryKey: queryKeys.characters(selectedProjectId),
+    queryFn: () => listCharactersAction(selectedProjectId),
+    enabled: hydrated && Boolean(token) && Boolean(selectedProjectId),
+  });
+  const characters = useMemo(() => charactersQuery.data?.characters ?? [], [charactersQuery.data?.characters]);
 
   const activeUserConfigByPurpose = useMemo(
     () =>
@@ -307,8 +320,20 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     },
   });
 
-  const openEpisodeMutation = useMutation({
-    mutationFn: (params: { projectId: string; episodeId: string }) =>
+  const setSceneCastMutation = useMutation({
+    mutationFn: (params: { projectId: string; sceneId: string; characterIds: string[]; previous: string[] }) =>
+      setSceneCastAction(params.projectId, params.sceneId, { characterIds: params.characterIds }),
+    onSuccess: (response) => {
+      setSceneCast(response.sceneId, response.characterIds);
+    },
+    onError: (error, variables) => {
+      // The toggle already landed optimistically, so roll it back to what the server has.
+      setSceneCast(variables.sceneId, variables.previous);
+      setStatusMessage(resolveRequestError(error, t("scene.castFailed")));
+    },
+  });
+
+  const openEpisodeMutation = useMutation({    mutationFn: (params: { projectId: string; episodeId: string }) =>
       getEpisodeAction(params.projectId, params.episodeId),
     onSuccess: (response, variables) => {
       openEpisode(variables.projectId, response.episode.id, response.episode.scenes);
@@ -1048,6 +1073,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
               </CardContent>
             </Card>
 
+            {currentProject ? (
+              <CharacterPanel
+                projectId={currentProject.id}
+                onStatus={setStatusMessage}
+                onCharacterDeleted={dropCharacter}
+              />
+            ) : null}
+
             <Card className="min-h-[500px] border-border/80">
               <CardHeader className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1137,6 +1170,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                           >
                             <SceneCard
                               scene={scene}
+                              characters={characters}
                               onNarrationChange={(value) =>
                                 saveScenePatch(scene.id, {
                                   narration: value,
@@ -1148,6 +1182,16 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                                 })
                               }
                               onFieldChange={(patch) => saveScenePatch(scene.id, patch)}
+                              onCastChange={(characterIds) => {
+                                const previous = scene.characterIds;
+                                setSceneCast(scene.id, characterIds);
+                                setSceneCastMutation.mutate({
+                                  projectId: currentProject.id,
+                                  sceneId: scene.id,
+                                  characterIds,
+                                  previous,
+                                });
+                              }}
                             />
                           </div>
                         ))}

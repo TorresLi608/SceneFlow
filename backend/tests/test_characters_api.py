@@ -526,6 +526,58 @@ def test_a_missing_portrait_costs_consistency_not_the_shot() -> None:
     assert references == []
 
 
+def test_a_speaker_can_be_set_and_cleared() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            character = _character(client, headers, project_id)
+            scene_id = client.post(
+                f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers
+            ).json()["scenes"][0]["id"]
+
+            named = client.patch(
+                f"/api/projects/{project_id}/scenes/{scene_id}",
+                json={"speakerCharacterId": character["id"]},
+                headers=headers,
+            )
+            assert named.json()["scene"]["speakerCharacterId"] == character["id"]
+
+            cleared = client.patch(
+                f"/api/projects/{project_id}/scenes/{scene_id}",
+                json={"speakerCharacterId": ""},
+                headers=headers,
+            )
+
+            # "" is how a client says "nobody": a JSON null cannot be told apart from a
+            # field that was never sent, so the column would keep the old speaker.
+            assert cleared.status_code == 200, cleared.text
+            assert cleared.json()["scene"]["speakerCharacterId"] is None
+            with database.db() as session:
+                stored = session.exec(
+                    database.select(Scene.speaker_character_id).where(Scene.id == scene_id)
+                ).first()
+            assert stored is None
+
+
+def test_a_speaker_from_another_show_is_refused() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            scene_id = client.post(
+                f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers
+            ).json()["scenes"][0]["id"]
+            outsider = _character(client, headers, _project(client, headers), name="别的剧的人")
+
+            refused = client.patch(
+                f"/api/projects/{project_id}/scenes/{scene_id}",
+                json={"speakerCharacterId": outsider["id"]},
+                headers=headers,
+            )
+
+            # It would resolve to no voice at render time and look like a silent bug.
+            assert refused.status_code == 404, refused.text
+
+
 if __name__ == "__main__":
     test_a_character_without_variants_is_itself_in_every_episode()
     test_a_variant_takes_over_only_inside_its_episode_range()
@@ -548,3 +600,5 @@ if __name__ == "__main__":
     test_a_portrait_becomes_the_reference_a_shot_renders_against()
     test_only_the_first_few_portraits_ride_along()
     test_a_missing_portrait_costs_consistency_not_the_shot()
+    test_a_speaker_can_be_set_and_cleared()
+    test_a_speaker_from_another_show_is_refused()
