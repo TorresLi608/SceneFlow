@@ -30,6 +30,19 @@ from app.utils.common import new_id
 MAX_DOCUMENT_CHARS = 100_000
 ARTIFACT_TTL_DAYS = 30
 ARTIFACT_SIGNING_KEY = hashlib.sha256(JWT_SECRET.encode()).digest()
+MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".mp4": "video/mp4",
+    ".srt": "application/x-subrip",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 CJK_FONT_CANDIDATES = (
     CJK_FONT_PATH,
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
@@ -245,24 +258,37 @@ def _safe_segment(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", value)[:80] or "chat"
 
 
-def _download_name(title: str, extension: str) -> str:
-    stem = re.sub(r"[\\/:*?\"<>|\r\n]+", " ", title).strip(" .")[:80] or "SceneFlow"
-    return f"{stem}.{extension}"
+def media_type_for(name: str) -> str:
+    return MEDIA_TYPES.get(Path(name).suffix.lower(), "application/octet-stream")
 
 
-def _markdown_label(value: str) -> str:
-    return re.sub(r"[\r\n]+", " ", value).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-
-
-def _artifact_path(session_id: str, extension: str) -> Path:
+def _artifact_path(scope: str, extension: str, category: str = "chat") -> Path:
     # ponytail: local disk is enough for one backend instance; move to object storage when deployments become multi-instance.
-    directory = PRIVATE_GENERATED_DIR / "chat" / _safe_segment(session_id)
+    directory = PRIVATE_GENERATED_DIR / _safe_segment(category) / _safe_segment(scope)
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{new_id('artifact')}.{extension}"
 
 
+def artifact_relative_path(path: Path) -> str:
+    """Express an on-disk artifact as a path relative to the private artifact root."""
+    return path.resolve().relative_to(PRIVATE_GENERATED_DIR.resolve()).as_posix()
+
+
+def artifact_absolute_path(relative: str) -> Path:
+    """Resolve a stored relative path back to disk, rejecting escapes from the artifact root."""
+    pure = PurePosixPath(relative)
+    if not relative or pure.is_absolute() or ".." in pure.parts:
+        raise ValueError("invalid artifact path")
+    path = (PRIVATE_GENERATED_DIR / Path(*pure.parts)).resolve()
+    path.relative_to(PRIVATE_GENERATED_DIR.resolve())
+    return path
+
+
 def _signed_url(path: Path, filename: str, media_type: str, inline: bool) -> str:
-    relative = path.resolve().relative_to(PRIVATE_GENERATED_DIR.resolve()).as_posix()
+    return _sign(artifact_relative_path(path), filename, media_type, inline)
+
+
+def _sign(relative: str, filename: str, media_type: str, inline: bool) -> str:
     issued = datetime.now(timezone.utc)
     token = jwt.encode(
         {
@@ -284,6 +310,36 @@ def signed_file_url(path: Path, filename: str, media_type: str, inline: bool = T
     return _signed_url(path, Path(filename).name[:180], media_type[:120], inline)
 
 
+def signed_url_for_stored(relative: str, download_stem: str = "", inline: bool = True) -> str:
+    """Mint a fresh link for an artifact the database tracks by path.
+
+    Signed links expire after ARTIFACT_TTL_DAYS. Persisting the URL would make every
+    asset in a long-running series 404 a month later, so rows keep the relative path and
+    the URL is minted per response instead. The extension comes from the stored file, so a
+    caller naming the download cannot mislabel a webp as a png.
+    """
+    artifact_absolute_path(relative)
+    stored = PurePosixPath(relative)
+    stem = Path(download_stem).name[:180]
+    name = f"{stem}{stored.suffix}" if stem else stored.name
+    return _sign(relative, name, media_type_for(relative)[:120], inline)
+
+
+def stored_relative_path(value: str) -> str:
+    """Recover the relative path a legacy signed URL points at, ignoring its expiry.
+
+    Used once by the schema migration that moves rows off stored URLs; an unreadable
+    token means the link was already dead and the caller drops the reference.
+    """
+    token = value.rsplit("/", 1)[-1].strip()
+    payload = jwt.decode(token, ARTIFACT_SIGNING_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    if payload.get("scope") != "artifact":
+        raise ValueError("invalid scope")
+    relative = str(payload["path"])
+    artifact_absolute_path(relative)
+    return relative
+
+
 def save_binary_artifact(scope: str, filename: str, data: bytes, media_type: str, inline: bool = True) -> str:
     extension = Path(filename).suffix.lower().removeprefix(".") or "bin"
     path = _artifact_path(scope, extension)
@@ -292,21 +348,34 @@ def save_binary_artifact(scope: str, filename: str, data: bytes, media_type: str
     return signed_file_url(path, filename, media_type, inline)
 
 
+def store_artifact(category: str, scope: str, filename: str, data: bytes) -> str:
+    """Persist bytes under the private root and return the relative path to store in a row."""
+    path = _artifact_path(scope, Path(filename).suffix.lower().removeprefix(".") or "bin", category)
+    path.write_bytes(data)
+    path.chmod(0o600)
+    return artifact_relative_path(path)
+
+
 def artifact_from_token(token: str) -> tuple[Path, str, str, bool]:
     try:
         payload = jwt.decode(token, ARTIFACT_SIGNING_KEY, algorithms=["HS256"])
         if payload.get("scope") != "artifact":
             raise ValueError("invalid scope")
-        relative = PurePosixPath(str(payload["path"]))
-        if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError("invalid path")
-        path = (PRIVATE_GENERATED_DIR / Path(*relative.parts)).resolve()
-        path.relative_to(PRIVATE_GENERATED_DIR.resolve())
+        path = artifact_absolute_path(str(payload["path"]))
         if not path.is_file():
             raise FileNotFoundError(path)
         return path, str(payload["filename"])[:180], str(payload["mediaType"])[:120], bool(payload.get("inline"))
     except Exception as exc:
         raise ValueError("invalid or expired artifact link") from exc
+
+
+def _download_name(title: str, extension: str) -> str:
+    stem = re.sub(r"[\\/:*?\"<>|\r\n]+", " ", title).strip(" .")[:80] or "SceneFlow"
+    return f"{stem}.{extension}"
+
+
+def _markdown_label(value: str) -> str:
+    return re.sub(r"[\r\n]+", " ", value).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def save_image_artifact(session_id: str, title: str, data: bytes, extension: str) -> dict[str, str]:

@@ -1,0 +1,3300 @@
+# SceneFlow backend OpenAPI spec.
+# GENERATED FILE - do not hand-edit. Regenerate with the command in docs/reference/error-codes.md.
+openapi: 3.1.0
+info:
+  title: SceneFlow Backend
+  version: 0.1.0
+paths:
+  /api/auth/register:
+    post:
+      tags:
+      - auth
+      summary: Register
+      operationId: register_api_auth_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Payload
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Register Api Auth Register Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/auth/login:
+    post:
+      tags:
+      - auth
+      summary: Login
+      operationId: login_api_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Payload
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Login Api Auth Login Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/users/me:
+    get:
+      tags:
+      - users
+      summary: Get Me
+      operationId: get_me_api_users_me_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Me Api Users Me Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - users
+      summary: Update Me
+      operationId: update_me_api_users_me_patch
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Me Api Users Me Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - users
+      summary: Delete Me
+      operationId: delete_me_api_users_me_delete
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/users/redeem:
+    post:
+      tags:
+      - users
+      summary: Redeem Code
+      operationId: redeem_code_api_users_redeem_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Redeem Code Api Users Redeem Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/users:
+    get:
+      tags:
+      - admin
+      summary: List Users
+      operationId: list_users_api_admin_users_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Users Api Admin Users Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - admin
+      summary: Create User
+      operationId: create_user_api_admin_users_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create User Api Admin Users Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/usage-logs:
+    get:
+      tags:
+      - admin
+      summary: List All Usage Logs
+      operationId: list_all_usage_logs_api_admin_usage_logs_get
+      parameters:
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          default: ''
+          title: Search
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: pageSize
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Pagesize
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List All Usage Logs Api Admin Usage Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/users/{target_user_id}:
+    patch:
+      tags:
+      - admin
+      summary: Update User
+      operationId: update_user_api_admin_users__target_user_id__patch
+      parameters:
+      - name: target_user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Target User Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update User Api Admin Users  Target User Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - admin
+      summary: Reset User Password
+      operationId: reset_user_password_api_admin_users__target_user_id__post
+      parameters:
+      - name: target_user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Target User Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Reset User Password Api Admin Users  Target User Id  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - admin
+      summary: Delete User
+      operationId: delete_user_api_admin_users__target_user_id__delete
+      parameters:
+      - name: target_user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Target User Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/invitation-codes:
+    get:
+      tags:
+      - admin
+      summary: List Invitation Codes
+      operationId: list_invitation_codes_api_admin_invitation_codes_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|unused|used|expired)$
+          default: all
+          title: Status
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          default: ''
+          title: Search
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: pageSize
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 10
+          title: Pagesize
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Invitation Codes Api Admin Invitation Codes Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - admin
+      summary: Create Invitation Code
+      operationId: create_invitation_code_api_admin_invitation_codes_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Invitation Code Api Admin Invitation Codes Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/redemption-codes:
+    get:
+      tags:
+      - admin
+      summary: List Redemption Codes
+      operationId: list_redemption_codes_api_admin_redemption_codes_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|unused|redeemed|expired)$
+          default: all
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: pageSize
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 10
+          title: Pagesize
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Redemption Codes Api Admin Redemption Codes Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - admin
+      summary: Create Redemption Code
+      operationId: create_redemption_code_api_admin_redemption_codes_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Redemption Code Api Admin Redemption Codes Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/default-models:
+    get:
+      tags:
+      - admin
+      summary: List Default Models
+      operationId: list_default_models_api_admin_default_models_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Default Models Api Admin Default Models Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - admin
+      summary: Create Default Model
+      operationId: create_default_model_api_admin_default_models_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Default Model Api Admin Default Models Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/model-configs/{config_id}/secret:
+    post:
+      tags:
+      - admin
+      summary: Get Model Config Secret
+      operationId: get_model_config_secret_api_admin_model_configs__config_id__secret_post
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Get Model Config Secret Api Admin Model Configs  Config Id  Secret Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/model-configs/{config_id}:
+    patch:
+      tags:
+      - admin
+      summary: Update Model Config
+      operationId: update_model_config_api_admin_model_configs__config_id__patch
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Model Config Api Admin Model Configs  Config Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/default-models/{config_id}:
+    patch:
+      tags:
+      - admin
+      summary: Update Default Model
+      operationId: update_default_model_api_admin_default_models__config_id__patch
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Default Model Api Admin Default Models  Config Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - admin
+      summary: Delete Default Model
+      operationId: delete_default_model_api_admin_default_models__config_id__delete
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/keys:
+    get:
+      tags:
+      - settings
+      summary: List Configs
+      operationId: list_configs_api_settings_keys_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Configs Api Settings Keys Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - settings
+      summary: Create Config
+      operationId: create_config_api_settings_keys_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Config Api Settings Keys Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/models:
+    post:
+      tags:
+      - settings
+      summary: Discover Models
+      operationId: discover_models_api_settings_models_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
+                title: Response Discover Models Api Settings Models Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/keys/validate:
+    post:
+      tags:
+      - settings
+      summary: Validate Config
+      operationId: validate_config_api_settings_keys_validate_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Config Api Settings Keys Validate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/keys/{config_id}:
+    get:
+      tags:
+      - settings
+      summary: Get Config
+      operationId: get_config_api_settings_keys__config_id__get
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Config Api Settings Keys  Config Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - settings
+      summary: Update Config
+      operationId: update_config_api_settings_keys__config_id__patch
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Config Api Settings Keys  Config Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - settings
+      summary: Delete Config
+      operationId: delete_config_api_settings_keys__config_id__delete
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/keys/{config_id}/secret:
+    post:
+      tags:
+      - settings
+      summary: Get Config Secret
+      operationId: get_config_secret_api_settings_keys__config_id__secret_post
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Get Config Secret Api Settings Keys  Config Id  Secret Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/official/{config_id}/activate:
+    post:
+      tags:
+      - settings
+      summary: Activate Official Config
+      operationId: activate_official_config_api_settings_official__config_id__activate_post
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Activate Official Config Api Settings Official  Config Id  Activate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - settings
+      summary: Deactivate Official Config
+      operationId: deactivate_official_config_api_settings_official__config_id__activate_delete
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Config Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/chat/artifacts/{token}:
+    get:
+      tags:
+      - chat
+      summary: Get Artifact
+      operationId: get_artifact_api_chat_artifacts__token__get
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/chat/sessions:
+    get:
+      tags:
+      - chat
+      summary: Get Sessions
+      operationId: get_sessions_api_chat_sessions_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Sessions Api Chat Sessions Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - chat
+      summary: Post Session
+      operationId: post_session_api_chat_sessions_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Post Session Api Chat Sessions Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/chat/sessions/{session_id}:
+    delete:
+      tags:
+      - chat
+      summary: Delete Session
+      operationId: delete_session_api_chat_sessions__session_id__delete
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+                title: Response Delete Session Api Chat Sessions  Session Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/chat/sessions/{session_id}/messages:
+    get:
+      tags:
+      - chat
+      summary: Get Messages
+      operationId: get_messages_api_chat_sessions__session_id__messages_get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Messages Api Chat Sessions  Session Id  Messages Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - chat
+      summary: Post Message
+      operationId: post_message_api_chat_sessions__session_id__messages_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Post Message Api Chat Sessions  Session Id  Messages Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/chat/sessions/{session_id}/messages/stream:
+    post:
+      tags:
+      - chat
+      summary: Stream Message
+      operationId: stream_message_api_chat_sessions__session_id__messages_stream_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/images/generate:
+    post:
+      tags:
+      - images
+      summary: Generate Image
+      operationId: generate_image_api_images_generate_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Image Api Images Generate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/videos/generate:
+    post:
+      tags:
+      - videos
+      summary: Generate Video Route
+      operationId: generate_video_route_api_videos_generate_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Video Route Api Videos Generate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/usage/logs:
+    get:
+      tags:
+      - usage
+      summary: Get Usage Logs
+      operationId: get_usage_logs_api_usage_logs_get
+      parameters:
+      - name: feature
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 40
+          default: all
+          title: Feature
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 365
+          minimum: 1
+          default: 30
+          title: Days
+      - name: source
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|official|user)$
+          default: all
+          title: Source
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Usage Logs Api Usage Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects:
+    get:
+      tags:
+      - projects
+      summary: List Projects
+      description: 'Every series, each carrying its current episode''s shots and a summary of the rest.
+
+
+        Batched rather than serialized one project at a time: a list of series would otherwise
+
+        run two queries per row. A project with no episode yet reads as empty here — creating
+
+        one is a write, and a GET has no business doing that.'
+      operationId: list_projects_api_projects_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Projects Api Projects Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - projects
+      summary: Create Project
+      operationId: create_project_api_projects_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Project Api Projects Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}:
+    patch:
+      tags:
+      - projects
+      summary: Update Project
+      operationId: update_project_api_projects__project_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Project Api Projects  Project Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - projects
+      summary: Delete Project
+      operationId: delete_project_api_projects__project_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/production-settings:
+    patch:
+      tags:
+      - projects
+      summary: Update Production Settings
+      operationId: update_production_settings_api_projects__project_id__production_settings_patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductionSettingsRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Production Settings Api Projects  Project Id  Production Settings
+                  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/jobs:
+    get:
+      tags:
+      - projects
+      summary: List Jobs
+      operationId: list_jobs_api_projects__project_id__jobs_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Jobs Api Projects  Project Id  Jobs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/scenes/reorder:
+    patch:
+      tags:
+      - projects
+      summary: Reorder Project Scenes
+      operationId: reorder_project_scenes_api_projects__project_id__scenes_reorder_patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderScenesRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Reorder Project Scenes Api Projects  Project Id  Scenes Reorder Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/scenes/{scene_id}:
+    patch:
+      tags:
+      - projects
+      summary: Update Project Scene
+      operationId: update_project_scene_api_projects__project_id__scenes__scene_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: scene_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Scene Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSceneRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Project Scene Api Projects  Project Id  Scenes  Scene Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/parse:
+    post:
+      tags:
+      - projects
+      summary: Parse Project
+      operationId: parse_project_api_projects__project_id__parse_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParseProjectRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Parse Project Api Projects  Project Id  Parse Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/optimize:
+    post:
+      tags:
+      - projects
+      summary: Optimize Project
+      operationId: optimize_project_api_projects__project_id__optimize_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OptimizeProjectRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Optimize Project Api Projects  Project Id  Optimize Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/generate:
+    post:
+      tags:
+      - projects
+      summary: Generate Project
+      operationId: generate_project_api_projects__project_id__generate_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateProjectRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Project Api Projects  Project Id  Generate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/generate-video:
+    post:
+      tags:
+      - projects
+      summary: Generate Video
+      operationId: generate_video_api_projects__project_id__generate_video_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateVideoRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Video Api Projects  Project Id  Generate Video Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes:
+    get:
+      tags:
+      - episodes
+      summary: List Episodes
+      operationId: list_episodes_api_projects__project_id__episodes_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Episodes Api Projects  Project Id  Episodes Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - episodes
+      summary: Add Episode
+      operationId: add_episode_api_projects__project_id__episodes_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEpisodeRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Add Episode Api Projects  Project Id  Episodes Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}:
+    get:
+      tags:
+      - episodes
+      summary: Get Episode
+      operationId: get_episode_api_projects__project_id__episodes__episode_id__get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Episode Api Projects  Project Id  Episodes  Episode Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - episodes
+      summary: Update Episode
+      operationId: update_episode_api_projects__project_id__episodes__episode_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEpisodeRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Episode Api Projects  Project Id  Episodes  Episode Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - episodes
+      summary: Remove Episode
+      operationId: remove_episode_api_projects__project_id__episodes__episode_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/characters:
+    get:
+      tags:
+      - characters
+      summary: List Characters
+      operationId: list_characters_api_projects__project_id__characters_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Characters Api Projects  Project Id  Characters Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - characters
+      summary: Add Character
+      operationId: add_character_api_projects__project_id__characters_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCharacterRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Add Character Api Projects  Project Id  Characters Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/characters/{character_id}:
+    patch:
+      tags:
+      - characters
+      summary: Update Character
+      operationId: update_character_api_projects__project_id__characters__character_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCharacterRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Character Api Projects  Project Id  Characters  Character Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - characters
+      summary: Remove Character
+      operationId: remove_character_api_projects__project_id__characters__character_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/characters/{character_id}/variants:
+    post:
+      tags:
+      - characters
+      summary: Add Variant
+      operationId: add_variant_api_projects__project_id__characters__character_id__variants_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCharacterVariantRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Add Variant Api Projects  Project Id  Characters  Character Id  Variants
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/characters/{character_id}/variants/{variant_id}:
+    patch:
+      tags:
+      - characters
+      summary: Update Variant
+      operationId: update_variant_api_projects__project_id__characters__character_id__variants__variant_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      - name: variant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Variant Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCharacterVariantRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Variant Api Projects  Project Id  Characters  Character Id  Variants  Variant
+                  Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - characters
+      summary: Remove Variant
+      operationId: remove_variant_api_projects__project_id__characters__character_id__variants__variant_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      - name: variant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Variant Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/characters/{character_id}/portrait:
+    post:
+      tags:
+      - characters
+      summary: Generate Portrait
+      description: 'Render the reference portrait later shots are matched against.
+
+
+        Synchronous rather than a background job: it is one image and the card the user is
+
+        looking at is the only thing waiting on it.'
+      operationId: generate_portrait_api_projects__project_id__characters__character_id__portrait_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: character_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Character Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Portrait Api Projects  Project Id  Characters  Character Id  Portrait
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/scenes/{scene_id}/characters:
+    put:
+      tags:
+      - characters
+      summary: Set Cast
+      description: Replace which characters appear in a shot. An empty list clears the cast.
+      operationId: set_cast_api_projects__project_id__scenes__scene_id__characters_put
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: scene_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Scene Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetSceneCastRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Set Cast Api Projects  Project Id  Scenes  Scene Id  Characters Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/jobs/{job_id}/cancel:
+    post:
+      tags:
+      - jobs
+      summary: Cancel Generation Job
+      operationId: cancel_generation_job_api_jobs__job_id__cancel_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Cancel Generation Job Api Jobs  Job Id  Cancel Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/jobs/{job_id}/retry:
+    post:
+      tags:
+      - jobs
+      summary: Retry Generation Job
+      operationId: retry_generation_job_api_jobs__job_id__retry_post
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Retry Generation Job Api Jobs  Job Id  Retry Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /healthz:
+    get:
+      summary: Healthz
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Healthz Healthz Get
+components:
+  schemas:
+    CreateCharacterRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        aliases:
+          type: string
+          maxLength: 400
+          title: Aliases
+          default: ''
+        description:
+          type: string
+          maxLength: 4000
+          title: Description
+          default: ''
+        appearancePrompt:
+          type: string
+          maxLength: 4000
+          title: Appearanceprompt
+          default: ''
+        voiceProvider:
+          type: string
+          maxLength: 40
+          title: Voiceprovider
+          default: ''
+        voiceModel:
+          type: string
+          maxLength: 160
+          title: Voicemodel
+          default: ''
+        orderNum:
+          type: integer
+          maximum: 9999.0
+          minimum: 0.0
+          title: Ordernum
+          default: 0
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: CreateCharacterRequest
+    CreateCharacterVariantRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        appearancePrompt:
+          type: string
+          maxLength: 4000
+          title: Appearanceprompt
+          default: ''
+        voiceModel:
+          type: string
+          maxLength: 160
+          title: Voicemodel
+          default: ''
+        fromEpisode:
+          type: integer
+          minimum: 1.0
+          title: Fromepisode
+          default: 1
+        toEpisode:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Toepisode
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: CreateCharacterVariantRequest
+      description: 'A deliberate change of look or voice over a range of episodes.
+
+
+        Every override is optional and an empty one means "unchanged", so a variant that only
+
+        swaps the voice keeps the established look.'
+    CreateEpisodeRequest:
+      properties:
+        title:
+          type: string
+          maxLength: 80
+          title: Title
+          default: ''
+        synopsis:
+          type: string
+          maxLength: 4000
+          title: Synopsis
+          default: ''
+        sourceText:
+          type: string
+          maxLength: 200000
+          title: Sourcetext
+          default: ''
+      additionalProperties: false
+      type: object
+      title: CreateEpisodeRequest
+      description: 'Everything optional: the common case is "add the next episode" with nothing else.'
+    CreateProjectRequest:
+      properties:
+        title:
+          type: string
+          maxLength: 80
+          title: Title
+          default: ''
+        originalScript:
+          type: string
+          maxLength: 200000
+          title: Originalscript
+          default: ''
+        productionSettings:
+          $ref: '#/components/schemas/ProductionSettingsRequest'
+      additionalProperties: false
+      type: object
+      title: CreateProjectRequest
+    GenerateProjectRequest:
+      properties:
+        model:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Model
+        episodeId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Episodeid
+      additionalProperties: false
+      type: object
+      title: GenerateProjectRequest
+    GenerateVideoRequest:
+      properties:
+        model:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Model
+      additionalProperties: false
+      type: object
+      title: GenerateVideoRequest
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    OptimizeProjectRequest:
+      properties:
+        script:
+          anyOf:
+          - type: string
+            maxLength: 200000
+          - type: 'null'
+          title: Script
+        model:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Model
+      additionalProperties: false
+      type: object
+      title: OptimizeProjectRequest
+    ParseProjectRequest:
+      properties:
+        script:
+          type: string
+          maxLength: 200000
+          minLength: 1
+          title: Script
+        model:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Model
+        episodeId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Episodeid
+        replaceAll:
+          type: boolean
+          title: Replaceall
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - script
+      title: ParseProjectRequest
+    ProductionSettingsRequest:
+      properties:
+        mode:
+          anyOf:
+          - type: string
+            enum:
+            - comic
+            - drama
+          - type: 'null'
+          title: Mode
+        aspectRatio:
+          anyOf:
+          - type: string
+            enum:
+            - '9:16'
+            - '16:9'
+            - '1:1'
+          - type: 'null'
+          title: Aspectratio
+        width:
+          anyOf:
+          - type: integer
+            maximum: 4096.0
+            minimum: 256.0
+          - type: 'null'
+          title: Width
+        height:
+          anyOf:
+          - type: integer
+            maximum: 4096.0
+            minimum: 256.0
+          - type: 'null'
+          title: Height
+        fps:
+          anyOf:
+          - type: integer
+            enum:
+            - 24
+            - 30
+          - type: 'null'
+          title: Fps
+        targetDurationMs:
+          anyOf:
+          - type: integer
+            maximum: 600000.0
+            minimum: 10000.0
+          - type: 'null'
+          title: Targetdurationms
+        language:
+          anyOf:
+          - type: string
+            maxLength: 20
+            minLength: 1
+          - type: 'null'
+          title: Language
+        stylePrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Styleprompt
+        negativePrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Negativeprompt
+        currentStage:
+          anyOf:
+          - type: string
+            enum:
+            - script
+            - bible
+            - storyboard
+            - audio
+            - timeline
+            - export
+          - type: 'null'
+          title: Currentstage
+      additionalProperties: false
+      type: object
+      title: ProductionSettingsRequest
+      description: 'Every field optional so a PATCH can carry just the one the user changed.
+
+
+        Range checks live here for the OpenAPI schema; `project_service.production_settings`
+
+        stays the single place that resolves defaults and cross-field consistency.'
+    ReorderScenesRequest:
+      properties:
+        sceneIds:
+          items:
+            type: string
+          type: array
+          minItems: 1
+          title: Sceneids
+        episodeId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Episodeid
+      additionalProperties: false
+      type: object
+      required:
+      - sceneIds
+      title: ReorderScenesRequest
+    SetSceneCastRequest:
+      properties:
+        characterIds:
+          items:
+            type: string
+          type: array
+          maxItems: 32
+          title: Characterids
+      additionalProperties: false
+      type: object
+      title: SetSceneCastRequest
+      description: The full cast of a shot; sending an empty list clears it.
+    UpdateCharacterRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 80
+            minLength: 1
+          - type: 'null'
+          title: Name
+        aliases:
+          anyOf:
+          - type: string
+            maxLength: 400
+          - type: 'null'
+          title: Aliases
+        description:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Description
+        appearancePrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Appearanceprompt
+        voiceProvider:
+          anyOf:
+          - type: string
+            maxLength: 40
+          - type: 'null'
+          title: Voiceprovider
+        voiceModel:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Voicemodel
+        isLocked:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Islocked
+        orderNum:
+          anyOf:
+          - type: integer
+            maximum: 9999.0
+            minimum: 0.0
+          - type: 'null'
+          title: Ordernum
+      additionalProperties: false
+      type: object
+      title: UpdateCharacterRequest
+    UpdateCharacterVariantRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 80
+            minLength: 1
+          - type: 'null'
+          title: Name
+        appearancePrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Appearanceprompt
+        voiceModel:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Voicemodel
+        fromEpisode:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Fromepisode
+        toEpisode:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Toepisode
+      additionalProperties: false
+      type: object
+      title: UpdateCharacterVariantRequest
+    UpdateEpisodeRequest:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Title
+        synopsis:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Synopsis
+        sourceText:
+          anyOf:
+          - type: string
+            maxLength: 200000
+          - type: 'null'
+          title: Sourcetext
+        status:
+          anyOf:
+          - type: string
+            enum:
+            - draft
+            - storyboard
+            - generating
+            - done
+            - partial
+            - failed
+          - type: 'null'
+          title: Status
+      additionalProperties: false
+      type: object
+      title: UpdateEpisodeRequest
+    UpdateProjectRequest:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Title
+        originalScript:
+          anyOf:
+          - type: string
+            maxLength: 200000
+          - type: 'null'
+          title: Originalscript
+        seriesBible:
+          anyOf:
+          - type: string
+            maxLength: 200000
+          - type: 'null'
+          title: Seriesbible
+      additionalProperties: false
+      type: object
+      title: UpdateProjectRequest
+    UpdateSceneRequest:
+      properties:
+        narration:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Narration
+        dialogue:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Dialogue
+        speakerCharacterId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Speakercharacterid
+        visualPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Visualprompt
+        shotType:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Shottype
+        cameraMove:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Cameramove
+        durationMs:
+          anyOf:
+          - type: integer
+            maximum: 600000.0
+            minimum: 0.0
+          - type: 'null'
+          title: Durationms
+        subtitleText:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Subtitletext
+        isLocked:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Islocked
+      additionalProperties: false
+      type: object
+      title: UpdateSceneRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

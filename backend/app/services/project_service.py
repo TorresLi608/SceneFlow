@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import func, update
 from sqlmodel import Session, select
 
+from app.core.database import db
 from app.models import Project, Scene
 from app.services.config_service import active_model_config
 from app.services.usage_service import require_model_balance
@@ -14,6 +16,8 @@ from app.utils.common import now
 PROJECT_MODES = {"comic", "drama"}
 ASPECT_RATIOS = {"9:16", "16:9", "1:1"}
 PROJECT_STAGES = {"script", "bible", "storyboard", "audio", "timeline", "export"}
+# States a project can be pulled out of to start new work; anything else means a run owns it.
+IDLE_STATUSES = {"idle", "done", "partial", "failed"}
 
 
 def production_settings(payload: dict[str, Any], *, defaults: bool = False) -> dict[str, Any]:
@@ -78,44 +82,83 @@ def production_settings(payload: dict[str, Any], *, defaults: bool = False) -> d
     return values
 
 
-async def parse_project_model(session: Session, user_id: int, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    script = str(payload.get("script", "")).strip()
-    if not script:
-        raise HTTPException(400, "script is required")
+def claim_project_status(session: Session, project_id: str, *, allowed_from: set[str], to: str, **values: Any) -> None:
+    """Move a project into a busy state, or refuse if something else already owns it.
+
+    A conditional UPDATE rather than read-then-write: a double-clicked button used to start
+    two identical runs that fought over the same rows. Extra columns ride along in the same
+    statement so the claim and the fields it guards can never disagree.
+    """
+    claimed = session.execute(
+        update(Project)
+        .where(
+            Project.id == project_id,
+            Project.deleted_at.is_(None),
+            func.coalesce(Project.status, "idle").in_(sorted(allowed_from)),
+        )
+        .values(status=to, updated_at=now(), **values),
+        execution_options={"synchronize_session": False},
+    )
+    if claimed.rowcount != 1:
+        raise HTTPException(409, f"project is busy and cannot start {to} right now")
+
+
+def release_project_status(project_id: str, status: str = "idle") -> None:
+    with db() as session:
+        session.execute(
+            update(Project).where(Project.id == project_id).values(status=status, updated_at=now()),
+            execution_options={"synchronize_session": False},
+        )
+
+
+def prepare_parse(session: Session, user_id: int, project_id: str, script: str, title: str = "") -> dict[str, Any]:
+    """Resolve the script model and take the parse lock, creating the project on first use."""
     existing = session.exec(select(Project).where(Project.id == project_id, Project.deleted_at.is_(None))).first()
-    stamp = now()
     if existing and existing.user_id != user_id:
         raise HTTPException(403, "project does not belong to current user")
     config = active_model_config(session, user_id, "script", "故事生成/分镜拆分")
     require_model_balance(session, user_id, config)
     if existing:
-        existing.original_script = script
-        existing.status = "parsing"
-        existing.updated_at = stamp
-        session.add(existing)
+        claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="parsing", original_script=script)
     else:
+        stamp = now()
         session.add(
             Project(
                 id=project_id,
                 created_at=stamp,
                 updated_at=stamp,
                 user_id=user_id,
-                title=str(payload.get("title", "")).strip()[:80] or "新项目",
+                title=title.strip()[:80] or "新项目",
                 original_script=script,
                 status="parsing",
                 video_status="idle",
                 video_progress=0,
             )
         )
-    return {"script": script, "config": config}
+    return config
 
 
-def project_and_scenes(session: Session, project_id: str, user_id: int) -> tuple[Project, list[Scene]]:
+def scenes_with_assets(scenes: list[Scene]) -> list[Scene]:
+    """Scenes that cost money or manual effort, and so must not be discarded silently."""
+    return [scene for scene in scenes if scene.image_path or scene.audio_path or scene.video_path]
+
+
+def owned_project(session: Session, project_id: str, user_id: int) -> Project:
     project = session.exec(select(Project).where(Project.id == project_id, Project.deleted_at.is_(None))).first()
     if not project:
         raise HTTPException(404, "project not found")
     if project.user_id != user_id:
         raise HTTPException(403, "project does not belong to current user")
+    return project
+
+
+def project_and_scenes(session: Session, project_id: str, user_id: int) -> tuple[Project, list[Scene]]:
+    """The project and every shot in it, across all episodes.
+
+    Only for whole-series work. Anything that renders or reorders wants one episode's
+    shots, since order numbers restart each episode; use `episode_service.episode_scenes`.
+    """
+    project = owned_project(session, project_id, user_id)
     scenes = session.exec(
         select(Scene).where(Scene.project_id == project_id, Scene.deleted_at.is_(None)).order_by(Scene.order_num.asc())
     ).all()

@@ -40,6 +40,8 @@ export default function AiScriptPage() {
     generating: t("home.projectStatus.generating"),
     video_generating: t("home.projectStatus.video_generating"),
     done: t("home.projectStatus.done"),
+    partial: t("home.projectStatus.partial"),
+    failed: t("home.projectStatus.failed"),
   };
   const statusItems = [
     { value: "all", label: t("home.projectStatusAll") },

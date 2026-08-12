@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
+from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter
 from app.models import User
 from app.utils.common import now
 
@@ -72,6 +73,40 @@ def test_official_image_requires_balance_but_personal_config_does_not() -> None:
             database.DB_PATH = original_path
 
 
+def test_gemini_image_uses_generate_content_without_duplicate_api_version() -> None:
+    generate = AsyncMock(
+        return_value=SimpleNamespace(
+            parts=[SimpleNamespace(inline_data=SimpleNamespace(data=b"png", mime_type="image/png"))]
+        )
+    )
+    aio = SimpleNamespace(models=SimpleNamespace(generate_content=generate), aclose=AsyncMock())
+    client = Mock(return_value=SimpleNamespace(aio=aio))
+
+    with patch("app.llms.router.genai.Client", client):
+        result = asyncio.run(
+            ModelRouter()._generate_gemini_image(
+                "test-key",
+                "gemini-image",
+                "draw it",
+                [("reference.jpg", b"jpeg", "image/jpeg")],
+                "16:9",
+                "2K",
+                "https://generativelanguage.googleapis.com/v1beta",
+            )
+        )
+
+    assert result.data == b"png"
+    assert client.call_args.kwargs["http_options"] == {
+        "base_url": "https://generativelanguage.googleapis.com",
+        "timeout": GENERATION_TIMEOUT_SECONDS * 1000,
+    }
+    request = generate.call_args.kwargs
+    assert request["config"].response_modalities == ["TEXT", "IMAGE"]
+    assert request["config"].image_config.aspect_ratio == "16:9"
+    assert request["contents"][1].inline_data.data == b"jpeg"
+
+
 if __name__ == "__main__":
     test_generate_image_records_usage_without_references()
     test_official_image_requires_balance_but_personal_config_does_not()
+    test_gemini_image_uses_generate_content_without_duplicate_api_version()

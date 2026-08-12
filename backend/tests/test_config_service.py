@@ -151,7 +151,7 @@ def test_video_gemini_config_is_valid() -> None:
 
 
 def test_gemini_image_helpers() -> None:
-    assert image_base_url_for("gemini", "https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com/v1beta"
+    assert image_base_url_for("gemini", "https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com"
     assert _is_native_gemini_image_url("https://generativelanguage.googleapis.com/v1beta/openai")
     assert not _is_native_gemini_image_url("https://relay.example.com/v1")
     assert _openai_image_size("16:9") == "1536x1024"

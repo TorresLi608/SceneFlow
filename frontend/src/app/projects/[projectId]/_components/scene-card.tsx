@@ -2,26 +2,51 @@
 
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
-import { GripVertical, Image as ImageIcon, Mic } from "lucide-react";
+import { GripVertical, Image as ImageIcon, Lock, LockOpen, Mic } from "lucide-react";
 import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { backendBaseURL } from "@/lib/http/backend-client";
 import { cn } from "@/lib/utils";
-import type { Scene } from "@/types/project";
+import type { SceneEdit } from "@/store/project-store";
+import type { Character, Scene } from "@/types/project";
+
+/** Stands in for "nobody speaks": Select cannot carry an empty string as a value. */
+const NO_SPEAKER = "__none__";
 
 interface SceneCardProps {
   scene: Scene;
+  /** The series bible, so a shot can be cast and given a speaker. */
+  characters: Character[];
   onNarrationChange: (value: string) => void;
   onPromptChange: (value: string) => void;
+  /** The storyboard fields beyond narration and prompt: dialogue, framing, timing, lock. */
+  onFieldChange: (patch: SceneEdit) => void;
+  onCastChange: (characterIds: string[]) => void;
 }
 
-export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCardProps) {
+export function SceneCard({
+  scene,
+  characters,
+  onNarrationChange,
+  onPromptChange,
+  onFieldChange,
+  onCastChange,
+}: SceneCardProps) {
   const { t } = useI18n();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scene.id,
@@ -76,10 +101,32 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
             <Mic className="size-3.5" />
             {t("scene.audioStatus", { status: statusLabel[scene.audio.status] })}
           </Badge>
+          {scene.isLocked ? (
+            <Badge variant="outline" className="gap-1">
+              <Lock className="size-3.5" />
+              {t("scene.locked")}
+            </Badge>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+            onClick={() => onFieldChange({ isLocked: !scene.isLocked })}
+          >
+            {scene.isLocked ? <LockOpen className="mr-1 size-3.5" /> : <Lock className="mr-1 size-3.5" />}
+            {scene.isLocked ? t("scene.unlock") : t("scene.lock")}
+          </Button>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {scene.errorMessage ? (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            {scene.errorMessage}
+          </p>
+        ) : null}
+
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{t("scene.imageProgress")}</span>
@@ -148,6 +195,121 @@ export function SceneCard({ scene, onNarrationChange, onPromptChange }: SceneCar
             value={scene.visualPrompt}
             onChange={(event) => onPromptChange(event.target.value)}
             className="min-h-24"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`dialogue_${scene.id}`}>{t("scene.dialogue")}</Label>
+          <Textarea
+            id={`dialogue_${scene.id}`}
+            value={scene.dialogue}
+            onChange={(event) => onFieldChange({ dialogue: event.target.value })}
+            className="min-h-16"
+            placeholder={t("scene.dialoguePlaceholder")}
+          />
+        </div>
+
+        {characters.length > 0 ? (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>{t("scene.cast")}</Label>
+              {/* Toggles rather than a combobox: a cast is short, and seeing every card at
+                  once is what makes a missing character obvious. */}
+              <div className="flex flex-wrap gap-2">
+                {characters.map((character) => {
+                  const cast = scene.characterIds.includes(character.id);
+                  return (
+                    <Button
+                      key={character.id}
+                      type="button"
+                      size="sm"
+                      variant={cast ? "default" : "outline"}
+                      onClick={() =>
+                        onCastChange(
+                          cast
+                            ? scene.characterIds.filter((id) => id !== character.id)
+                            : [...scene.characterIds, character.id]
+                        )
+                      }
+                    >
+                      {character.name}
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">{t("scene.castHint")}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t("scene.speaker")}</Label>
+              <Select
+                value={scene.speakerCharacterId ?? NO_SPEAKER}
+                onValueChange={(value) =>
+                  // "" clears it; the Select can also hand back null when nothing is picked.
+                  onFieldChange({ speakerCharacterId: !value || value === NO_SPEAKER ? "" : value })
+                }
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_SPEAKER}>{t("scene.speakerNone")}</SelectItem>
+                  {characters.map((character) => (
+                    <SelectItem key={character.id} value={character.id}>
+                      {character.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t("scene.speakerHint")}</p>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor={`shot_${scene.id}`}>{t("scene.shotType")}</Label>
+            <Input
+              id={`shot_${scene.id}`}
+              value={scene.shotType}
+              onChange={(event) => onFieldChange({ shotType: event.target.value })}
+              placeholder={t("scene.shotTypePlaceholder")}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`camera_${scene.id}`}>{t("scene.cameraMove")}</Label>
+            <Input
+              id={`camera_${scene.id}`}
+              value={scene.cameraMove}
+              onChange={(event) => onFieldChange({ cameraMove: event.target.value })}
+              placeholder={t("scene.cameraMovePlaceholder")}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`duration_${scene.id}`}>{t("scene.durationMs")}</Label>
+            <Input
+              id={`duration_${scene.id}`}
+              type="number"
+              min={0}
+              max={600000}
+              step={100}
+              value={scene.durationMs}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                onFieldChange({ durationMs: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0 });
+              }}
+            />
+            {/* 0 is not "no length" — it hands the shot back to its voice track. */}
+            <p className="text-xs text-muted-foreground">{t("scene.durationHint")}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`subtitle_${scene.id}`}>{t("scene.subtitleText")}</Label>
+          <Textarea
+            id={`subtitle_${scene.id}`}
+            value={scene.subtitleText}
+            onChange={(event) => onFieldChange({ subtitleText: event.target.value })}
+            className="min-h-16"
+            placeholder={t("scene.subtitlePlaceholder")}
           />
         </div>
       </CardContent>

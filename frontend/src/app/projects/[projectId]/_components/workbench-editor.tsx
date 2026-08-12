@@ -26,14 +26,19 @@ import {
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 import {
+  createEpisodeAction,
   createProjectAction,
+  deleteEpisodeAction,
   deleteProjectAction,
   generateProjectAction,
   generateVideoAction,
+  getEpisodeAction,
+  listCharactersAction,
   listProjectsAction,
   optimizeProjectAction,
   parseProjectAction,
   reorderProjectScenesAction,
+  setSceneCastAction,
   updateProjectAction,
   updateProductionSettingsAction,
   updateProjectSceneAction,
@@ -60,10 +65,11 @@ import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
 import { configsByPurpose, providerLabel } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
-import { useProjectStore } from "@/store/project-store";
+import { useProjectStore, type SceneEdit } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
 import type { UserConfig } from "@/types/auth";
 import type {
+  EpisodeSummary,
   ProductionSettings,
   ProjectStage,
   ProjectStatus,
@@ -71,6 +77,7 @@ import type {
   SceneUpdatePayload,
 } from "@/types/project";
 import { ProductionSettingsForm } from "./production-settings";
+import { CharacterPanel } from "./character-panel";
 import { SceneCard } from "./scene-card";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -112,6 +119,9 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  const [episodeToDelete, setEpisodeToDelete] = useState<EpisodeSummary | null>(null);
+  // Set when a reparse would discard rendered shots; the backend held off until the user confirms.
+  const [reparsePrompt, setReparsePrompt] = useState<{ discards: number; pending: number } | null>(null);
 
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
@@ -133,11 +143,20 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const updateCurrentScript = useProjectStore((state) => state.updateCurrentScript);
   const updateScene = useProjectStore((state) => state.updateScene);
   const reorderScenes = useProjectStore((state) => state.reorderScenes);
+  const openEpisode = useProjectStore((state) => state.openEpisode);
+  const upsertEpisode = useProjectStore((state) => state.upsertEpisode);
+  const removeEpisode = useProjectStore((state) => state.removeEpisode);
+  const setSceneCast = useProjectStore((state) => state.setSceneCast);
+  const dropCharacter = useProjectStore((state) => state.dropCharacter);
 
   const currentProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId),
     [projects, selectedProjectId]
   );
+
+  const episodes = currentProject?.episodes ?? [];
+  const currentEpisodeId = currentProject?.currentEpisodeId ?? null;
+  const currentEpisode = episodes.find((episode) => episode.id === currentEpisodeId) ?? null;
 
   const meQuery = useQuery({
     queryKey: queryKeys.me,
@@ -158,6 +177,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     enabled: hydrated && Boolean(token),
     staleTime: 30_000,
   });
+
+  // Shares a cache entry with the character panel, which owns the writes.
+  const charactersQuery = useQuery({
+    queryKey: queryKeys.characters(selectedProjectId),
+    queryFn: () => listCharactersAction(selectedProjectId),
+    enabled: hydrated && Boolean(token) && Boolean(selectedProjectId),
+  });
+  const characters = useMemo(() => charactersQuery.data?.characters ?? [], [charactersQuery.data?.characters]);
 
   const activeUserConfigByPurpose = useMemo(
     () =>
@@ -189,16 +216,34 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const hasUsableImageConfig = Boolean(activeImageConfig);
 
   const parseProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; script: string; model?: string }) =>
+    mutationFn: (params: {
+      projectId: string;
+      script: string;
+      model?: string;
+      episodeId?: string;
+      replaceAll?: boolean;
+    }) =>
       parseProjectAction(params.projectId, {
         script: params.script,
         model: params.model,
+        episodeId: params.episodeId,
+        replaceAll: params.replaceAll,
       }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       setProjectStatus(projectId, "parsing");
     },
     onSuccess: (response) => {
+      if (!response.applied) {
+        setProjectStatus(response.projectId, "idle");
+        setReparsePrompt({
+          discards: response.discardsGeneratedScenes,
+          pending: response.pendingScenes.length,
+        });
+        return;
+      }
+
+      setReparsePrompt(null);
       applyParsedScenes(
         response.projectId,
         response.status,
@@ -257,7 +302,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const updateSceneMutation = useMutation({
-    mutationFn: (params: { projectId: string; sceneId: string; patch: Partial<Pick<SceneUpdatePayload, "narration" | "visualPrompt">> }) =>
+    mutationFn: (params: { projectId: string; sceneId: string; patch: SceneEdit }) =>
       updateProjectSceneAction(params.projectId, params.sceneId, params.patch),
     onError: (error) => {
       setStatusMessage(resolveRequestError(error, t("home.saveSceneFailed")));
@@ -265,16 +310,76 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const reorderScenesMutation = useMutation({
-    mutationFn: (params: { projectId: string; sceneIds: string[] }) =>
-      reorderProjectScenesAction(params.projectId, { sceneIds: params.sceneIds }),
+    mutationFn: (params: { projectId: string; sceneIds: string[]; episodeId?: string }) =>
+      reorderProjectScenesAction(params.projectId, {
+        sceneIds: params.sceneIds,
+        episodeId: params.episodeId,
+      }),
     onError: (error) => {
       setStatusMessage(resolveRequestError(error, t("home.reorderScenesFailed")));
     },
   });
 
+  const setSceneCastMutation = useMutation({
+    mutationFn: (params: { projectId: string; sceneId: string; characterIds: string[]; previous: string[] }) =>
+      setSceneCastAction(params.projectId, params.sceneId, { characterIds: params.characterIds }),
+    onSuccess: (response) => {
+      setSceneCast(response.sceneId, response.characterIds);
+    },
+    onError: (error, variables) => {
+      // The toggle already landed optimistically, so roll it back to what the server has.
+      setSceneCast(variables.sceneId, variables.previous);
+      setStatusMessage(resolveRequestError(error, t("scene.castFailed")));
+    },
+  });
+
+  const openEpisodeMutation = useMutation({    mutationFn: (params: { projectId: string; episodeId: string }) =>
+      getEpisodeAction(params.projectId, params.episodeId),
+    onSuccess: (response, variables) => {
+      openEpisode(variables.projectId, response.episode.id, response.episode.scenes);
+      setStatusMessage(null);
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, t("home.episodeLoadFailed")));
+    },
+  });
+
+  const addEpisodeMutation = useMutation({
+    mutationFn: (projectId: string) => createEpisodeAction(projectId, {}),
+    onSuccess: (response, projectId) => {
+      // A new episode is empty, so switching to it needs no extra fetch.
+      upsertEpisode(projectId, response.episode);
+      openEpisode(projectId, response.episode.id, []);
+      setStatusMessage(t("home.episodeAdded", { title: response.episode.title }));
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, t("home.episodeAddFailed")));
+    },
+  });
+
+  const deleteEpisodeMutation = useMutation({
+    mutationFn: (params: { projectId: string; episodeId: string }) =>
+      deleteEpisodeAction(params.projectId, params.episodeId),
+    onSuccess: (_, variables) => {
+      setEpisodeToDelete(null);
+      removeEpisode(variables.projectId, variables.episodeId);
+      // The store fell back to the newest remaining episode but has none of its shots.
+      const fallback = useProjectStore
+        .getState()
+        .projects.find((project) => project.id === variables.projectId)?.currentEpisodeId;
+      if (fallback) {
+        openEpisodeMutation.mutate({ projectId: variables.projectId, episodeId: fallback });
+      }
+      setStatusMessage(t("home.episodeDeleted"));
+    },
+    onError: (error) => {
+      setStatusMessage(resolveRequestError(error, t("home.episodeDeleteFailed")));
+    },
+  });
+
   const generateProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; model?: string }) =>
-      generateProjectAction(params.projectId, { model: params.model }),
+    mutationFn: (params: { projectId: string; model?: string; episodeId?: string }) =>
+      generateProjectAction(params.projectId, { model: params.model, episodeId: params.episodeId }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       setProjectStatus(projectId, "generating");
@@ -298,9 +403,10 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       setStatusMessage(null);
     },
     onSuccess: (response, variables) => {
+      // Only the script changed. Forcing status back to idle here used to hide a run that
+      // was still in flight.
       updateProjectFields(variables.projectId, {
         originalScript: response.optimizedScript,
-        status: "idle",
       });
 
       if (response.warning) {
@@ -470,6 +576,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
             setStatusMessage(t("home.status.generationDone"));
           }
 
+          if (status === "partial") {
+            setStatusMessage(t("home.status.generationPartial"));
+          }
+
+          if (status === "failed") {
+            setStatusMessage(t("home.status.generationFailed"));
+          }
+
           if (videoStatus === "success") {
             setStatusMessage(t("home.status.videoDone"));
           }
@@ -552,10 +666,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     }, 500);
   };
 
-  const saveScenePatch = (
-    sceneId: string,
-    patch: Partial<Pick<SceneUpdatePayload, "narration" | "visualPrompt">>
-  ) => {
+  const saveScenePatch = (sceneId: string, patch: SceneEdit) => {
     if (!currentProject) {
       return;
     }
@@ -583,6 +694,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       reorderScenesMutation.mutate({
         projectId: nextProject.id,
         sceneIds: nextProject.scenes.map((scene) => scene.id),
+        episodeId: nextProject.currentEpisodeId ?? undefined,
       });
     }
   };
@@ -856,6 +968,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                           projectId: currentProject.id,
                           script: currentProject.originalScript,
                           model: activeScriptConfig?.modelSeries,
+                          episodeId: currentProject.currentEpisodeId ?? undefined,
                         });
                       }}
                       disabled={!currentProject || !hasUsableScriptConfig || currentProject.status === "parsing"}
@@ -873,6 +986,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                         generateProjectMutation.mutate({
                           projectId: currentProject.id,
                           model: activeImageConfig?.modelSeries,
+                          episodeId: currentProject.currentEpisodeId ?? undefined,
                         });
                       }}
                       disabled={
@@ -959,12 +1073,82 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
               </CardContent>
             </Card>
 
+            {currentProject ? (
+              <CharacterPanel
+                projectId={currentProject.id}
+                onStatus={setStatusMessage}
+                onCharacterDeleted={dropCharacter}
+              />
+            ) : null}
+
             <Card className="min-h-[500px] border-border/80">
-              <CardHeader>
-                <CardTitle className="text-base">{t("home.sceneFlowTitle")}</CardTitle>
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-base">{t("home.sceneFlowTitle")}</CardTitle>
+                  {currentEpisode ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t("home.episodeShotCount", { count: currentProject?.scenes.length ?? 0 })}
+                    </span>
+                  ) : null}
+                </div>
+
+                {/* Shots below belong to the selected episode only, so the switcher sits with them. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {episodes.map((episode) => (
+                    <Button
+                      key={episode.id}
+                      size="sm"
+                      variant={episode.id === currentEpisodeId ? "default" : "outline"}
+                      onClick={() => {
+                        if (!currentProject || episode.id === currentEpisodeId) {
+                          return;
+                        }
+                        openEpisodeMutation.mutate({ projectId: currentProject.id, episodeId: episode.id });
+                      }}
+                      disabled={openEpisodeMutation.isPending}
+                    >
+                      {episode.title}
+                      <Badge variant="secondary" className="ml-2">
+                        {episode.sceneCount}
+                      </Badge>
+                    </Button>
+                  ))}
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (currentProject) {
+                        addEpisodeMutation.mutate(currentProject.id);
+                      }
+                    }}
+                    disabled={!currentProject || addEpisodeMutation.isPending}
+                  >
+                    <Plus className="mr-1 size-4" />
+                    {t("home.addEpisode")}
+                  </Button>
+
+                  {currentEpisode ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      onClick={() => setEpisodeToDelete(currentEpisode)}
+                      disabled={deleteEpisodeMutation.isPending}
+                    >
+                      <Trash2 className="mr-1 size-4" />
+                      {t("home.deleteEpisode")}
+                    </Button>
+                  ) : null}
+                </div>
               </CardHeader>
               <CardContent>
                 {!currentProject ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-40 w-full" />
+                    <Skeleton className="h-40 w-full" />
+                  </div>
+                ) : openEpisodeMutation.isPending ? (
                   <div className="space-y-3">
                     <Skeleton className="h-40 w-full" />
                     <Skeleton className="h-40 w-full" />
@@ -986,6 +1170,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                           >
                             <SceneCard
                               scene={scene}
+                              characters={characters}
                               onNarrationChange={(value) =>
                                 saveScenePatch(scene.id, {
                                   narration: value,
@@ -996,6 +1181,17 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                                   visualPrompt: value,
                                 })
                               }
+                              onFieldChange={(patch) => saveScenePatch(scene.id, patch)}
+                              onCastChange={(characterIds) => {
+                                const previous = scene.characterIds;
+                                setSceneCast(scene.id, characterIds);
+                                setSceneCastMutation.mutate({
+                                  projectId: currentProject.id,
+                                  sceneId: scene.id,
+                                  characterIds,
+                                  previous,
+                                });
+                              }}
                             />
                           </div>
                         ))}
@@ -1008,6 +1204,50 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
         </section>
       </div>
+
+      <Dialog
+        open={reparsePrompt !== null}
+        onOpenChange={(open) => {
+          if (!open && !parseProjectMutation.isPending) setReparsePrompt(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("home.reparseTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("home.reparseConfirm", {
+                count: reparsePrompt?.discards ?? 0,
+                pending: reparsePrompt?.pending ?? 0,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setReparsePrompt(null)}
+              disabled={parseProjectMutation.isPending}
+            >
+              {t("home.reparseKeep")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!currentProject) return;
+                parseProjectMutation.mutate({
+                  projectId: currentProject.id,
+                  script: currentProject.originalScript,
+                  model: activeScriptConfig?.modelSeries,
+                  episodeId: currentProject.currentEpisodeId ?? undefined,
+                  replaceAll: true,
+                });
+              }}
+              disabled={!currentProject || parseProjectMutation.isPending}
+            >
+              {t("home.reparseReplace")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={deleteProjectOpen}
@@ -1039,6 +1279,48 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
             >
               <Trash2 data-icon="inline-start" />
               {deleteProjectMutation.isPending ? t("home.deletingProject") : t("home.deleteProject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(episodeToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleteEpisodeMutation.isPending) setEpisodeToDelete(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("home.deleteEpisode")}</DialogTitle>
+            <DialogDescription>
+              {t("home.deleteEpisodeConfirm", {
+                title: episodeToDelete?.title ?? "",
+                count: episodeToDelete?.sceneCount ?? 0,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEpisodeToDelete(null)}
+              disabled={deleteEpisodeMutation.isPending}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (currentProject && episodeToDelete) {
+                  deleteEpisodeMutation.mutate({
+                    projectId: currentProject.id,
+                    episodeId: episodeToDelete.id,
+                  });
+                }
+              }}
+              disabled={!currentProject || !episodeToDelete || deleteEpisodeMutation.isPending}
+            >
+              <Trash2 data-icon="inline-start" />
+              {t("home.deleteEpisode")}
             </Button>
           </DialogFooter>
         </DialogContent>

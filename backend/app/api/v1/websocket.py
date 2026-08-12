@@ -22,7 +22,9 @@ def protocol_token(value: str) -> tuple[str, str]:
 async def project_ws(websocket: WebSocket, project_id: str) -> None:
     token, protocol = protocol_token(websocket.headers.get("sec-websocket-protocol") or "")
     if not token:
-        token = (websocket.headers.get("authorization") or "").replace("Bearer", "").strip()
+        header = (websocket.headers.get("authorization") or "").strip()
+        # Prefix-strip, not replace: a token whose body contains "Bearer" was being mangled.
+        token = header[7:].strip() if header[:7].lower() == "bearer " else header
     try:
         user_id = user_id_from_token(token)
     except Exception:

@@ -28,3 +28,4 @@ PRIVATE_GENERATED_DIR = Path(os.getenv("SCENEFLOW_PRIVATE_GENERATED_DIR", "./pri
 CJK_FONT_PATH = os.getenv("SCENEFLOW_CJK_FONT_PATH", "").strip()
 CJK_FONT_NAME = os.getenv("SCENEFLOW_CJK_FONT_NAME", "Arial Unicode MS").strip() or "Arial Unicode MS"
 MAX_CONTEXT_TOKENS = max(10_000, int(os.getenv("SCENEFLOW_MAX_CONTEXT_TOKENS", "100000")))
+LOG_LEVEL = os.getenv("SCENEFLOW_LOG_LEVEL", "INFO").strip().upper()

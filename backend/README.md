@@ -13,9 +13,9 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ## Structure
 
 - `app/api/v1/`: FastAPI endpoints and request/response orchestration.
-- `app/core/`: configuration, database, security, and realtime infrastructure.
+- `app/core/`: configuration, database, logging, security, and realtime infrastructure.
 - `app/models/`: SQLModel table definitions; the single source of truth for the schema.
-- `app/schemas/`: response serialization shared by API modules.
+- `app/schemas/`: `requests.py` holds the Pydantic request bodies, `serializers.py` the response shaping.
 - `app/services/`: model, usage, chat, artifact, project, and generation business logic.
 - `app/graph/`: context and agent workflow orchestration.
 - `app/llms/`: provider routing and model registry.
@@ -38,6 +38,7 @@ cd backend
 - `SCENEFLOW_AES_KEY` (default `dev-aes-key-change-me`, internally SHA-256 -> 32 bytes)
 - `SCENEFLOW_SUPER_ADMIN_PASSWORD` (default `superAdmin@123` in development)
 - `SCENEFLOW_MAX_CONTEXT_TOKENS` (default `100000`)
+- `SCENEFLOW_LOG_LEVEL` (default `INFO`)
 - `SCENEFLOW_PUBLIC_BASE_URL` (default `http://127.0.0.1:8080`)
 - `SCENEFLOW_CORS_ORIGINS` (comma-separated; defaults to the two local frontend origins)
 - `SCENEFLOW_PRIVATE_GENERATED_DIR` (default `./private_generated`)
@@ -95,14 +96,44 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 
 ### Project Parse (JWT required)
 - `POST /api/projects/:id/parse`
-  - request body: `{ "script": "...", "model": "gpt-4o" }`
-  - parses script to scenes and persists to DB
+  - request body: `{ "script": "...", "model": "gpt-4o", "episodeId": null, "replaceAll": false }`
+  - parses script to scenes and persists them into one episode; `episodeId` omitted targets
+    the current (highest-numbered) episode
+  - Re-splitting is destructive. When the target episode already has shots carrying a
+    generated image or voice track, the response comes back with `applied: false`,
+    `discardsGeneratedScenes: N`, and the parsed shots under `pendingScenes` instead of
+    overwriting them. The client confirms, then repeats the call with `replaceAll: true`.
+
+### Episodes (JWT required)
+- `GET /api/projects/:id/episodes` — summaries (no script, no shots) plus a shot count each
+- `POST /api/projects/:id/episodes` — append the next episode; the number comes from the
+  highest live one, so a soft-deleted number is reused
+- `GET /api/projects/:id/episodes/:episodeId` — the episode with its script and ordered shots
+- `PATCH /api/projects/:id/episodes/:episodeId` — title, synopsis, source text, status
+- `DELETE /api/projects/:id/episodes/:episodeId` — soft-deletes the episode and its shots;
+  refused with 409 while the project is busy, since a run holds those rows open
+
+### Characters (JWT required)
+- `GET /api/projects/:id/characters` — the series bible, each card with its variants
+- `POST /api/projects/:id/characters`, `PATCH .../:characterId`, `DELETE .../:characterId`
+  - deleting soft-deletes the card and its variants and drops it from every shot's cast,
+    since a deleted character left in a cast would keep steering prompts
+- `POST /api/projects/:id/characters/:characterId/portrait`
+  - renders the reference portrait and freezes the provider/model that produced it, so
+    changing the account default later cannot restyle an established character
+  - synchronous, and refused with 409 on a locked card
+- `POST /api/projects/:id/characters/:characterId/variants`, `PATCH .../:variantId`, `DELETE .../:variantId`
+- `PUT /api/projects/:id/scenes/:sceneId/characters` — replace a shot's cast; `[]` clears it
 
 ### Project Generate (JWT required)
 - `POST /api/projects/:id/generate`
   - requires an active image configuration
+  - renders one episode's shots; `episodeId` omitted targets the current episode
+  - shots with `isLocked` are skipped; all of them locked is a 400 rather than a silent no-op
   - generates real storyboard images and TTS audio concurrently
   - TTS supports Edge/System/OpenAI audio configurations
+  - the terminal status reflects what landed: `done`, `partial`, or `failed`, written to both
+    the project (which holds the busy lock) and the episode that was rendered
 - `PATCH /api/projects/:id/production-settings`
 - `GET /api/projects/:id/jobs`
 - `POST /api/jobs/:id/cancel`
@@ -110,8 +141,39 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 
 `generation_jobs` currently provides persistence, idempotency, leases, cancel, and retry services. The worker processor and project job UI are still pending; existing image/audio generation still starts in the API process.
 
-## Short-drama orchestration
+## Data model
 
+`Project` is a series. Its content hangs off `Episode` rows, and each `Scene` is one shot
+inside an episode. `Character` plus `CharacterVariant` form the series bible that keeps a
+cast member's look, image model, and voice stable across episodes; `SceneCharacter` records
+who appears in a shot. `ExportJob` tracks a merged render of up to
+`MAX_EXPORT_EPISODES` (10) episodes.
+
+Order numbers restart at 1 in every episode, so a serialized project carries **one episode's**
+shots under `scenes` — never the whole series' merged together — alongside `episodes` (summaries)
+and `currentEpisodeId`. Anything that renders or reorders resolves a target episode first;
+`episode_service.resolve_episode` defaults an unnamed one to the highest-numbered episode.
+`project_service.project_and_scenes` still spans the whole series and is only for series-wide work.
+
+Generated media is referenced by a path relative to `SCENEFLOW_PRIVATE_GENERATED_DIR`, never
+by URL. Signed links expire after 30 days, so a URL stored in a row would turn every asset in
+a long-running series into a 404; `schemas/serializers.py` mints a fresh link per response
+instead. `_migrate_scene_assets` in `app/core/database.py` upgrades older rows in place and
+drops references whose token no longer decodes, since those links were already dead.
+
+A character card pins a look, an image model, and a voice; a `CharacterVariant` is how a
+series says "this one changed in episode 5" without the drift being accidental.
+`character_service.resolve_character` folds the variant covering an episode over the card,
+and a variant only overrides the fields it actually sets — an empty appearance prompt means
+"the look did not change". Overlapping ranges resolve to the latest change.
+
+At render time a shot's cast contributes two things: the appearance prompts, which work on
+every provider, and the reference portraits, which are passed image-to-image through
+`edit_image` and are what actually holds a face steady. A voice override is honoured only on
+the configured audio provider, because a card stores a provider and a model but never
+credentials. `ExportJob` is still schema only — no service or endpoint reads it yet.
+
+## Short-drama orchestration
 - LangGraph is reserved for checkpointed LLM decisions and human approval, such as script structure and continuity review.
 - `generation_jobs` plus a worker owns deterministic image, TTS, video, and FFmpeg tasks.
 - Rollback means selecting an earlier asset version and marking downstream results stale, not deleting generated assets.
@@ -126,8 +188,12 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 ## Notes
 
 - Data access goes through SQLModel (SQLAlchemy 2.x) sessions; `app/models/` owns the schema and `init_db()` creates it with `SQLModel.metadata.create_all()`.
+- Request bodies are Pydantic models in `app/schemas/requests.py`, all extending `CamelModel`: the frontend sends camelCase, the backend reads snake_case, and an unknown field is a 422 rather than a silently dropped value.
 - Timestamp columns stay ISO-8601 strings (not `datetime`) because the code compares them as strings and the API passes them straight through.
 - The hand-written `ALTER TABLE` compatibility steps and the `user_configs`/`official_model_configs` -> `model_configs` data migration in `app/core/database.py` deliberately remain raw SQL; they operate on tables that no longer have models.
+- Databases created before the episode layer keep unused `scenes.image_url`/`audio_url` columns only if the rename could not run; the current column names are `image_path`/`audio_path`.
+- `_backfill_first_episode` gives every episode-less project an episode 1 that adopts its shots, then attaches any remaining episode-less shot to its project's earliest episode. Listing projects never creates one: a GET has no business writing rows.
+- Starting work on a project takes a conditional UPDATE on `projects.status` (`claim_project_status`), so a double-clicked button cannot start two runs over the same rows. The lock stays at project level even though rendering is per episode, so one run owns the series at a time.
 - Passwords are stored by bcrypt hash; model API keys are encrypted with AES-GCM.
 - Generated media is stored under `private_generated` and served only through expiring signed URLs.
 - Provider API keys are encrypted by AES-256-GCM before persisting.
