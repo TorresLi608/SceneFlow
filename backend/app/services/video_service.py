@@ -5,11 +5,14 @@ import base64
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import tempfile
 import time
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from dashscope.aigc.video_synthesis import VideoSynthesis
+from dashscope.utils.oss_utils import OssUtils
 from google import genai
 from google.genai import types
 
@@ -213,6 +216,12 @@ def is_native_qwen_video_url(base_url: str) -> bool:
     return (urlparse(base_url or QWEN_VIDEO_BASE_URL).hostname or "").lower() == "dashscope.aliyuncs.com"
 
 
+def qwen_media_policy_model(model: str) -> str:
+    return {"wan2.5-i2v": "wan2.6-i2v", "wan2.7-i2v": "wan2.6-i2v", "wan2.7-r2v": "wan2.6-r2v"}.get(
+        model.strip().lower(), model.strip()
+    )
+
+
 async def _generate_doubao_video(
     api_key: str,
     model: str,
@@ -349,48 +358,20 @@ async def _generate_qwen_video(
         payload["parameters"]["resolution"] = resolve_qwen_video_quality(quality).upper()
     base = (base_url or QWEN_VIDEO_BASE_URL).strip().rstrip("/")
     headers = {"Authorization": f"Bearer {api_key.strip()}", "X-DashScope-Async": "enable"}
+    if is_native_qwen_video_url(base):
+        return await _generate_qwen_video_sdk(
+            api_key, model, prompt, quality, duration, prompt_extend,
+            references, reference_video, driving_audio, base,
+        )
     async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
-        media_headers: dict[str, str] = {}
-
         async def media_url(value: dict[str, Any], kind: str) -> str:
             if kind == "image":
                 data, mime_type = parse_reference(value)
-                filename = Path(str(value.get("name") or "reference.png")).name
             elif kind == "video":
-                data, mime_type, filename = parse_media(value, {"video/mp4", "video/quicktime", "video/webm"}, MAX_MEDIA_BYTES)
+                data, mime_type, _ = parse_media(value, {"video/mp4", "video/quicktime", "video/webm"}, MAX_MEDIA_BYTES)
             else:
-                data, mime_type, filename = parse_media(value, {"audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4"}, MAX_MEDIA_BYTES)
-            if not is_native_qwen_video_url(base):
-                return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
-            policy = await client.get(
-                f"{base}/uploads", params={"action": "getPolicy", "model": model}, headers={"Authorization": headers["Authorization"]}
-            )
-            policy.raise_for_status()
-            output = policy.json().get("output", policy.json())
-            host = output.get("upload_host") or output.get("host")
-            key = output.get("upload_file_path") or output.get("object_key") or output.get("key") or f"{output.get('upload_dir', '').rstrip('/')}/{filename}"
-            if not host or not key.strip("/"):
-                raise ValueError("Qwen media upload policy returned no host or object key")
-            form = {"key": key}
-            for source, target in {
-                "policy": "policy", "signature": "signature", "oss_access_key_id": "OSSAccessKeyId",
-                "x_oss_security_token": "x-oss-security-token", "success_action_status": "success_action_status",
-                "x_oss_signature_version": "x-oss-signature-version", "x_oss_credential": "x-oss-credential",
-                "x_oss_date": "x-oss-date", "x_oss_signature": "x-oss-signature",
-                "x_oss_object_acl": "x-oss-object-acl", "x_oss_forbid_overwrite": "x-oss-forbid-overwrite",
-                "callback": "callback",
-            }.items():
-                if output.get(source):
-                    form[target] = str(output[source])
-            for field_name, value in output.items():
-                if field_name.startswith("x-oss-") and value and field_name not in form:
-                    form[field_name] = str(value)
-            form.setdefault("x-oss-object-acl", "private")
-            form.setdefault("x-oss-forbid-overwrite", "true")
-            upload = await client.post(host, data=form, files={"file": (filename, data, mime_type)})
-            upload.raise_for_status()
-            media_headers["X-DashScope-OssResourceResolve"] = "enable"
-            return f"oss://{key}"
+                data, mime_type, _ = parse_media(value, {"audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4"}, MAX_MEDIA_BYTES)
+            return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
 
         media: list[dict[str, str]] = []
         normalized_model = model.lower()
@@ -407,7 +388,6 @@ async def _generate_qwen_video(
                 media.append({"type": "driving_audio", "url": await media_url(driving_audio, "audio")})
             if media:
                 payload["input"]["media"] = media
-        headers.update(media_headers)
         response = await client.post(f"{base}/services/aigc/video-generation/video-synthesis", headers=headers, json=payload)
         response.raise_for_status()
         task_id = str(response.json().get("output", {}).get("task_id") or "")
@@ -430,6 +410,83 @@ async def _generate_qwen_video(
             if status in {"FAILED", "CANCELED", "UNKNOWN"}:
                 raise ValueError(f"Qwen video task {status.lower()}: {output.get('message') or output.get('code') or ''}")
         raise TimeoutError("Qwen video generation timed out")
+
+
+async def _generate_qwen_video_sdk(
+    api_key: str,
+    model: str,
+    prompt: str,
+    quality: str,
+    duration: int,
+    prompt_extend: bool,
+    references: list[dict[str, Any]],
+    reference_video: dict[str, Any] | None,
+    driving_audio: dict[str, Any] | None,
+    base: str,
+) -> VideoResult:
+    temp_files: list[str] = []
+    media: list[dict[str, str]] = []
+
+    async def upload(value: dict[str, Any], kind: str) -> str:
+        if kind == "image":
+            data, mime_type = parse_reference(value)
+            filename = Path(str(value.get("name") or "reference.png")).name
+        elif kind == "video":
+            data, mime_type, filename = parse_media(value, {"video/mp4", "video/quicktime", "video/webm"}, MAX_MEDIA_BYTES)
+        else:
+            data, mime_type, filename = parse_media(value, {"audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4"}, MAX_MEDIA_BYTES)
+        suffix = Path(filename).suffix or "." + mime_type.split("/", 1)[-1].replace("jpeg", "jpg")
+        temp = tempfile.NamedTemporaryFile(prefix="sceneflow-qwen-", suffix=suffix, delete=False)
+        temp.write(data)
+        temp.close()
+        temp_files.append(temp.name)
+        result = await asyncio.to_thread(
+            OssUtils.upload,
+            model=qwen_media_policy_model(model),
+            file_path=temp.name,
+            api_key=api_key.strip(),
+            base_address=base,
+        )
+        return result[0]
+
+    try:
+        if "-r2v" in model.lower():
+            input_data: dict[str, Any] = {"reference_image_urls": [await upload(item, "image") for item in references]}
+        else:
+            for index, item in enumerate(references):
+                media.append({"type": "first_frame" if index == 0 else "reference_image", "url": await upload(item, "image")})
+            if reference_video:
+                media.append({"type": "video", "url": await upload(reference_video, "video")})
+            if driving_audio:
+                media.append({"type": "driving_audio", "url": await upload(driving_audio, "audio")})
+            input_data = {"media": media} if media else {}
+        task = await asyncio.to_thread(
+            VideoSynthesis.async_call,
+            model=model, prompt=prompt, extra_input=input_data, api_key=api_key.strip(), duration=duration,
+            prompt_extend=prompt_extend, watermark=False, resolution=quality.upper() if quality else None,
+            headers={"X-DashScope-OssResourceResolve": "enable"} if media or "reference_image_urls" in input_data else {}, base_address=base,
+        )
+        if getattr(task, "status_code", 200) != 200:
+            raise ValueError(f"Qwen video task creation failed: {getattr(task, 'message', '') or getattr(task, 'code', '')}")
+        result = await asyncio.to_thread(
+            VideoSynthesis.wait, task, api_key=api_key.strip(), wait_timeout=GENERATION_TIMEOUT_SECONDS
+        )
+        if getattr(result, "status_code", 200) != 200:
+            raise ValueError(f"Qwen video task failed: {getattr(result, 'message', '') or getattr(result, 'code', '')}")
+        output = getattr(result, "output", None) or {}
+        status = str(output.get("task_status") or "").upper()
+        if status and status != "SUCCEEDED":
+            raise ValueError(f"Qwen video task {status.lower()}: {output.get('message') or output.get('code') or ''}")
+        video_url = str((output.get("video_url") if hasattr(output, "get") else getattr(output, "video_url", "")) or "")
+        if not video_url:
+            raise ValueError("Qwen video task succeeded without a video URL")
+        async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            video_response = await client.get(video_url)
+            video_response.raise_for_status()
+            return VideoResult(video_response.content)
+    finally:
+        for path in temp_files:
+            Path(path).unlink(missing_ok=True)
 
 
 async def generate_video(

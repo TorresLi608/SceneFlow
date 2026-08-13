@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.generation_service import _generate_scene_video
-from app.services.video_service import VideoResult, VideoSettings, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, is_native_qwen_video_url, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, validate_video_inputs
+from app.services.video_service import GENERATION_TIMEOUT_SECONDS, VideoResult, VideoSettings, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, is_native_qwen_video_url, qwen_media_policy_model, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, validate_video_inputs
 
 
 REFERENCE = {"name": "first.png", "data": "data:image/png;base64," + base64.b64encode(b"image").decode("ascii")}
@@ -89,26 +89,37 @@ def test_qwen_video_model_matches_input_type() -> None:
 
 
 def test_qwen_native_video_uploads_media_to_temporary_oss() -> None:
-    policy = SimpleNamespace(json=lambda: {"output": {"upload_host": "https://oss.test", "upload_file_path": "temp/frame.png", "policy": "p", "x_oss_signature": "sig"}}, raise_for_status=lambda: None)
-    uploaded = SimpleNamespace(raise_for_status=lambda: None)
-    created = SimpleNamespace(json=lambda: {"output": {"task_id": "task-1"}}, raise_for_status=lambda: None)
-    task = SimpleNamespace(json=lambda: {"output": {"task_status": "SUCCEEDED", "video_url": "https://video.test/result.mp4"}}, raise_for_status=lambda: None)
+    created = SimpleNamespace(output={"task_id": "task-1"})
+    task = SimpleNamespace(output={"task_status": "SUCCEEDED", "video_url": "https://video.test/result.mp4"})
     video = SimpleNamespace(content=b"mp4", raise_for_status=lambda: None)
     client = AsyncMock()
-    client.get.side_effect = [policy, task, video]
-    client.post.side_effect = [uploaded, created]
+    client.get.return_value = video
     context = AsyncMock()
     context.__aenter__.return_value = client
-    with patch("app.services.video_service.httpx.AsyncClient", return_value=context), patch("app.services.video_service.asyncio.sleep", new=AsyncMock()):
+    submit = MagicMock(return_value=created)
+    wait = MagicMock(return_value=task)
+    upload = MagicMock(return_value=("oss://temp/frame.png", {}))
+    with (
+        patch("app.services.video_service.OssUtils.upload", upload),
+        patch("app.services.video_service.VideoSynthesis.async_call", new=submit),
+        patch("app.services.video_service.VideoSynthesis.wait", new=wait),
+        patch("app.services.video_service.httpx.AsyncClient", return_value=context),
+    ):
         result = asyncio.run(_generate_qwen_video("test-key", "wan2.7-i2v", "camera move", "720p", 5, True, [REFERENCE], None, None, "https://dashscope.aliyuncs.com/api/v1"))
 
     assert result.data == b"mp4"
-    upload = client.post.call_args_list[0]
-    assert upload.args[0] == "https://oss.test"
-    assert upload.kwargs["data"]["x-oss-signature"] == "sig"
-    create = client.post.call_args_list[1].kwargs
-    assert create["headers"]["X-DashScope-OssResourceResolve"] == "enable"
-    assert create["json"]["input"]["media"] == [{"type": "first_frame", "url": "oss://temp/frame.png"}]
+    assert upload.call_args.kwargs["model"] == "wan2.6-i2v"
+    request = submit.call_args.kwargs
+    assert request["base_address"] == "https://dashscope.aliyuncs.com/api/v1"
+    assert request["extra_input"]["media"] == [{"type": "first_frame", "url": "oss://temp/frame.png"}]
+    wait.assert_called_once_with(created, api_key="test-key", wait_timeout=GENERATION_TIMEOUT_SECONDS)
+
+
+def test_qwen_media_policy_uses_supported_upload_model() -> None:
+    assert qwen_media_policy_model("wan2.5-i2v") == "wan2.6-i2v"
+    assert qwen_media_policy_model("wan2.7-i2v") == "wan2.6-i2v"
+    assert qwen_media_policy_model("wan2.7-r2v") == "wan2.6-r2v"
+    assert qwen_media_policy_model("wan2.7-t2v") == "wan2.7-t2v"
 
 
 def test_video_options_follow_model_capabilities() -> None:
@@ -181,6 +192,7 @@ if __name__ == "__main__":
     test_qwen_video_uses_reference_frame_and_async_task()
     test_qwen_video_model_matches_input_type()
     test_qwen_native_video_uploads_media_to_temporary_oss()
+    test_qwen_media_policy_uses_supported_upload_model()
     test_video_options_follow_model_capabilities()
     test_video_media_capabilities_are_enforced()
     test_qwen_native_url_detection_keeps_relays_configurable()

@@ -7,6 +7,7 @@ bcrypt>=4.2
 PyJWT>=2.9
 cryptography>=43
 google-genai>=2.10
+dashscope>=1.26.7
 httpx>=0.28
 edge-tts>=7.2
 openai>=2.0

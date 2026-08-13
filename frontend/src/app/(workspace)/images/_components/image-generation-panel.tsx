@@ -9,6 +9,7 @@ import { generateImageAction } from "@/actions/image-generation-actions";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { artifactBffUrl } from "@/lib/artifact-url";
 import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
@@ -124,6 +125,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   }, [imageConfigs]);
   const effectiveConfigId = imageConfigs.some((config) => configSelectValue(config) === selectedConfigId) ? selectedConfigId : defaultConfigId;
   const selectedConfig = imageConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
+  const resolvedImageUrl = artifactBffUrl(imageUrl);
 
   const generateMutation = useMutation({
     mutationFn: generateImageAction,
@@ -198,7 +200,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
     setErrorMessage(null);
 
     try {
-      const response = await fetch(imageUrl);
+      const response = await fetch(resolvedImageUrl);
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status}`);
       }
@@ -207,7 +209,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = `sceneflow-image-${Date.now()}.${imageExtension(blob, imageUrl)}`;
+      link.download = `sceneflow-image-${Date.now()}.${imageExtension(blob, resolvedImageUrl)}`;
       document.body.append(link);
       link.click();
       link.remove();
@@ -364,7 +366,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
                   aria-label={t("images.viewHistoryItem")}
                 >
                   <span className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
-                    <Image src={item.imageUrl} alt="" fill unoptimized sizes="56px" className="object-cover" />
+                    <Image src={artifactBffUrl(item.imageUrl)} alt="" fill unoptimized sizes="56px" className="object-cover" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium">{item.prompt}</span>
@@ -416,7 +418,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
             </div>
           ) : imageUrl ? (
             <div className="relative h-full w-full">
-              <Image src={imageUrl} alt={t("images.resultAlt")} fill unoptimized sizes="(min-width: 768px) calc(100vw - 720px), 100vw" className="object-contain" />
+              <Image src={resolvedImageUrl} alt={t("images.resultAlt")} fill unoptimized sizes="(min-width: 768px) calc(100vw - 720px), 100vw" className="object-contain" />
             </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground">

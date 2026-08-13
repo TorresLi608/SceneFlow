@@ -18,6 +18,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_openai import ChatOpenAI
 from openai import APIStatusError, AsyncOpenAI
 import httpx
+from dashscope.aigc.image_generation import ImageGeneration
 
 from app.services.usage_service import aggregate_token_usage
 
@@ -97,12 +98,28 @@ def image_base_url_for(provider: str, base_url: str = "") -> str:
         base = base_url.strip().rstrip("/") if base_url else GEMINI_IMAGE_BASE_URL
         return base.removesuffix("/openai").removesuffix("/v1beta")
     if provider == "qwen":
-        return (base_url or QWEN_MEDIA_BASE_URL).strip().rstrip("/")
+        base = (base_url or QWEN_MEDIA_BASE_URL).strip().rstrip("/")
+        parsed = urlparse(base)
+        if (parsed.hostname or "").lower() == "dashscope.aliyuncs.com":
+            return f"{parsed.scheme or 'https'}://{parsed.netloc}/api/v1"
+        return base
     raise ValueError(f"unsupported image provider: {provider}")
 
 
 def _is_native_gemini_image_url(base_url: str = "") -> bool:
     return urlparse(image_base_url_for("gemini", base_url)).netloc == "generativelanguage.googleapis.com"
+
+
+def _qwen_image_url(output: dict[str, Any]) -> str:
+    results = output.get("results") or []
+    if results and isinstance(results[0], dict) and results[0].get("url"):
+        return str(results[0]["url"])
+    for choice in output.get("choices") or []:
+        content = (choice.get("message") or {}).get("content") or []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "image" and item.get("image"):
+                return str(item["image"])
+    return ""
 
 
 def _json_object(text: str) -> dict[str, Any]:
@@ -237,10 +254,10 @@ def _qwen_image_size(aspect_ratio: str, resolution: str, has_images: bool, model
     resolution = {"low": "1K", "medium": "2K", "high": "4K"}.get(resolution, resolution.upper())
     if resolution == "4K" and (has_images or model.strip().lower() == "wan2.7-image"):
         resolution = "2K"
-    if has_images or ":" not in aspect_ratio:
-        return resolution if resolution in {"1K", "2K", "4K"} else "2K"
     scale = 1024 if resolution == "1K" else 4096 if resolution == "4K" else 2048
     aligned = lambda value: max(16, value // 16 * 16)
+    if ":" not in aspect_ratio:
+        return f"{scale}*{scale}"
     return {
         "1:1": f"{scale}*{scale}",
         "2:3": f"{aligned(scale * 2 // 3)}*{scale}",
@@ -586,6 +603,30 @@ class ModelRouter:
         }
         headers = {"Authorization": f"Bearer {api_key.strip()}", "X-DashScope-Async": "enable"}
         base = image_base_url_for("qwen", base_url)
+        if urlparse(base).hostname == "dashscope.aliyuncs.com":
+            response = await asyncio.to_thread(
+                ImageGeneration.async_call,
+                model=model.strip(), api_key=api_key.strip(), messages=payload["input"]["messages"],
+                n=1, size=payload["parameters"]["size"], watermark=False, base_address=base,
+            )
+            if getattr(response, "status_code", 200) != 200:
+                raise ValueError(f"Qwen image task creation failed: {getattr(response, 'message', '') or getattr(response, 'code', '')}")
+            response = await asyncio.to_thread(
+                ImageGeneration.wait, response, api_key=api_key.strip(), wait_timeout=GENERATION_TIMEOUT_SECONDS
+            )
+            if getattr(response, "status_code", 200) != 200:
+                raise ValueError(f"Qwen image task failed: {getattr(response, 'message', '') or getattr(response, 'code', '')}")
+            output = getattr(response, "output", None) or {}
+            status = str(output.get("task_status") or "").upper()
+            if status and status != "SUCCEEDED":
+                raise ValueError(f"Qwen image task {status.lower()}: {output.get('message') or output.get('code') or ''}")
+            url = _qwen_image_url(output)
+            if not url:
+                raise ValueError("Qwen image task succeeded without an image URL")
+            async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+                image_response = await client.get(url)
+                image_response.raise_for_status()
+                return ImageResult(image_response.content, _image_format_from_mime(image_response.headers.get("content-type", "image/png").split(";", 1)[0]))
         async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
             response = await client.post(f"{base}/services/aigc/image-generation/generation", headers=headers, json=payload)
             response.raise_for_status()
@@ -600,8 +641,7 @@ class ModelRouter:
                 output = task_response.json().get("output", {})
                 status = str(output.get("task_status") or "").upper()
                 if status == "SUCCEEDED":
-                    results = output.get("results") or []
-                    url = str((results[0] if results else {}).get("url") or "")
+                    url = _qwen_image_url(output)
                     if not url:
                         raise ValueError("Qwen image task succeeded without an image URL")
                     image_response = await client.get(url)

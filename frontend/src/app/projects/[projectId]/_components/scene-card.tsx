@@ -2,7 +2,7 @@
 
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
-import { Film, GripVertical, Image as ImageIcon, Lock, LockOpen, Mic } from "lucide-react";
+import { Film, GripVertical, Image as ImageIcon, Lock, LockOpen, Mic, RefreshCw, Trash2 } from "lucide-react";
 import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,11 @@ interface SceneCardProps {
   /** The storyboard fields beyond narration and prompt: dialogue, framing, timing, lock. */
   onFieldChange: (patch: SceneEdit) => void;
   onCastChange: (characterIds: string[]) => void;
+  selected: boolean;
+  disabled: boolean;
+  onSelectedChange: (selected: boolean) => void;
+  onGenerate: (media: "image" | "audio" | "video") => void;
+  onDelete: () => void;
 }
 
 export function SceneCard({
@@ -46,6 +51,11 @@ export function SceneCard({
   onPromptChange,
   onFieldChange,
   onCastChange,
+  selected,
+  disabled,
+  onSelectedChange,
+  onGenerate,
+  onDelete,
 }: SceneCardProps) {
   const { t } = useI18n();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -83,8 +93,17 @@ export function SceneCard({
       )}
     >
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-semibold">{t("scene.sceneLabel", { order: scene.order })}</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={(event) => onSelectedChange(event.target.checked)}
+              aria-label={t("scene.select", { order: scene.order })}
+              className="size-4 accent-primary"
+            />
+            <CardTitle className="text-base font-semibold">{t("scene.sceneLabel", { order: scene.order })}</CardTitle>
+          </label>
           <button
             type="button"
             aria-label={t("scene.dragSort")}
@@ -125,6 +144,24 @@ export function SceneCard({
             {scene.isLocked ? <LockOpen className="mr-1 size-3.5" /> : <Lock className="mr-1 size-3.5" />}
             {scene.isLocked ? t("scene.unlock") : t("scene.lock")}
           </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => onGenerate("image")} disabled={disabled || scene.isLocked}>
+            <ImageIcon />
+            {scene.image.status === "error" ? t("scene.retryImage") : t("scene.generateImage")}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => onGenerate("audio")} disabled={disabled || scene.isLocked}>
+            <Mic />
+            {scene.audio.status === "error" ? t("scene.retryAudio") : t("scene.generateAudio")}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => onGenerate("video")} disabled={disabled || scene.isLocked}>
+            <Film />
+            {scene.video.status === "error" ? t("scene.retryVideo") : t("scene.generateVideo")}
+          </Button>
+          {(scene.image.status === "error" || scene.audio.status === "error" || scene.video.status === "error") ? (
+            <RefreshCw className="size-3.5 text-destructive" aria-hidden="true" />
+          ) : null}
+          <Button type="button" size="icon-sm" variant="ghost" onClick={onDelete} disabled={disabled} title={t("scene.delete")}>
+            <Trash2 className="text-destructive" />
+          </Button>
         </div>
       </CardHeader>
 
@@ -142,7 +179,7 @@ export function SceneCard({
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full bg-primary transition-all duration-500"
+              className={cn("h-full transition-all duration-500", scene.image.status === "success" ? "bg-emerald-500" : "bg-primary")}
               style={{ width: `${scene.image.progress}%` }}
             />
           </div>

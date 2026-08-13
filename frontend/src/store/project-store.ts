@@ -64,6 +64,8 @@ interface ProjectStoreState {
   applySceneStreamUpdate: (projectID: string, sceneID: string, data: SceneUpdatePayload) => void;
   updateCurrentScript: (script: string) => void;
   updateScene: (sceneId: string, patch: SceneEdit) => void;
+  addScene: (scene: Scene) => void;
+  removeScene: (sceneId: string) => void;
   /** Cast lives in its own join table, so it is set through its own endpoint and action. */
   setSceneCast: (sceneId: string, characterIds: string[]) => void;
   /** A deleted character has to leave every shot it was cast in. */
@@ -459,6 +461,36 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
               ),
             }
       ),
+    }));
+  },
+
+  addScene: (scene) => {
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id !== state.selectedProjectId
+          ? project
+          : {
+              ...project,
+              episodes: withSceneCount(project.episodes, project.currentEpisodeId, project.scenes.length + 1),
+              scenes: normalizeOrder([...project.scenes, normalizeScene(scene)]),
+              updatedAt: nowISO(),
+            }
+      ),
+    }));
+  },
+
+  removeScene: (sceneId) => {
+    set((state) => ({
+      projects: state.projects.map((project) => {
+        if (project.id !== state.selectedProjectId) return project;
+        const scenes = normalizeOrder(project.scenes.filter((scene) => scene.id !== sceneId));
+        return {
+          ...project,
+          episodes: withSceneCount(project.episodes, project.currentEpisodeId, scenes.length),
+          scenes,
+          updatedAt: nowISO(),
+        };
+      }),
     }));
   },
 

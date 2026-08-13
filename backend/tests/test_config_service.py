@@ -235,6 +235,8 @@ def test_gemini_image_helpers() -> None:
     assert not _is_native_gemini_image_url("https://relay.example.com/v1")
     assert _openai_image_size("16:9") == "1536x1024"
     assert _openai_image_quality("2K") == "medium"
+    assert image_base_url_for("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1") == "https://dashscope.aliyuncs.com/api/v1"
+    assert image_base_url_for("qwen", "https://relay.example.com/v1") == "https://relay.example.com/v1"
 
 
 def test_user_config_pricing_round_trip() -> None:

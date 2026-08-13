@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { artifactBffUrl } from "@/lib/artifact-url";
 import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
@@ -116,6 +117,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
   const selectedFps = capabilities?.fps.includes(fps) ? fps : capabilities?.fps[0] ?? 24;
   const selectedDuration = capabilities ? Math.min(capabilities.maxDuration, Math.max(capabilities.minDuration, duration)) : duration;
   const selectedPromptExtend = Boolean(capabilities?.promptExtend && promptExtend);
+  const resolvedVideoUrl = artifactBffUrl(videoUrl);
   const durationOptions = capabilities
     ? Array.from({ length: capabilities.maxDuration - capabilities.minDuration + 1 }, (_, index) => capabilities.minDuration + index)
     : [];
@@ -210,7 +212,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     setIsDownloading(true);
     setErrorMessage(null);
     try {
-      const response = await fetch(videoUrl);
+      const response = await fetch(resolvedVideoUrl);
       if (!response.ok) throw new Error(`Download failed: ${response.status}`);
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
@@ -411,7 +413,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
               {generatingLabel}
             </div>
           ) : videoUrl ? (
-            <video key={videoUrl} src={videoUrl} controls playsInline className="max-h-full max-w-full" />
+            <video key={resolvedVideoUrl} src={resolvedVideoUrl} controls playsInline className="max-h-full max-w-full" />
           ) : (
             <div className="text-center text-sm text-muted-foreground">
               <Film className="mx-auto mb-3 size-5" />

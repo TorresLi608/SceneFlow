@@ -6,9 +6,12 @@ import { useRouter } from "next/navigation";
 import {
   Clapperboard,
   Film,
+  Image as ImageIcon,
   LayoutDashboard,
   LogOut,
+  Mic,
   Plus,
+  RefreshCw,
   Shield,
   SlidersHorizontal,
   Sparkles,
@@ -27,8 +30,10 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 
 import {
   createEpisodeAction,
+  createProjectSceneAction,
   createProjectAction,
   deleteEpisodeAction,
+  deleteProjectSceneAction,
   deleteProjectAction,
   generateProjectAction,
   generateVideoAction,
@@ -128,6 +133,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const [videoFps, setVideoFps] = useState("");
   const [videoDuration, setVideoDuration] = useState(3);
   const [videoPromptExtend, setVideoPromptExtend] = useState(false);
+  const [videoSceneIds, setVideoSceneIds] = useState<string[]>([]);
+  const [selectedSceneIds, setSelectedSceneIds] = useState<Set<string>>(new Set());
   const [episodeToDelete, setEpisodeToDelete] = useState<EpisodeSummary | null>(null);
   // Set when a reparse would discard rendered shots; the backend held off until the user confirms.
   const [reparsePrompt, setReparsePrompt] = useState<{ discards: number; pending: number } | null>(null);
@@ -151,6 +158,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const applySceneStreamUpdate = useProjectStore((state) => state.applySceneStreamUpdate);
   const updateCurrentScript = useProjectStore((state) => state.updateCurrentScript);
   const updateScene = useProjectStore((state) => state.updateScene);
+  const addScene = useProjectStore((state) => state.addScene);
+  const removeScene = useProjectStore((state) => state.removeScene);
   const reorderScenes = useProjectStore((state) => state.reorderScenes);
   const openEpisode = useProjectStore((state) => state.openEpisode);
   const upsertEpisode = useProjectStore((state) => state.upsertEpisode);
@@ -387,8 +396,13 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const generateProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; model?: string; episodeId?: string }) =>
-      generateProjectAction(params.projectId, { model: params.model, episodeId: params.episodeId }),
+    mutationFn: (params: { projectId: string; model?: string; episodeId?: string; media: "image" | "audio"; sceneIds: string[] }) =>
+      generateProjectAction(params.projectId, {
+        model: params.model,
+        episodeId: params.episodeId,
+        media: params.media,
+        sceneIds: params.sceneIds,
+      }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       setProjectStatus(projectId, "generating");
@@ -444,7 +458,17 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       fps?: number;
       duration: number;
       promptExtend: boolean;
-    }) => generateVideoAction(params.projectId, params),
+      sceneIds: string[];
+    }) => generateVideoAction(params.projectId, {
+      model: params.model,
+      episodeId: params.episodeId,
+      quality: params.quality,
+      resolution: params.resolution,
+      fps: params.fps,
+      duration: params.duration,
+      promptExtend: params.promptExtend,
+      sceneIds: params.sceneIds,
+    }),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       updateProjectFields(projectId, {
@@ -455,6 +479,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     },
     onSuccess: () => {
       setVideoDialogOpen(false);
+      setVideoSceneIds([]);
       setStatusMessage(t("home.status.videoStarted"));
     },
     onError: (error, variables) => {
@@ -481,6 +506,31 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     onError: (error) => {
       setStatusMessage(resolveRequestError(error, t("home.status.deleteFailed")));
     },
+  });
+
+  const createSceneMutation = useMutation({
+    mutationFn: (params: { projectId: string; episodeId?: string }) =>
+      createProjectSceneAction(params.projectId, { episodeId: params.episodeId }),
+    onSuccess: (response) => {
+      addScene(response.scene);
+      setStatusMessage(t("scene.added"));
+    },
+    onError: (error) => setStatusMessage(resolveRequestError(error, t("scene.addFailed"))),
+  });
+
+  const deleteSceneMutation = useMutation({
+    mutationFn: (params: { projectId: string; sceneId: string }) =>
+      deleteProjectSceneAction(params.projectId, params.sceneId),
+    onSuccess: (_, variables) => {
+      removeScene(variables.sceneId);
+      setSelectedSceneIds((selected) => {
+        const next = new Set(selected);
+        next.delete(variables.sceneId);
+        return next;
+      });
+      setStatusMessage(t("scene.deleted"));
+    },
+    onError: (error) => setStatusMessage(resolveRequestError(error, t("scene.deleteFailed"))),
   });
 
   useEffect(() => {
@@ -637,6 +687,11 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           return;
         }
 
+        if (payload.type === "SCENE_DELETED" && payload.sceneId) {
+          removeScene(payload.sceneId);
+          return;
+        }
+
         if (payload.type === "SCENE_UPDATE" && payload.sceneId) {
           applySceneStreamUpdate(payload.projectId, payload.sceneId, payload.data as SceneUpdatePayload);
         }
@@ -657,6 +712,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     setProjectStatus,
     updateProjectFields,
     removeProject,
+    removeScene,
     t,
   ]);
 
@@ -684,9 +740,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     }, 500);
   };
 
-  const openVideoDialog = () => {
+  const openVideoDialog = (sceneIds?: string[]) => {
     const capabilities = activeVideoConfig?.videoCapabilities;
     if (!capabilities) return;
+    const unlockedIds = sceneIds?.filter(
+      (sceneId) => !currentProject?.scenes.find((scene) => scene.id === sceneId)?.isLocked
+    ) ?? [];
+    if (sceneIds && unlockedIds.length === 0) return;
+    setVideoSceneIds(unlockedIds);
     setVideoQuality(capabilities.qualities[0] ?? "");
     setVideoResolution(capabilities.resolutions[0] ?? "");
     setVideoFps(capabilities.fps[0] ? String(capabilities.fps[0]) : "");
@@ -694,6 +755,28 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     setVideoPromptExtend(false);
     setVideoDialogOpen(true);
   };
+
+  const generateScenes = (media: "image" | "audio", sceneIds: string[]) => {
+    if (!currentProject) return;
+    const unlockedIds = sceneIds.filter(
+      (sceneId) => !currentProject.scenes.find((scene) => scene.id === sceneId)?.isLocked
+    );
+    if (unlockedIds.length === 0) return;
+    generateProjectMutation.mutate({
+      projectId: currentProject.id,
+      model: media === "image" ? activeImageConfig?.modelSeries : activeAudioConfig?.modelSeries,
+      episodeId: currentProject.currentEpisodeId ?? undefined,
+      media,
+      sceneIds: unlockedIds,
+    });
+  };
+
+  const selectedScenes = currentProject?.scenes.filter((scene) => selectedSceneIds.has(scene.id)) ?? [];
+  const failedSceneIds = (media: "image" | "audio" | "video") =>
+    currentProject?.scenes.filter((scene) => scene[media].status === "error").map((scene) => scene.id) ?? [];
+  const generationBusy = Boolean(
+    currentProject && ["parsing", "generating", "video_generating"].includes(currentProject.status)
+  );
 
   const saveScenePatch = (sceneId: string, patch: SceneEdit) => {
     if (!currentProject) {
@@ -1003,49 +1086,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                       disabled={!currentProject || !hasUsableScriptConfig || currentProject.status === "parsing"}
                     >
                       <WandSparkles className="mr-2 size-4" />
-                      {currentProject?.status === "parsing" ? t("home.parsingScenes") : t("home.parseScenes")}
-                    </Button>
-
-                    <Button
-                      onClick={() => {
-                        if (!currentProject) {
-                          return;
-                        }
-
-                        generateProjectMutation.mutate({
-                          projectId: currentProject.id,
-                          model: activeImageConfig?.modelSeries,
-                          episodeId: currentProject.currentEpisodeId ?? undefined,
-                        });
-                      }}
-                      disabled={
-                        !currentProject ||
-                        !hasUsableImageConfig ||
-                        currentProject.status === "parsing" ||
-                        currentProject.status === "generating" ||
-                        currentProject.scenes.length === 0
-                      }
-                    >
-                      <Sparkles className="mr-2 size-4" />
-                      {currentProject?.status === "generating" ? t("home.generatingAll") : t("home.generateAll")}
-                    </Button>
-
-                    <Button
-                      onClick={openVideoDialog}
-                      disabled={
-                        !currentProject ||
-                        !activeVideoConfig?.videoCapabilities ||
-                        generateVideoMutation.isPending ||
-                        currentProject.status === "parsing" ||
-                        currentProject.status === "generating" ||
-                        currentProject.status === "video_generating" ||
-                        currentProject.scenes.length === 0
-                      }
-                    >
-                      <Film className="mr-2 size-4" />
-                      {currentProject?.status === "video_generating"
-                        ? t("home.generatingVideo")
-                        : t("home.generateVideo")}
+                      {currentProject?.status === "parsing" ? t("home.parsingScenes") : t("home.generateStoryboard")}
                     </Button>
 
                     <Button
@@ -1111,6 +1152,53 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                       {t("home.episodeShotCount", { count: currentProject?.scenes.length ?? 0 })}
                     </span>
                   ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(currentProject?.scenes.length) && selectedScenes.length === currentProject?.scenes.length}
+                      onChange={(event) =>
+                        setSelectedSceneIds(
+                          event.target.checked
+                            ? new Set(currentProject?.scenes.map((scene) => scene.id) ?? [])
+                            : new Set()
+                        )
+                      }
+                      className="size-4 accent-primary"
+                    />
+                    {t("scene.selectAll")}
+                  </label>
+                  <Badge variant="outline">{t("scene.selectedCount", { count: selectedScenes.length })}</Badge>
+                  <Button size="sm" onClick={() => generateScenes("image", selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !hasUsableImageConfig || selectedScenes.length === 0}>
+                    <ImageIcon />
+                    {t("scene.generateSelectedImages")}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => generateScenes("audio", selectedScenes.map((scene) => scene.id))} disabled={generationBusy || selectedScenes.length === 0}>
+                    <Mic />
+                    {t("scene.generateSelectedAudio")}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => openVideoDialog(selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !activeVideoConfig?.videoCapabilities || selectedScenes.length === 0}>
+                    <Film />
+                    {t("scene.generateSelectedVideo")}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => generateScenes("image", failedSceneIds("image"))} disabled={generationBusy || !hasUsableImageConfig || failedSceneIds("image").length === 0}>
+                    <RefreshCw />
+                    {t("scene.retryFailedImages")}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => generateScenes("audio", failedSceneIds("audio"))} disabled={generationBusy || failedSceneIds("audio").length === 0}>
+                    <RefreshCw />
+                    {t("scene.retryFailedAudio")}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => openVideoDialog(failedSceneIds("video"))} disabled={generationBusy || !activeVideoConfig?.videoCapabilities || failedSceneIds("video").length === 0}>
+                    <RefreshCw />
+                    {t("scene.retryFailedVideo")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => currentProject && createSceneMutation.mutate({ projectId: currentProject.id, episodeId: currentProject.currentEpisodeId ?? undefined })} disabled={!currentProject || generationBusy || createSceneMutation.isPending}>
+                    <Plus />
+                    {t("scene.add")}
+                  </Button>
                 </div>
 
                 {/* Shots below belong to the selected episode only, so the switcher sits with them. */}
@@ -1192,6 +1280,22 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                             <SceneCard
                               scene={scene}
                               characters={characters}
+                              selected={selectedSceneIds.has(scene.id)}
+                              disabled={generationBusy}
+                              onSelectedChange={(selected) => setSelectedSceneIds((current) => {
+                                const next = new Set(current);
+                                if (selected) next.add(scene.id); else next.delete(scene.id);
+                                return next;
+                              })}
+                              onGenerate={(media) => {
+                                if (media === "video") openVideoDialog([scene.id]);
+                                else generateScenes(media, [scene.id]);
+                              }}
+                              onDelete={() => {
+                                if (window.confirm(t("scene.deleteConfirm", { order: scene.order }))) {
+                                  deleteSceneMutation.mutate({ projectId: currentProject.id, sceneId: scene.id });
+                                }
+                              }}
                               onNarrationChange={(value) =>
                                 saveScenePatch(scene.id, {
                                   narration: value,
@@ -1302,6 +1406,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   fps: videoFps ? Number(videoFps) : undefined,
                   duration: videoDuration,
                   promptExtend: videoPromptExtend,
+                  sceneIds: videoSceneIds,
                 });
               }}
               disabled={!currentProject || generateVideoMutation.isPending}

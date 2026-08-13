@@ -13,8 +13,9 @@ from app.core import database
 from app.core.security import encrypt, token_for
 from app.llms.registry import models
 from app.llms.router import ParseResult, SceneDraft
-from app.models import ModelConfig, Scene, User
+from app.models import ModelConfig, Project, Scene, User
 from app.services import artifact_service
+from app.services.generation_service import episode_media_status
 from app.utils.common import now
 
 
@@ -219,6 +220,68 @@ def test_scene_assets_are_served_through_a_fresh_signed_link() -> None:
             assert download.content == b"rendered-bytes"
 
 
+def test_scene_terminal_progress_survives_reload() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _create_project(client, headers)
+            client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers)
+            with database.db() as session:
+                scene = session.exec(database.select(Scene).where(Scene.project_id == project_id)).first()
+                scene.image_status = "success"
+                scene.audio_status = "generating"
+                session.add(scene)
+
+            scene = client.get("/api/projects", headers=headers).json()["projects"][0]["scenes"][0]
+            assert scene["image"]["progress"] == 100
+            assert scene["audio"]["progress"] == 20
+
+
+def test_selected_media_generation_and_scene_crud() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _create_project(client, headers)
+            parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers).json()
+            selected_id = parsed["scenes"][0]["id"]
+
+            started = client.post(
+                f"/api/projects/{project_id}/generate",
+                json={"media": "audio", "sceneIds": [selected_id]},
+                headers=headers,
+            )
+            assert started.status_code == 202, started.text
+            assert started.json()["media"] == "audio"
+            assert started.json()["sceneCount"] == 1
+
+            # The test worker leaves the project busy, matching the lock test below.
+            with database.db() as session:
+                project = session.exec(database.select(Project).where(Project.id == project_id)).first()
+                project.status = "idle"
+                session.add(project)
+            added = client.post(
+                f"/api/projects/{project_id}/scenes",
+                json={"episodeId": parsed["episodeId"], "narration": "新增镜头"},
+                headers=headers,
+            )
+            assert added.status_code == 201, added.text
+            added_id = added.json()["scene"]["id"]
+            deleted = client.delete(f"/api/projects/{project_id}/scenes/{added_id}", headers=headers)
+            assert deleted.status_code == 204, deleted.text
+
+
+def test_retry_status_keeps_other_failed_scenes_visible() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _create_project(client, headers)
+            parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers).json()
+            with database.db() as session:
+                scenes = list(session.exec(database.select(Scene).where(Scene.project_id == project_id)).all())
+                scenes[0].image_status = "success"
+                scenes[1].image_status = "error"
+                session.add_all(scenes)
+
+            assert episode_media_status(parsed["episodeId"], [True]) == "partial"
+
+
 def test_second_generate_is_refused_while_the_first_is_running() -> None:
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers):
@@ -239,4 +302,7 @@ if __name__ == "__main__":
     test_parse_applies_when_there_is_nothing_to_lose()
     test_reparse_holds_back_until_the_user_accepts_losing_rendered_shots()
     test_scene_assets_are_served_through_a_fresh_signed_link()
+    test_scene_terminal_progress_survives_reload()
+    test_selected_media_generation_and_scene_crud()
+    test_retry_status_keeps_other_failed_scenes_visible()
     test_second_generate_is_refused_while_the_first_is_running()

@@ -15,6 +15,7 @@ from app.api.deps import current_user_id
 from app.llms.registry import models
 from app.models import Episode, Project, Scene
 from app.schemas.requests import (
+    CreateSceneRequest,
     CreateProjectRequest,
     GenerateProjectRequest,
     GenerateVideoRequest,
@@ -102,6 +103,18 @@ def _scene_payloads(
         payload["speaker"] = speaker.as_payload() if speaker else None
         payloads.append(payload)
     return payloads
+
+
+def _selected_scenes(scenes: list[Scene], scene_ids: list[str] | None) -> list[Scene]:
+    if scene_ids is None:
+        return [scene for scene in scenes if not scene.is_locked]
+    requested = {scene_id.strip() for scene_id in scene_ids if scene_id.strip()}
+    selected = [scene for scene in scenes if scene.id in requested]
+    if len(selected) != len(requested):
+        raise HTTPException(400, "sceneIds must belong to the selected episode")
+    if any(scene.is_locked for scene in selected):
+        raise HTTPException(400, "unlock selected scenes before generating them")
+    return selected
 
 
 @router.get("")
@@ -344,6 +357,72 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
     return {"scene": data}
 
 
+@router.post("/{project_id}/scenes", status_code=201)
+async def create_project_scene(
+    project_id: str,
+    body: CreateSceneRequest,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    stamp = now()
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        if (project.status or "idle") not in IDLE_STATUSES:
+            raise HTTPException(409, "project is busy, cannot add a scene right now")
+        episode = resolve_episode(session, project_id, body.episode_id)
+        if body.speaker_character_id:
+            owned_character(session, project_id, body.speaker_character_id)
+        scene = Scene(
+            id=new_id("scene"),
+            created_at=stamp,
+            updated_at=stamp,
+            project_id=project_id,
+            episode_id=episode.id,
+            order_num=len(episode_scenes(session, episode.id)) + 1,
+            narration=body.narration or "",
+            dialogue=body.dialogue or "",
+            speaker_character_id=body.speaker_character_id or None,
+            visual_prompt=body.visual_prompt or "",
+            shot_type=body.shot_type or "",
+            camera_move=body.camera_move or "",
+            duration_ms=body.duration_ms or 0,
+            subtitle_text=body.subtitle_text or "",
+            is_locked=bool(body.is_locked),
+        )
+        session.add(scene)
+        touch_episode(session, episode, status="storyboard")
+        project.updated_at = stamp
+        session.add(project)
+        session.flush()
+        data = scene_json(scene)
+    await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene.id, "data": data})
+    return {"scene": data}
+
+
+@router.delete("/{project_id}/scenes/{scene_id}", status_code=204)
+async def delete_project_scene(project_id: str, scene_id: str, user_id: int = Depends(current_user_id)) -> None:
+    stamp = now()
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        if (project.status or "idle") not in IDLE_STATUSES:
+            raise HTTPException(409, "project is busy, cannot delete a scene right now")
+        scene = session.exec(
+            select(Scene).where(Scene.id == scene_id, Scene.project_id == project_id, Scene.deleted_at.is_(None))
+        ).first()
+        if not scene:
+            return
+        scene.deleted_at = stamp
+        scene.updated_at = stamp
+        session.add(scene)
+        session.flush()
+        for index, sibling in enumerate(episode_scenes(session, scene.episode_id or ""), start=1):
+            sibling.order_num = index
+            sibling.updated_at = stamp
+            session.add(sibling)
+        project.updated_at = stamp
+        session.add(project)
+    await broadcast(project_id, {"type": "SCENE_DELETED", "projectId": project_id, "sceneId": scene_id})
+
+
 def _replace_scenes(project_id: str, episode_id: str, drafts: list[Any], source_text: str) -> list[Scene]:
     """Swap one episode's storyboard for a freshly parsed one.
 
@@ -548,17 +627,18 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
         # A locked shot is one the user approved; a batch rerun leaves it alone.
-        pending = [scene for scene in scenes if not scene.is_locked]
+        pending = _selected_scenes(scenes, body.scene_ids)
         if not pending:
             raise HTTPException(400, "every scene in this episode is locked, unlock one to regenerate")
-        config = active_model_config(session, user_id, "image", "分镜图片生成")
-        require_model_balance(session, user_id, config)
-        try:
-            audio_config = active_model_config(session, user_id, "audio", "场景配音")
-        except HTTPException:
-            audio_config = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
-        if audio_config["provider"] not in {"edge", "system"}:
-            require_model_balance(session, user_id, audio_config)
+        if body.media == "image":
+            config = active_model_config(session, user_id, "image", "分镜图片生成")
+        else:
+            try:
+                config = active_model_config(session, user_id, "audio", "场景配音")
+            except HTTPException:
+                config = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
+        if config["provider"] not in {"edge", "system"}:
+            require_model_balance(session, user_id, config)
         # The lock stays on the project: one run owns the series, so a second episode
         # cannot start rendering into the same worker pool while this one is going.
         claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="generating")
@@ -569,14 +649,14 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         project_id,
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
     )
-    asyncio.create_task(run_generation(project_id, scene_payloads, config, audio_config, user_id, episode_id=episode_id))
+    asyncio.create_task(run_generation(project_id, scene_payloads, config, user_id, body.media, episode_id=episode_id))
     return {
         "projectId": project_id,
         "episodeId": episode_id,
         "status": "generating",
         "model": body.model or config["model"],
         "provider": config["provider"],
-        "imageModel": config["model"],
+        "media": body.media,
         "sceneCount": len(scene_payloads),
     }
 
@@ -600,7 +680,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             )
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, str(exc)[:220]) from exc
-        pending = [scene for scene in scenes if not scene.is_locked]
+        pending = _selected_scenes(scenes, body.scene_ids)
         if not pending:
             raise HTTPException(400, "every scene video in this episode is locked")
         if config["videoCapabilities"]["referenceImagesRequired"] and not any(scene.image_path for scene in pending):

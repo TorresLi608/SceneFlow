@@ -91,6 +91,10 @@ class UpdateSceneRequest(CamelModel):
     is_locked: bool | None = None
 
 
+class CreateSceneRequest(UpdateSceneRequest):
+    episode_id: str | None = Field(default=None, max_length=64)
+
+
 class ReorderScenesRequest(CamelModel):
     scene_ids: list[str] = Field(min_length=1)
     # Order numbers restart each episode, so a reorder is always within one.
@@ -168,6 +172,8 @@ class OptimizeProjectRequest(CamelModel):
 class GenerateProjectRequest(CamelModel):
     model: str | None = Field(default=None, max_length=160)
     episode_id: str | None = Field(default=None, max_length=64)
+    media: Literal["image", "audio"] = "image"
+    scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
 
 
 class GenerateVideoRequest(CamelModel):
@@ -178,3 +184,4 @@ class GenerateVideoRequest(CamelModel):
     fps: int | None = None
     duration: int | None = None
     prompt_extend: bool = False
+    scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)

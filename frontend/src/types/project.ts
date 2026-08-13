@@ -273,6 +273,9 @@ export interface UpdateSceneInput {
   subtitleText?: string;
   isLocked?: boolean;
 }
+export interface CreateSceneInput extends UpdateSceneInput {
+  episodeId?: string;
+}
 export interface ReorderScenesInput {
   sceneIds: string[];
   /** Order numbers restart each episode, so a reorder is always within one. */
@@ -313,6 +316,8 @@ export interface ParseProjectResponse {
 export interface GenerateProjectInput {
   model?: string;
   episodeId?: string;
+  media: "image" | "audio";
+  sceneIds?: string[];
 }
 
 export interface GenerateProjectResponse {
@@ -347,6 +352,7 @@ export interface GenerateVideoInput {
   fps?: number;
   duration?: number;
   promptExtend?: boolean;
+  sceneIds?: string[];
 }
 
 export interface GenerateVideoResponse {

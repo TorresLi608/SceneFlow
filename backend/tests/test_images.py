@@ -13,7 +13,7 @@ from openai import RateLimitError
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
-from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _qwen_image_size
+from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _qwen_image_size, _qwen_image_url, image_base_url_for
 from app.models import User
 from app.utils.common import now
 
@@ -132,17 +132,24 @@ def test_openai_image_does_not_retry_provider_errors() -> None:
 
 def test_qwen_image_uses_async_task_with_reference_images() -> None:
     assert _qwen_image_size("2:3", "2K", False) == "1360*2048"
-    assert _qwen_image_size("16:9", "4K", True, "wan2.7-image-pro") == "2K"
+    assert _qwen_image_size("16:9", "4K", True, "wan2.7-image-pro") == "2048*1152"
     assert _qwen_image_size("16:9", "4K", False, "wan2.7-image") == "2048*1152"
-    response = SimpleNamespace(json=lambda: {"output": {"task_id": "task-1"}}, raise_for_status=lambda: None)
-    task = SimpleNamespace(json=lambda: {"output": {"task_status": "SUCCEEDED", "results": [{"url": "https://image.test/result.png"}]}}, raise_for_status=lambda: None)
+    assert _qwen_image_size("auto", "1K", False, "wan2.7-image") == "1024*1024"
+    assert _qwen_image_size("auto", "2K", True, "wan2.7-image-pro") == "2048*2048"
+    response = SimpleNamespace(output={"task_id": "task-1"})
+    task = SimpleNamespace(output={"task_status": "SUCCEEDED", "choices": [{"message": {"content": [{"type": "image", "image": "https://image.test/result.png"}]}}]})
     image = SimpleNamespace(content=b"png", headers={"content-type": "image/png"}, raise_for_status=lambda: None)
     client = AsyncMock()
-    client.post.return_value = response
-    client.get.side_effect = [task, image]
+    client.get.return_value = image
     context = AsyncMock()
     context.__aenter__.return_value = client
-    with patch("app.llms.router.httpx.AsyncClient", return_value=context), patch("app.llms.router.asyncio.sleep", new=AsyncMock()):
+    submit = Mock(return_value=response)
+    wait = Mock(return_value=task)
+    with (
+        patch("app.llms.router.ImageGeneration.async_call", new=submit),
+        patch("app.llms.router.ImageGeneration.wait", new=wait),
+        patch("app.llms.router.httpx.AsyncClient", return_value=context),
+    ):
         result = asyncio.run(
             ModelRouter()._generate_qwen_image(
                 "test-key", "wan2.7-image", "draw it", [("face.png", b"png", "image/png")], "16:9", "2K"
@@ -150,11 +157,39 @@ def test_qwen_image_uses_async_task_with_reference_images() -> None:
         )
 
     assert result.data == b"png"
-    request = client.post.call_args.kwargs
-    assert request["headers"]["X-DashScope-Async"] == "enable"
-    assert request["json"]["input"]["messages"][0]["content"][0]["image"].startswith("data:image/png;base64,")
-    assert request["json"]["input"]["messages"][0]["content"][-1] == {"text": "draw it"}
-    assert request["json"]["parameters"]["size"] == "2K"
+    request = submit.call_args.kwargs
+    assert request["base_address"] == "https://dashscope.aliyuncs.com/api/v1"
+    assert request["messages"][0]["content"][0]["image"].startswith("data:image/png;base64,")
+    assert request["messages"][0]["content"][-1] == {"text": "draw it"}
+    assert request["size"] == "2048*1152"
+    wait.assert_called_once_with(response, api_key="test-key", wait_timeout=GENERATION_TIMEOUT_SECONDS)
+
+
+def test_qwen_image_reads_wan27_choice_result() -> None:
+    assert _qwen_image_url(
+        {"choices": [{"message": {"content": [{"type": "text", "text": "done"}, {"type": "image", "image": "https://image.test/wan27.png"}]}}]}
+    ) == "https://image.test/wan27.png"
+
+
+def test_qwen_image_relay_keeps_http_compatibility() -> None:
+    created = SimpleNamespace(json=lambda: {"output": {"task_id": "task-1"}}, raise_for_status=lambda: None)
+    task = SimpleNamespace(json=lambda: {"output": {"task_status": "SUCCEEDED", "results": [{"url": "https://image.test/result.png"}]}}, raise_for_status=lambda: None)
+    image = SimpleNamespace(content=b"png", headers={"content-type": "image/png"}, raise_for_status=lambda: None)
+    client = AsyncMock()
+    client.post.return_value = created
+    client.get.side_effect = [task, image]
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with patch("app.llms.router.httpx.AsyncClient", return_value=context), patch("app.llms.router.asyncio.sleep", new=AsyncMock()):
+        result = asyncio.run(ModelRouter()._generate_qwen_image("test-key", "wan2.7-image", "draw it", [], "1:1", "1K", "https://relay.example.com/api/v1"))
+
+    assert result.data == b"png"
+    assert client.post.call_args.args[0] == "https://relay.example.com/api/v1/services/aigc/image-generation/generation"
+
+
+def test_qwen_image_normalizes_only_the_official_dashscope_url() -> None:
+    assert image_base_url_for("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1") == "https://dashscope.aliyuncs.com/api/v1"
+    assert image_base_url_for("qwen", "https://relay.example.com/compatible-mode/v1") == "https://relay.example.com/compatible-mode/v1"
 
 
 if __name__ == "__main__":
@@ -163,3 +198,6 @@ if __name__ == "__main__":
     test_gemini_image_uses_generate_content_without_duplicate_api_version()
     test_openai_image_does_not_retry_provider_errors()
     test_qwen_image_uses_async_task_with_reference_images()
+    test_qwen_image_reads_wan27_choice_result()
+    test_qwen_image_relay_keeps_http_compatibility()
+    test_qwen_image_normalizes_only_the_official_dashscope_url()

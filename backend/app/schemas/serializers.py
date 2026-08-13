@@ -97,6 +97,7 @@ def scene_asset_url(stored_path: str | None, download_stem: str) -> str | None:
 
 def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str, Any]:
     stem = f"scene-{scene.order_num or 0}"
+    progress = lambda status: 100 if status == "success" else 20 if status == "generating" else 0
     return {
         "id": scene.id,
         "episodeId": scene.episode_id,
@@ -116,18 +117,18 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
         "image": {
             "url": scene_asset_url(scene.image_path, stem),
             "status": scene.image_status,
-            "progress": 0,
+            "progress": progress(scene.image_status),
         },
         "audio": {
             "url": scene_asset_url(scene.audio_path, stem),
             "status": scene.audio_status,
-            "progress": 0,
+            "progress": progress(scene.audio_status),
             "duration": scene.audio_duration or 0,
         },
         "video": {
             "url": scene_asset_url(scene.video_path, stem),
             "status": scene.video_status or "idle",
-            "progress": 0,
+            "progress": progress(scene.video_status),
         },
         "errorMessage": scene.error_message or "",
     }

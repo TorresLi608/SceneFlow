@@ -6,6 +6,7 @@ import type {
   CreateCharacterInput,
   CreateCharacterVariantInput,
   CreateEpisodeInput,
+  CreateSceneInput,
   EpisodeItemResponse,
   EpisodeListResponse,
   GenerateProjectInput,
@@ -21,6 +22,7 @@ import type {
   ProjectListResponse,
   GenerationJobListResponse,
   ReorderScenesInput,
+  Scene,
   SetSceneCastInput,
   SetSceneCastResponse,
   UpdateCharacterInput,
@@ -61,6 +63,15 @@ export async function listProjectJobsAction(projectID: string) {
 export async function updateProjectSceneAction(projectID: string, sceneID: string, payload: UpdateSceneInput) {
   const response = await httpClient.patch<{ scene: unknown }>(`/api/bff/projects/${projectID}/scenes/${sceneID}`, payload);
   return response.data;
+}
+
+export async function createProjectSceneAction(projectID: string, payload: CreateSceneInput) {
+  const response = await httpClient.post<{ scene: Scene }>(`/api/bff/projects/${projectID}/scenes`, payload);
+  return response.data;
+}
+
+export async function deleteProjectSceneAction(projectID: string, sceneID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/scenes/${sceneID}`);
 }
 
 export async function reorderProjectScenesAction(projectID: string, payload: ReorderScenesInput) {

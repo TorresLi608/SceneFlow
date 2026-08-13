@@ -14,23 +14,22 @@ workbench ─▶ parseProjectAction ─▶ POST /api/projects/:id/parse
 - **Re-splitting is destructive.** If the target episode already has shots carrying a generated image or voice track, the response comes back `applied: false` with `discardsGeneratedScenes: N` and the parsed shots under `pendingScenes`. The client confirms with the user, then repeats the call with `replaceAll: true`. Do not silently overwrite.
 - Shot `order` restarts at 1 within each episode, so the response carries one episode's shots — never the series merged together.
 
-## 2. Shots → images + voice (generate)
+## 2. Shots → selected images or voice (generate)
 
 ```
-POST /api/projects/:id/generate
+POST /api/projects/:id/generate  { media, sceneIds? }
    ─▶ claim_project_status  (conditional UPDATE; second click loses)
    ─▶ resolve episode + cast + production settings
    ─▶ asyncio.create_task(run_generation(...))     ← returns 202 immediately
         └─ per shot, ≤3 concurrent (MAX_CONCURRENT_SCENES):
-             character_references() ─▶ image provider (image-to-image when portraits exist)
-             build_image_prompt()   ─▶ image provider
-             voice_config()         ─▶ TTS (edge / system / openai / qwen)
+             media=image ─▶ character references + image provider
+             media=audio ─▶ voice_config() + TTS (edge / system / openai / qwen)
              store_artifact()       ─▶ private_generated/<relative path>
              broadcast SCENE_UPDATE ─▶ ws://…/ws/projects/:id
    ─▶ terminal status: done | partial | failed, written to both project and episode
 ```
 
-- Requires an active **image** configuration; shots with `isLocked` are skipped, and all-locked is a `400` rather than a silent no-op.
+- The workbench's one-click storyboard action stops after parsing and filling shots. Images, voice, and video are explicit single-shot or multi-select actions. Image requires an active image configuration; audio may use built-in Edge TTS. Locked shots are skipped, and all-locked is a `400` rather than a silent no-op.
 - A shot's cast contributes two things: **appearance prompts**, which work on every provider, and **reference portraits**, which are passed image-to-image and are what actually holds a face steady across episodes. At most `MAX_REFERENCE_IMAGES` (4) portraits per request, because providers cap reference images and a crowd scene would blow past it.
 - A portrait whose file is missing is skipped rather than failing the shot: losing consistency is a smaller harm than losing the render.
 - A voice override on a character card is honoured only on the configured audio provider — a card stores a provider and a model, never credentials.

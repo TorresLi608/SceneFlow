@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 from sqlalchemy import update
+from sqlmodel import select
 
 from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
@@ -89,8 +90,12 @@ def character_references(scene: dict[str, Any]) -> list[tuple[str, bytes, str]]:
 
 async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: dict[str, Any], user_id: int) -> bool:
     scene_id = scene["id"]
-    _update_scene(scene_id, image_status="generating", error_message=None)
-    await _scene_event(project_id, scene_id, imageStatus="generating", imageProgress=5, errorMsg="")
+    preserve_error = any(scene.get(field) == "error" for field in ("audio_status", "video_status"))
+    values: dict[str, Any] = {"image_status": "generating"}
+    if not preserve_error:
+        values["error_message"] = None
+    _update_scene(scene_id, **values)
+    await _scene_event(project_id, scene_id, imageStatus="generating", imageProgress=5, **({} if preserve_error else {"errorMsg": ""}))
     try:
         started_at = time.monotonic()
         with db() as session:
@@ -128,14 +133,14 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         await _scene_event(project_id, scene_id, imageStatus="error", imageProgress=0, errorMsg=f"AI 图片生成失败：{detail}")
         return False
 
-    _update_scene(scene_id, image_status="success", image_path=image_path, error_message=None)
+    _update_scene(scene_id, image_status="success", image_path=image_path)
     await _scene_event(
         project_id,
         scene_id,
         imageStatus="success",
         imageProgress=100,
         imageUrl=signed_url_for_stored(image_path, f"scene-{scene.get('order_num') or 0}"),
-        errorMsg="",
+        **({} if preserve_error else {"errorMsg": ""}),
     )
     return True
 
@@ -171,7 +176,12 @@ def spoken_line(scene: dict[str, Any], audio_config: dict[str, Any]) -> tuple[st
 
 async def _generate_scene_audio(project_id: str, scene: dict[str, Any], audio_config: dict[str, Any], user_id: int) -> bool:
     scene_id = scene["id"]
-    await _scene_event(project_id, scene_id, audioStatus="generating", audioProgress=20, errorMsg="")
+    preserve_error = any(scene.get(field) == "error" for field in ("image_status", "video_status"))
+    values: dict[str, Any] = {"audio_status": "generating"}
+    if not preserve_error:
+        values["error_message"] = None
+    _update_scene(scene_id, **values)
+    await _scene_event(project_id, scene_id, audioStatus="generating", audioProgress=20, **({} if preserve_error else {"errorMsg": ""}))
     try:
         line, config = spoken_line(scene, audio_config)
         extension = "mp3" if config["provider"] == "edge" else "wav"
@@ -197,7 +207,7 @@ async def _generate_scene_audio(project_id: str, scene: dict[str, Any], audio_co
         audioProgress=100,
         audioUrl=signed_url_for_stored(audio_path, f"scene-{scene.get('order_num') or 0}"),
         audioDuration=duration,
-        errorMsg="",
+        **({} if preserve_error else {"errorMsg": ""}),
     )
     return True
 
@@ -213,24 +223,45 @@ def terminal_status(outcomes: list[bool]) -> str:
     return "partial" if any(outcomes) else "failed"
 
 
+def episode_media_status(episode_id: str, outcomes: list[bool]) -> str:
+    """Keep a successful retry from hiding another shot that is still failed."""
+    with db() as session:
+        scenes = session.exec(
+            select(Scene).where(Scene.episode_id == episode_id, Scene.deleted_at.is_(None))
+        ).all()
+    has_error = any(
+        status == "error"
+        for scene in scenes
+        for status in (scene.image_status, scene.audio_status, scene.video_status)
+    )
+    if not has_error:
+        return terminal_status(outcomes)
+    has_success = any(
+        status == "success"
+        for scene in scenes
+        for status in (scene.image_status, scene.audio_status, scene.video_status)
+    )
+    return "partial" if has_success else "failed"
+
+
 async def run_generation(
     project_id: str,
     scenes: list[dict[str, Any]],
     config: dict[str, Any],
-    audio_config: dict[str, Any],
     user_id: int,
+    media: str,
     episode_id: str | None = None,
 ) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCENES)
 
-    async def one(scene: dict[str, Any]) -> list[bool]:
+    async def one(scene: dict[str, Any]) -> bool:
         async with semaphore:
-            image_ok = await _generate_scene_image(project_id, scene, config, user_id)
-            audio_ok = await _generate_scene_audio(project_id, scene, audio_config, user_id)
-            return [image_ok, audio_ok]
+            if media == "image":
+                return await _generate_scene_image(project_id, scene, config, user_id)
+            return await _generate_scene_audio(project_id, scene, config, user_id)
 
     results = await asyncio.gather(*(one(scene) for scene in scenes))
-    status = terminal_status([outcome for scene_result in results for outcome in scene_result])
+    status = episode_media_status(episode_id, results) if episode_id else terminal_status(results)
     logger.info(
         "generation finished project=%s episode=%s scenes=%d status=%s", project_id, episode_id, len(scenes), status
     )
@@ -311,8 +342,12 @@ async def _generate_scene_video(
     options: dict[str, Any],
 ) -> bool:
     scene_id = scene["id"]
-    _update_scene(scene_id, video_status="generating", error_message=None)
-    await _scene_event(project_id, scene_id, videoStatus="generating", videoProgress=5, errorMsg="")
+    preserve_error = any(scene.get(field) == "error" for field in ("image_status", "audio_status"))
+    values: dict[str, Any] = {"video_status": "generating"}
+    if not preserve_error:
+        values["error_message"] = None
+    _update_scene(scene_id, **values)
+    await _scene_event(project_id, scene_id, videoStatus="generating", videoProgress=5, **({} if preserve_error else {"errorMsg": ""}))
     try:
         capabilities = config["videoCapabilities"]
         references = []
@@ -355,14 +390,14 @@ async def _generate_scene_video(
         await _scene_event(project_id, scene_id, videoStatus="error", videoProgress=0, errorMsg=f"AI 视频生成失败：{detail}")
         return False
 
-    _update_scene(scene_id, video_status="success", video_path=video_path, error_message=None)
+    _update_scene(scene_id, video_status="success", video_path=video_path)
     await _scene_event(
         project_id,
         scene_id,
         videoStatus="success",
         videoProgress=100,
         videoUrl=signed_url_for_stored(video_path, f"scene-{scene.get('order_num') or 0}"),
-        errorMsg="",
+        **({} if preserve_error else {"errorMsg": ""}),
     )
     return True
 
@@ -393,9 +428,10 @@ async def run_video_generation(
 
     results = await asyncio.gather(*(run(scene) for scene in scenes))
     successes = sum(results)
-    status = "done" if successes == len(scenes) else "partial" if successes else "failed"
-    video_status = "success" if status == "done" else "error"
-    detail = "" if status == "done" else f"{len(scenes) - successes} 个分镜视频生成失败"
+    batch_status = terminal_status(results)
+    status = episode_media_status(episode_id, results)
+    video_status = "success" if batch_status == "done" else "error"
+    detail = "" if batch_status == "done" else f"{len(scenes) - successes} 个分镜视频生成失败"
     _update_project(project_id, status=status, video_status=video_status, video_progress=100, video_url=None)
     _update_episode(episode_id, status=status, video_status=video_status, video_progress=100, error_message=detail or None)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"]}})

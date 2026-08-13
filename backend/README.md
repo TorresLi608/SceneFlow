@@ -65,7 +65,7 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 - Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.
 - Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
 - Image generation supports OpenAI, Gemini, and Qwen/Wan; video supports Doubao, Gemini, and Qwen/Wan; audio supports Edge, system, OpenAI, and Qwen TTS.
-- Qwen media uses the native `https://dashscope.aliyuncs.com/api/v1` API. Video uses `wan2.7-t2v` without a reference image, `wan2.7-i2v` with a first frame and optional driving audio, `wan2.7-r2v` with up to five references, or `videoedit` with a reference video. Each video model config declares its allowed inputs, quality, pixel resolution, FPS, prompt enhancement, and duration range; unsupported parameters are omitted and rejected if submitted. Native DashScope uploads local media to its temporary OSS upload endpoint and sends `oss://` paths; a configured relay Base URL remains supported and receives data URLs. Qwen quality is `480p`, `720p`, or `1080p`, and prompt enhancement maps to `prompt_extend`. Audio `modelSeries` is `model:voice`, for example `qwen3-tts-flash:Cherry`.
+- Qwen media uses Alibaba's official `dashscope` SDK for the native `https://dashscope.aliyuncs.com/api/v1` API. Video uses `wan2.7-t2v` without a reference image, `wan2.7-i2v` with a first frame and optional driving audio, `wan2.7-r2v` with up to five references, or `videoedit` with a reference video. Each video model config declares its allowed inputs, quality, pixel resolution, FPS, prompt enhancement, and duration range; unsupported parameters are omitted and rejected if submitted. Native DashScope media uploads use the SDK's OSS uploader; a configured relay Base URL remains supported through its HTTP-compatible API and receives data URLs. Qwen quality is `480p`, `720p`, or `1080p`, and prompt enhancement maps to `prompt_extend`. Audio `modelSeries` is `model:voice`, for example `qwen3-tts-flash:Cherry`.
 - New model configurations start with an empty `modelSeries`. Model discovery does not filter by purpose: it uses the provider or relay `/models` endpoint when available, while native Qwen media and local TTS return all known models for that provider. Saving never performs a remote connectivity check; enabled configs still require their local fields and API key.
 
 ## APIs
@@ -131,13 +131,15 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
   - synchronous, and refused with 409 on a locked card
 - `POST /api/projects/:id/characters/:characterId/variants`, `PATCH .../:variantId`, `DELETE .../:variantId`
 - `PUT /api/projects/:id/scenes/:sceneId/characters` — replace a shot's cast; `[]` clears it
+- `POST /api/projects/:id/scenes`, `DELETE /api/projects/:id/scenes/:sceneId` — add or soft-delete a shot in an episode
 
 ### Project Generate (JWT required)
 - `POST /api/projects/:id/generate`
-  - requires an active image configuration
+  - request body selects `media: "image" | "audio"` and optional `sceneIds`; omitted IDs target all unlocked shots
+  - image generation requires an active image configuration; audio falls back to built-in Edge TTS
   - renders one episode's shots; `episodeId` omitted targets the current episode
   - shots with `isLocked` are skipped; all of them locked is a 400 rather than a silent no-op
-  - generates real storyboard images and TTS audio concurrently
+  - generates the selected media independently, up to three shots concurrently
   - TTS supports Edge/System/OpenAI audio configurations
   - the terminal status reflects what landed: `done`, `partial`, or `failed`, written to both
     the project (which holds the busy lock) and the episode that was rendered
