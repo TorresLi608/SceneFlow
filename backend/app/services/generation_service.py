@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 from typing import Any
@@ -21,12 +22,14 @@ from app.services.artifact_service import (
 )
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.tts_service import synthesize
+from app.services.video_service import generate_video
 from app.utils.common import now
 
 
 logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT_SCENES = 3
+MAX_CONCURRENT_VIDEO_SCENES = 2
 ERROR_DETAIL_CHARS = 220
 # Providers cap how many reference images one request may carry, and a crowd scene would
 # blow past it. The cast is ordered, so this keeps the characters that matter most.
@@ -291,11 +294,108 @@ def persist_character_portrait(project_id: str, character_id: str, data: bytes, 
     return store_artifact("characters", project_id, f"{character_id}.{ext}", data)
 
 
-async def run_video_generation(project_id: str, model: str) -> None:
-    for progress in [10, 25, 40, 60, 75, 90, 100]:
-        await asyncio.sleep(0.35)
-        _update_project(project_id, video_progress=progress)
-        await broadcast(project_id, {"type": "VIDEO_UPDATE", "projectId": project_id, "data": {"videoStatus": "generating", "videoProgress": progress, "videoModel": model}})
-    video_url = f"https://example.com/video/{project_id}.mp4"
-    _update_project(project_id, status="done", video_status="success", video_progress=100, video_url=video_url)
-    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "done", "videoStatus": "success", "videoUrl": video_url, "videoModel": model}})
+def _stored_media(stored: str) -> dict[str, str]:
+    path = artifact_absolute_path(stored)
+    data = path.read_bytes()
+    return {
+        "name": path.name,
+        "data": f"data:{media_type_for(path.name)};base64,{base64.b64encode(data).decode('ascii')}",
+    }
+
+
+async def _generate_scene_video(
+    project_id: str,
+    scene: dict[str, Any],
+    config: dict[str, Any],
+    user_id: int,
+    options: dict[str, Any],
+) -> bool:
+    scene_id = scene["id"]
+    _update_scene(scene_id, video_status="generating", error_message=None)
+    await _scene_event(project_id, scene_id, videoStatus="generating", videoProgress=5, errorMsg="")
+    try:
+        capabilities = config["videoCapabilities"]
+        references = []
+        if capabilities["maxReferenceImages"] and scene.get("image_path"):
+            references.append(_stored_media(scene["image_path"]))
+        if capabilities["referenceImagesRequired"] and not references:
+            raise ValueError("该分镜缺少模型必需的参考图")
+        for _, data, mime_type in character_references(scene):
+            if len(references) >= capabilities["maxReferenceImages"]:
+                break
+            references.append({"name": "character.png", "data": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"})
+        driving_audio = _stored_media(scene["audio_path"]) if capabilities["drivingAudio"] and scene.get("audio_path") else None
+        prompt = str(scene.get("visual_prompt") or scene.get("narration") or "").strip()
+        if not prompt:
+            raise ValueError("该分镜缺少画面提示词")
+        started_at = time.monotonic()
+        with db() as session:
+            require_model_balance(session, user_id, config)
+        await _scene_event(project_id, scene_id, videoStatus="generating", videoProgress=20, errorMsg="")
+        result = await generate_video(
+            provider=config["provider"],
+            api_key=config["apiKey"],
+            model=config["model"],
+            prompt=prompt,
+            quality=options["quality"],
+            resolution=options["resolution"],
+            fps=options["fps"],
+            duration=options["duration"],
+            prompt_extend=options["promptExtend"],
+            references=references,
+            driving_audio=driving_audio,
+            base_url=config.get("baseUrl", ""),
+        )
+        record_usage(user_id, config, "scene_video", started_at, quantity=options["duration"])
+        video_path = store_artifact("projects", project_id, f"{scene_id}.{result.format}", result.data)
+    except Exception as exc:
+        detail = str(exc)[:ERROR_DETAIL_CHARS]
+        logger.warning("scene video generation failed project=%s scene=%s: %s", project_id, scene_id, detail)
+        _update_scene(scene_id, video_status="error", error_message=f"AI 视频生成失败：{detail}")
+        await _scene_event(project_id, scene_id, videoStatus="error", videoProgress=0, errorMsg=f"AI 视频生成失败：{detail}")
+        return False
+
+    _update_scene(scene_id, video_status="success", video_path=video_path, error_message=None)
+    await _scene_event(
+        project_id,
+        scene_id,
+        videoStatus="success",
+        videoProgress=100,
+        videoUrl=signed_url_for_stored(video_path, f"scene-{scene.get('order_num') or 0}"),
+        errorMsg="",
+    )
+    return True
+
+
+async def run_video_generation(
+    project_id: str,
+    scenes: list[dict[str, Any]],
+    config: dict[str, Any],
+    user_id: int,
+    episode_id: str,
+    options: dict[str, Any],
+) -> None:
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_VIDEO_SCENES)
+    completed = 0
+    completed_lock = asyncio.Lock()
+
+    async def run(scene: dict[str, Any]) -> bool:
+        nonlocal completed
+        async with semaphore:
+            succeeded = await _generate_scene_video(project_id, scene, config, user_id, options)
+        async with completed_lock:
+            completed += 1
+            progress = round(completed / len(scenes) * 100)
+            _update_project(project_id, video_progress=progress)
+            _update_episode(episode_id, video_progress=progress)
+            await broadcast(project_id, {"type": "VIDEO_UPDATE", "projectId": project_id, "data": {"videoStatus": "generating", "videoProgress": progress, "videoModel": config["model"]}})
+        return succeeded
+
+    results = await asyncio.gather(*(run(scene) for scene in scenes))
+    successes = sum(results)
+    status = "done" if successes == len(scenes) else "partial" if successes else "failed"
+    video_status = "success" if status == "done" else "error"
+    detail = "" if status == "done" else f"{len(scenes) - successes} 个分镜视频生成失败"
+    _update_project(project_id, status=status, video_status=video_status, video_progress=100, video_url=None)
+    _update_episode(episode_id, status=status, video_status=video_status, video_progress=100, error_message=detail or None)
+    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"]}})

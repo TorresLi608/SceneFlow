@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Download, Film, RotateCcw, Sparkles, Upload, X } from "lucide-react";
+import { Download, Film, Music2, RotateCcw, Sparkles, Upload, Video, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { generateVideoAction } from "@/actions/video-generation-actions";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
@@ -21,9 +22,6 @@ const resolutionOptions: { value: VideoResolution; label: string; ratio: string 
   { value: "1024x1024", label: "1024 × 1024", ratio: "1:1" },
   { value: "1920x1080", label: "1920 × 1080", ratio: "16:9" },
 ];
-const fpsOptions: VideoFps[] = [24, 30, 60];
-const qualityOptions: VideoQuality[] = ["480p", "720p", "1080p"];
-const durationOptions = Array.from({ length: 12 }, (_, index) => index + 4);
 const historyStorageKey = "sceneflow-video-generation-history-v1";
 
 interface VideoHistoryItem {
@@ -82,13 +80,18 @@ interface VideoGenerationPanelProps {
 export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerationPanelProps) {
   const { t, formatDateTime } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<VideoResolution>("1280x720");
   const [fps, setFps] = useState<VideoFps>(24);
   const [quality, setQuality] = useState<VideoQuality>("720p");
-  const [duration, setDuration] = useState(4);
+  const [duration, setDuration] = useState(3);
+  const [promptExtend, setPromptExtend] = useState(false);
   const [prompt, setPrompt] = useState("");
-  const [reference, setReference] = useState<VideoReferenceInput | undefined>();
+  const [references, setReferences] = useState<VideoReferenceInput[]>([]);
+  const [referenceVideo, setReferenceVideo] = useState<VideoReferenceInput>();
+  const [drivingAudio, setDrivingAudio] = useState<VideoReferenceInput>();
   const [videoUrl, setVideoUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -107,8 +110,15 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     ? selectedConfigId
     : defaultConfigId;
   const selectedConfig = videoConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
-  const isGemini = selectedConfig?.provider === "gemini";
-  const isQwen = selectedConfig?.provider === "qwen";
+  const capabilities = selectedConfig?.videoCapabilities;
+  const selectedQuality = capabilities?.qualities.includes(quality) ? quality : capabilities?.qualities[0] ?? "720p";
+  const selectedResolution = capabilities?.resolutions.includes(resolution) ? resolution : capabilities?.resolutions[0] ?? "1280x720";
+  const selectedFps = capabilities?.fps.includes(fps) ? fps : capabilities?.fps[0] ?? 24;
+  const selectedDuration = capabilities ? Math.min(capabilities.maxDuration, Math.max(capabilities.minDuration, duration)) : duration;
+  const selectedPromptExtend = Boolean(capabilities?.promptExtend && promptExtend);
+  const durationOptions = capabilities
+    ? Array.from({ length: capabilities.maxDuration - capabilities.minDuration + 1 }, (_, index) => capabilities.minDuration + index)
+    : [];
 
   const generateMutation = useMutation({
     mutationFn: generateVideoAction,
@@ -141,19 +151,40 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     const nextValue = value ?? "";
     setSelectedConfigId(nextValue);
     const nextConfig = videoConfigs.find((config) => configSelectValue(config) === nextValue);
-    if (nextConfig?.provider === "gemini" && resolution === "1024x1024") {
-      setResolution("1280x720");
-    }
+    const nextCapabilities = nextConfig?.videoCapabilities;
+    setReferences((current) => nextCapabilities?.maxReferenceImages ? current.slice(0, nextCapabilities.maxReferenceImages) : []);
+    if (!nextCapabilities?.referenceVideo) setReferenceVideo(undefined);
+    if (!nextCapabilities?.drivingAudio) setDrivingAudio(undefined);
+    setQuality(nextCapabilities?.qualities[0] ?? "720p");
+    setResolution(nextCapabilities?.resolutions[0] ?? "1280x720");
+    setFps(nextCapabilities?.fps[0] ?? 24);
+    setDuration(nextCapabilities?.minDuration ?? 3);
+    setPromptExtend(false);
   };
 
-  const addReference = async (file: File | undefined) => {
-    if (!file) return;
-    setErrorMessage(null);
-    if (!file.type.match(/^image\/(png|jpeg|webp)$/) || file.size > 10 * 1024 * 1024) {
+  const addReferences = async (files: FileList | null) => {
+    if (!files || !capabilities) return;
+    const selected = Array.from(files).slice(0, Math.max(0, capabilities.maxReferenceImages - references.length));
+    if (selected.some((file) => !file.type.match(/^image\/(png|jpeg|webp)$/) || file.size > 10 * 1024 * 1024)) {
       setErrorMessage(t("videos.referenceLimit"));
       return;
     }
-    setReference({ name: file.name, data: await readFileAsDataUrl(file) });
+    setReferences((current) => [...current, ...selected.map((file) => ({ name: file.name, data: "" }))]);
+    const loaded = await Promise.all(selected.map(async (file) => ({ name: file.name, data: await readFileAsDataUrl(file) })));
+    setReferences((current) => [...current.slice(0, -selected.length), ...loaded]);
+  };
+
+  const addMedia = async (file: File | undefined, kind: "video" | "audio") => {
+    if (!file) return;
+    setErrorMessage(null);
+    const allowed = kind === "video" ? /^video\/(mp4|quicktime|webm)$/ : /^audio\/(mpeg|wav|x-wav|mp4)$/;
+    if (!allowed.test(file.type) || file.size > 50 * 1024 * 1024) {
+      setErrorMessage(t(kind === "video" ? "videos.referenceVideoLimit" : "videos.drivingAudioLimit"));
+      return;
+    }
+    const value = { name: file.name, data: await readFileAsDataUrl(file) };
+    if (kind === "video") setReferenceVideo(value);
+    else setDrivingAudio(value);
   };
 
   const generate = () => {
@@ -162,9 +193,14 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     setElapsedSeconds(0);
     generateMutation.mutate({
       prompt: content,
-      duration,
-      reference,
-      ...(isQwen ? { quality } : { resolution, fps }),
+      duration: selectedDuration,
+      references,
+      ...(referenceVideo ? { referenceVideo } : {}),
+      ...(drivingAudio ? { drivingAudio } : {}),
+      ...(capabilities?.qualities.length ? { quality: selectedQuality } : {}),
+      ...(capabilities?.resolutions.length ? { resolution: selectedResolution } : {}),
+      ...(capabilities?.fps.length ? { fps: selectedFps } : {}),
+      ...(capabilities?.promptExtend ? { promptExtend: selectedPromptExtend } : {}),
       ...selectedConfigPayload(selectedConfig),
     });
   };
@@ -232,102 +268,91 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
             />
           </div>
 
-          <div className={`grid gap-3 ${isQwen ? "sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3"}`}>
-            {isQwen ? (
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
+            {capabilities?.qualities.length ? (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">{t("videos.quality")}</label>
-                <Select value={quality} onValueChange={(value) => setQuality(value as VideoQuality)}>
-                  <SelectTrigger><SelectValue>{quality}</SelectValue></SelectTrigger>
+                <Select value={selectedQuality} onValueChange={(value) => setQuality(value as VideoQuality)}>
+                  <SelectTrigger><SelectValue>{selectedQuality}</SelectValue></SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
-                    {qualityOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                    {capabilities.qualities.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">{t("videos.resolution")}</label>
-                  <Select value={resolution} onValueChange={(value) => setResolution(value as VideoResolution)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent alignItemWithTrigger={false}>
-                      {resolutionOptions.map((item) => (
-                        <SelectItem key={item.value} value={item.value} disabled={isGemini && item.ratio === "1:1"}>
-                          {item.label} ({item.ratio})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            ) : null}
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">{t("videos.fps")}</label>
-                  <Select value={String(fps)} onValueChange={(value) => setFps(Number(value) as VideoFps)}>
-                    <SelectTrigger><SelectValue>{fps} FPS</SelectValue></SelectTrigger>
-                    <SelectContent alignItemWithTrigger={false}>
-                      {fpsOptions.map((item) => (
-                        <SelectItem key={item} value={String(item)} disabled={item !== 24}>{item} FPS</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
+            {capabilities?.resolutions.length ? (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">{t("videos.resolution")}</label>
+                <Select value={selectedResolution} onValueChange={(value) => setResolution(value as VideoResolution)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    {resolutionOptions.filter((item) => capabilities.resolutions.includes(item.value)).map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label} ({item.ratio})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
+            {capabilities?.fps.length ? (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">{t("videos.fps")}</label>
+                <Select value={String(selectedFps)} onValueChange={(value) => setFps(Number(value) as VideoFps)}>
+                  <SelectTrigger><SelectValue>{selectedFps} FPS</SelectValue></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    {capabilities.fps.map((item) => <SelectItem key={item} value={String(item)}>{item} FPS</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium">{t("videos.duration")}</label>
-              <Select value={String(duration)} onValueChange={(value) => setDuration(Number(value))}>
-                <SelectTrigger><SelectValue>{duration} s</SelectValue></SelectTrigger>
+              <Select value={String(selectedDuration)} onValueChange={(value) => setDuration(Number(value))}>
+                <SelectTrigger><SelectValue>{selectedDuration} s</SelectValue></SelectTrigger>
                 <SelectContent alignItemWithTrigger={false} className="max-h-64">
                   {durationOptions.map((item) => <SelectItem key={item} value={String(item)}>{item} s</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          {!isQwen ? <p className="text-xs leading-5 text-muted-foreground">{t("videos.capabilityHint")}</p> : null}
 
-          <div className="space-y-2">
+            {capabilities?.promptExtend ? (
+              <label className="flex min-h-8 items-center justify-between gap-3 text-sm">
+                <span className="font-medium">{t("videos.promptExtend")}</span>
+                <Switch checked={selectedPromptExtend} onCheckedChange={setPromptExtend} />
+              </label>
+            ) : null}
+          </div>
+
+          {capabilities && (capabilities.maxReferenceImages > 0 || capabilities.referenceVideo || capabilities.drivingAudio) ? <div className="space-y-3 border-t border-border/70 pt-4">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm font-medium">{t("videos.reference")}</label>
+              <label className="text-sm font-medium">{t("videos.inputMedia")}</label>
               <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                {reference ? t("videos.imageToVideo") : t("videos.textToVideo")}
+                {referenceVideo ? t("videos.videoToVideo") : references.length ? t("videos.imageToVideo") : t("videos.textToVideo")}
               </span>
             </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-                <Upload className="size-4" />
-                {t("videos.uploadReference")}
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => setReference(undefined)} disabled={!reference}>
-                {t("videos.clearReference")}
-              </Button>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(event) => {
-                void addReference(event.target.files?.[0]);
-                event.currentTarget.value = "";
-              }}
-            />
-            <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-md border border-dashed border-muted-foreground/50 bg-background/40 text-xs text-muted-foreground">
-              {reference ? (
-                <>
-                  <Image src={reference.data} alt="" fill unoptimized sizes="348px" className="object-contain" />
-                  <button
-                    type="button"
-                    onClick={() => setReference(undefined)}
-                    className="absolute top-2 right-2 inline-flex size-7 items-center justify-center rounded-md bg-background/85 text-foreground"
-                    aria-label={t("videos.removeReference")}
-                  >
-                    <X className="size-4" />
-                  </button>
-                </>
-              ) : t("videos.referenceEmpty")}
-            </div>
-            <p className="text-xs leading-5 text-muted-foreground">{t("videos.referenceHint")}</p>
-          </div>
+            {capabilities.maxReferenceImages > 0 ? <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium">{t("videos.referenceImages", { count: references.length, max: capabilities.maxReferenceImages })}</span>
+                <Button type="button" size="sm" variant="secondary" disabled={references.length >= capabilities.maxReferenceImages} onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="size-4" /> {t("videos.uploadReference")}
+                </Button>
+              </div>
+              <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { void addReferences(event.target.files); event.currentTarget.value = ""; }} />
+              <div className="grid grid-cols-3 gap-2">
+                {references.map((reference, index) => <div key={`${reference.name}-${index}`} className="relative aspect-video overflow-hidden rounded-md border bg-background/40">
+                  {reference.data ? <Image src={reference.data} alt="" fill unoptimized sizes="120px" className="object-cover" /> : null}
+                  <button type="button" onClick={() => setReferences((current) => current.filter((_, item) => item !== index))} className="absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded bg-background/85" aria-label={t("videos.removeReference")}><X className="size-3.5" /></button>
+                </div>)}
+              </div>
+              {capabilities.referenceImagesRequired && references.length === 0 ? <p className="text-xs text-amber-600">{t("videos.referenceRequired")}</p> : null}
+            </div> : null}
+            {capabilities.referenceVideo ? <MediaUpload icon={<Video className="size-4" />} label={t("videos.referenceVideo")} value={referenceVideo} uploadLabel={t("common.upload")} replaceLabel={t("common.replace")} clearLabel={t("common.clear")} onUpload={() => videoInputRef.current?.click()} onClear={() => setReferenceVideo(undefined)} /> : null}
+            {capabilities.drivingAudio ? <MediaUpload icon={<Music2 className="size-4" />} label={t("videos.drivingAudio")} value={drivingAudio} uploadLabel={t("common.upload")} replaceLabel={t("common.replace")} clearLabel={t("common.clear")} onUpload={() => audioInputRef.current?.click()} onClear={() => setDrivingAudio(undefined)} /> : null}
+            <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={(event) => { void addMedia(event.target.files?.[0], "video"); event.currentTarget.value = ""; }} />
+            <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/wav,audio/mp4" className="hidden" onChange={(event) => { void addMedia(event.target.files?.[0], "audio"); event.currentTarget.value = ""; }} />
+          </div> : null}
         </div>
 
         <div className="mt-4 border-t border-border/70 pt-4">
@@ -357,7 +382,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
         </div>
 
         <div className="mt-4 border-t border-border/70 pt-4">
-          <Button className="w-full" onClick={generate} disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}>
+          <Button className="w-full" onClick={generate} disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending || Boolean(capabilities?.referenceImagesRequired && references.length === 0)}>
             <Sparkles className="size-4" />
             {generateMutation.isPending ? generatingLabel : t("videos.generateNow")}
           </Button>
@@ -398,4 +423,14 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
       </section>
     </div>
   );
+}
+
+function MediaUpload({ icon, label, value, uploadLabel, replaceLabel, clearLabel, onUpload, onClear }: { icon: React.ReactNode; label: string; value?: VideoReferenceInput; uploadLabel: string; replaceLabel: string; clearLabel: string; onUpload: () => void; onClear: () => void }) {
+  return <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 p-2 text-xs">
+    <span className="flex min-w-0 items-center gap-2">{icon}<span className="truncate">{value?.name || label}</span></span>
+    <div className="flex gap-1">
+      <Button type="button" size="icon-sm" variant="ghost" onClick={onUpload} title={value ? replaceLabel : uploadLabel} aria-label={value ? replaceLabel : uploadLabel}>{value ? <RotateCcw className="size-4" /> : <Upload className="size-4" />}</Button>
+      {value ? <Button type="button" size="icon-sm" variant="ghost" onClick={onClear} title={clearLabel} aria-label={clearLabel}><X className="size-4" /></Button> : null}
+    </div>
+  </div>;
 }

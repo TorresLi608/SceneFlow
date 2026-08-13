@@ -15,6 +15,7 @@ from app.models import (
     User,
 )
 from app.services.artifact_service import signed_url_for_stored
+from app.services.config_service import video_capabilities
 
 
 def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int = 0) -> dict[str, Any]:
@@ -68,6 +69,7 @@ def config_json(config: ModelConfig) -> dict[str, Any]:
         "cacheWritePricePerMillion": price("cache_write_price_per_million", "0"),
         "unitPrice": price("unit_price", "0"),
         "unitName": config.unit_name,
+        "videoCapabilities": video_capabilities(config) if config.purpose == "video" else None,
     }
 
 

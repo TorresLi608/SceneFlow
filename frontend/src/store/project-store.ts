@@ -403,6 +403,15 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
           if (typeof data.audioDuration === "number") {
             nextScene.audio.duration = data.audioDuration;
           }
+          if (typeof data.videoStatus === "string") {
+            nextScene.video.status = data.videoStatus;
+          }
+          if (typeof data.videoProgress === "number") {
+            nextScene.video.progress = data.videoProgress;
+          }
+          if ("videoUrl" in data) {
+            nextScene.video.url = data.videoUrl ?? null;
+          }
           if (typeof data.errorMsg === "string") {
             nextScene.errorMessage = data.errorMsg;
           }

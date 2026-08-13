@@ -49,6 +49,7 @@ from app.services.project_service import (
     scenes_with_assets,
 )
 from app.services.usage_service import record_usage, require_model_balance
+from app.services.video_service import resolve_video_options
 from app.utils.common import new_id, now
 
 
@@ -584,12 +585,26 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
 async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
         owned_project(session, project_id, user_id)
-        episode = resolve_episode(session, project_id, None)
-        if not episode_scenes(session, episode.id):
+        episode = resolve_episode(session, project_id, body.episode_id)
+        scenes = episode_scenes(session, episode.id)
+        if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
         config = active_model_config(session, user_id, "video", "视频生成")
         require_model_balance(session, user_id, config)
         model = (body.model or config["model"]).strip()
+        if model != config["model"]:
+            raise HTTPException(400, "selected video model is not the active video configuration")
+        try:
+            quality, resolution, fps, duration, prompt_extend = resolve_video_options(
+                body.model_dump(by_alias=True, exclude_none=True), config["videoCapabilities"]
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)[:220]) from exc
+        pending = [scene for scene in scenes if not scene.is_locked]
+        if not pending:
+            raise HTTPException(400, "every scene video in this episode is locked")
+        if config["videoCapabilities"]["referenceImagesRequired"] and not any(scene.image_path for scene in pending):
+            raise HTTPException(400, "selected video model requires storyboard images, generate them first")
         claim_project_status(
             session,
             project_id,
@@ -598,6 +613,9 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             video_status="generating",
             video_progress=0,
         )
+        touch_episode(session, episode, status="generating", video_status="generating", video_progress=0)
+        episode_id = episode.id
+        scene_payloads = _scene_payloads(session, project_id, episode.episode_number, pending)
     await broadcast(
         project_id,
         {
@@ -606,8 +624,17 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             "data": {"status": "video_generating", "videoStatus": "generating", "videoModel": model},
         },
     )
-    asyncio.create_task(run_video_generation(project_id, model))
-    return {"projectId": project_id, "status": "video_generating", "model": model}
+    asyncio.create_task(
+        run_video_generation(
+            project_id,
+            scene_payloads,
+            config,
+            user_id,
+            episode_id,
+            {"quality": quality, "resolution": resolution, "fps": fps, "duration": duration, "promptExtend": prompt_extend},
+        )
+    )
+    return {"projectId": project_id, "episodeId": episode_id, "status": "video_generating", "model": model, "sceneCount": len(scene_payloads)}
 
 
 @router.delete("/{project_id}", status_code=204)

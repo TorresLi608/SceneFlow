@@ -10,7 +10,7 @@ from app.api.deps import current_user_id
 from app.services.artifact_service import save_binary_artifact
 from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.usage_service import record_usage, require_model_balance
-from app.services.video_service import generate_video, parse_reference, resolve_qwen_video_quality, resolve_video_settings, validate_qwen_video_input
+from app.services.video_service import generate_video, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, validate_qwen_video_input, validate_video_inputs
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -26,9 +26,15 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
     if not prompt:
         raise HTTPException(400, "prompt is required")
 
-    reference = payload.get("reference")
-    if reference is not None and not isinstance(reference, dict):
-        raise HTTPException(400, "reference must be an image data URL")
+    references = payload.get("references") or ([payload["reference"]] if payload.get("reference") else [])
+    reference_video = payload.get("referenceVideo")
+    driving_audio = payload.get("drivingAudio")
+    if not isinstance(references, list) or any(not isinstance(item, dict) for item in references):
+        raise HTTPException(400, "references must be image data URLs")
+    if reference_video is not None and not isinstance(reference_video, dict):
+        raise HTTPException(400, "referenceVideo must be a video data URL")
+    if driving_audio is not None and not isinstance(driving_audio, dict):
+        raise HTTPException(400, "drivingAudio must be an audio data URL")
 
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
@@ -43,19 +49,14 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
 
     started_at = time.monotonic()
     try:
-        duration = int(payload.get("duration") or 4)
-        if reference:
-            parse_reference(reference)
+        quality, resolution, fps, duration, prompt_extend = resolve_video_options(payload, config["videoCapabilities"])
+        validate_video_inputs(config["videoCapabilities"], references, reference_video, driving_audio)
         if config["provider"] == "qwen":
-            quality = resolve_qwen_video_quality(str(payload.get("quality") or "720p"), duration)
-            resolution = None
-            fps = None
-            validate_qwen_video_input(config["model"], reference)
-        else:
-            quality = None
-            resolution = str(payload.get("resolution") or "1280x720")
-            fps = int(payload.get("fps") or 24)
-            resolve_video_settings(config["provider"], resolution, fps, duration)
+            if quality:
+                quality = resolve_qwen_video_quality(str(quality))
+            validate_qwen_video_input(config["model"], references, reference_video)
+        elif resolution:
+            resolve_video_settings(config["provider"], resolution)
     except (TypeError, ValueError) as exc:
         raise HTTPException(400, str(exc)[:220]) from exc
 
@@ -69,7 +70,10 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
             fps=fps,
             duration=duration,
             quality=quality,
-            reference=reference,
+            prompt_extend=prompt_extend,
+            references=references,
+            reference_video=reference_video,
+            driving_audio=driving_audio,
             base_url=config.get("baseUrl", ""),
         )
     except Exception as exc:
@@ -79,7 +83,7 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
     video = {
         "url": persist_video(result.data),
         "model": config["model"],
-        "source": "image-to-video" if reference else "text-to-video",
+        "source": "video-to-video" if reference_video else ("image-to-video" if references else "text-to-video"),
     }
     if fps is not None:
         video["fps"] = fps

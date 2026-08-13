@@ -36,7 +36,24 @@ POST /api/projects/:id/generate
 - A voice override on a character card is honoured only on the configured audio provider — a card stores a provider and a model, never credentials.
 - The terminal status reflects what actually landed. `partial` is a real outcome, not an error state to normalise away.
 
-## 3. Chat streaming
+## 3. Shots -> generated clips (drama / motion comic)
+
+```
+POST /api/projects/:id/generate-video
+   -> active video config + its declared capabilities
+   -> current episode's unlocked shots, <=2 concurrent
+        storyboard image -> first-frame reference when supported/required
+        scene voice track -> driving audio when supported
+        video provider -> store_artifact(projects/<id>/<scene>.mp4)
+        broadcast SCENE_UPDATE -> videoStatus / videoProgress / videoUrl
+   -> terminal project + episode status: done | partial | failed
+```
+
+- This produces one clip per shot; final timeline composition/export remains a separate stage.
+- The same capability validator serves the standalone video page and this batch path. Pixel resolution, FPS, quality, duration, prompt enhancement, and media inputs are omitted when the selected model does not support them.
+- A model that requires a reference image marks a shot without a storyboard image as failed, so the batch can finish `partial` without inventing a first frame from an unrelated portrait.
+
+## 4. Chat streaming
 
 Two bridges, deliberately separate. Do not collapse them.
 
@@ -58,7 +75,7 @@ backend /api/chat/… ─▶ graph/context_graph  ─▶ history ─▶ token bu
 - Context compression: when history exceeds `SCENEFLOW_MAX_CONTEXT_TOKENS` (default 100000), older messages are summarised into `chat_sessions.context_summary` and the recent detail is kept.
 - assistant-ui renders from an **external store** because the AI SDK already owns message state. Full design, and the changes that would break it, in `../design/feature-chat.md`.
 
-## 4. Metering and billing
+## 5. Metering and billing
 
 ```
 before the provider call:  require_model_balance(session, user_id, config)

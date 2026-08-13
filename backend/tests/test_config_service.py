@@ -17,7 +17,7 @@ from app.core.database import db, init_db
 from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
 from app.models import ChatMessage, ChatSession, ModelConfig, User, UserOfficialConfigDefault
-from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload
+from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
 
 
 def _stored_config() -> ModelConfig:
@@ -166,6 +166,45 @@ def test_video_gemini_config_is_valid() -> None:
     assert normalized["purpose"] == "video"
     assert normalized["provider"] == "gemini"
     assert normalized["model"] == "veo-3.1-generate-preview"
+
+
+def test_video_capabilities_are_normalized_and_stored() -> None:
+    payload = {
+        "purpose": "video",
+        "provider": "qwen",
+        "modelSeries": "wan2.7-t2v",
+        "apiKey": "new-secret-key",
+        "videoCapabilities": {
+            "qualities": ["1080p", "480p"],
+            "fps": [],
+            "resolutions": [],
+            "promptExtend": True,
+            "minDuration": 3,
+            "maxDuration": 12,
+        },
+    }
+    normalized = normalize_config_payload(payload)
+    fields = config_create_fields(payload, normalized)
+    config = ModelConfig(provider="qwen", encrypted_key="x", purpose="video", video_capabilities_json=fields["video_capabilities_json"])
+
+    assert video_capabilities(config) == {
+        "qualities": ["480p", "1080p"],
+        "fps": [],
+        "resolutions": [],
+        "promptExtend": True,
+        "minDuration": 3,
+        "maxDuration": 12,
+        "referenceImagesRequired": False,
+        "maxReferenceImages": 0,
+        "referenceVideo": False,
+        "drivingAudio": False,
+    }
+    try:
+        normalize_video_capabilities({"minDuration": 15, "maxDuration": 3}, "qwen")
+    except HTTPException as exc:
+        assert exc.status_code == 400
+    else:
+        raise AssertionError("invalid video duration range should fail")
 
 
 def test_qwen_media_configs_are_valid() -> None:
@@ -458,6 +497,7 @@ if __name__ == "__main__":
     test_image_openai_relay_config_is_valid()
     test_image_gemini_config_is_valid()
     test_video_gemini_config_is_valid()
+    test_video_capabilities_are_normalized_and_stored()
     test_qwen_media_configs_are_valid()
     test_gemini_image_helpers()
     test_user_config_pricing_round_trip()

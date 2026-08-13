@@ -2851,6 +2851,38 @@ components:
             maxLength: 160
           - type: 'null'
           title: Model
+        episodeId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Episodeid
+        quality:
+          anyOf:
+          - type: string
+            maxLength: 16
+          - type: 'null'
+          title: Quality
+        resolution:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Resolution
+        fps:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Fps
+        duration:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Duration
+        promptExtend:
+          type: boolean
+          title: Promptextend
+          default: false
       additionalProperties: false
       type: object
       title: GenerateVideoRequest

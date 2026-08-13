@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import dataclass
+from pathlib import Path
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from google import genai
@@ -15,8 +17,9 @@ from google.genai import types
 DOUBAO_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 GEMINI_VIDEO_BASE_URL = "https://generativelanguage.googleapis.com"
 QWEN_VIDEO_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
-DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpeg|jpg|webp));base64,(.+)$", re.DOTALL)
-MAX_REFERENCE_BYTES = 10 * 1024 * 1024
+DATA_URL_RE = re.compile(r"^data:([^;,]+);base64,(.+)$", re.DOTALL)
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_MEDIA_BYTES = 50 * 1024 * 1024
 POLL_INTERVAL_SECONDS = 5
 GENERATION_TIMEOUT_SECONDS = 15 * 60
 
@@ -42,28 +45,54 @@ VIDEO_SETTINGS = {
 QWEN_VIDEO_QUALITIES = {"480p", "720p", "1080p"}
 
 
-def parse_reference(value: dict[str, Any]) -> tuple[bytes, str]:
+def parse_media(value: dict[str, Any], allowed: set[str], maximum: int) -> tuple[bytes, str, str]:
     match = DATA_URL_RE.match(str(value.get("data") or ""))
     if not match:
-        raise ValueError("reference image must be a png/jpeg/webp data URL")
+        raise ValueError("media must be a base64 data URL")
     mime_type, encoded = match.groups()
+    if mime_type not in allowed:
+        raise ValueError(f"unsupported media type: {mime_type}")
     try:
         data = base64.b64decode(encoded, validate=True)
     except Exception as exc:
         raise ValueError("invalid reference image data") from exc
-    if not data or len(data) > MAX_REFERENCE_BYTES:
-        raise ValueError("reference image must be 1 byte to 10MB")
-    return data, "image/jpeg" if mime_type in {"image/jpeg", "image/jpg"} else mime_type
+    if not data or len(data) > maximum:
+        raise ValueError(f"media must be 1 byte to {maximum // (1024 * 1024)}MB")
+    return data, "image/jpeg" if mime_type in {"image/jpeg", "image/jpg"} else mime_type, Path(str(value.get("name") or "media")).name
 
 
-def resolve_video_settings(provider: str, resolution: str, fps: int, duration: int) -> VideoSettings:
+def parse_reference(value: dict[str, Any]) -> tuple[bytes, str]:
+    data, mime_type, _ = parse_media(value, {"image/png", "image/jpeg", "image/jpg", "image/webp"}, MAX_IMAGE_BYTES)
+    return data, mime_type
+
+
+def validate_video_inputs(
+    capabilities: dict[str, Any],
+    references: list[dict[str, Any]],
+    reference_video: dict[str, Any] | None,
+    driving_audio: dict[str, Any] | None,
+) -> None:
+    maximum = capabilities["maxReferenceImages"]
+    if capabilities["referenceImagesRequired"] and not references:
+        raise ValueError("selected model requires a reference image")
+    if len(references) > maximum:
+        raise ValueError(f"selected model accepts at most {maximum} reference images")
+    if reference_video and not capabilities["referenceVideo"]:
+        raise ValueError("selected model does not support a reference video")
+    if driving_audio and not capabilities["drivingAudio"]:
+        raise ValueError("selected model does not support driving audio")
+    for reference in references:
+        parse_reference(reference)
+    if reference_video:
+        parse_media(reference_video, {"video/mp4", "video/quicktime", "video/webm"}, MAX_MEDIA_BYTES)
+    if driving_audio:
+        parse_media(driving_audio, {"audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4"}, MAX_MEDIA_BYTES)
+
+
+def resolve_video_settings(provider: str, resolution: str) -> VideoSettings:
     provider = provider.strip().lower()
     if provider not in {"doubao", "gemini"}:
-        raise ValueError("pixel resolution and FPS are only supported for Doubao and Gemini")
-    if fps != 24:
-        raise ValueError("Doubao and Gemini video models currently only support 24 FPS")
-    if not 4 <= duration <= 15:
-        raise ValueError("duration must be between 4 and 15 seconds")
+        raise ValueError("pixel resolution is only supported for Doubao and Gemini")
     settings = VIDEO_SETTINGS.get(resolution)
     if not settings:
         raise ValueError("unsupported video resolution")
@@ -72,27 +101,65 @@ def resolve_video_settings(provider: str, resolution: str, fps: int, duration: i
     return settings
 
 
-def resolve_qwen_video_quality(quality: str, duration: int) -> str:
-    if not 4 <= duration <= 15:
-        raise ValueError("duration must be between 4 and 15 seconds")
+def resolve_qwen_video_quality(quality: str) -> str:
     normalized = quality.strip().lower()
     if normalized not in QWEN_VIDEO_QUALITIES:
         raise ValueError("Qwen video quality must be 480p, 720p, or 1080p")
     return normalized
 
 
-def validate_qwen_video_input(model: str, reference: dict[str, Any] | None) -> None:
-    is_i2v = "-i2v" in model.strip().lower()
-    if is_i2v and not reference:
+def validate_qwen_video_input(model: str, references: list[dict[str, Any]], reference_video: dict[str, Any] | None) -> None:
+    normalized = model.strip().lower()
+    is_i2v = "-i2v" in normalized
+    if is_i2v and not references:
         raise ValueError(f"Qwen image-to-video model {model} requires a reference image")
-    if reference and not is_i2v:
+    if references and not any(part in normalized for part in ("-i2v", "-r2v", "videoedit")):
         raise ValueError(f"Qwen text-to-video model {model} does not accept a reference image; use wan2.7-i2v")
+    if reference_video and "videoedit" not in normalized:
+        raise ValueError(f"Qwen model {model} does not accept a reference video")
+
+
+def resolve_video_options(payload: dict[str, Any], capabilities: dict[str, Any]) -> tuple[str | None, str | None, int | None, int, bool]:
+    raw_duration = payload.get("duration", capabilities["minDuration"])
+    duration = int(raw_duration)
+    if isinstance(raw_duration, bool) or str(duration) != str(raw_duration):
+        raise ValueError("duration must be an integer")
+    if not capabilities["minDuration"] <= duration <= capabilities["maxDuration"]:
+        raise ValueError(f"duration must be between {capabilities['minDuration']} and {capabilities['maxDuration']} seconds")
+
+    def selected(name: str, allowed: list[Any]) -> Any:
+        value = payload.get(name)
+        if not allowed:
+            if value is not None:
+                raise ValueError(f"selected model does not support {name}")
+            return None
+        value = allowed[0] if value is None else value
+        if value not in allowed:
+            raise ValueError(f"selected model does not support {name}={value}")
+        return value
+
+    quality = selected("quality", capabilities["qualities"])
+    resolution = selected("resolution", capabilities["resolutions"])
+    fps_value = payload.get("fps")
+    fps = capabilities["fps"][0] if capabilities["fps"] else None
+    if fps_value is not None:
+        fps = int(fps_value)
+        if fps not in capabilities["fps"]:
+            raise ValueError(f"selected model does not support fps={fps}")
+    prompt_extend = payload.get("promptExtend", False)
+    if not isinstance(prompt_extend, bool):
+        raise ValueError("promptExtend must be boolean")
+    if prompt_extend and not capabilities["promptExtend"]:
+        raise ValueError("selected model does not support promptExtend")
+    return quality, resolution, fps, duration, prompt_extend
 
 
 def build_doubao_payload(
     model: str,
     prompt: str,
-    settings: VideoSettings,
+    settings: VideoSettings | None,
+    quality: str | None,
+    fps: int | None,
     duration: int,
     reference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -107,14 +174,19 @@ def build_doubao_payload(
                 "role": "first_frame",
             }
         )
-    return {
+    payload: dict[str, Any] = {
         "model": model,
         "content": content,
-        "resolution": settings.resolution,
-        "ratio": settings.ratio,
         "duration": duration,
         "watermark": False,
     }
+    if settings:
+        payload["ratio"] = settings.ratio
+    if quality or settings:
+        payload["resolution"] = quality or settings.resolution
+    if fps is not None:
+        payload["fps"] = fps
+    return payload
 
 
 def _provider_error(payload: Any) -> str:
@@ -137,16 +209,22 @@ def gemini_video_base_url(base_url: str = "") -> str:
     return (base_url or GEMINI_VIDEO_BASE_URL).strip().rstrip("/").removesuffix("/openai").removesuffix("/v1beta")
 
 
+def is_native_qwen_video_url(base_url: str) -> bool:
+    return (urlparse(base_url or QWEN_VIDEO_BASE_URL).hostname or "").lower() == "dashscope.aliyuncs.com"
+
+
 async def _generate_doubao_video(
     api_key: str,
     model: str,
     prompt: str,
-    settings: VideoSettings,
+    settings: VideoSettings | None,
+    quality: str | None,
+    fps: int | None,
     duration: int,
     reference: dict[str, Any] | None,
     base_url: str,
 ) -> VideoResult:
-    payload = build_doubao_payload(model, prompt, settings, duration, reference)
+    payload = build_doubao_payload(model, prompt, settings, quality, fps, duration, reference)
     headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
     timeout = httpx.Timeout(GENERATION_TIMEOUT_SECONDS)
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
@@ -193,7 +271,9 @@ async def _generate_gemini_video(
     api_key: str,
     model: str,
     prompt: str,
-    settings: VideoSettings,
+    settings: VideoSettings | None,
+    quality: str | None,
+    fps: int | None,
     duration: int,
     reference: dict[str, Any] | None,
     base_url: str,
@@ -217,8 +297,9 @@ async def _generate_gemini_video(
             config=types.GenerateVideosConfig(
                 number_of_videos=1,
                 duration_seconds=duration,
-                aspect_ratio=settings.ratio,
-                resolution=settings.resolution,
+                aspect_ratio=settings.ratio if settings else None,
+                resolution=quality or (settings.resolution if settings else None),
+                fps=fps,
             ),
         )
         deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS
@@ -247,31 +328,86 @@ async def _generate_qwen_video(
     prompt: str,
     quality: str,
     duration: int,
-    reference: dict[str, Any] | None,
+    prompt_extend: bool,
+    references: list[dict[str, Any]],
+    reference_video: dict[str, Any] | None,
+    driving_audio: dict[str, Any] | None,
     base_url: str,
 ) -> VideoResult:
     model = model.strip()
-    validate_qwen_video_input(model, reference)
+    validate_qwen_video_input(model, references, reference_video)
     payload: dict[str, Any] = {
         "model": model,
         "input": {"prompt": prompt},
         "parameters": {
-            "resolution": quality.upper(),
             "duration": duration,
-            "prompt_extend": True,
+            "prompt_extend": prompt_extend,
             "watermark": False,
         },
     }
-    if reference:
-        data, mime_type = parse_reference(reference)
-        image_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
-        if model.lower() == "wan2.7-i2v":
-            payload["input"]["media"] = [{"type": "first_frame", "url": image_url}]
-        else:
-            payload["input"]["img_url"] = image_url
+    if quality:
+        payload["parameters"]["resolution"] = resolve_qwen_video_quality(quality).upper()
     base = (base_url or QWEN_VIDEO_BASE_URL).strip().rstrip("/")
     headers = {"Authorization": f"Bearer {api_key.strip()}", "X-DashScope-Async": "enable"}
     async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        media_headers: dict[str, str] = {}
+
+        async def media_url(value: dict[str, Any], kind: str) -> str:
+            if kind == "image":
+                data, mime_type = parse_reference(value)
+                filename = Path(str(value.get("name") or "reference.png")).name
+            elif kind == "video":
+                data, mime_type, filename = parse_media(value, {"video/mp4", "video/quicktime", "video/webm"}, MAX_MEDIA_BYTES)
+            else:
+                data, mime_type, filename = parse_media(value, {"audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4"}, MAX_MEDIA_BYTES)
+            if not is_native_qwen_video_url(base):
+                return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+            policy = await client.get(
+                f"{base}/uploads", params={"action": "getPolicy", "model": model}, headers={"Authorization": headers["Authorization"]}
+            )
+            policy.raise_for_status()
+            output = policy.json().get("output", policy.json())
+            host = output.get("upload_host") or output.get("host")
+            key = output.get("upload_file_path") or output.get("object_key") or output.get("key") or f"{output.get('upload_dir', '').rstrip('/')}/{filename}"
+            if not host or not key.strip("/"):
+                raise ValueError("Qwen media upload policy returned no host or object key")
+            form = {"key": key}
+            for source, target in {
+                "policy": "policy", "signature": "signature", "oss_access_key_id": "OSSAccessKeyId",
+                "x_oss_security_token": "x-oss-security-token", "success_action_status": "success_action_status",
+                "x_oss_signature_version": "x-oss-signature-version", "x_oss_credential": "x-oss-credential",
+                "x_oss_date": "x-oss-date", "x_oss_signature": "x-oss-signature",
+                "x_oss_object_acl": "x-oss-object-acl", "x_oss_forbid_overwrite": "x-oss-forbid-overwrite",
+                "callback": "callback",
+            }.items():
+                if output.get(source):
+                    form[target] = str(output[source])
+            for field_name, value in output.items():
+                if field_name.startswith("x-oss-") and value and field_name not in form:
+                    form[field_name] = str(value)
+            form.setdefault("x-oss-object-acl", "private")
+            form.setdefault("x-oss-forbid-overwrite", "true")
+            upload = await client.post(host, data=form, files={"file": (filename, data, mime_type)})
+            upload.raise_for_status()
+            media_headers["X-DashScope-OssResourceResolve"] = "enable"
+            return f"oss://{key}"
+
+        media: list[dict[str, str]] = []
+        normalized_model = model.lower()
+        if "-r2v" in normalized_model:
+            payload["input"]["reference_image_urls"] = [await media_url(item, "image") for item in references]
+        else:
+            if references:
+                media.append({"type": "first_frame", "url": await media_url(references[0], "image")})
+                for item in references[1:]:
+                    media.append({"type": "reference_image", "url": await media_url(item, "image")})
+            if reference_video:
+                media.append({"type": "video", "url": await media_url(reference_video, "video")})
+            if driving_audio:
+                media.append({"type": "driving_audio", "url": await media_url(driving_audio, "audio")})
+            if media:
+                payload["input"]["media"] = media
+        headers.update(media_headers)
         response = await client.post(f"{base}/services/aigc/video-generation/video-synthesis", headers=headers, json=payload)
         response.raise_for_status()
         task_id = str(response.json().get("output", {}).get("task_id") or "")
@@ -305,16 +441,19 @@ async def generate_video(
     fps: int | None,
     duration: int,
     quality: str | None = None,
-    reference: dict[str, Any] | None = None,
+    prompt_extend: bool = False,
+    references: list[dict[str, Any]] | None = None,
+    reference_video: dict[str, Any] | None = None,
+    driving_audio: dict[str, Any] | None = None,
     base_url: str = "",
 ) -> VideoResult:
-    if reference:
-        parse_reference(reference)
+    references = references or []
     if provider == "qwen":
         return await _generate_qwen_video(
-            api_key, model, prompt, resolve_qwen_video_quality(quality or "720p", duration), duration, reference, base_url
+            api_key, model, prompt, quality or "", duration, prompt_extend, references, reference_video, driving_audio, base_url
         )
-    settings = resolve_video_settings(provider, resolution or "", fps or 0, duration)
+    reference = references[0] if references else None
+    settings = resolve_video_settings(provider, resolution) if resolution else None
     if provider == "doubao":
-        return await _generate_doubao_video(api_key, model, prompt, settings, duration, reference, base_url)
-    return await _generate_gemini_video(api_key, model, prompt, settings, duration, reference, base_url)
+        return await _generate_doubao_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)
+    return await _generate_gemini_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)

@@ -172,3 +172,9 @@ class GenerateProjectRequest(CamelModel):
 
 class GenerateVideoRequest(CamelModel):
     model: str | None = Field(default=None, max_length=160)
+    episode_id: str | None = Field(default=None, max_length=64)
+    quality: str | None = Field(default=None, max_length=16)
+    resolution: str | None = Field(default=None, max_length=32)
+    fps: int | None = None
+    duration: int | None = None
+    prompt_extend: bool = False

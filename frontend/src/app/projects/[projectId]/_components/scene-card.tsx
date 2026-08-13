@@ -2,7 +2,7 @@
 
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
-import { GripVertical, Image as ImageIcon, Lock, LockOpen, Mic } from "lucide-react";
+import { Film, GripVertical, Image as ImageIcon, Lock, LockOpen, Mic } from "lucide-react";
 import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,10 @@ export function SceneCard({
     scene.image.url && scene.image.url.startsWith("/")
       ? `${backendBaseURL}${scene.image.url}`
       : scene.image.url;
+  const resolvedVideoURL =
+    scene.video.url && scene.video.url.startsWith("/")
+      ? `${backendBaseURL}${scene.video.url}`
+      : scene.video.url;
 
   const statusLabel: Record<Scene["image"]["status"], string> = {
     idle: t("scene.status.idle"),
@@ -100,6 +104,10 @@ export function SceneCard({
           <Badge variant="secondary" className="gap-1">
             <Mic className="size-3.5" />
             {t("scene.audioStatus", { status: statusLabel[scene.audio.status] })}
+          </Badge>
+          <Badge variant="secondary" className="gap-1">
+            <Film className="size-3.5" />
+            {t("scene.videoStatus", { status: statusLabel[scene.video.status] })}
           </Badge>
           {scene.isLocked ? (
             <Badge variant="outline" className="gap-1">
@@ -158,6 +166,19 @@ export function SceneCard({
             </div>
           ) : null}
         </div>
+
+        {scene.video.status !== "idle" ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t("scene.videoProgress")}</span>
+              <span>{scene.video.progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-cyan-500 transition-all duration-500" style={{ width: `${scene.video.progress}%` }} />
+            </div>
+            {resolvedVideoURL ? <video src={resolvedVideoURL} controls className="aspect-video w-full rounded-md border border-border/70 bg-black" /> : null}
+          </div>
+        ) : null}
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">

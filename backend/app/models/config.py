@@ -39,6 +39,7 @@ class ModelConfig(SQLModel, table=True):
     unit_price: float | None = Field(default=0, sa_column_kwargs={"server_default": text("0")})
     unit_name: str | None = Field(default="token", sa_column_kwargs={"server_default": text("'token'")})
     pricing_json: str | None = None
+    video_capabilities_json: str | None = None
 
 
 class UserOfficialConfigDefault(SQLModel, table=True):

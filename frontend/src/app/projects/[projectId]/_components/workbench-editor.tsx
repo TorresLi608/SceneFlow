@@ -59,7 +59,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
@@ -119,6 +122,12 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false);
+  const [videoQuality, setVideoQuality] = useState("");
+  const [videoResolution, setVideoResolution] = useState("");
+  const [videoFps, setVideoFps] = useState("");
+  const [videoDuration, setVideoDuration] = useState(3);
+  const [videoPromptExtend, setVideoPromptExtend] = useState(false);
   const [episodeToDelete, setEpisodeToDelete] = useState<EpisodeSummary | null>(null);
   // Set when a reparse would discard rendered shots; the backend held off until the user confirms.
   const [reparsePrompt, setReparsePrompt] = useState<{ discards: number; pending: number } | null>(null);
@@ -426,8 +435,16 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const generateVideoMutation = useMutation({
-    mutationFn: (params: { projectId: string; model?: string }) =>
-      generateVideoAction(params.projectId, { model: params.model }),
+    mutationFn: (params: {
+      projectId: string;
+      model?: string;
+      episodeId?: string;
+      quality?: string;
+      resolution?: string;
+      fps?: number;
+      duration: number;
+      promptExtend: boolean;
+    }) => generateVideoAction(params.projectId, params),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       updateProjectFields(projectId, {
@@ -437,6 +454,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       });
     },
     onSuccess: () => {
+      setVideoDialogOpen(false);
       setStatusMessage(t("home.status.videoStarted"));
     },
     onError: (error, variables) => {
@@ -664,6 +682,17 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     scriptSaveTimerRef.current = setTimeout(() => {
       updateProjectMutation.mutate({ projectId, originalScript: value });
     }, 500);
+  };
+
+  const openVideoDialog = () => {
+    const capabilities = activeVideoConfig?.videoCapabilities;
+    if (!capabilities) return;
+    setVideoQuality(capabilities.qualities[0] ?? "");
+    setVideoResolution(capabilities.resolutions[0] ?? "");
+    setVideoFps(capabilities.fps[0] ? String(capabilities.fps[0]) : "");
+    setVideoDuration(capabilities.minDuration);
+    setVideoPromptExtend(false);
+    setVideoDialogOpen(true);
   };
 
   const saveScenePatch = (sceneId: string, patch: SceneEdit) => {
@@ -1002,18 +1031,10 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                     </Button>
 
                     <Button
-                      onClick={() => {
-                        if (!currentProject) {
-                          return;
-                        }
-
-                        generateVideoMutation.mutate({
-                          projectId: currentProject.id,
-                          model: activeVideoConfig?.modelSeries,
-                        });
-                      }}
+                      onClick={openVideoDialog}
                       disabled={
                         !currentProject ||
+                        !activeVideoConfig?.videoCapabilities ||
                         generateVideoMutation.isPending ||
                         currentProject.status === "parsing" ||
                         currentProject.status === "generating" ||
@@ -1204,6 +1225,93 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
         </section>
       </div>
+
+      <Dialog
+        open={videoDialogOpen}
+        onOpenChange={(open) => {
+          if (!generateVideoMutation.isPending) setVideoDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("home.videoDialogTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("home.videoDialogSummary", {
+                ready: currentProject?.scenes.filter((scene) => scene.image.url).length ?? 0,
+                missing: currentProject?.scenes.filter((scene) => !scene.image.url).length ?? 0,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          {activeVideoConfig?.videoCapabilities ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {activeVideoConfig.videoCapabilities.qualities.length ? (
+                <div className="space-y-2">
+                  <Label>{t("videos.quality")}</Label>
+                  <Select value={videoQuality} onValueChange={(value) => setVideoQuality(value ?? "")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{activeVideoConfig.videoCapabilities.qualities.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              {activeVideoConfig.videoCapabilities.resolutions.length ? (
+                <div className="space-y-2">
+                  <Label>{t("videos.resolution")}</Label>
+                  <Select value={videoResolution} onValueChange={(value) => setVideoResolution(value ?? "")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{activeVideoConfig.videoCapabilities.resolutions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              {activeVideoConfig.videoCapabilities.fps.length ? (
+                <div className="space-y-2">
+                  <Label>{t("videos.fps")}</Label>
+                  <Select value={videoFps} onValueChange={(value) => setVideoFps(value ?? "")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{activeVideoConfig.videoCapabilities.fps.map((value) => <SelectItem key={value} value={String(value)}>{value} FPS</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                <Label>{t("videos.duration")}</Label>
+                <Select value={String(videoDuration)} onValueChange={(value) => setVideoDuration(Number(value))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {Array.from({ length: activeVideoConfig.videoCapabilities.maxDuration - activeVideoConfig.videoCapabilities.minDuration + 1 }, (_, index) => activeVideoConfig.videoCapabilities!.minDuration + index).map((value) => <SelectItem key={value} value={String(value)}>{value} s</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {activeVideoConfig.videoCapabilities.promptExtend ? (
+                <label className="flex items-center justify-between gap-3 sm:col-span-2">
+                  <span className="text-sm font-medium">{t("videos.promptExtend")}</span>
+                  <Switch checked={videoPromptExtend} onCheckedChange={setVideoPromptExtend} />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVideoDialogOpen(false)} disabled={generateVideoMutation.isPending}>{t("common.cancel")}</Button>
+            <Button
+              onClick={() => {
+                if (!currentProject || !activeVideoConfig) return;
+                generateVideoMutation.mutate({
+                  projectId: currentProject.id,
+                  model: activeVideoConfig.modelSeries,
+                  episodeId: currentProject.currentEpisodeId ?? undefined,
+                  quality: videoQuality || undefined,
+                  resolution: videoResolution || undefined,
+                  fps: videoFps ? Number(videoFps) : undefined,
+                  duration: videoDuration,
+                  promptExtend: videoPromptExtend,
+                });
+              }}
+              disabled={!currentProject || generateVideoMutation.isPending}
+            >
+              <Film data-icon="inline-start" />
+              {generateVideoMutation.isPending ? t("home.generatingVideo") : t("home.generateVideo")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={reparsePrompt !== null}

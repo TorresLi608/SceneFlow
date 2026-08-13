@@ -12,17 +12,20 @@ export interface GenerateVideoInput {
   resolution?: VideoResolution;
   fps?: VideoFps;
   quality?: VideoQuality;
+  promptExtend?: boolean;
   duration: number;
   configId?: number;
   officialConfigId?: number;
-  reference?: VideoReferenceInput;
+  references?: VideoReferenceInput[];
+  referenceVideo?: VideoReferenceInput;
+  drivingAudio?: VideoReferenceInput;
 }
 
 export interface GenerateVideoResponse {
   video: {
     url: string;
     model: string;
-    source: "text-to-video" | "image-to-video";
+    source: "text-to-video" | "image-to-video" | "video-to-video";
     fps?: number;
     quality?: VideoQuality;
   };

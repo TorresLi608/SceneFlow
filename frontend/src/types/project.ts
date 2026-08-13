@@ -341,12 +341,20 @@ export interface OptimizeProjectResponse {
 
 export interface GenerateVideoInput {
   model?: string;
+  episodeId?: string;
+  quality?: string;
+  resolution?: string;
+  fps?: number;
+  duration?: number;
+  promptExtend?: boolean;
 }
 
 export interface GenerateVideoResponse {
   projectId: string;
   status: ProjectStatus;
   model: string;
+  episodeId: string;
+  sceneCount: number;
 }
 
 export interface SceneUpdatePayload {

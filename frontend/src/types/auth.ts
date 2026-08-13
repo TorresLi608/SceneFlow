@@ -1,6 +1,19 @@
 export type ConfigPurpose = "general" | "script" | "image" | "video" | "audio";
 export type PricingUnit = "token" | "request" | "image" | "second";
 
+export interface VideoCapabilities {
+  qualities: ("480p" | "720p" | "1080p")[];
+  fps: (24 | 30 | 60)[];
+  resolutions: ("1280x720" | "720x1280" | "1024x1024" | "1920x1080")[];
+  promptExtend: boolean;
+  minDuration: number;
+  maxDuration: number;
+  referenceImagesRequired: boolean;
+  maxReferenceImages: number;
+  referenceVideo: boolean;
+  drivingAudio: boolean;
+}
+
 export interface ModelPricing {
   pricingMultiplier: string;
   inputPricePerMillion: string;
@@ -67,6 +80,7 @@ export interface UserConfig extends ModelPricing {
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  videoCapabilities: VideoCapabilities | null;
 }
 
 export interface UserConfigListResponse {
@@ -96,6 +110,7 @@ export interface CreateUserConfigInput extends Partial<ModelPricing> {
   apiKey: string;
   isActive: boolean;
   isEnabled?: boolean;
+  videoCapabilities?: VideoCapabilities;
 }
 
 export interface UpdateUserConfigInput extends Partial<ModelPricing> {
@@ -108,4 +123,5 @@ export interface UpdateUserConfigInput extends Partial<ModelPricing> {
   apiKey?: string;
   isActive?: boolean;
   isEnabled?: boolean;
+  videoCapabilities?: VideoCapabilities;
 }

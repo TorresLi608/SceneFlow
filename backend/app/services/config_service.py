@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from ipaddress import ip_address
 from typing import Any, Sequence
 from urllib.parse import urlparse
@@ -10,6 +11,101 @@ from sqlmodel import Session, select
 from app.core.security import decrypt, encrypt
 from app.llms.router import pick_model
 from app.models import ModelConfig, UserOfficialConfigDefault
+
+
+VIDEO_QUALITIES = ("480p", "720p", "1080p")
+VIDEO_FPS = (24, 30, 60)
+VIDEO_RESOLUTIONS = ("1280x720", "720x1280", "1024x1024", "1920x1080")
+
+
+def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]:
+    if normalize_provider(provider) == "qwen":
+        is_i2v = "-i2v" in model.lower()
+        is_r2v = "-r2v" in model.lower()
+        is_video_edit = "videoedit" in model.lower()
+        return {
+            "qualities": list(VIDEO_QUALITIES),
+            "fps": [],
+            "resolutions": [],
+            "promptExtend": is_i2v,
+            "minDuration": 2 if is_i2v else 3,
+            "maxDuration": 15,
+            "referenceImagesRequired": is_i2v or is_r2v,
+            "maxReferenceImages": 5 if is_r2v else (1 if is_i2v or is_video_edit else 0),
+            "referenceVideo": is_video_edit,
+            "drivingAudio": is_i2v,
+        }
+    resolutions = [value for value in VIDEO_RESOLUTIONS if provider != "gemini" or value != "1024x1024"]
+    return {
+        "qualities": [],
+        "fps": [24],
+        "resolutions": resolutions,
+        "promptExtend": False,
+        "minDuration": 3,
+        "maxDuration": 15,
+        "referenceImagesRequired": False,
+        "maxReferenceImages": 1,
+        "referenceVideo": False,
+        "drivingAudio": False,
+    }
+
+
+def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> dict[str, Any]:
+    if value is None:
+        return default_video_capabilities(provider, model)
+    if not isinstance(value, dict):
+        raise HTTPException(400, "videoCapabilities must be an object")
+
+    def choices(name: str, allowed: tuple[Any, ...]) -> list[Any]:
+        selected = value.get(name, [])
+        if not isinstance(selected, list) or any(item not in allowed for item in selected):
+            raise HTTPException(400, f"videoCapabilities.{name} contains an unsupported value")
+        return [item for item in allowed if item in selected]
+
+    try:
+        minimum = int(value.get("minDuration", 3))
+        maximum = int(value.get("maxDuration", 15))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "video duration limits must be integers") from exc
+    if isinstance(value.get("minDuration"), bool) or isinstance(value.get("maxDuration"), bool) or not 1 <= minimum <= maximum <= 60:
+        raise HTTPException(400, "video duration limits must satisfy 1 <= minDuration <= maxDuration <= 60")
+    prompt_extend = value.get("promptExtend", False)
+    if not isinstance(prompt_extend, bool):
+        raise HTTPException(400, "videoCapabilities.promptExtend must be boolean")
+    try:
+        max_reference_images = int(value.get("maxReferenceImages", 0))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "videoCapabilities.maxReferenceImages must be an integer") from exc
+    if isinstance(value.get("maxReferenceImages"), bool) or not 0 <= max_reference_images <= 9:
+        raise HTTPException(400, "videoCapabilities.maxReferenceImages must be between 0 and 9")
+    required = value.get("referenceImagesRequired", False)
+    reference_video = value.get("referenceVideo", False)
+    driving_audio = value.get("drivingAudio", False)
+    if not all(isinstance(item, bool) for item in (required, reference_video, driving_audio)):
+        raise HTTPException(400, "video input capability flags must be boolean")
+    if required and max_reference_images == 0:
+        raise HTTPException(400, "required reference images need maxReferenceImages greater than 0")
+    return {
+        "qualities": choices("qualities", VIDEO_QUALITIES),
+        "fps": choices("fps", VIDEO_FPS),
+        "resolutions": choices("resolutions", VIDEO_RESOLUTIONS),
+        "promptExtend": prompt_extend,
+        "minDuration": minimum,
+        "maxDuration": maximum,
+        "referenceImagesRequired": required,
+        "maxReferenceImages": max_reference_images,
+        "referenceVideo": reference_video,
+        "drivingAudio": driving_audio,
+    }
+
+
+def video_capabilities(config: ModelConfig) -> dict[str, Any]:
+    if config.video_capabilities_json:
+        try:
+            return normalize_video_capabilities(json.loads(config.video_capabilities_json), config.provider, config.model_name or "")
+        except (TypeError, ValueError, HTTPException):
+            pass
+    return default_video_capabilities(config.provider, config.model_name or "")
 
 
 def normalize_purpose(value: str) -> str:
@@ -109,12 +205,25 @@ def normalize_config_payload(payload: dict[str, Any], current: ModelConfig | Non
     else:
         api_key = str(payload.get("apiKey", "")).strip()
     validate_config_fields(purpose, provider, model, base_url)
+    capabilities = None
+    if purpose == "video":
+        existing_capabilities = (
+            video_capabilities(current)
+            if current and purpose == current.purpose and provider == normalize_provider(current.provider) and model == (current.model_name or "")
+            else None
+        )
+        capabilities = normalize_video_capabilities(
+            payload.get("videoCapabilities") if "videoCapabilities" in payload else existing_capabilities,
+            provider,
+            model,
+        )
     return {
         "purpose": purpose,
         "provider": provider,
         "base_url": base_url,
         "model": model,
         "api_key": api_key,
+        "video_capabilities": capabilities,
     }
 
 
@@ -132,6 +241,7 @@ def config_create_fields(payload: dict[str, Any], normalized: dict[str, Any]) ->
         "encrypted_key": encrypt(normalized["api_key"]),
         "is_active": 1 if payload.get("isActive") else 0,
         "is_enabled": is_enabled,
+        "video_capabilities_json": json.dumps(normalized["video_capabilities"], separators=(",", ":")) if normalized["video_capabilities"] else None,
     }
 
 
@@ -159,6 +269,15 @@ def config_update_fields(payload: dict[str, Any], current: ModelConfig, normaliz
         updates["is_enabled"] = 1 if payload["isEnabled"] else 0
         if not payload["isEnabled"]:
             updates["is_active"] = 0
+    if (
+        "videoCapabilities" in payload
+        or ("purpose" in payload and normalized["purpose"] != current.purpose)
+        or ("provider" in payload and normalized["provider"] != normalize_provider(current.provider))
+        or (any(key in payload for key in ("modelSeries", "model")) and normalized["model"] != (current.model_name or ""))
+    ):
+        updates["video_capabilities_json"] = (
+            json.dumps(normalized["video_capabilities"], separators=(",", ":")) if normalized["video_capabilities"] else None
+        )
     return updates
 
 
@@ -171,7 +290,7 @@ def validate_api_key(provider: str, api_key: str) -> None:
         raise HTTPException(400, "apiKey length must be between 8 and 512")
 
 
-def _model_config(config: ModelConfig | None, purpose: str, stage: str, source: str) -> dict[str, str]:
+def _model_config(config: ModelConfig | None, purpose: str, stage: str, source: str) -> dict[str, Any]:
     if not config:
         raise HTTPException(400, f"{stage}未配置可用的默认模型。请先使用官方配置或添加自定义配置。")
     provider = normalize_provider(config.provider)
@@ -189,6 +308,7 @@ def _model_config(config: ModelConfig | None, purpose: str, stage: str, source: 
         "source": source,
         "configId": config.id if source == "user" else None,
         "officialConfigId": config.id if source == "official" else None,
+        "videoCapabilities": video_capabilities(config) if purpose == "video" else None,
     }
 
 
