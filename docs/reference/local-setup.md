@@ -16,8 +16,11 @@ cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
+
+The backend loads `backend/.env` automatically; shell and deployment environment variables override it.
 
 From the repo root, `npm run dev:backend` runs the same uvicorn command against the existing venv.
 
@@ -61,13 +64,7 @@ Four variables are read by the code:
 | `NEXT_PUBLIC_BFF_BASE_URL` | axios `baseURL` | empty → same origin, i.e. the Next BFF |
 | `NEXT_PUBLIC_WS_BASE_URL` | browser WebSocket target | `ws://127.0.0.1:8080` |
 
-> **`.env.example` is incomplete** — it ships only `NEXT_PUBLIC_API_BASE_URL`, which is the legacy fallback. The defaults cover a standard local run, so copying it as-is works, but a non-default backend port needs the full set:
-
-```env
-NEXT_PUBLIC_BFF_BASE_URL=
-NEXT_PUBLIC_WS_BASE_URL=ws://127.0.0.1:8080
-BACKEND_API_BASE_URL=http://127.0.0.1:8080
-```
+The committed `.env.example` includes all four variables with Chinese and English comments.
 
 Changing `.env.local` requires restarting the dev server.
 

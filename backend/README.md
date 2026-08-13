@@ -7,8 +7,11 @@ cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
+
+`app/core/config.py` loads `backend/.env` automatically. Existing process environment variables take precedence.
 
 ## Structure
 
@@ -29,7 +32,7 @@ cd backend
 .venv/bin/python tests/run_all.py
 ```
 
-## Optional env
+## Environment
 
 - `PORT` (default `8080`)
 - `SCENEFLOW_DB_PATH` (default `./sceneflow.db`)

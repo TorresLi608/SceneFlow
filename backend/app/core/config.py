@@ -4,6 +4,11 @@ import hashlib
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
 
 PORT = os.getenv("PORT", "8080")
 DB_PATH = os.getenv("SCENEFLOW_DB_PATH", "./sceneflow.db")
