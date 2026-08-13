@@ -24,7 +24,7 @@ POST /api/projects/:id/generate
         └─ per shot, ≤3 concurrent (MAX_CONCURRENT_SCENES):
              character_references() ─▶ image provider (image-to-image when portraits exist)
              build_image_prompt()   ─▶ image provider
-             voice_config()         ─▶ TTS (edge / system / openai)
+             voice_config()         ─▶ TTS (edge / system / openai / qwen)
              store_artifact()       ─▶ private_generated/<relative path>
              broadcast SCENE_UPDATE ─▶ ws://…/ws/projects/:id
    ─▶ terminal status: done | partial | failed, written to both project and episode

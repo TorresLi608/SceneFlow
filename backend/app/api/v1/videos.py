@@ -10,7 +10,7 @@ from app.api.deps import current_user_id
 from app.services.artifact_service import save_binary_artifact
 from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.usage_service import record_usage, require_model_balance
-from app.services.video_service import generate_video, parse_reference, resolve_video_settings
+from app.services.video_service import generate_video, parse_reference, resolve_video_settings, validate_qwen_video_input
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -49,6 +49,8 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
         resolve_video_settings(config["provider"], resolution, fps, duration)
         if reference:
             parse_reference(reference)
+        if config["provider"] == "qwen":
+            validate_qwen_video_input(config["model"], reference)
     except (TypeError, ValueError) as exc:
         raise HTTPException(400, str(exc)[:220]) from exc
 

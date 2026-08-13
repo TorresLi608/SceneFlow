@@ -63,7 +63,7 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
                 with db() as session:
                     require_model_balance(session, user_id, image_config)
             provider = image_config["provider"]
-            size = aspect_ratio if provider == "gemini" else _openai_image_size(aspect_ratio)
+            size = aspect_ratio if provider in {"gemini", "qwen"} else _openai_image_size(aspect_ratio)
             quality = "2K" if provider == "gemini" else "medium"
             result = await models.generate_image(
                 image_config["apiKey"],

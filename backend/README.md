@@ -64,7 +64,8 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 - Chat context assembly lives in `app/graph/`: SQLite history -> token budget check -> old-context summary compression -> model messages.
 - Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.
 - Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
-- Image generation currently supports OpenAI Images.
+- Image generation supports OpenAI, Gemini, and Qwen/Wan; video supports Doubao, Gemini, and Qwen/Wan; audio supports Edge, system, OpenAI, and Qwen TTS.
+- Qwen media uses the native `https://dashscope.aliyuncs.com/api/v1` API. Video uses `wan2.7-t2v` without a reference image or `wan2.7-i2v` with one. Audio `modelSeries` is `model:voice`, for example `qwen3-tts-flash:Cherry`.
 
 ## APIs
 

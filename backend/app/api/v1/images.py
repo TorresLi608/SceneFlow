@@ -76,13 +76,13 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
             config = active_model_config(session, user_id, "image", "图片生成")
         require_model_balance(session, user_id, config)
 
-    if config["provider"] not in {"openai", "gemini"}:
-        raise HTTPException(400, "image generation currently only supports provider openai/gemini")
+    if config["provider"] not in {"openai", "gemini", "qwen"}:
+        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")
 
     ratio = str(payload.get("ratio") or "auto")
     resolution = str(payload.get("resolution") or "2K")
-    size = ratio if config["provider"] == "gemini" else RATIO.get(ratio, "auto")
-    quality = resolution if config["provider"] == "gemini" else QUALITY.get(resolution, "medium")
+    size = ratio if config["provider"] in {"gemini", "qwen"} else RATIO.get(ratio, "auto")
+    quality = resolution if config["provider"] in {"gemini", "qwen"} else QUALITY.get(resolution, "medium")
     started_at = time.monotonic()
     try:
         if references:

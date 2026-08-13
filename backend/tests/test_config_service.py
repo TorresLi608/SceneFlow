@@ -150,6 +150,28 @@ def test_video_gemini_config_is_valid() -> None:
     assert normalized["model"] == "veo-3.1-generate-preview"
 
 
+def test_qwen_media_configs_are_valid() -> None:
+    image = normalize_config_payload(
+        {"purpose": "image", "provider": "qwen", "modelSeries": "wan2.7-image", "apiKey": "new-secret-key"}
+    )
+    video = normalize_config_payload(
+        {"purpose": "video", "provider": "qwen", "modelSeries": "wan2.7-t2v", "apiKey": "new-secret-key"}
+    )
+    audio = normalize_config_payload(
+        {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen3-tts-flash:Cherry", "apiKey": "new-secret-key"}
+    )
+    assert (image["provider"], video["provider"], audio["model"]) == ("qwen", "qwen", "qwen3-tts-flash:Cherry")
+
+    try:
+        normalize_config_payload(
+            {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen3-tts-flash", "apiKey": "new-secret-key"}
+        )
+    except HTTPException as exc:
+        assert exc.detail == "Qwen audio modelSeries must use model:voice"
+    else:
+        raise AssertionError("Qwen TTS must require a voice")
+
+
 def test_gemini_image_helpers() -> None:
     assert image_base_url_for("gemini", "https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com"
     assert _is_native_gemini_image_url("https://generativelanguage.googleapis.com/v1beta/openai")
@@ -428,6 +450,7 @@ if __name__ == "__main__":
     test_image_openai_relay_config_is_valid()
     test_image_gemini_config_is_valid()
     test_video_gemini_config_is_valid()
+    test_qwen_media_configs_are_valid()
     test_gemini_image_helpers()
     test_user_config_pricing_round_trip()
     test_price_only_admin_edit_skips_model_revalidation()

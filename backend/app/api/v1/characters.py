@@ -218,8 +218,8 @@ async def generate_portrait(
         require_model_balance(session, user_id, config)
         prompt = build_portrait_prompt(character.name, character.appearance_prompt, character.description)
 
-    if config["provider"] not in {"openai", "gemini"}:
-        raise HTTPException(400, "image generation currently only supports provider openai/gemini")
+    if config["provider"] not in {"openai", "gemini", "qwen"}:
+        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")
     started_at = time.monotonic()
     try:
         image = await models.generate_image(

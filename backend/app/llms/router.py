@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 from io import BytesIO
 import json
+import asyncio
 from dataclasses import dataclass, field
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -15,6 +17,7 @@ from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from openai import APIStatusError, AsyncOpenAI
+import httpx
 
 from app.services.usage_service import aggregate_token_usage
 
@@ -28,8 +31,10 @@ CHAT_BASE_URLS = {
     "anthropic": "https://api.anthropic.com",
 }
 GEMINI_IMAGE_BASE_URL = "https://generativelanguage.googleapis.com"
-IMAGE_PROVIDERS = {"openai", "gemini"}
+QWEN_MEDIA_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
+IMAGE_PROVIDERS = {"openai", "gemini", "qwen"}
 GENERATION_TIMEOUT_SECONDS = 15 * 60
+POLL_INTERVAL_SECONDS = 5
 
 
 @dataclass
@@ -64,7 +69,7 @@ class ImageResult:
 def pick_model(provider: str, requested: str = "") -> str:
     requested = requested.strip()
     if requested:
-        return requested.lower() if provider in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"} else requested
+        return requested.lower() if provider in {"deepseek", "doubao", "openai", "gemini", "anthropic"} else requested
     return {
         "openai": "gpt-4o-mini",
         "deepseek": "deepseek-chat",
@@ -91,6 +96,8 @@ def image_base_url_for(provider: str, base_url: str = "") -> str:
     if provider == "gemini":
         base = base_url.strip().rstrip("/") if base_url else GEMINI_IMAGE_BASE_URL
         return base.removesuffix("/openai").removesuffix("/v1beta")
+    if provider == "qwen":
+        return (base_url or QWEN_MEDIA_BASE_URL).strip().rstrip("/")
     raise ValueError(f"unsupported image provider: {provider}")
 
 
@@ -224,6 +231,27 @@ def _openai_image_size(value: str) -> str:
 
 def _openai_image_quality(value: str) -> str:
     return {"1K": "low", "2K": "medium", "4K": "high"}.get(value, value)
+
+
+def _qwen_image_size(aspect_ratio: str, resolution: str, has_images: bool, model: str = "") -> str:
+    resolution = {"low": "1K", "medium": "2K", "high": "4K"}.get(resolution, resolution.upper())
+    if resolution == "4K" and (has_images or model.strip().lower() == "wan2.7-image"):
+        resolution = "2K"
+    if has_images or ":" not in aspect_ratio:
+        return resolution if resolution in {"1K", "2K", "4K"} else "2K"
+    scale = 1024 if resolution == "1K" else 4096 if resolution == "4K" else 2048
+    aligned = lambda value: max(16, value // 16 * 16)
+    return {
+        "1:1": f"{scale}*{scale}",
+        "2:3": f"{aligned(scale * 2 // 3)}*{scale}",
+        "3:2": f"{scale}*{aligned(scale * 2 // 3)}",
+        "3:4": f"{aligned(scale * 3 // 4)}*{scale}",
+        "4:3": f"{scale}*{aligned(scale * 3 // 4)}",
+        "16:9": f"{scale}*{aligned(scale * 9 // 16)}",
+        "9:16": f"{aligned(scale * 9 // 16)}*{scale}",
+        "21:9": f"{scale}*{aligned(scale * 9 // 21)}",
+        "9:21": f"{aligned(scale * 9 // 21)}*{scale}",
+    }.get(aspect_ratio, resolution if resolution in {"1K", "2K", "4K"} else "2K")
 
 
 class ModelRouter:
@@ -401,7 +429,7 @@ class ModelRouter:
 
     async def validate_image_model(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
         if provider.strip().lower() not in IMAGE_PROVIDERS:
-            raise ValueError("image generation currently only supports provider openai/gemini")
+            raise ValueError("image generation currently only supports provider openai/gemini/qwen")
         if not model.strip():
             raise ValueError("image purpose requires modelSeries")
         await self.generate_image(api_key, model, "Generate a simple gray square with soft light.", "1:1", "1K", base_url, provider)
@@ -417,6 +445,8 @@ class ModelRouter:
         provider: str = "openai",
     ) -> ImageResult:
         provider = provider.strip().lower()
+        if provider == "qwen":
+            return await self._generate_qwen_image(api_key, model, prompt, [], size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
             return await self._generate_gemini_image(api_key, model, prompt, [], size, quality, base_url)
 
@@ -455,6 +485,8 @@ class ModelRouter:
         provider: str = "openai",
     ) -> ImageResult:
         provider = provider.strip().lower()
+        if provider == "qwen":
+            return await self._generate_qwen_image(api_key, model, prompt, images, size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
             return await self._generate_gemini_image(api_key, model, prompt, images, size, quality, base_url)
 
@@ -531,3 +563,50 @@ class ModelRouter:
                 data = base64.b64decode(image.data) if isinstance(image.data, str) else image.data
                 return ImageResult(data=data, format=_image_format_from_mime(str(image.mime_type or "image/png")))
         raise ValueError("empty image response")
+
+    async def _generate_qwen_image(
+        self,
+        api_key: str,
+        model: str,
+        prompt: str,
+        images: list[tuple[str, bytes, str]],
+        aspect_ratio: str,
+        resolution: str,
+        base_url: str = "",
+    ) -> ImageResult:
+        content = [
+            {"image": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"}
+            for _, data, mime_type in images
+        ]
+        content.append({"text": prompt.strip()})
+        payload = {
+            "model": model.strip(),
+            "input": {"messages": [{"role": "user", "content": content}]},
+            "parameters": {"n": 1, "size": _qwen_image_size(aspect_ratio, resolution, bool(images), model), "watermark": False},
+        }
+        headers = {"Authorization": f"Bearer {api_key.strip()}", "X-DashScope-Async": "enable"}
+        base = image_base_url_for("qwen", base_url)
+        async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            response = await client.post(f"{base}/services/aigc/image-generation/generation", headers=headers, json=payload)
+            response.raise_for_status()
+            task_id = str(response.json().get("output", {}).get("task_id") or "")
+            if not task_id:
+                raise ValueError("Qwen image task creation returned no task id")
+            deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS
+            while time.monotonic() < deadline:
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                task_response = await client.get(f"{base}/tasks/{task_id}", headers={"Authorization": headers["Authorization"]})
+                task_response.raise_for_status()
+                output = task_response.json().get("output", {})
+                status = str(output.get("task_status") or "").upper()
+                if status == "SUCCEEDED":
+                    results = output.get("results") or []
+                    url = str((results[0] if results else {}).get("url") or "")
+                    if not url:
+                        raise ValueError("Qwen image task succeeded without an image URL")
+                    image_response = await client.get(url)
+                    image_response.raise_for_status()
+                    return ImageResult(image_response.content, _image_format_from_mime(image_response.headers.get("content-type", "image/png").split(";", 1)[0]))
+                if status in {"FAILED", "CANCELED", "UNKNOWN"}:
+                    raise ValueError(f"Qwen image task {status.lower()}: {output.get('message') or output.get('code') or ''}")
+            raise TimeoutError("Qwen image generation timed out")

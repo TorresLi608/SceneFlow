@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import shutil
 import subprocess
@@ -26,8 +27,10 @@ async def synthesize(text: str, config: dict[str, str], output: Path) -> tuple[P
         await asyncio.to_thread(_system_tts, text, config["model"], output)
     elif provider == "openai":
         await _openai_tts(text, config, output)
+    elif provider == "qwen":
+        await _qwen_tts(text, config, output)
     else:
-        raise ValueError("audio purpose only supports provider edge/system/openai")
+        raise ValueError("audio purpose only supports provider edge/system/openai/qwen")
     return output, _duration(output, len(text) / 4.5)
 
 
@@ -72,3 +75,27 @@ async def _openai_tts(text: str, config: dict[str, str], output: Path) -> None:
         )
         response.raise_for_status()
         output.write_bytes(response.content)
+
+
+async def _qwen_tts(text: str, config: dict[str, str], output: Path) -> None:
+    model, separator, voice = config["model"].partition(":")
+    if not separator or not voice:
+        raise ValueError("Qwen audio modelSeries must use model:voice, for example qwen3-tts-flash:Cherry")
+    base_url = (config.get("baseUrl") or "https://dashscope.aliyuncs.com/api/v1").rstrip("/")
+    async with httpx.AsyncClient(timeout=15 * 60, follow_redirects=True) as client:
+        response = await client.post(
+            f"{base_url}/services/aigc/multimodal-generation/generation",
+            headers={"Authorization": f"Bearer {config['apiKey']}"},
+            json={"model": model, "input": {"text": text, "voice": voice}},
+        )
+        response.raise_for_status()
+        audio = response.json().get("output", {}).get("audio", {})
+        if audio.get("url"):
+            audio_response = await client.get(audio["url"])
+            audio_response.raise_for_status()
+            output.write_bytes(audio_response.content)
+            return
+        if audio.get("data"):
+            output.write_bytes(base64.b64decode(audio["data"]))
+            return
+        raise ValueError("Qwen TTS returned no audio")

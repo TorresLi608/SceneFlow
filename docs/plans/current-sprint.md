@@ -26,7 +26,6 @@ Consequences worth knowing before building on it: shot order restarts per episod
 Verified gaps, ordered by how much they cost to leave alone. Owner and sizing to be assigned.
 
 - [ ] **Fix `tests/run_all.py` isolation.** All 22 test files pass individually; the runner fails inside `test_characters_api.py` because it `runpy`s everything in one process and state leaks (reproducible with `test_artifact_service.py` or `test_admin_usage_logs.py` first). It also aborts on the first failure, so later files silently never run. Either run each file in a subprocess or make the runner restore module state and continue on failure. **This is the highest-value item here: the suite currently cannot be trusted as a gate.**
-- [ ] **`backend/README.md` says image generation is OpenAI-only.** `app/llms/router.py` has `IMAGE_PROVIDERS = {"openai", "gemini"}` with a native Gemini path. One-line doc fix.
 - [ ] **Generation-jobs worker.** `generation_jobs` provides persistence, idempotency, leases, cancel, and retry, but there is no worker process — generation still starts in the API process via `asyncio.create_task`, so a restart mid-run orphans it. See `../architecture/boundaries.md`.
 - [ ] **Project job UI.** The endpoints exist (`GET /api/projects/:id/jobs`, cancel, retry); the workbench does not surface them.
 

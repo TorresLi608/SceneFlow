@@ -58,17 +58,19 @@ def normalize_base_url(value: str) -> str:
 
 def normalize_model(provider: str, value: str) -> str:
     value = (value or "").strip()
-    return value.lower() if value and provider in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"} else value
+    return value.lower() if value and provider in {"deepseek", "doubao", "openai", "gemini", "anthropic"} else value
 
 
 def validate_config_fields(purpose: str, provider: str, model: str, base_url: str = "") -> None:
     if purpose not in {"general", "script", "image", "video", "audio"}:
         raise HTTPException(400, "invalid purpose")
     if purpose == "audio":
-        if provider not in {"edge", "system", "openai"}:
-            raise HTTPException(400, "audio purpose only supports provider edge/system/openai")
+        if provider not in {"edge", "system", "openai", "qwen"}:
+            raise HTTPException(400, "audio purpose only supports provider edge/system/openai/qwen")
         if not model.strip():
             raise HTTPException(400, "audio purpose requires a voice or modelSeries")
+        if provider == "qwen" and ":" not in model:
+            raise HTTPException(400, "Qwen audio modelSeries must use model:voice")
         return
     if provider == "custom":
         if purpose not in {"general", "script"}:
@@ -79,13 +81,13 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
             raise HTTPException(400, "custom provider requires baseUrl")
         return
     if purpose == "video":
-        if provider not in {"doubao", "gemini"}:
-            raise HTTPException(400, "video purpose only supports provider doubao/gemini")
+        if provider not in {"doubao", "gemini", "qwen"}:
+            raise HTTPException(400, "video purpose only supports provider doubao/gemini/qwen")
         if not model.strip():
             raise HTTPException(400, "video purpose requires modelSeries")
     elif purpose == "image":
-        if provider not in {"openai", "gemini"}:
-            raise HTTPException(400, "image purpose currently only supports provider openai/gemini")
+        if provider not in {"openai", "gemini", "qwen"}:
+            raise HTTPException(400, "image purpose currently only supports provider openai/gemini/qwen")
         if not model.strip():
             raise HTTPException(400, "image purpose requires modelSeries")
     elif provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"}:

@@ -90,6 +90,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       docsUrl: "https://ai.google.dev/gemini-api/docs/image-generation",
     },
+    {
+      value: "qwen",
+      label: "Qwen",
+      modelSeries: "wan2.7-image",
+      modelPlaceholder: "wan2.7-image / wan2.7-image-pro",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      docsUrl: "https://platform.qianwenai.com/docs/developer-guides/image-generation/text-to-image",
+    },
   ],
   video: [
     {
@@ -107,6 +115,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       modelPlaceholder: "veo-3.1-generate-preview",
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       docsUrl: "https://ai.google.dev/gemini-api/docs/video",
+    },
+    {
+      value: "qwen",
+      label: "Qwen",
+      modelSeries: "wan2.7-t2v",
+      modelPlaceholder: "wan2.7-t2v / wan2.7-i2v",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      docsUrl: "https://platform.qianwenai.com/docs/developer-guides/video-generation/text-to-video",
     },
   ],
   audio: [
@@ -130,6 +146,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       modelPlaceholder: "gpt-4o-mini-tts",
       baseUrl: "https://api.openai.com/v1",
       docsUrl: "https://platform.openai.com/docs/guides/text-to-speech",
+    },
+    {
+      value: "qwen",
+      label: "Qwen TTS",
+      modelSeries: "qwen3-tts-flash:Cherry",
+      modelPlaceholder: "qwen3-tts-flash:Cherry",
+      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
+      docsUrl: "https://platform.qianwenai.com/docs/developer-guides/speech/tts-models",
     },
   ],
 };

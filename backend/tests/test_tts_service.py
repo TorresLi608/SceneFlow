@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.config_service import normalize_config_payload
-from app.services.tts_service import _duration, _openai_tts, _system_tts, synthesize
+from app.services.tts_service import _duration, _openai_tts, _qwen_tts, _system_tts, synthesize
 
 
 def test_system_audio_config_needs_no_api_key() -> None:
@@ -54,9 +54,25 @@ def test_duration_uses_ffprobe() -> None:
         assert _duration(Path("voice.mp3"), 9) == 3.25
 
 
+def test_qwen_tts_uses_model_and_voice() -> None:
+    response = MagicMock()
+    response.json.return_value = {"output": {"audio": {"data": "d2F2"}}}
+    response.raise_for_status = MagicMock()
+    client = AsyncMock()
+    client.post.return_value = response
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with TemporaryDirectory() as directory, patch("app.services.tts_service.httpx.AsyncClient", return_value=context):
+        path = Path(directory) / "voice.wav"
+        asyncio.run(_qwen_tts("hello", {"apiKey": "secret", "model": "qwen3-tts-flash:Cherry", "baseUrl": "https://example.test/v1"}, path))
+        assert client.post.call_args.kwargs["json"] == {"model": "qwen3-tts-flash", "input": {"text": "hello", "voice": "Cherry"}}
+        assert path.read_bytes() == b"wav"
+
+
 if __name__ == "__main__":
     test_system_audio_config_needs_no_api_key()
     test_system_tts_uses_available_binary()
     test_edge_tts_saves_mp3()
     test_openai_tts_requests_wav()
     test_duration_uses_ffprobe()
+    test_qwen_tts_uses_model_and_voice()

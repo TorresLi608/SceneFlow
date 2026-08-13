@@ -14,6 +14,7 @@ from google.genai import types
 
 DOUBAO_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 GEMINI_VIDEO_BASE_URL = "https://generativelanguage.googleapis.com"
+QWEN_VIDEO_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
 DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpeg|jpg|webp));base64,(.+)$", re.DOTALL)
 MAX_REFERENCE_BYTES = 10 * 1024 * 1024
 POLL_INTERVAL_SECONDS = 5
@@ -56,10 +57,10 @@ def parse_reference(value: dict[str, Any]) -> tuple[bytes, str]:
 
 def resolve_video_settings(provider: str, resolution: str, fps: int, duration: int) -> VideoSettings:
     provider = provider.strip().lower()
-    if provider not in {"doubao", "gemini"}:
-        raise ValueError("video generation currently only supports provider doubao/gemini")
+    if provider not in {"doubao", "gemini", "qwen"}:
+        raise ValueError("video generation currently only supports provider doubao/gemini/qwen")
     if fps != 24:
-        raise ValueError("Doubao and Gemini video models currently only support 24 FPS")
+        raise ValueError("Doubao, Gemini, and Qwen video models currently only support 24 FPS")
     if not 4 <= duration <= 15:
         raise ValueError("duration must be between 4 and 15 seconds")
     settings = VIDEO_SETTINGS.get(resolution)
@@ -68,6 +69,14 @@ def resolve_video_settings(provider: str, resolution: str, fps: int, duration: i
     if provider == "gemini" and settings.ratio == "1:1":
         raise ValueError("Gemini video models do not support 1:1 output")
     return settings
+
+
+def validate_qwen_video_input(model: str, reference: dict[str, Any] | None) -> None:
+    is_i2v = "-i2v" in model.strip().lower()
+    if is_i2v and not reference:
+        raise ValueError(f"Qwen image-to-video model {model} requires a reference image")
+    if reference and not is_i2v:
+        raise ValueError(f"Qwen text-to-video model {model} does not accept a reference image; use wan2.7-i2v")
 
 
 def build_doubao_payload(
@@ -222,6 +231,63 @@ async def _generate_gemini_video(
         await client.aio.aclose()
 
 
+async def _generate_qwen_video(
+    api_key: str,
+    model: str,
+    prompt: str,
+    settings: VideoSettings,
+    duration: int,
+    reference: dict[str, Any] | None,
+    base_url: str,
+) -> VideoResult:
+    model = model.strip()
+    validate_qwen_video_input(model, reference)
+    payload: dict[str, Any] = {
+        "model": model,
+        "input": {"prompt": prompt},
+        "parameters": {
+            "resolution": settings.resolution.upper(),
+            "ratio": settings.ratio,
+            "duration": duration,
+            "prompt_extend": True,
+            "watermark": False,
+        },
+    }
+    if reference:
+        data, mime_type = parse_reference(reference)
+        image_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+        if model.lower() == "wan2.7-i2v":
+            payload["input"]["media"] = [{"type": "first_frame", "url": image_url}]
+            payload["parameters"].pop("ratio")
+        else:
+            payload["input"]["img_url"] = image_url
+    base = (base_url or QWEN_VIDEO_BASE_URL).strip().rstrip("/")
+    headers = {"Authorization": f"Bearer {api_key.strip()}", "X-DashScope-Async": "enable"}
+    async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        response = await client.post(f"{base}/services/aigc/video-generation/video-synthesis", headers=headers, json=payload)
+        response.raise_for_status()
+        task_id = str(response.json().get("output", {}).get("task_id") or "")
+        if not task_id:
+            raise ValueError("Qwen video task creation returned no task id")
+        deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            task_response = await client.get(f"{base}/tasks/{task_id}", headers={"Authorization": headers["Authorization"]})
+            task_response.raise_for_status()
+            output = task_response.json().get("output", {})
+            status = str(output.get("task_status") or "").upper()
+            if status == "SUCCEEDED":
+                video_url = str(output.get("video_url") or "")
+                if not video_url:
+                    raise ValueError("Qwen video task succeeded without a video URL")
+                video_response = await client.get(video_url)
+                video_response.raise_for_status()
+                return VideoResult(video_response.content)
+            if status in {"FAILED", "CANCELED", "UNKNOWN"}:
+                raise ValueError(f"Qwen video task {status.lower()}: {output.get('message') or output.get('code') or ''}")
+        raise TimeoutError("Qwen video generation timed out")
+
+
 async def generate_video(
     provider: str,
     api_key: str,
@@ -238,4 +304,6 @@ async def generate_video(
         parse_reference(reference)
     if provider == "doubao":
         return await _generate_doubao_video(api_key, model, prompt, settings, duration, reference, base_url)
+    if provider == "qwen":
+        return await _generate_qwen_video(api_key, model, prompt, settings, duration, reference, base_url)
     return await _generate_gemini_video(api_key, model, prompt, settings, duration, reference, base_url)

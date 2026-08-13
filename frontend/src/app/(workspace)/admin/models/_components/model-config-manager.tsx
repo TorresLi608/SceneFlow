@@ -194,6 +194,7 @@ export function ModelConfigManager() {
   const options = providerOptions[purpose];
   const isRelay = isRelayConnection(provider, connectionMode);
   const selectedProviderOption = providerOption(purpose, provider);
+  const canDiscoverModels = !(provider === "qwen" && ["image", "video", "audio"].includes(purpose));
   const isMutating = (isSuperAdmin && officialQuery.isLoading) || userQuery.isLoading;
 
   const refreshConfigs = async () => {
@@ -716,7 +717,6 @@ export function ModelConfigManager() {
                     setBaseUrl(event.target.value);
                     setModelOptions([]);
                   }}
-                  disabled={!isRelay || ["edge", "system"].includes(provider)}
                   placeholder="https://api.example.com/v1"
                 />
               </div>
@@ -758,7 +758,7 @@ export function ModelConfigManager() {
                   variant="outline"
                   size="sm"
                   onClick={() => discoverModelsMutation.mutate()}
-                  disabled={discoverModelsMutation.isPending || ["edge", "system"].includes(provider)}
+                  disabled={discoverModelsMutation.isPending || ["edge", "system"].includes(provider) || !canDiscoverModels}
                 >
                   {discoverModelsMutation.isPending ? t("admin.fetchingModels") : t("admin.fetchModels")}
                 </Button>

@@ -26,10 +26,10 @@ Every error response is `{"error": "<message>"}` — see `../conventions/error-h
 | `custom provider requires baseUrl` | model config write |
 | `baseUrl must not target a private network` | model config write — SSRF guard |
 | `invalid purpose` | model config write |
-| `audio purpose only supports provider edge/system/openai` | model config write |
-| `video purpose only supports provider doubao/gemini` | model config write |
+| `audio purpose only supports provider edge/system/openai/qwen` | model config write |
+| `video purpose only supports provider doubao/gemini/qwen` | model config write |
 | `video purpose requires modelSeries` | model config write |
-| `image generation currently only supports provider openai/gemini` | image router |
+| `image generation currently only supports provider openai/gemini/qwen` | image router |
 | `disabled config cannot be default` | model config activate |
 | `stored API key cannot be decrypted` | any config read whose ciphertext no longer decodes |
 | `model validation failed: …` / `failed to fetch model list: …` | provider validation, provider text truncated to 180 chars |
