@@ -13,7 +13,7 @@ import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import type { UserConfig } from "@/types/auth";
-import type { VideoFps, VideoReferenceInput, VideoResolution } from "@/types/video-generation";
+import type { VideoFps, VideoQuality, VideoReferenceInput, VideoResolution } from "@/types/video-generation";
 
 const resolutionOptions: { value: VideoResolution; label: string; ratio: string }[] = [
   { value: "1280x720", label: "1280 × 720", ratio: "16:9" },
@@ -22,6 +22,7 @@ const resolutionOptions: { value: VideoResolution; label: string; ratio: string 
   { value: "1920x1080", label: "1920 × 1080", ratio: "16:9" },
 ];
 const fpsOptions: VideoFps[] = [24, 30, 60];
+const qualityOptions: VideoQuality[] = ["480p", "720p", "1080p"];
 const durationOptions = Array.from({ length: 12 }, (_, index) => index + 4);
 const historyStorageKey = "sceneflow-video-generation-history-v1";
 
@@ -44,7 +45,7 @@ function selectedConfigPayload(config: UserConfig | undefined) {
 function isVideoConfig(config: UserConfig) {
   return (
     config.purpose === "video" &&
-    ["doubao", "gemini"].includes(config.provider) &&
+    ["doubao", "gemini", "qwen"].includes(config.provider) &&
     config.isEnabled &&
     Boolean(config.modelSeries.trim())
   );
@@ -84,6 +85,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<VideoResolution>("1280x720");
   const [fps, setFps] = useState<VideoFps>(24);
+  const [quality, setQuality] = useState<VideoQuality>("720p");
   const [duration, setDuration] = useState(4);
   const [prompt, setPrompt] = useState("");
   const [reference, setReference] = useState<VideoReferenceInput | undefined>();
@@ -106,6 +108,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     : defaultConfigId;
   const selectedConfig = videoConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
   const isGemini = selectedConfig?.provider === "gemini";
+  const isQwen = selectedConfig?.provider === "qwen";
 
   const generateMutation = useMutation({
     mutationFn: generateVideoAction,
@@ -159,10 +162,9 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     setElapsedSeconds(0);
     generateMutation.mutate({
       prompt: content,
-      resolution,
-      fps,
       duration,
       reference,
+      ...(isQwen ? { quality } : { resolution, fps }),
       ...selectedConfigPayload(selectedConfig),
     });
   };
@@ -230,32 +232,46 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
             />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t("videos.resolution")}</label>
-              <Select value={resolution} onValueChange={(value) => setResolution(value as VideoResolution)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  {resolutionOptions.map((item) => (
-                    <SelectItem key={item.value} value={item.value} disabled={isGemini && item.ratio === "1:1"}>
-                      {item.label} ({item.ratio})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className={`grid gap-3 ${isQwen ? "sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2" : "sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3"}`}>
+            {isQwen ? (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">{t("videos.quality")}</label>
+                <Select value={quality} onValueChange={(value) => setQuality(value as VideoQuality)}>
+                  <SelectTrigger><SelectValue>{quality}</SelectValue></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    {qualityOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">{t("videos.resolution")}</label>
+                  <Select value={resolution} onValueChange={(value) => setResolution(value as VideoResolution)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {resolutionOptions.map((item) => (
+                        <SelectItem key={item.value} value={item.value} disabled={isGemini && item.ratio === "1:1"}>
+                          {item.label} ({item.ratio})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t("videos.fps")}</label>
-              <Select value={String(fps)} onValueChange={(value) => setFps(Number(value) as VideoFps)}>
-                <SelectTrigger><SelectValue>{fps} FPS</SelectValue></SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  {fpsOptions.map((item) => (
-                    <SelectItem key={item} value={String(item)} disabled={item !== 24}>{item} FPS</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">{t("videos.fps")}</label>
+                  <Select value={String(fps)} onValueChange={(value) => setFps(Number(value) as VideoFps)}>
+                    <SelectTrigger><SelectValue>{fps} FPS</SelectValue></SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {fpsOptions.map((item) => (
+                        <SelectItem key={item} value={String(item)} disabled={item !== 24}>{item} FPS</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium">{t("videos.duration")}</label>
@@ -267,7 +283,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
               </Select>
             </div>
           </div>
-          <p className="text-xs leading-5 text-muted-foreground">{t("videos.capabilityHint")}</p>
+          {!isQwen ? <p className="text-xs leading-5 text-muted-foreground">{t("videos.capabilityHint")}</p> : null}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">

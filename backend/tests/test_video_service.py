@@ -5,7 +5,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.services.video_service import VideoSettings, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, resolve_video_settings
+from app.services.video_service import VideoSettings, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, resolve_qwen_video_quality, resolve_video_settings
 
 
 REFERENCE = {"name": "first.png", "data": "data:image/png;base64," + base64.b64encode(b"image").decode("ascii")}
@@ -25,8 +25,12 @@ def test_resolution_mapping_and_provider_limits() -> None:
     assert resolve_video_settings("doubao", "720x1280", 24, 15) == VideoSettings("720p", "9:16")
     assert resolve_video_settings("doubao", "1920x1080", 24, 8) == VideoSettings("1080p", "16:9")
     assert_raises("24 FPS", lambda: resolve_video_settings("gemini", "1280x720", 30, 4))
+    assert_raises("only supported for Doubao and Gemini", lambda: resolve_video_settings("qwen", "1280x720", 24, 4))
     assert_raises("1:1", lambda: resolve_video_settings("gemini", "1024x1024", 24, 4))
     assert_raises("between 4 and 15", lambda: resolve_video_settings("doubao", "1280x720", 24, 16))
+    assert resolve_qwen_video_quality("480P", 4) == "480p"
+    assert resolve_qwen_video_quality("1080p", 15) == "1080p"
+    assert_raises("480p, 720p, or 1080p", lambda: resolve_qwen_video_quality("4k", 4))
 
 
 def test_doubao_payload_with_and_without_reference() -> None:
@@ -58,24 +62,24 @@ def test_qwen_video_uses_reference_frame_and_async_task() -> None:
     context = AsyncMock()
     context.__aenter__.return_value = client
     with patch("app.services.video_service.httpx.AsyncClient", return_value=context), patch("app.services.video_service.asyncio.sleep", new=AsyncMock()):
-        result = asyncio.run(_generate_qwen_video("test-key", "wan2.7-i2v", "camera move", VideoSettings("720p", "16:9"), 5, REFERENCE, ""))
+        result = asyncio.run(_generate_qwen_video("test-key", "wan2.7-i2v", "camera move", "480p", 5, REFERENCE, ""))
 
     assert result.data == b"mp4"
     request = client.post.call_args.kwargs
     assert request["json"]["input"]["media"][0]["type"] == "first_frame"
     assert request["json"]["input"]["media"][0]["url"].startswith("data:image/png;base64,")
-    assert request["json"]["parameters"]["resolution"] == "720P"
+    assert request["json"]["parameters"]["resolution"] == "480P"
     assert "ratio" not in request["json"]["parameters"]
+    assert "fps" not in request["json"]["parameters"]
 
 
 def test_qwen_video_model_matches_input_type() -> None:
-    settings = VideoSettings("720p", "16:9")
     for model, reference, message in (
         ("wan2.7-i2v", None, "requires a reference image"),
         ("wan2.7-t2v", REFERENCE, "does not accept a reference image"),
     ):
         try:
-            asyncio.run(_generate_qwen_video("test-key", model, "camera move", settings, 5, reference, ""))
+            asyncio.run(_generate_qwen_video("test-key", model, "camera move", "720p", 5, reference, ""))
         except ValueError as exc:
             assert message in str(exc)
         else:

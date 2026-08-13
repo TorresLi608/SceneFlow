@@ -10,7 +10,7 @@ from app.api.deps import current_user_id
 from app.services.artifact_service import save_binary_artifact
 from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.usage_service import record_usage, require_model_balance
-from app.services.video_service import generate_video, parse_reference, resolve_video_settings, validate_qwen_video_input
+from app.services.video_service import generate_video, parse_reference, resolve_qwen_video_quality, resolve_video_settings, validate_qwen_video_input
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -41,16 +41,21 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
             config = active_model_config(session, user_id, "video", "视频生成")
         require_model_balance(session, user_id, config)
 
-    resolution = str(payload.get("resolution") or "1280x720")
     started_at = time.monotonic()
     try:
-        fps = int(payload.get("fps") or 24)
         duration = int(payload.get("duration") or 4)
-        resolve_video_settings(config["provider"], resolution, fps, duration)
         if reference:
             parse_reference(reference)
         if config["provider"] == "qwen":
+            quality = resolve_qwen_video_quality(str(payload.get("quality") or "720p"), duration)
+            resolution = None
+            fps = None
             validate_qwen_video_input(config["model"], reference)
+        else:
+            quality = None
+            resolution = str(payload.get("resolution") or "1280x720")
+            fps = int(payload.get("fps") or 24)
+            resolve_video_settings(config["provider"], resolution, fps, duration)
     except (TypeError, ValueError) as exc:
         raise HTTPException(400, str(exc)[:220]) from exc
 
@@ -63,6 +68,7 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
             resolution=resolution,
             fps=fps,
             duration=duration,
+            quality=quality,
             reference=reference,
             base_url=config.get("baseUrl", ""),
         )
@@ -70,11 +76,13 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
         raise HTTPException(502, "AI 视频生成失败：" + str(exc)[:220]) from exc
     record_usage(user_id, config, "video", started_at, quantity=duration)
 
-    return {
-        "video": {
-            "url": persist_video(result.data),
-            "model": config["model"],
-            "source": "image-to-video" if reference else "text-to-video",
-            "fps": fps,
-        }
+    video = {
+        "url": persist_video(result.data),
+        "model": config["model"],
+        "source": "image-to-video" if reference else "text-to-video",
     }
+    if fps is not None:
+        video["fps"] = fps
+    if quality is not None:
+        video["quality"] = quality
+    return {"video": video}

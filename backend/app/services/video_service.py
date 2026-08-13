@@ -39,6 +39,7 @@ VIDEO_SETTINGS = {
     "1024x1024": VideoSettings("720p", "1:1"),
     "1920x1080": VideoSettings("1080p", "16:9"),
 }
+QWEN_VIDEO_QUALITIES = {"480p", "720p", "1080p"}
 
 
 def parse_reference(value: dict[str, Any]) -> tuple[bytes, str]:
@@ -57,10 +58,10 @@ def parse_reference(value: dict[str, Any]) -> tuple[bytes, str]:
 
 def resolve_video_settings(provider: str, resolution: str, fps: int, duration: int) -> VideoSettings:
     provider = provider.strip().lower()
-    if provider not in {"doubao", "gemini", "qwen"}:
-        raise ValueError("video generation currently only supports provider doubao/gemini/qwen")
+    if provider not in {"doubao", "gemini"}:
+        raise ValueError("pixel resolution and FPS are only supported for Doubao and Gemini")
     if fps != 24:
-        raise ValueError("Doubao, Gemini, and Qwen video models currently only support 24 FPS")
+        raise ValueError("Doubao and Gemini video models currently only support 24 FPS")
     if not 4 <= duration <= 15:
         raise ValueError("duration must be between 4 and 15 seconds")
     settings = VIDEO_SETTINGS.get(resolution)
@@ -69,6 +70,15 @@ def resolve_video_settings(provider: str, resolution: str, fps: int, duration: i
     if provider == "gemini" and settings.ratio == "1:1":
         raise ValueError("Gemini video models do not support 1:1 output")
     return settings
+
+
+def resolve_qwen_video_quality(quality: str, duration: int) -> str:
+    if not 4 <= duration <= 15:
+        raise ValueError("duration must be between 4 and 15 seconds")
+    normalized = quality.strip().lower()
+    if normalized not in QWEN_VIDEO_QUALITIES:
+        raise ValueError("Qwen video quality must be 480p, 720p, or 1080p")
+    return normalized
 
 
 def validate_qwen_video_input(model: str, reference: dict[str, Any] | None) -> None:
@@ -235,7 +245,7 @@ async def _generate_qwen_video(
     api_key: str,
     model: str,
     prompt: str,
-    settings: VideoSettings,
+    quality: str,
     duration: int,
     reference: dict[str, Any] | None,
     base_url: str,
@@ -246,8 +256,7 @@ async def _generate_qwen_video(
         "model": model,
         "input": {"prompt": prompt},
         "parameters": {
-            "resolution": settings.resolution.upper(),
-            "ratio": settings.ratio,
+            "resolution": quality.upper(),
             "duration": duration,
             "prompt_extend": True,
             "watermark": False,
@@ -258,7 +267,6 @@ async def _generate_qwen_video(
         image_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
         if model.lower() == "wan2.7-i2v":
             payload["input"]["media"] = [{"type": "first_frame", "url": image_url}]
-            payload["parameters"].pop("ratio")
         else:
             payload["input"]["img_url"] = image_url
     base = (base_url or QWEN_VIDEO_BASE_URL).strip().rstrip("/")
@@ -293,17 +301,20 @@ async def generate_video(
     api_key: str,
     model: str,
     prompt: str,
-    resolution: str,
-    fps: int,
+    resolution: str | None,
+    fps: int | None,
     duration: int,
+    quality: str | None = None,
     reference: dict[str, Any] | None = None,
     base_url: str = "",
 ) -> VideoResult:
-    settings = resolve_video_settings(provider, resolution, fps, duration)
     if reference:
         parse_reference(reference)
+    if provider == "qwen":
+        return await _generate_qwen_video(
+            api_key, model, prompt, resolve_qwen_video_quality(quality or "720p", duration), duration, reference, base_url
+        )
+    settings = resolve_video_settings(provider, resolution or "", fps or 0, duration)
     if provider == "doubao":
         return await _generate_doubao_video(api_key, model, prompt, settings, duration, reference, base_url)
-    if provider == "qwen":
-        return await _generate_qwen_video(api_key, model, prompt, settings, duration, reference, base_url)
     return await _generate_gemini_video(api_key, model, prompt, settings, duration, reference, base_url)

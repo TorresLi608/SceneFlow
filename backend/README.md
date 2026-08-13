@@ -65,7 +65,7 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 - Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.
 - Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
 - Image generation supports OpenAI, Gemini, and Qwen/Wan; video supports Doubao, Gemini, and Qwen/Wan; audio supports Edge, system, OpenAI, and Qwen TTS.
-- Qwen media uses the native `https://dashscope.aliyuncs.com/api/v1` API. Video uses `wan2.7-t2v` without a reference image or `wan2.7-i2v` with one. Audio `modelSeries` is `model:voice`, for example `qwen3-tts-flash:Cherry`.
+- Qwen media uses the native `https://dashscope.aliyuncs.com/api/v1` API. Video uses `wan2.7-t2v` without a reference image or `wan2.7-i2v` with one, and accepts `480p`, `720p`, or `1080p` quality without pixel resolution or FPS. Audio `modelSeries` is `model:voice`, for example `qwen3-tts-flash:Cherry`.
 - New model configurations start with an empty `modelSeries`. Model discovery does not filter by purpose: it uses the provider or relay `/models` endpoint when available, while native Qwen media and local TTS return all known models for that provider. Saving never performs a remote connectivity check; enabled configs still require their local fields and API key.
 
 ## APIs
