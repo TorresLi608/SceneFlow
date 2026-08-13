@@ -21,6 +21,7 @@ def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int
     return {
         "id": user.id,
         "username": user.username,
+        "nickname": user.nickname or "",
         "role": user.role or "user",
         "isDisabled": bool(user.is_disabled),
         "balanceMicros": str(user.balance_micros),
@@ -58,7 +59,6 @@ def config_json(config: ModelConfig) -> dict[str, Any]:
         "model": config.model_name or "",
         "isActive": bool(config.is_active),
         "isEnabled": bool(config.is_enabled),
-        "isVerified": bool(config.is_verified),
         "createdAt": config.created_at,
         "updatedAt": config.updated_at,
         "pricingMultiplier": price("pricing_multiplier", "1"),

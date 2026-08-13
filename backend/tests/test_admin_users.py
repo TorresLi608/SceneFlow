@@ -22,6 +22,10 @@ def test_admin_create_and_reset_user() -> None:
             created = create_user({"username": "alice", "password": "initial-password"}, 1)["user"]
             assert created["role"] == "user"
             assert created["level"] == 1
+            updated_profile = update_me({"nickname": "Alice"}, created["id"])["user"]
+            assert updated_profile["nickname"] == "Alice"
+            cleared_profile = update_me({"nickname": ""}, created["id"])["user"]
+            assert cleared_profile["nickname"] == ""
             super_admin = create_user({"username": "admin-two", "password": "initial-password", "role": "superAdmin"}, 1)["user"]
             assert super_admin["role"] == "superAdmin"
             updated = update_user(created["id"], {"level": 3}, 1)["user"]

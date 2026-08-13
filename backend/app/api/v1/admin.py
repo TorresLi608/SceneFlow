@@ -404,7 +404,7 @@ async def update_model_config(
         raise HTTPException(400, "invalid config source")
 
     normalized = normalize_config_payload(payload, config)
-    if normalized["needs_validation"]:
+    if bool(payload.get("isEnabled", config.is_enabled)):
         validate_api_key(normalized["provider"], normalized["api_key"])
     updates = config_update_fields(payload, config, normalized)
     try:
@@ -486,11 +486,9 @@ async def update_model_config(
 @router.post("/default-models", status_code=201)
 async def create_default_model(payload: dict[str, Any], _: int = Depends(current_super_admin_id)) -> dict[str, Any]:
     normalized = normalize_config_payload(payload)
-    is_verified = 0
-    if normalized["api_key"] or payload.get("isActive"):
+    if normalized["api_key"] or payload.get("isEnabled", True) or payload.get("isActive"):
         validate_api_key(normalized["provider"], normalized["api_key"])
-        is_verified = 1
-    fields = config_create_fields(payload, normalized, is_verified)
+    fields = config_create_fields(payload, normalized)
     try:
         pricing = normalize_pricing(payload)
     except ValueError as exc:
@@ -537,7 +535,7 @@ async def update_default_model(config_id: int, payload: dict[str, Any], _: int =
         raise HTTPException(404, "official config not found")
 
     normalized = normalize_config_payload(payload, config)
-    if normalized["needs_validation"]:
+    if bool(payload.get("isEnabled", config.is_enabled)):
         validate_api_key(normalized["provider"], normalized["api_key"])
     updates = config_update_fields(payload, config, normalized)
     try:

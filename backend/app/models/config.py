@@ -28,7 +28,6 @@ class ModelConfig(SQLModel, table=True):
     is_enabled: bool | None = Field(default=True, sa_column_kwargs={"server_default": text("true")})
     purpose: str | None = Field(default="script", sa_column_kwargs={"server_default": text("'script'")})
     model_name: str | None = None
-    is_verified: bool | None = Field(default=False, sa_column_kwargs={"server_default": text("false")})
     name: str | None = None
     description: str | None = None
     base_url: str | None = None

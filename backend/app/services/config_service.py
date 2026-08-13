@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.core.security import decrypt, encrypt
-from app.llms.registry import models
 from app.llms.router import pick_model
 from app.models import ModelConfig, UserOfficialConfigDefault
 
@@ -97,10 +96,6 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
 
 
 def normalize_config_payload(payload: dict[str, Any], current: ModelConfig | None = None) -> dict[str, Any]:
-    current_purpose = normalize_purpose(str(current.purpose)) if current else ""
-    current_provider = normalize_provider(str(current.provider)) if current else ""
-    current_base_url = normalize_base_url(str(current.base_url or "")) if current else ""
-    current_model = normalize_model(current_provider, str(current.model_name or "")) if current else ""
     current_api_key = decrypt(current.encrypted_key) if current else ""
     purpose = normalize_purpose(str(payload.get("purpose", current.purpose if current else "")))
     provider = normalize_provider(str(payload.get("provider", current.provider if current else "")))
@@ -120,13 +115,10 @@ def normalize_config_payload(payload: dict[str, Any], current: ModelConfig | Non
         "base_url": base_url,
         "model": model,
         "api_key": api_key,
-        "needs_validation": current is None
-        or (purpose, provider, base_url, model, api_key) != (current_purpose, current_provider, current_base_url, current_model, current_api_key)
-        or (bool(payload.get("isActive")) and not bool(current.is_active)),
     }
 
 
-def config_create_fields(payload: dict[str, Any], normalized: dict[str, Any], is_verified: int) -> dict[str, Any]:
+def config_create_fields(payload: dict[str, Any], normalized: dict[str, Any]) -> dict[str, Any]:
     is_enabled = 1 if payload.get("isEnabled", True) else 0
     if payload.get("isActive") and not is_enabled:
         raise HTTPException(400, "disabled config cannot be default")
@@ -140,7 +132,6 @@ def config_create_fields(payload: dict[str, Any], normalized: dict[str, Any], is
         "encrypted_key": encrypt(normalized["api_key"]),
         "is_active": 1 if payload.get("isActive") else 0,
         "is_enabled": is_enabled,
-        "is_verified": is_verified,
     }
 
 
@@ -160,8 +151,6 @@ def config_update_fields(payload: dict[str, Any], current: ModelConfig, normaliz
         updates["model_name"] = normalized["model"]
     if "apiKey" in payload:
         updates["encrypted_key"] = encrypt(normalized["api_key"])
-    if normalized["needs_validation"]:
-        updates["is_verified"] = 1
     if "isActive" in payload:
         if payload["isActive"] and not bool(payload.get("isEnabled", current.is_enabled)):
             raise HTTPException(400, "disabled config cannot be default")
@@ -182,19 +171,6 @@ def validate_api_key(provider: str, api_key: str) -> None:
         raise HTTPException(400, "apiKey length must be between 8 and 512")
 
 
-async def validate_provider(purpose: str, provider: str, model: str, api_key: str, base_url: str = "") -> None:
-    validate_api_key(provider, api_key)
-    if purpose in {"video", "audio"}:
-        return
-    try:
-        if purpose == "image":
-            await models.validate_image_model(provider, api_key, model, base_url)
-        else:
-            await models.validate_chat_model(provider, api_key, model, base_url)
-    except Exception as exc:
-        raise HTTPException(400, f"model validation failed: {str(exc).strip()[:180]}") from exc
-
-
 def _model_config(config: ModelConfig | None, purpose: str, stage: str, source: str) -> dict[str, str]:
     if not config:
         raise HTTPException(400, f"{stage}未配置可用的默认模型。请先使用官方配置或添加自定义配置。")
@@ -202,8 +178,6 @@ def _model_config(config: ModelConfig | None, purpose: str, stage: str, source: 
     model = pick_model(provider, normalize_model(provider, config.model_name or ""))
     base_url = normalize_base_url(config.base_url or "")
     validate_config_fields(purpose, provider, model, base_url)
-    if not bool(config.is_verified):
-        raise HTTPException(400, f"{stage}当前默认模型尚未通过校验。")
     api_key = decrypt(config.encrypted_key).strip()
     if not api_key and provider not in {"edge", "system"}:
         raise HTTPException(400, f"{stage}当前默认模型缺少 API Key。")
@@ -284,7 +258,6 @@ def active_model_config(session: Session, user_id: int, purpose: str, stage: str
             UserOfficialConfigDefault.purpose == purpose,
             ModelConfig.source == "official",
             ModelConfig.is_enabled.is_(True),
-            ModelConfig.is_verified.is_(True),
             ModelConfig.deleted_at.is_(None),
         )
         .limit(1)
@@ -313,7 +286,6 @@ def active_model_config(session: Session, user_id: int, purpose: str, stage: str
             ModelConfig.purpose == purpose,
             ModelConfig.is_active.is_(True),
             ModelConfig.is_enabled.is_(True),
-            ModelConfig.is_verified.is_(True),
             ModelConfig.deleted_at.is_(None),
         )
         .order_by(ModelConfig.updated_at.desc())

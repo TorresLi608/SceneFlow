@@ -11,13 +11,20 @@ from app.core.database import db
 from app.api.deps import current_user_id
 from app.models import ModelConfig, UserOfficialConfigDefault
 from app.schemas.serializers import config_json, official_config_json
-from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_api_key, validate_provider
+from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_api_key
 from app.llms.registry import models
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates
 from app.utils.common import now
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+KNOWN_MODELS = {
+    "qwen": ["wan2.7-image", "wan2.7-image-pro", "wan2.7-t2v", "wan2.7-i2v", "qwen3-tts-flash:Cherry"],
+    "edge": ["zh-CN-XiaoxiaoNeural"],
+    "system": ["Tingting", "zh"],
+}
+QWEN_NATIVE_MEDIA_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
 
 
 @router.get("/keys")
@@ -40,7 +47,6 @@ def list_configs(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
             .where(
                 ModelConfig.source == "official",
                 ModelConfig.is_enabled.is_(True),
-                ModelConfig.is_verified.is_(True),
                 ModelConfig.deleted_at.is_(None),
             )
             .order_by(ModelConfig.purpose, ModelConfig.updated_at.desc())
@@ -76,6 +82,9 @@ async def discover_models(payload: dict[str, Any], _: int = Depends(current_user
     provider = normalize_provider(str(payload.get("provider", "")))
     base_url = normalize_base_url(str(payload.get("baseUrl", "")))
     api_key = str(payload.get("apiKey", "")).strip()
+    known_models = KNOWN_MODELS.get(provider)
+    if known_models and (provider in {"edge", "system"} or not base_url or base_url == QWEN_NATIVE_MEDIA_BASE_URL):
+        return {"models": known_models}
     if provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic", "custom"}:
         raise HTTPException(400, "provider does not support model discovery")
     if provider == "custom" and not base_url:
@@ -89,26 +98,6 @@ async def discover_models(payload: dict[str, Any], _: int = Depends(current_user
     if not model_names:
         raise HTTPException(400, "provider returned no models")
     return {"models": model_names}
-
-
-@router.post("/keys/validate")
-async def validate_config(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    normalized = normalize_config_payload(payload)
-    await validate_provider(
-        normalized["purpose"],
-        normalized["provider"],
-        normalized["model"],
-        normalized["api_key"],
-        normalized["base_url"],
-    )
-    return {
-        "valid": True,
-        "purpose": normalized["purpose"],
-        "provider": normalized["provider"],
-        "baseUrl": normalized["base_url"],
-        "modelSeries": normalized["model"],
-        "model": normalized["model"],
-    }
 
 
 def _own_config(session, config_id: int, user_id: int) -> ModelConfig | None:
@@ -144,7 +133,7 @@ def get_config_secret(config_id: int, user_id: int = Depends(current_user_id)) -
 async def create_config(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     normalized = normalize_config_payload(payload)
     validate_api_key(normalized["provider"], normalized["api_key"])
-    fields = config_create_fields(payload, normalized, 1)
+    fields = config_create_fields(payload, normalized)
     try:
         pricing = normalize_pricing(payload)
     except ValueError as exc:
@@ -193,7 +182,7 @@ async def update_config(config_id: int, payload: dict[str, Any], user_id: int = 
         raise HTTPException(404, "config not found")
 
     normalized = normalize_config_payload(payload, config)
-    if normalized["needs_validation"]:
+    if bool(payload.get("isEnabled", config.is_enabled)):
         validate_api_key(normalized["provider"], normalized["api_key"])
     updates = config_update_fields(payload, config, normalized)
     try:
@@ -260,7 +249,6 @@ def activate_official_config(config_id: int, user_id: int = Depends(current_user
                 ModelConfig.id == config_id,
                 ModelConfig.source == "official",
                 ModelConfig.is_enabled.is_(True),
-                ModelConfig.is_verified.is_(True),
                 ModelConfig.deleted_at.is_(None),
             )
         ).first()

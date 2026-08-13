@@ -21,6 +21,7 @@ export default function RegisterPage() {
   const setAuth = useUserStore((state) => state.setAuth);
 
   const [username, setUsername] = useState("");
+  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [invitationCode, setInvitationCode] = useState("");
@@ -49,6 +50,7 @@ export default function RegisterPage() {
 
     registerMutation.mutate({
       username,
+      nickname: nickname.trim(),
       password,
       invitationCode,
     });
@@ -70,6 +72,16 @@ export default function RegisterPage() {
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nickname">{t("auth.nickname")}</Label>
+              <Input
+                id="nickname"
+                value={nickname}
+                onChange={(event) => setNickname(event.target.value)}
+                maxLength={64}
+                placeholder={t("auth.nicknamePlaceholder")}
               />
             </div>
             <div className="space-y-2">

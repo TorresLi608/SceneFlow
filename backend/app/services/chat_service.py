@@ -33,8 +33,6 @@ def _row_chat_config(config: ModelConfig | None, config_id: int | None = None, o
     base_url = normalize_base_url(config.base_url or "")
     model = pick_model(provider, normalize_model(provider, config.model_name or ""))
     validate_config_fields(config.purpose, provider, model, base_url)
-    if not bool(config.is_verified):
-        raise HTTPException(400, "config is not verified")
     api_key = decrypt(config.encrypted_key).strip()
     if not api_key:
         raise HTTPException(400, "config missing API key")
@@ -52,7 +50,6 @@ def _active_chat_config(session: Session, user_id: int) -> dict[str, Any]:
             UserOfficialConfigDefault.purpose.in_(CHAT_PURPOSES),
             ModelConfig.source == "official",
             ModelConfig.is_enabled.is_(True),
-            ModelConfig.is_verified.is_(True),
             ModelConfig.deleted_at.is_(None),
         )
         .order_by(case((UserOfficialConfigDefault.purpose == "script", 0), else_=1))
@@ -84,7 +81,6 @@ def _active_chat_config(session: Session, user_id: int) -> dict[str, Any]:
             ModelConfig.purpose.in_(CHAT_PURPOSES),
             ModelConfig.is_active.is_(True),
             ModelConfig.is_enabled.is_(True),
-            ModelConfig.is_verified.is_(True),
             ModelConfig.deleted_at.is_(None),
         )
         .order_by(case((ModelConfig.purpose == "script", 0), else_=1), ModelConfig.updated_at.desc())

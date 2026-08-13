@@ -190,7 +190,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     () =>
       configsByPurpose(userConfigsQuery.data?.configs ?? [], (config) => {
         const isUsableActiveConfig =
-          config.isActive && config.isVerified && config.modelSeries.trim().length > 0;
+          config.isActive && config.modelSeries.trim().length > 0;
         return isUsableActiveConfig;
       }),
     [userConfigsQuery.data?.configs]
@@ -199,7 +199,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     () =>
       configsByPurpose(userConfigsQuery.data?.officialConfigs ?? [], (config) => {
         const isUsableActiveConfig =
-          config.isActive && config.isVerified && config.modelSeries.trim().length > 0;
+          config.isActive && config.modelSeries.trim().length > 0;
         return isUsableActiveConfig;
       }),
     [userConfigsQuery.data?.officialConfigs]
@@ -828,7 +828,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                 <p className="text-base font-semibold">{currentProject?.title ?? t("home.projectTitleLoading")}</p>
                 <p className="text-xs text-muted-foreground">
                   {t("common.currentUser", {
-                    username: meQuery.isLoading ? t("common.loading") : user?.username ?? t("common.unknownUser"),
+                    username: meQuery.isLoading ? t("common.loading") : user?.nickname || user?.username || t("common.unknownUser"),
                   })}
                 </p>
               </div>

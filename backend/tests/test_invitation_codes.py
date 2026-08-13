@@ -23,7 +23,13 @@ def test_invitation_code_is_required_and_consumed() -> None:
             except Exception as exc:
                 assert getattr(exc, "detail", None) == "invitation code required"
 
-            register({"username": "alice", "password": "password", "invitationCode": invitation["code"]})
+            registered = register({
+                "username": "alice",
+                "nickname": "Alice",
+                "password": "password",
+                "invitationCode": invitation["code"],
+            })
+            assert registered["user"]["nickname"] == "Alice"
             result = list_invitation_codes(1, status="used", search="ali", page=1, page_size=10)
             listed = result["invitationCodes"]
 

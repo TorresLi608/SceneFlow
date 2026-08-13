@@ -94,7 +94,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               <p className="text-base font-semibold">{t(pageTitleKey(pathname))}</p>
               <p className="text-xs text-muted-foreground">
                 {t("common.currentUser", {
-                  username: meQuery.isLoading ? t("common.loading") : user?.username ?? t("common.unknownUser"),
+                  username: meQuery.isLoading ? t("common.loading") : user?.nickname || user?.username || t("common.unknownUser"),
                 })}
               </p>
             </div>
@@ -105,13 +105,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 <div onMouseEnter={keepAccountOpen} onMouseLeave={scheduleAccountClose}>
                   <PopoverTrigger render={<Button variant="secondary" />}>
                     <UserRound data-icon="inline-start" />
-                    {user?.username ?? t("common.loading")}
+                    {user?.nickname || user?.username || t("common.loading")}
                     <ChevronDown data-icon="inline-end" />
                   </PopoverTrigger>
                 </div>
                 <PopoverContent align="end" onMouseEnter={keepAccountOpen} onMouseLeave={scheduleAccountClose}>
                   <PopoverHeader>
-                    <PopoverTitle>{user?.username ?? t("common.unknownUser")}</PopoverTitle>
+                    <PopoverTitle>{user?.nickname || user?.username || t("common.unknownUser")}</PopoverTitle>
                     <PopoverDescription>{t("admin.levelValue", { level: user?.level ?? 1 })}</PopoverDescription>
                   </PopoverHeader>
                   <Separator />

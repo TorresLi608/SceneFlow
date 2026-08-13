@@ -21,10 +21,13 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/register", status_code=201)
 def register(payload: dict[str, Any]) -> dict[str, Any]:
     username = str(payload.get("username", "")).strip()
+    nickname = str(payload.get("nickname", "")).strip()
     password = str(payload.get("password", ""))
     invitation_code = str(payload.get("invitationCode", "")).strip().upper()
     if not 3 <= len(username) <= 64 or not 6 <= len(password) <= 128:
         raise HTTPException(400, "invalid username or password length")
+    if len(nickname) > 64:
+        raise HTTPException(400, "nickname must be at most 64 characters")
     if not invitation_code:
         raise HTTPException(400, "invitation code required")
     stamp = now()
@@ -39,7 +42,15 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(410, "invitation code expired")
         if session.exec(select(User.id).where(User.username == username, User.deleted_at.is_(None))).first():
             raise HTTPException(409, "username already exists")
-        user = User(created_at=stamp, updated_at=stamp, username=username, password=hashed, role="user", is_disabled=False)
+        user = User(
+            created_at=stamp,
+            updated_at=stamp,
+            username=username,
+            nickname=nickname or None,
+            password=hashed,
+            role="user",
+            is_disabled=False,
+        )
         session.add(user)
         try:
             session.flush()

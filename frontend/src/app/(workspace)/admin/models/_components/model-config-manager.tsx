@@ -194,7 +194,10 @@ export function ModelConfigManager() {
   const options = providerOptions[purpose];
   const isRelay = isRelayConnection(provider, connectionMode);
   const selectedProviderOption = providerOption(purpose, provider);
-  const canDiscoverModels = !(provider === "qwen" && ["image", "video", "audio"].includes(purpose));
+  const usesKnownModelList = ["edge", "system"].includes(provider) || (
+    provider === "qwen"
+    && (!baseUrl.trim() || baseUrl.trim() === "https://dashscope.aliyuncs.com/api/v1")
+  );
   const isMutating = (isSuperAdmin && officialQuery.isLoading) || userQuery.isLoading;
 
   const refreshConfigs = async () => {
@@ -302,7 +305,7 @@ export function ModelConfigManager() {
 
   const discoverModelsMutation = useMutation({
     mutationFn: () => {
-      if (!apiKey.trim()) {
+      if (!usesKnownModelList && !apiKey.trim()) {
         throw new Error(t("admin.enterApiKeyBeforeFetchModels"));
       }
       if (isRelay && !baseUrl.trim()) {
@@ -335,8 +338,8 @@ export function ModelConfigManager() {
       if (!["edge", "system"].includes(provider) && !editingConfig && !saveAsOfficial && !apiKey.trim()) {
         throw new Error(t("admin.userConfigNeedsApiKey"));
       }
-      if (!["edge", "system"].includes(provider) && !editingConfig && saveAsOfficial && isDefault && !apiKey.trim()) {
-        throw new Error(t("admin.officialDefaultNeedsApiKey"));
+      if (!["edge", "system"].includes(provider) && saveAsOfficial && isEnabled && !apiKey.trim()) {
+        throw new Error(t("admin.officialEnabledNeedsApiKey"));
       }
       if (editingConfig && isDefaultConfig(editingConfig, activeUserByPurpose) && !isDefault) {
         throw new Error(t("admin.keepOneDefault"));
@@ -591,9 +594,6 @@ export function ModelConfigManager() {
                       <Badge variant={config.isEnabled ? "outline" : "destructive"}>
                         {config.isEnabled ? t("settings.enable") : t("settings.disable")}
                       </Badge>
-                      <Badge variant={config.isVerified ? "outline" : "destructive"}>
-                        {config.isVerified ? t("settings.verified") : t("settings.unverified")}
-                      </Badge>
                     </div>
                   </td>
                   <td className="px-3 py-3">
@@ -758,7 +758,7 @@ export function ModelConfigManager() {
                   variant="outline"
                   size="sm"
                   onClick={() => discoverModelsMutation.mutate()}
-                  disabled={discoverModelsMutation.isPending || ["edge", "system"].includes(provider) || !canDiscoverModels}
+                  disabled={discoverModelsMutation.isPending}
                 >
                   {discoverModelsMutation.isPending ? t("admin.fetchingModels") : t("admin.fetchModels")}
                 </Button>
@@ -841,7 +841,7 @@ export function ModelConfigManager() {
               <p>{t("settings.provider")}: {providerLabel(viewingConfig.provider, t)}</p>
               <p>{t("admin.tableModel")}: {viewingConfig.modelSeries}</p>
               <p className="break-all">Base URL：{viewingConfig.baseUrl || "-"}</p>
-              <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")} / {viewingConfig.isVerified ? t("settings.verified") : t("settings.unverified")}</p>
+              <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")}</p>
               <p>
                 {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {viewingConfig.purpose === "image" || viewingConfig.purpose === "video"
                   ? `${t(viewingConfig.purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}: $${viewingConfig.unitPrice}`

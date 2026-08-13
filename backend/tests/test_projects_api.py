@@ -71,7 +71,6 @@ def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str]]]:
                             encrypted_key=encrypt("sk-test-key-value"),
                             is_active=True,
                             is_enabled=True,
-                            is_verified=True,
                             purpose=purpose,
                             model_name=model_name,
                         )

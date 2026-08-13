@@ -93,7 +93,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "qwen",
       label: "Qwen",
-      modelSeries: "wan2.7-image",
+      modelSeries: "",
       modelPlaceholder: "wan2.7-image / wan2.7-image-pro",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       docsUrl: "https://platform.qianwenai.com/docs/developer-guides/image-generation/text-to-image",
@@ -103,7 +103,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "doubao",
       label: "Doubao",
-      modelSeries: "doubao-seedance-2-0-260128",
+      modelSeries: "",
       modelPlaceholder: "doubao-seedance-2-0-260128",
       baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
       docsUrl: "https://www.volcengine.com/docs/82379",
@@ -111,7 +111,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "gemini",
       label: "Gemini",
-      modelSeries: "veo-3.1",
+      modelSeries: "",
       modelPlaceholder: "veo-3.1-generate-preview",
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       docsUrl: "https://ai.google.dev/gemini-api/docs/video",
@@ -119,7 +119,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "qwen",
       label: "Qwen",
-      modelSeries: "wan2.7-t2v",
+      modelSeries: "",
       modelPlaceholder: "wan2.7-t2v / wan2.7-i2v",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       docsUrl: "https://platform.qianwenai.com/docs/developer-guides/video-generation/text-to-video",
@@ -129,20 +129,20 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "edge",
       label: "Edge-TTS",
-      modelSeries: "zh-CN-XiaoxiaoNeural",
+      modelSeries: "",
       modelPlaceholder: "zh-CN-XiaoxiaoNeural",
       docsUrl: "https://github.com/rany2/edge-tts",
     },
     {
       value: "system",
       label: "System TTS",
-      modelSeries: "Tingting",
+      modelSeries: "",
       modelPlaceholder: "Tingting / zh",
     },
     {
       value: "openai",
       label: "OpenAI TTS",
-      modelSeries: "gpt-4o-mini-tts",
+      modelSeries: "",
       modelPlaceholder: "gpt-4o-mini-tts",
       baseUrl: "https://api.openai.com/v1",
       docsUrl: "https://platform.openai.com/docs/guides/text-to-speech",
@@ -150,7 +150,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "qwen",
       label: "Qwen TTS",
-      modelSeries: "qwen3-tts-flash:Cherry",
+      modelSeries: "",
       modelPlaceholder: "qwen3-tts-flash:Cherry",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       docsUrl: "https://platform.qianwenai.com/docs/developer-guides/speech/tts-models",

@@ -16,6 +16,7 @@ class User(SQLModel, table=True):
     updated_at: str | None = None
     deleted_at: str | None = None
     username: str = Field(unique=True)
+    nickname: str | None = None
     password: str
     role: str | None = Field(default="user", sa_column_kwargs={"server_default": text("'user'")})
     is_disabled: bool | None = Field(default=False, sa_column_kwargs={"server_default": text("false")})

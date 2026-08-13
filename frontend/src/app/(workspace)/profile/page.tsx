@@ -23,6 +23,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const setUser = useUserStore((state) => state.setUser);
   const [username, setUsername] = useState<string | null>(null);
+  const [nickname, setNickname] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -30,14 +31,16 @@ export default function ProfilePage() {
   const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: getMeAction });
   const user = meQuery.data?.user;
   const usernameValue = username ?? user?.username ?? "";
+  const nicknameValue = nickname ?? user?.nickname ?? "";
 
   const updateMutation = useMutation({
-    mutationFn: () => updateMeAction({ username: usernameValue.trim() }),
+    mutationFn: () => updateMeAction({ username: usernameValue.trim(), nickname: nicknameValue.trim() }),
     onSuccess: (data) => {
       setUser(data.user);
       queryClient.setQueryData(queryKeys.me, data);
       setUsername(null);
-      toast.add({ title: t("profile.saveSuccess"), description: data.user.username, type: "success" });
+      setNickname(null);
+      toast.add({ title: t("profile.saveSuccess"), description: data.user.nickname || data.user.username, type: "success" });
     },
     onError: (error) => toast.add({ title: t("profile.saveFailed"), description: resolveRequestError(error, t("profile.saveFailed")), type: "error", priority: "high" }),
   });
@@ -78,10 +81,10 @@ export default function ProfilePage() {
           <CardHeader className="border-b">
             <div className="flex flex-wrap items-center gap-4">
               <Avatar className="size-16">
-                <AvatarFallback className="text-lg">{user?.username.slice(0, 2).toUpperCase() || "SF"}</AvatarFallback>
+                <AvatarFallback className="text-lg">{(user?.nickname || user?.username)?.slice(0, 2).toUpperCase() || "SF"}</AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <CardTitle className="truncate text-lg">{user?.username ?? t("common.loading")}</CardTitle>
+                <CardTitle className="truncate text-lg">{user?.nickname || user?.username || t("common.loading")}</CardTitle>
                 <CardDescription className="mt-1 flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{t("admin.levelValue", { level: user?.level ?? 1 })}</Badge>
                   <span>{t("profile.userId")}: {user?.id ?? "—"}</span>
@@ -138,7 +141,11 @@ export default function ProfilePage() {
                     <FieldLabel htmlFor="profileUsername">{t("auth.username")}</FieldLabel>
                     <Input id="profileUsername" value={usernameValue} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={64} required />
                   </Field>
-                  <Button type="submit" disabled={updateMutation.isPending || usernameValue.trim() === user?.username}>
+                  <Field>
+                    <FieldLabel htmlFor="profileNickname">{t("auth.nickname")}</FieldLabel>
+                    <Input id="profileNickname" value={nicknameValue} onChange={(event) => setNickname(event.target.value)} maxLength={64} placeholder={t("auth.nicknamePlaceholder")} />
+                  </Field>
+                  <Button type="submit" disabled={updateMutation.isPending || (usernameValue.trim() === user?.username && nicknameValue.trim() === user?.nickname)}>
                     {updateMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <UserRound data-icon="inline-start" />}
                     {updateMutation.isPending ? t("common.loading") : t("common.save")}
                   </Button>

@@ -46,7 +46,6 @@ function isVideoConfig(config: UserConfig) {
     config.purpose === "video" &&
     ["doubao", "gemini"].includes(config.provider) &&
     config.isEnabled &&
-    config.isVerified &&
     Boolean(config.modelSeries.trim())
   );
 }

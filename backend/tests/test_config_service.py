@@ -54,7 +54,7 @@ def test_config_create_fields_rejects_disabled_default() -> None:
     normalized = normalize_config_payload(payload)
 
     try:
-        config_create_fields(payload, normalized, 1)
+        config_create_fields(payload, normalized)
     except HTTPException as exc:
         assert exc.status_code == 400
         assert exc.detail == "disabled config cannot be default"
@@ -73,6 +73,25 @@ def test_discover_models_uses_submitted_connection() -> None:
 
     assert result == {"models": ["gpt-4.1", "o3"]}
     list_models.assert_awaited_once_with("openai", "secret-key", "https://relay.example.com/v1")
+
+
+def test_discover_qwen_native_models_returns_all_known_models() -> None:
+    with patch("app.api.v1.settings.models.list_models", new=AsyncMock()) as list_models:
+        result = asyncio.run(
+            discover_models(
+                {
+                    "provider": "qwen",
+                    "baseUrl": "https://dashscope.aliyuncs.com/api/v1",
+                    "apiKey": "",
+                },
+                1,
+            )
+        )
+
+    assert result == {
+        "models": ["wan2.7-image", "wan2.7-image-pro", "wan2.7-t2v", "wan2.7-i2v", "qwen3-tts-flash:Cherry"]
+    }
+    list_models.assert_not_awaited()
 
 
 def test_base_url_rejects_private_networks() -> None:
@@ -94,7 +113,6 @@ def test_config_update_fields_disables_active_config() -> None:
 
     assert updates["is_enabled"] == 0
     assert updates["is_active"] == 0
-    assert "is_verified" not in updates
 
 
 def test_config_api_key_decrypts_stored_secret() -> None:
@@ -191,28 +209,25 @@ def test_user_config_pricing_round_trip() -> None:
                 session.add(user)
                 session.flush()
                 user_id = int(user.id)
-            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
-            with patch("app.services.config_service.models.validate_image_model", new=validator):
-                created = asyncio.run(
-                    create_config(
-                        {
-                            "purpose": "image",
-                            "provider": "openai",
-                            "modelSeries": "gpt-image-1",
-                            "apiKey": "new-secret-key",
-                            "isActive": False,
-                            "pricingMultiplier": "1.500000000000000001",
-                            "inputPricePerMillion": "0.123456789012345678",
-                            "unitPrice": "0.100000000000000009",
-                            "unitName": "image",
-                        },
-                        user_id,
-                    )
-                )["config"]
-                updated = asyncio.run(
-                    update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": "0.250000000000000001"}, user_id)
-                )["config"]
-            validator.assert_not_awaited()
+            created = asyncio.run(
+                create_config(
+                    {
+                        "purpose": "image",
+                        "provider": "openai",
+                        "modelSeries": "gpt-image-1",
+                        "apiKey": "new-secret-key",
+                        "isActive": False,
+                        "pricingMultiplier": "1.500000000000000001",
+                        "inputPricePerMillion": "0.123456789012345678",
+                        "unitPrice": "0.100000000000000009",
+                        "unitName": "image",
+                    },
+                    user_id,
+                )
+            )["config"]
+            updated = asyncio.run(
+                update_config(created["id"], {"modelSeries": "gpt-image-2", "unitPrice": "0.250000000000000001"}, user_id)
+            )["config"]
             assert created["pricingMultiplier"] == "1.500000000000000001"
             assert created["inputPricePerMillion"] == "0.123456789012345678"
             assert created["unitName"] == "image"
@@ -232,31 +247,27 @@ def test_price_only_admin_edit_skips_model_revalidation() -> None:
                 config = ModelConfig(
                     created_at="now", updated_at="now", user_id=None, source="official", name="Image", purpose="image",
                     provider="openai", base_url="https://relay.example.com/v1", model_name="gpt-image-2",
-                    encrypted_key=encrypt("source-secret-key"), is_active=True, is_enabled=True, is_verified=True,
+                    encrypted_key=encrypt("source-secret-key"), is_active=True, is_enabled=True,
                     unit_price=0, unit_name="image",
                 )
                 session.add(config)
                 session.flush()
                 config_id = int(config.id)
 
-            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
-            with patch("app.services.config_service.models.validate_image_model", new=validator):
-                updated = asyncio.run(update_model_config(config_id, {
-                    "source": "official",
-                    "name": "Image",
-                    "description": "",
-                    "purpose": "image",
-                    "provider": "openai",
-                    "baseUrl": "https://relay.example.com/v1",
-                    "modelSeries": "gpt-image-2",
-                    "isActive": True,
-                    "isEnabled": True,
-                    "pricingMultiplier": 1,
-                    "unitPrice": 0.5,
-                    "unitName": "image",
-                }, 1))["config"]
-
-            validator.assert_not_awaited()
+            updated = asyncio.run(update_model_config(config_id, {
+                "source": "official",
+                "name": "Image",
+                "description": "",
+                "purpose": "image",
+                "provider": "openai",
+                "baseUrl": "https://relay.example.com/v1",
+                "modelSeries": "gpt-image-2",
+                "isActive": True,
+                "isEnabled": True,
+                "pricingMultiplier": 1,
+                "unitPrice": 0.5,
+                "unitName": "image",
+            }, 1))["config"]
             assert updated["unitPrice"] == "0.5"
         finally:
             database.DB_PATH = original_path
@@ -276,7 +287,7 @@ def test_model_config_source_switch_preserves_id_and_key() -> None:
                 config = ModelConfig(
                     created_at="now", updated_at="now", user_id=admin_id, source="user", name="Personal", purpose="script",
                     provider="openai", base_url="https://api.openai.com/v1", model_name="gpt-test",
-                    encrypted_key=encrypt("source-secret-key"), is_active=True, is_enabled=True, is_verified=True,
+                    encrypted_key=encrypt("source-secret-key"), is_active=True, is_enabled=True,
                 )
                 session.add(config)
                 session.flush()
@@ -291,12 +302,9 @@ def test_model_config_source_switch_preserves_id_and_key() -> None:
                 "isActive": True,
                 "isEnabled": True,
             }
-            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
-            with patch("app.services.config_service.models.validate_chat_model", new=validator):
-                created_official = asyncio.run(create_default_model({**payload, "apiKey": "official-secret-key"}, admin_id))["config"]
-                official = asyncio.run(update_model_config(config_id, {**payload, "source": "official"}, admin_id))["config"]
-                personal = asyncio.run(update_model_config(config_id, {**payload, "source": "user"}, admin_id))["config"]
-            validator.assert_not_awaited()
+            created_official = asyncio.run(create_default_model({**payload, "apiKey": "official-secret-key"}, admin_id))["config"]
+            official = asyncio.run(update_model_config(config_id, {**payload, "source": "official"}, admin_id))["config"]
+            personal = asyncio.run(update_model_config(config_id, {**payload, "source": "user"}, admin_id))["config"]
 
             with db() as session:
                 converted = session.exec(select(ModelConfig).where(ModelConfig.id == config_id)).one()
@@ -394,16 +402,14 @@ def test_official_default_overrides_personal_config_and_is_reversible() -> None:
                 session.flush()
                 user_id = int(user.id)
 
-            validator = AsyncMock(side_effect=AssertionError("saving must not validate the model remotely"))
-            with patch("app.services.config_service.models.validate_chat_model", new=validator):
-                personal = asyncio.run(create_config({
-                    "purpose": "script", "provider": "openai", "modelSeries": "personal-model",
-                    "apiKey": "personal-secret-key", "isActive": True, "name": "Personal",
-                }, user_id))["config"]
-                official = asyncio.run(create_default_model({
-                    "purpose": "script", "provider": "openai", "modelSeries": "official-model",
-                    "apiKey": "official-secret-key", "isActive": True, "name": "Official", "isEnabled": True,
-                }, 1))["config"]
+            personal = asyncio.run(create_config({
+                "purpose": "script", "provider": "openai", "modelSeries": "personal-model",
+                "apiKey": "personal-secret-key", "isActive": True, "name": "Personal",
+            }, user_id))["config"]
+            official = asyncio.run(create_default_model({
+                "purpose": "script", "provider": "openai", "modelSeries": "official-model",
+                "apiKey": "official-secret-key", "isActive": True, "name": "Official", "isEnabled": True,
+            }, 1))["config"]
 
             def resolved() -> dict[str, str]:
                 with db() as session:
@@ -446,6 +452,8 @@ def test_official_default_overrides_personal_config_and_is_reversible() -> None:
 
 if __name__ == "__main__":
     test_config_create_fields_rejects_disabled_default()
+    test_discover_models_uses_submitted_connection()
+    test_discover_qwen_native_models_returns_all_known_models()
     test_config_update_fields_disables_active_config()
     test_image_openai_relay_config_is_valid()
     test_image_gemini_config_is_valid()

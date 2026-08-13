@@ -14,6 +14,7 @@ export interface ModelPricing {
 export interface AuthUser {
   id: number;
   username: string;
+  nickname: string;
   role: "user" | "superAdmin";
   isDisabled: boolean;
   balanceMicros: string;
@@ -32,6 +33,7 @@ export interface AuthResponse {
 
 export interface RegisterInput {
   username: string;
+  nickname?: string;
   password: string;
   invitationCode: string;
 }
@@ -42,6 +44,7 @@ export interface UserMeResponse {
 
 export interface UpdateMeInput {
   username?: string;
+  nickname?: string;
   password?: string;
 }
 
@@ -62,7 +65,6 @@ export interface UserConfig extends ModelPricing {
   model?: string;
   isActive: boolean;
   isEnabled: boolean;
-  isVerified: boolean;
   createdAt: string;
   updatedAt: string;
 }

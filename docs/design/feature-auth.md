@@ -27,7 +27,7 @@ Covers registration, login, session tokens, roles, account state, and how creden
 
 ## Registration
 
-- Username 3–64 chars, password length validated (`400 invalid username or password length`).
+- Username 3–64 chars, password length validated (`400 invalid username or password length`). Nickname is optional and limited to 64 characters.
 - Duplicate username → `409 username already exists`.
 - Registration consumes an **invitation code**: unknown → `404`, already used → `409 invitation code already used`, past its window → `410 invitation code expired`. Claiming is an atomic conditional `UPDATE` with a `rowcount` check, so two simultaneous registrations cannot share one code.
 - Invitation codes are created by a super admin with a validity of 1, 7, or 30 days and record `created_by_user_id` for audit.
@@ -44,6 +44,7 @@ Super admin is exempt from balance checks and from balance deduction — see `fe
 - The axios request interceptor attaches the token; the response interceptor calls `logout()` on any `401`. Do not add per-call 401 handling.
 - Authenticated pages live under the `(workspace)` route group; the workbench lives at `/projects/[projectId]`.
 - Login/register are at `/login` and `/register`.
+- The UI displays `nickname` when present and falls back to `username`; username remains the login credential.
 
 ## Rules when extending
 

@@ -86,6 +86,11 @@ def update_me(payload: dict[str, Any], user_id: int = Depends(current_user_id)) 
         if not 3 <= len(username) <= 64:
             raise HTTPException(400, "username length must be between 3 and 64")
         updates["username"] = username
+    if "nickname" in payload:
+        nickname = str(payload["nickname"]).strip()
+        if len(nickname) > 64:
+            raise HTTPException(400, "nickname must be at most 64 characters")
+        updates["nickname"] = nickname or None
     if "password" in payload:
         current_password = str(payload.get("currentPassword", ""))
         password = str(payload["password"])

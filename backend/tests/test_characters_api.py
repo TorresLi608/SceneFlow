@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+from threading import Event
 from typing import Any, Iterator
 from contextlib import contextmanager
 
@@ -81,7 +82,6 @@ def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str]]]:
                             encrypted_key=encrypt("sk-test-key-value"),
                             is_active=True,
                             is_enabled=True,
-                            is_verified=True,
                             purpose=purpose,
                             model_name=model_name,
                         )
@@ -401,18 +401,22 @@ def test_the_cast_reaches_generation_resolved_for_that_episode() -> None:
                 )
 
             captured: dict[str, Any] = {}
+            generated = Event()
 
             async def _capture(_project_id: str, scenes: list[dict[str, Any]], *_args: Any, **_kwargs: Any) -> None:
                 captured["scenes"] = scenes
+                generated.set()
 
             original = projects_api.run_generation
             projects_api.run_generation = _capture
             try:
-                client.post(
+                response = client.post(
                     f"/api/projects/{project_id}/generate",
                     json={"episodeId": second["id"]},
                     headers=headers,
                 )
+                assert response.status_code == 202, response.text
+                assert generated.wait(1), "generation task did not start"
             finally:
                 projects_api.run_generation = original
 

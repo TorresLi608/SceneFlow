@@ -53,7 +53,6 @@ function isImageConfig(config: UserConfig) {
   return (
     (config.purpose === "image" || (config.purpose === "general" && ["openai", "gemini"].includes(config.provider))) &&
     config.isEnabled &&
-    config.isVerified &&
     config.modelSeries.trim()
   );
 }

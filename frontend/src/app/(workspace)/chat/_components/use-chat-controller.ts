@@ -49,7 +49,7 @@ function selectedConfigPayload(config: UserConfig | undefined) {
 }
 
 function isChatConfig(config: UserConfig) {
-  return ["general", "script"].includes(config.purpose) && config.isEnabled && config.isVerified && config.modelSeries.trim();
+  return ["general", "script"].includes(config.purpose) && config.isEnabled && config.modelSeries.trim();
 }
 
 function upsertAgentStep(current: ChatAgentStep[], next: ChatAgentStep) {
