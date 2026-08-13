@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      PORT: "8080"
+      SCENEFLOW_DB_PATH: /app/backend/data/sceneflow.db
+      SCENEFLOW_PRIVATE_GENERATED_DIR: /app/backend/private_generated
+    ports:
+      - "8080:8080"
+    volumes:
+      - sceneflow_db:/app/backend/data
+      - sceneflow_media:/app/backend/private_generated
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_API_BASE_URL: http://backend:8080
+    environment:
+      BACKEND_API_BASE_URL: http://backend:8080
+      NEXT_PUBLIC_BFF_BASE_URL: ""
+      NEXT_PUBLIC_WS_BASE_URL: ws://127.0.0.1:8080
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+
+volumes:
+  sceneflow_db:
+    name: sceneflow_db
+  sceneflow_media:
+    name: sceneflow_media

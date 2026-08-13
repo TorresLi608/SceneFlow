@@ -1,0 +1,9 @@
+.env
+.env.*
+*.db
+private_generated
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+tests

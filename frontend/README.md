@@ -13,6 +13,8 @@ pnpm install
 pnpm dev
 ```
 
+The repository root also provides production Docker images. Run `npm run docker:build` to build both images or `npm run docker:up` to build and start the frontend with the backend.
+
 ## Environment
 
 Copy `.env.example` to `.env.local` and adjust if needed:

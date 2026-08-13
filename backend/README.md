@@ -13,6 +13,8 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 `app/core/config.py` loads `backend/.env` automatically. Existing process environment variables take precedence.
 
+From the repository root, `npm run docker:build` builds both images and `npm run docker:up` builds and starts them; see `../docs/reference/local-setup.md` for persistent volumes and production settings.
+
 ## Structure
 
 - `app/api/v1/`: FastAPI endpoints and request/response orchestration.

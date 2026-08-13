@@ -6,6 +6,7 @@ const backendBaseURL =
   "http://127.0.0.1:8080";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   reactCompiler: true,
   experimental: {
     proxyTimeout: 15 * 60 * 1000,

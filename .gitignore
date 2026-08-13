@@ -11,6 +11,7 @@ out/
 # Production
 build/
 dist/
+/backups/
 
 # Env files
 .env

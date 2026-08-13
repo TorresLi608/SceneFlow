@@ -86,6 +86,29 @@ pnpm dev            # or `npm run dev:frontend` from the repo root
 2. Then the frontend — open `http://localhost:4000`.
 3. Log in as `superAdmin` / `superAdmin@123`, or register a new account (registration consumes an invitation code — create one from the admin pages).
 
+## Docker deployment
+
+From the repository root:
+
+```bash
+cp backend/.env.example backend/.env
+npm run docker:up
+```
+
+Use `npm run docker:build` to build both images without starting them. The frontend is available at `http://127.0.0.1:4000`; the backend health endpoint is `http://127.0.0.1:8080/healthz`.
+
+SQLite data and generated media are stored in the fixed Docker volumes `sceneflow_db` and `sceneflow_media`. Rebuilding, redeploying, or running `docker compose down` preserves them; `docker compose down -v` or manually deleting either volume destroys the stored data. An existing host file at `backend/sceneflow.db` is not imported into the Docker volume automatically.
+
+Export both volumes into one timestamped archive under the repository's ignored `backups/` directory:
+
+```bash
+npm run docker:backup
+```
+
+The script briefly stops a running backend to take a consistent SQLite snapshot, restores its previous running state, and prints the generated archive path. Download that `.tar.gz` file from the deployment host.
+
+For production, replace the development secrets in `backend/.env` and set `SCENEFLOW_ENV=production` before starting the stack.
+
 ## Troubleshooting
 
 **Frontend requests fail.** Confirm the backend is on 8080 and that `frontend/.env.local` points at it. Restart the dev server after editing.
