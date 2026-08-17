@@ -1,7 +1,9 @@
-"""The series bible: variant resolution, shot casting, and what reaches the providers."""
+"""The series bible: state resolution, shot casting, and what reaches the providers."""
 
 from __future__ import annotations
 
+import base64
+from io import BytesIO
 from pathlib import Path
 import tempfile
 from threading import Event
@@ -9,22 +11,29 @@ from typing import Any, Iterator
 from contextlib import contextmanager
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.core import database
 from app.core.security import encrypt, token_for
 from app.llms.registry import models
-from app.llms.router import ImageResult, ParseResult, SceneDraft
-from app.models import Character, CharacterVariant, ModelConfig, Scene, User
+from app.llms.router import ImageResult, ParseResult, SceneDraft, TextResult
+from app.models import Character, CharacterState, ModelConfig, Scene, User
 from app.services import artifact_service
 from app.services.character_service import resolve_character
 from app.services.generation_service import (
     MAX_REFERENCE_IMAGES,
     build_image_prompt,
     character_references,
-    spoken_line,
-    voice_config,
 )
+from app.services.media_service import DEFAULT_CELL_WIDTH
 from app.utils.common import now
+
+
+# A one-pixel PNG, small enough to keep the fixtures readable.
+PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode("ascii")
 
 
 PARSED = ParseResult(
@@ -41,8 +50,6 @@ CONFIGS = (
     ("image", "openai", "gpt-image-1"),
     ("audio", "edge", "zh-CN-XiaoxiaoNeural"),
 )
-
-EDGE = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": ""}
 
 
 async def _fake_parse_script(*_args: Any, **_kwargs: Any) -> ParseResult:
@@ -118,16 +125,16 @@ def _card(**values: Any) -> Character:
     )
 
 
-def test_a_character_without_variants_is_itself_in_every_episode() -> None:
+def test_a_character_without_states_is_itself_in_every_episode() -> None:
     resolved = resolve_character(_card(), [], episode_number=7)
 
     assert resolved.appearance_prompt == "短发少年，灰布长衫"
     assert resolved.voice_model == "zh-CN-YunxiNeural"
 
 
-def test_a_variant_takes_over_only_inside_its_episode_range() -> None:
-    grown = CharacterVariant(
-        id="cvar_1",
+def test_a_state_takes_over_only_inside_its_episode_range() -> None:
+    grown = CharacterState(
+        id="cstate_1",
         character_id="char_1",
         name="成年",
         appearance_prompt="青年剑客，玄色劲装",
@@ -142,9 +149,9 @@ def test_a_variant_takes_over_only_inside_its_episode_range() -> None:
     assert after.appearance_prompt == "青年剑客，玄色劲装"
 
 
-def test_a_variant_leaves_alone_what_it_does_not_set() -> None:
-    hoarse = CharacterVariant(
-        id="cvar_1",
+def test_a_state_leaves_alone_what_it_does_not_set() -> None:
+    hoarse = CharacterState(
+        id="cstate_1",
         character_id="char_1",
         name="失声",
         appearance_prompt="",
@@ -162,11 +169,11 @@ def test_a_variant_leaves_alone_what_it_does_not_set() -> None:
 
 
 def test_the_later_change_wins_when_ranges_overlap() -> None:
-    first = CharacterVariant(
-        id="cvar_1", character_id="char_1", name="成年", appearance_prompt="青年剑客", from_episode=5, to_episode=None
+    first = CharacterState(
+        id="cstate_1", character_id="char_1", name="成年", appearance_prompt="青年剑客", from_episode=5, to_episode=None
     )
-    second = CharacterVariant(
-        id="cvar_2", character_id="char_1", name="断臂", appearance_prompt="独臂剑客", from_episode=9, to_episode=None
+    second = CharacterState(
+        id="cstate_2", character_id="char_1", name="断臂", appearance_prompt="独臂剑客", from_episode=9, to_episode=None
     )
 
     resolved = resolve_character(_card(), [first, second], episode_number=12)
@@ -189,42 +196,14 @@ def test_the_prompt_carries_framing_and_the_cast() -> None:
     assert "林小满: 短发少年，灰布长衫" in prompt
 
 
-def test_dialogue_is_spoken_in_the_speakers_voice() -> None:
-    scene = {
-        "narration": "山风呼啸",
-        "dialogue": "就是现在。",
-        "speaker": {"voice_provider": "edge", "voice_model": "zh-CN-YunxiNeural"},
-    }
-
-    line, config = spoken_line(scene, EDGE)
-
-    # One audio track per shot, so the character's line wins over the narrator's.
-    assert line == "就是现在。"
-    assert config["model"] == "zh-CN-YunxiNeural"
-
-
-def test_narration_keeps_the_default_voice_when_no_one_speaks() -> None:
-    line, config = spoken_line({"narration": "山风呼啸", "dialogue": ""}, EDGE)
-
-    assert line == "山风呼啸"
-    assert config["model"] == EDGE["model"]
-
-
-def test_a_voice_from_an_unconfigured_provider_is_not_used() -> None:
-    config = voice_config(EDGE, {"voice_provider": "openai", "voice_model": "alloy"})
-
-    # The card stores no credentials, so honouring this would fail on a key we do not have.
-    assert config["model"] == EDGE["model"]
-
-
-def test_characters_round_trip_with_their_variants() -> None:
+def test_characters_round_trip_with_their_states() -> None:
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers):
             project_id = _project(client, headers)
             character = _character(client, headers, project_id)
 
             created = client.post(
-                f"/api/projects/{project_id}/characters/{character['id']}/variants",
+                f"/api/projects/{project_id}/characters/{character['id']}/states",
                 json={"name": "成年", "appearancePrompt": "青年剑客", "fromEpisode": 5},
                 headers=headers,
             )
@@ -232,18 +211,18 @@ def test_characters_round_trip_with_their_variants() -> None:
             assert created.status_code == 201, created.text
             listed = client.get(f"/api/projects/{project_id}/characters", headers=headers).json()["characters"]
             assert [item["name"] for item in listed] == ["林小满"]
-            assert [variant["name"] for variant in listed[0]["variants"]] == ["成年"]
-            assert listed[0]["variants"][0]["toEpisode"] is None
+            assert [state["name"] for state in listed[0]["states"]] == ["成年"]
+            assert listed[0]["states"][0]["toEpisode"] is None
 
 
-def test_a_variant_that_ends_before_it_starts_is_refused() -> None:
+def test_a_state_that_ends_before_it_starts_is_refused() -> None:
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers):
             project_id = _project(client, headers)
             character = _character(client, headers, project_id)
 
             refused = client.post(
-                f"/api/projects/{project_id}/characters/{character['id']}/variants",
+                f"/api/projects/{project_id}/characters/{character['id']}/states",
                 json={"name": "错的", "fromEpisode": 8, "toEpisode": 3},
                 headers=headers,
             )
@@ -383,11 +362,11 @@ def test_the_cast_reaches_generation_resolved_for_that_episode() -> None:
             project_id = _project(client, headers)
             character = _character(client, headers, project_id)
             client.post(
-                f"/api/projects/{project_id}/characters/{character['id']}/variants",
+                f"/api/projects/{project_id}/characters/{character['id']}/states",
                 json={"name": "成年", "appearancePrompt": "青年剑客", "fromEpisode": 2},
                 headers=headers,
             )
-            second = client.post(f"/api/projects/{project_id}/episodes", json={}, headers=headers).json()["episode"]
+            second = client.post(f"/api/projects/{project_id}/episodes", json={"title": "第二集"}, headers=headers).json()["episode"]
             parsed = client.post(
                 f"/api/projects/{project_id}/parse",
                 json={"script": "第二集", "episodeId": second["id"]},
@@ -421,39 +400,83 @@ def test_the_cast_reaches_generation_resolved_for_that_episode() -> None:
                 projects_api.run_generation = original
 
             cast = captured["scenes"][0]["characters"]
-            # Episode 2 is inside the variant's range, so the grown-up look is what renders.
+            # Episode 2 is inside the state's range, so the grown-up look is what renders.
             assert [item["appearance_prompt"] for item in cast] == ["青年剑客"]
 
 
-def test_a_portrait_freezes_the_configuration_that_made_it() -> None:
+def _state(client: TestClient, headers: dict[str, str], project_id: str, character_id: str, **body: Any) -> dict[str, Any]:
+    payload = {"name": "青年", "description": "十六岁，校服", **body}
+    response = client.post(
+        f"/api/projects/{project_id}/characters/{character_id}/states", json=payload, headers=headers
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["state"]
+
+
+def test_drawing_a_state_freezes_the_configuration_that_made_it() -> None:
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers):
-            from app.api.v1 import characters as characters_api
+            from app.services import reference_service
 
             project_id = _project(client, headers)
             character = _character(client, headers, project_id)
+            state = _state(client, headers, project_id, character["id"], finalPrompt="三面图提示词")
 
             async def _fake_image(*_args: Any, **_kwargs: Any) -> ImageResult:
-                return ImageResult(data=b"portrait-bytes", format="png")
+                return ImageResult(data=b"sheet-bytes", format="png")
 
-            original = characters_api.models.generate_image
-            characters_api.models.generate_image = _fake_image
+            original = reference_service.models.generate_image
+            reference_service.models.generate_image = _fake_image
             try:
                 drawn = client.post(
-                    f"/api/projects/{project_id}/characters/{character['id']}/portrait",
+                    f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/image",
+                    json={},
                     headers=headers,
                 )
             finally:
-                characters_api.models.generate_image = original
+                reference_service.models.generate_image = original
 
             assert drawn.status_code == 200, drawn.text
             card = drawn.json()["character"]
             # Frozen, so changing the account default later cannot restyle an established
             # character the rest of the series was already matched against.
             assert (card["imageProvider"], card["imageModel"]) == ("openai", "gpt-image-1")
-            assert "/api/chat/artifacts/" in card["referenceImageUrl"]
-            fetched = client.get("/api/chat/artifacts/" + card["referenceImageUrl"].rsplit("/", 1)[-1])
-            assert fetched.content == b"portrait-bytes"
+            drawn_state = card["states"][0]
+            assert "/api/chat/artifacts/" in drawn_state["referenceImageUrl"]
+            fetched = client.get("/api/chat/artifacts/" + drawn_state["referenceImageUrl"].rsplit("/", 1)[-1])
+            assert fetched.content == b"sheet-bytes"
+            # The prompt behind the image is kept, so a reload can show what drew it.
+            assert drawn_state["finalPrompt"] == "三面图提示词"
+
+
+def test_a_drafted_prompt_is_returned_for_review_and_not_saved() -> None:
+    """The preview step is the point: drafting must not draw or persist anything."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            from app.services import reference_service
+
+            project_id = _project(client, headers)
+            character = _character(client, headers, project_id)
+            state = _state(client, headers, project_id, character["id"])
+
+            async def _fake_text(*_args: Any, **_kwargs: Any) -> TextResult:
+                return TextResult(text="正面、四分之三侧面、正侧面并排", usage={"inputTokens": 5, "outputTokens": 9})
+
+            original = reference_service.models.complete_text
+            reference_service.models.complete_text = _fake_text
+            try:
+                drafted = client.post(
+                    f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/prompt",
+                    json={},
+                    headers=headers,
+                )
+            finally:
+                reference_service.models.complete_text = original
+
+            assert drafted.status_code == 200, drafted.text
+            assert drafted.json()["prompt"] == "正面、四分之三侧面、正侧面并排"
+            listed = client.get(f"/api/projects/{project_id}/characters", headers=headers).json()["characters"]
+            assert listed[0]["states"][0]["finalPrompt"] == ""
 
 
 def test_a_locked_character_is_not_redrawn() -> None:
@@ -461,6 +484,7 @@ def test_a_locked_character_is_not_redrawn() -> None:
         with _app(directory) as (client, headers):
             project_id = _project(client, headers)
             character = _character(client, headers, project_id)
+            state = _state(client, headers, project_id, character["id"])
             client.patch(
                 f"/api/projects/{project_id}/characters/{character['id']}",
                 json={"isLocked": True},
@@ -468,11 +492,89 @@ def test_a_locked_character_is_not_redrawn() -> None:
             )
 
             refused = client.post(
-                f"/api/projects/{project_id}/characters/{character['id']}/portrait",
+                f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/image",
+                json={},
                 headers=headers,
             )
 
             assert refused.status_code == 409, refused.text
+
+
+def test_a_state_sheet_can_be_uploaded_instead_of_drawn() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            character = _character(client, headers, project_id)
+            state = _state(client, headers, project_id, character["id"])
+
+            uploaded = client.put(
+                f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/image",
+                json={"imageData": PNG_DATA_URL},
+                headers=headers,
+            )
+
+            assert uploaded.status_code == 200, uploaded.text
+            url = uploaded.json()["character"]["states"][0]["referenceImageUrl"]
+            assert client.get("/api/chat/artifacts/" + url.rsplit("/", 1)[-1]).content == PNG_BYTES
+
+
+def test_merging_the_cast_tiles_every_state_into_one_sheet() -> None:
+    """Providers cap reference images, so a cast of any size has to arrive as one image."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            for name in ("林小满", "陆沉"):
+                character = _character(client, headers, project_id, name=name)
+                for state_name in ("幼年", "青年"):
+                    state = _state(client, headers, project_id, character["id"], name=state_name)
+                    client.put(
+                        f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/image",
+                        json={"imageData": PNG_DATA_URL},
+                        headers=headers,
+                    )
+
+            merged = client.post(f"/api/projects/{project_id}/characters/sheet", headers=headers)
+
+            assert merged.status_code == 200, merged.text
+            sheet_url = merged.json()["characterSheetUrl"]
+            assert "/api/chat/artifacts/" in sheet_url
+            downloaded = client.get("/api/chat/artifacts/" + sheet_url.rsplit("/", 1)[-1])
+            assert downloaded.status_code == 200, downloaded.text
+            sheet = Image.open(BytesIO(downloaded.content))
+            # Four states in a 2x2 grid, so the sheet is two cells wide.
+            assert sheet.width == 2 * DEFAULT_CELL_WIDTH
+            # And the project now carries it, which is what a render reads.
+            project = client.get("/api/projects", headers=headers).json()["projects"][0]
+            assert project["characterSheetUrl"]
+
+
+def test_merging_with_nothing_drawn_yet_says_so() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            character = _character(client, headers, project_id)
+            _state(client, headers, project_id, character["id"])
+
+            refused = client.post(f"/api/projects/{project_id}/characters/sheet", headers=headers)
+
+            # Silently producing an empty sheet would read as a merge that worked.
+            assert refused.status_code == 400, refused.text
+
+
+def test_an_unpinned_state_is_a_parallel_look_not_a_timeline_change() -> None:
+    """幼年/青年/服饰 are choices, not events, so they must not hijack episode resolution."""
+    outfit = CharacterState(
+        id="cstate_1",
+        character_id="char_1",
+        name="夜行衣",
+        appearance_prompt="黑色夜行衣",
+        from_episode=None,
+        to_episode=None,
+    )
+
+    resolved = resolve_character(_card(), [outfit], episode_number=7)
+
+    assert resolved.appearance_prompt == "短发少年，灰布长衫"
 
 
 def test_a_portrait_becomes_the_reference_a_shot_renders_against() -> None:
@@ -583,24 +685,26 @@ def test_a_speaker_from_another_show_is_refused() -> None:
 
 
 if __name__ == "__main__":
-    test_a_character_without_variants_is_itself_in_every_episode()
-    test_a_variant_takes_over_only_inside_its_episode_range()
-    test_a_variant_leaves_alone_what_it_does_not_set()
+    test_a_character_without_states_is_itself_in_every_episode()
+    test_a_state_takes_over_only_inside_its_episode_range()
+    test_a_state_leaves_alone_what_it_does_not_set()
     test_the_later_change_wins_when_ranges_overlap()
     test_the_prompt_carries_framing_and_the_cast()
-    test_dialogue_is_spoken_in_the_speakers_voice()
-    test_narration_keeps_the_default_voice_when_no_one_speaks()
-    test_a_voice_from_an_unconfigured_provider_is_not_used()
-    test_characters_round_trip_with_their_variants()
-    test_a_variant_that_ends_before_it_starts_is_refused()
+    test_characters_round_trip_with_their_states()
+    test_a_state_that_ends_before_it_starts_is_refused()
     test_unlocking_a_character_is_an_edit_a_patch_can_make()
     test_a_shot_casts_only_characters_from_its_own_project()
     test_deleting_a_character_takes_it_out_of_every_shot()
     test_generation_leaves_locked_shots_alone()
     test_generation_says_so_when_every_shot_is_locked()
     test_the_cast_reaches_generation_resolved_for_that_episode()
-    test_a_portrait_freezes_the_configuration_that_made_it()
+    test_drawing_a_state_freezes_the_configuration_that_made_it()
+    test_a_drafted_prompt_is_returned_for_review_and_not_saved()
     test_a_locked_character_is_not_redrawn()
+    test_a_state_sheet_can_be_uploaded_instead_of_drawn()
+    test_merging_the_cast_tiles_every_state_into_one_sheet()
+    test_merging_with_nothing_drawn_yet_says_so()
+    test_an_unpinned_state_is_a_parallel_look_not_a_timeline_change()
     test_a_portrait_becomes_the_reference_a_shot_renders_against()
     test_only_the_first_few_portraits_ride_along()
     test_a_missing_portrait_costs_consistency_not_the_shot()

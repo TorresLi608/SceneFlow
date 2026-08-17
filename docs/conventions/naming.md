@@ -6,7 +6,7 @@
 |---|---|---|
 | Module | `snake_case`, singular by role | `episode_service.py`, `artifact_service.py` |
 | Function / variable | `snake_case` | `resolve_episode`, `cost_micros` |
-| SQLModel class | `PascalCase`, singular | `Episode`, `CharacterVariant`, `UsageLog` |
+| SQLModel class | `PascalCase`, singular | `Episode`, `CharacterState`, `UsageLog` |
 | Table name | `snake_case`, plural | `episodes`, `scene_characters`, `generation_jobs` |
 | Column | `snake_case` | `image_path`, `balance_micros`, `episode_number` |
 | Constant | `UPPER_SNAKE` at module top | `MAX_CONCURRENT_SCENES`, `ARTIFACT_TTL_DAYS` |
@@ -26,8 +26,8 @@ Timestamps: `created_at`, `updated_at`, `deleted_at` (soft delete), all ISO-8601
 ## API surface
 
 - **Fields are camelCase on the wire**, snake_case in Python. `CamelModel`'s alias generator does this — never hand-translate.
-- **Paths are plural and nested by ownership**: `/api/projects/:id/episodes/:episodeId`, `/api/projects/:id/characters/:characterId/variants`.
-- **Path params are camelCase too**: `episodeId`, `characterId`, `variantId`, `sceneId`.
+- **Paths are plural and nested by ownership**: `/api/projects/:id/episodes/:episodeId`, `/api/projects/:id/characters/:characterId/states`.
+- **Path params are camelCase too**: `episodeId`, `characterId`, `stateId`, `sceneId`.
 - Suffix money fields with the unit: `costMicros`, `amountMicros`, `balanceMicros`. Prices per million tokens spell it out: `inputPricePerMillion`.
 - Booleans read as predicates: `isLocked`, `isDisabled`, `isDefault`, `replaceAll`.
 

@@ -9,20 +9,17 @@ from typing import Any
 from sqlalchemy import update
 from sqlmodel import select
 
-from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
 from app.core.realtime import broadcast
 from app.llms.registry import models
 from app.models import Episode, Project, Scene
 from app.services.artifact_service import (
     artifact_absolute_path,
-    artifact_relative_path,
     media_type_for,
     signed_url_for_stored,
     store_artifact,
 )
 from app.services.usage_service import record_usage, require_model_balance
-from app.services.tts_service import synthesize
 from app.services.video_service import generate_video
 from app.utils.common import now
 
@@ -37,7 +34,7 @@ ERROR_DETAIL_CHARS = 220
 MAX_REFERENCE_IMAGES = 4
 
 
-def _update_scene(scene_id: str, **values: Any) -> None:
+def update_scene_row(scene_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
             update(Scene).where(Scene.id == scene_id).values(updated_at=now(), **values),
@@ -45,7 +42,7 @@ def _update_scene(scene_id: str, **values: Any) -> None:
         )
 
 
-def _update_project(project_id: str, **values: Any) -> None:
+def update_project_row(project_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
             update(Project).where(Project.id == project_id).values(updated_at=now(), **values),
@@ -53,7 +50,7 @@ def _update_project(project_id: str, **values: Any) -> None:
         )
 
 
-def _update_episode(episode_id: str, **values: Any) -> None:
+def update_episode_row(episode_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
             update(Episode).where(Episode.id == episode_id).values(updated_at=now(), **values),
@@ -61,7 +58,7 @@ def _update_episode(episode_id: str, **values: Any) -> None:
         )
 
 
-async def _scene_event(project_id: str, scene_id: str, **data: Any) -> None:
+async def scene_event(project_id: str, scene_id: str, **data: Any) -> None:
     await broadcast(project_id, {"type": "SCENE_UPDATE", "projectId": project_id, "sceneId": scene_id, "data": data})
 
 
@@ -94,15 +91,15 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
     values: dict[str, Any] = {"image_status": "generating"}
     if not preserve_error:
         values["error_message"] = None
-    _update_scene(scene_id, **values)
-    await _scene_event(project_id, scene_id, imageStatus="generating", imageProgress=5, **({} if preserve_error else {"errorMsg": ""}))
+    update_scene_row(scene_id, **values)
+    await scene_event(project_id, scene_id, imageStatus="generating", imageProgress=5, **({} if preserve_error else {"errorMsg": ""}))
     try:
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
         if config["provider"] not in {"openai", "gemini", "qwen"}:
             raise ValueError("image generation currently only supports provider openai/gemini/qwen")
-        await _scene_event(project_id, scene_id, imageStatus="generating", imageProgress=20, errorMsg="")
+        await scene_event(project_id, scene_id, imageStatus="generating", imageProgress=20, errorMsg="")
         references = character_references(scene)
         if references:
             # Image-to-image with the cast's portraits: the appearance prompt alone drifts
@@ -129,84 +126,17 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         detail = str(exc)[:ERROR_DETAIL_CHARS]
         logger.warning("scene image generation failed project=%s scene=%s: %s", project_id, scene_id, detail)
         # Persisted, not just broadcast: a reload used to lose the reason the shot is blank.
-        _update_scene(scene_id, image_status="error", error_message=f"AI 图片生成失败：{detail}")
-        await _scene_event(project_id, scene_id, imageStatus="error", imageProgress=0, errorMsg=f"AI 图片生成失败：{detail}")
+        update_scene_row(scene_id, image_status="error", error_message=f"AI 图片生成失败：{detail}")
+        await scene_event(project_id, scene_id, imageStatus="error", imageProgress=0, errorMsg=f"AI 图片生成失败：{detail}")
         return False
 
-    _update_scene(scene_id, image_status="success", image_path=image_path)
-    await _scene_event(
+    update_scene_row(scene_id, image_status="success", image_path=image_path)
+    await scene_event(
         project_id,
         scene_id,
         imageStatus="success",
         imageProgress=100,
         imageUrl=signed_url_for_stored(image_path, f"scene-{scene.get('order_num') or 0}"),
-        **({} if preserve_error else {"errorMsg": ""}),
-    )
-    return True
-
-
-def voice_config(audio_config: dict[str, Any], speaker: dict[str, Any] | None) -> dict[str, Any]:
-    """Swap in a character's voice, but only one the account can actually synthesize.
-
-    A character card stores a provider and a model, never credentials. Honouring a model
-    from a provider the project is not configured for would fail on a key we do not have,
-    so the default voice reads the line instead of the shot erroring out.
-    """
-    if not speaker:
-        return audio_config
-    model = str(speaker.get("voice_model") or "").strip()
-    provider = str(speaker.get("voice_provider") or "").strip().lower()
-    if not model or (provider and provider != audio_config["provider"]):
-        return audio_config
-    return {**audio_config, "model": model}
-
-
-def spoken_line(scene: dict[str, Any], audio_config: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """What a shot says, and in whose voice.
-
-    A shot carries one audio track, so dialogue wins when there is any: it belongs to a
-    character and should sound like them. With no dialogue the narrator reads the narration
-    in the project's default voice.
-    """
-    dialogue = str(scene.get("dialogue") or "").strip()
-    if dialogue:
-        return dialogue, voice_config(audio_config, scene.get("speaker"))
-    return str(scene.get("narration") or "").strip(), audio_config
-
-
-async def _generate_scene_audio(project_id: str, scene: dict[str, Any], audio_config: dict[str, Any], user_id: int) -> bool:
-    scene_id = scene["id"]
-    preserve_error = any(scene.get(field) == "error" for field in ("image_status", "video_status"))
-    values: dict[str, Any] = {"audio_status": "generating"}
-    if not preserve_error:
-        values["error_message"] = None
-    _update_scene(scene_id, **values)
-    await _scene_event(project_id, scene_id, audioStatus="generating", audioProgress=20, **({} if preserve_error else {"errorMsg": ""}))
-    try:
-        line, config = spoken_line(scene, audio_config)
-        extension = "mp3" if config["provider"] == "edge" else "wav"
-        target = PRIVATE_GENERATED_DIR / "projects" / project_id / f"{scene_id}.{extension}"
-        started_at = time.monotonic()
-        target, duration = await synthesize(line, config, target)
-        target.chmod(0o600)
-        if config["provider"] not in {"edge", "system"}:
-            record_usage(user_id, config, "scene_tts", started_at, quantity=duration)
-        audio_path = artifact_relative_path(target)
-    except Exception as exc:
-        detail = str(exc)[:ERROR_DETAIL_CHARS]
-        logger.warning("scene audio generation failed project=%s scene=%s: %s", project_id, scene_id, detail)
-        _update_scene(scene_id, audio_status="error", error_message=f"AI 配音生成失败：{detail}")
-        await _scene_event(project_id, scene_id, audioStatus="error", audioProgress=0, errorMsg=f"AI 配音生成失败：{detail}")
-        return False
-
-    _update_scene(scene_id, audio_status="success", audio_path=audio_path, audio_duration=duration)
-    await _scene_event(
-        project_id,
-        scene_id,
-        audioStatus="success",
-        audioProgress=100,
-        audioUrl=signed_url_for_stored(audio_path, f"scene-{scene.get('order_num') or 0}"),
-        audioDuration=duration,
         **({} if preserve_error else {"errorMsg": ""}),
     )
     return True
@@ -249,16 +179,13 @@ async def run_generation(
     scenes: list[dict[str, Any]],
     config: dict[str, Any],
     user_id: int,
-    media: str,
     episode_id: str | None = None,
 ) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCENES)
 
     async def one(scene: dict[str, Any]) -> bool:
         async with semaphore:
-            if media == "image":
-                return await _generate_scene_image(project_id, scene, config, user_id)
-            return await _generate_scene_audio(project_id, scene, config, user_id)
+            return await _generate_scene_image(project_id, scene, config, user_id)
 
     results = await asyncio.gather(*(one(scene) for scene in scenes))
     status = episode_media_status(episode_id, results) if episode_id else terminal_status(results)
@@ -267,9 +194,9 @@ async def run_generation(
     )
     # Both levels carry the outcome: the project because it holds the busy lock, the
     # episode because that is what the user was actually rendering.
-    _update_project(project_id, status=status)
+    update_project_row(project_id, status=status)
     if episode_id:
-        _update_episode(episode_id, status=status)
+        update_episode_row(episode_id, status=status)
     await broadcast(
         project_id,
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "episodeId": episode_id}},
@@ -294,6 +221,14 @@ def build_image_prompt(scene: dict[str, Any]) -> str:
     )
     if cast:
         prompt += f" Keep these characters consistent — {cast}."
+    # The project's house style. Carried on the scene payload because the worker runs after
+    # the request session closes and cannot read the project row itself.
+    style = str(scene.get("style_prompt") or "").strip()
+    if style:
+        prompt += f" Overall style: {style}."
+    negative = str(scene.get("negative_prompt") or "").strip()
+    if negative:
+        prompt += f" Avoid: {negative}."
     return prompt
 
 
@@ -301,28 +236,6 @@ def persist_scene_image(project_id: str, scene_id: str, data: bytes, ext: str) -
     ext = (ext or "png").strip().lower()
     ext = "jpg" if ext in {"jpg", "jpeg"} else ext if ext in {"png", "webp"} else "png"
     return store_artifact("projects", project_id, f"{scene_id}.{ext}", data)
-
-
-def build_portrait_prompt(name: str, appearance_prompt: str, description: str = "") -> str:
-    """The reference portrait a character's later shots are matched against.
-
-    Deliberately plain — front-facing, neutral light, no scene — because this image is used
-    as an image-to-image reference, and any drama baked into it would leak into every shot
-    the character appears in.
-    """
-    traits = appearance_prompt.strip() or description.strip()
-    return (
-        "Create a clean character reference portrait for an anime short drama. "
-        "Single character, front-facing, head and shoulders, neutral expression, plain "
-        "neutral background, even lighting, no text, no watermark, no props. "
-        f"Character name: {name.strip()}. Appearance: {traits}."
-    )
-
-
-def persist_character_portrait(project_id: str, character_id: str, data: bytes, ext: str) -> str:
-    ext = (ext or "png").strip().lower()
-    ext = "jpg" if ext in {"jpg", "jpeg"} else ext if ext in {"png", "webp"} else "png"
-    return store_artifact("characters", project_id, f"{character_id}.{ext}", data)
 
 
 def _stored_media(stored: str) -> dict[str, str]:
@@ -346,8 +259,8 @@ async def _generate_scene_video(
     values: dict[str, Any] = {"video_status": "generating"}
     if not preserve_error:
         values["error_message"] = None
-    _update_scene(scene_id, **values)
-    await _scene_event(project_id, scene_id, videoStatus="generating", videoProgress=5, **({} if preserve_error else {"errorMsg": ""}))
+    update_scene_row(scene_id, **values)
+    await scene_event(project_id, scene_id, videoStatus="generating", videoProgress=5, **({} if preserve_error else {"errorMsg": ""}))
     try:
         capabilities = config["videoCapabilities"]
         references = []
@@ -359,14 +272,20 @@ async def _generate_scene_video(
             if len(references) >= capabilities["maxReferenceImages"]:
                 break
             references.append({"name": "character.png", "data": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"})
-        driving_audio = _stored_media(scene["audio_path"]) if capabilities["drivingAudio"] and scene.get("audio_path") else None
+        driving_audio = (
+            # The project's timbre reference, not a per-shot track: shots no longer carry
+            # their own audio, and this is what tells the model who sounds like what.
+            _stored_media(options["voiceSheetPath"])
+            if capabilities["drivingAudio"] and options.get("voiceSheetPath")
+            else None
+        )
         prompt = str(scene.get("visual_prompt") or scene.get("narration") or "").strip()
         if not prompt:
             raise ValueError("该分镜缺少画面提示词")
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
-        await _scene_event(project_id, scene_id, videoStatus="generating", videoProgress=20, errorMsg="")
+        await scene_event(project_id, scene_id, videoStatus="generating", videoProgress=20, errorMsg="")
         result = await generate_video(
             provider=config["provider"],
             api_key=config["apiKey"],
@@ -386,12 +305,12 @@ async def _generate_scene_video(
     except Exception as exc:
         detail = str(exc)[:ERROR_DETAIL_CHARS]
         logger.warning("scene video generation failed project=%s scene=%s: %s", project_id, scene_id, detail)
-        _update_scene(scene_id, video_status="error", error_message=f"AI 视频生成失败：{detail}")
-        await _scene_event(project_id, scene_id, videoStatus="error", videoProgress=0, errorMsg=f"AI 视频生成失败：{detail}")
+        update_scene_row(scene_id, video_status="error", error_message=f"AI 视频生成失败：{detail}")
+        await scene_event(project_id, scene_id, videoStatus="error", videoProgress=0, errorMsg=f"AI 视频生成失败：{detail}")
         return False
 
-    _update_scene(scene_id, video_status="success", video_path=video_path)
-    await _scene_event(
+    update_scene_row(scene_id, video_status="success", video_path=video_path)
+    await scene_event(
         project_id,
         scene_id,
         videoStatus="success",
@@ -421,8 +340,8 @@ async def run_video_generation(
         async with completed_lock:
             completed += 1
             progress = round(completed / len(scenes) * 100)
-            _update_project(project_id, video_progress=progress)
-            _update_episode(episode_id, video_progress=progress)
+            update_project_row(project_id, video_progress=progress)
+            update_episode_row(episode_id, video_progress=progress)
             await broadcast(project_id, {"type": "VIDEO_UPDATE", "projectId": project_id, "data": {"videoStatus": "generating", "videoProgress": progress, "videoModel": config["model"]}})
         return succeeded
 
@@ -432,6 +351,6 @@ async def run_video_generation(
     status = episode_media_status(episode_id, results)
     video_status = "success" if batch_status == "done" else "error"
     detail = "" if batch_status == "done" else f"{len(scenes) - successes} 个分镜视频生成失败"
-    _update_project(project_id, status=status, video_status=video_status, video_progress=100, video_url=None)
-    _update_episode(episode_id, status=status, video_status=video_status, video_progress=100, error_message=detail or None)
+    update_project_row(project_id, status=status, video_status=video_status, video_progress=100, video_url=None)
+    update_episode_row(episode_id, status=status, video_status=video_status, video_progress=100, error_message=detail or None)
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"]}})

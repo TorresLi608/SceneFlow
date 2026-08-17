@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from html import escape
+import base64
+import binascii
 import hashlib
 from pathlib import Path, PurePosixPath
 import json
@@ -28,6 +30,8 @@ from app.utils.common import new_id
 
 
 MAX_DOCUMENT_CHARS = 100_000
+MAX_UPLOAD_IMAGE_BYTES = 10 * 1024 * 1024
+IMAGE_DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpeg|jpg|webp));base64,(.+)$", re.DOTALL)
 ARTIFACT_TTL_DAYS = 30
 ARTIFACT_SIGNING_KEY = hashlib.sha256(JWT_SECRET.encode()).digest()
 MEDIA_TYPES = {
@@ -260,6 +264,29 @@ def _safe_segment(value: str) -> str:
 
 def media_type_for(name: str) -> str:
     return MEDIA_TYPES.get(Path(name).suffix.lower(), "application/octet-stream")
+
+
+def decode_image_data_url(value: str, maximum: int = MAX_UPLOAD_IMAGE_BYTES) -> tuple[bytes, str, str]:
+    """Decode a browser-supplied `data:image/...;base64,` string into bytes, mime, extension.
+
+    The client never uploads multipart — every image the frontend sends (chat attachments,
+    image-to-image references, covers, character sheets) arrives as a data URL, so the
+    decode and its size ceiling live here once instead of in each caller.
+
+    Raises ValueError, not HTTPException: the API layer decides the status code.
+    """
+    match = IMAGE_DATA_URL_RE.match(value.strip())
+    if not match:
+        raise ValueError("image must be a png/jpeg/webp base64 data URL")
+    mime_type, encoded = match.groups()
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("invalid base64 image data") from exc
+    if not data or len(data) > maximum:
+        raise ValueError(f"image must be 1 byte to {maximum // (1024 * 1024)}MB")
+    extension = "jpg" if mime_type in {"image/jpeg", "image/jpg"} else mime_type.removeprefix("image/")
+    return data, mime_type, extension
 
 
 def _artifact_path(scope: str, extension: str, category: str = "chat") -> Path:

@@ -155,34 +155,59 @@ def test_qwen_native_url_detection_keeps_relays_configurable() -> None:
     assert not is_native_qwen_video_url("https://relay.example.com/api/v1")
 
 
-def test_storyboard_video_passes_scene_media_and_capabilities() -> None:
+def _render_scene_video(options: dict, media: list[dict]):
+    """Drive one scene render with the providers stubbed, and hand back the request made."""
     config = {
         "provider": "qwen", "apiKey": "secret", "model": "wan2.7-i2v", "baseUrl": "https://relay.example.com/api/v1",
         "videoCapabilities": {"maxReferenceImages": 1, "referenceImagesRequired": True, "drivingAudio": True},
     }
-    scene = {"id": "scene-1", "order_num": 1, "visual_prompt": "camera move", "image_path": "frame.png", "audio_path": "line.wav", "characters": []}
-    image = {"name": "frame.png", "data": "data:image/png;base64,aW1hZ2U="}
-    audio = {"name": "line.wav", "data": "data:audio/wav;base64,YXVkaW8="}
+    scene = {"id": "scene-1", "order_num": 1, "visual_prompt": "camera move", "image_path": "frame.png", "characters": []}
     generate = AsyncMock(return_value=VideoResult(b"mp4"))
     with (
-        patch("app.services.generation_service._stored_media", side_effect=[image, audio]),
+        patch("app.services.generation_service._stored_media", side_effect=media),
         patch("app.services.generation_service.generate_video", new=generate),
         patch("app.services.generation_service.db", return_value=MagicMock()),
         patch("app.services.generation_service.require_model_balance"),
         patch("app.services.generation_service.record_usage"),
         patch("app.services.generation_service.store_artifact", return_value="projects/p/scene-1.mp4"),
         patch("app.services.generation_service.signed_url_for_stored", return_value="/api/files/video"),
-        patch("app.services.generation_service._update_scene"),
-        patch("app.services.generation_service._scene_event", new=AsyncMock()),
+        patch("app.services.generation_service.update_scene_row"),
+        patch("app.services.generation_service.scene_event", new=AsyncMock()),
     ):
-        succeeded = asyncio.run(_generate_scene_video("p", scene, config, 1, {"quality": "720p", "resolution": None, "fps": None, "duration": 5, "promptExtend": True}))
+        succeeded = asyncio.run(_generate_scene_video("p", scene, config, 1, options))
+    return succeeded, generate.call_args.kwargs
+
+
+def test_storyboard_video_passes_scene_media_and_capabilities() -> None:
+    image = {"name": "frame.png", "data": "data:image/png;base64,aW1hZ2U="}
+    voices = {"name": "voices.mp3", "data": "data:audio/mpeg;base64,YXVkaW8="}
+
+    succeeded, request = _render_scene_video(
+        {"quality": "720p", "resolution": None, "fps": None, "duration": 5, "promptExtend": True,
+         "voiceSheetPath": "voices/p/voices.mp3"},
+        [image, voices],
+    )
 
     assert succeeded
-    request = generate.call_args.kwargs
     assert request["references"] == [image]
-    assert request["driving_audio"] == audio
+    # The project's timbre reference, not a per-shot track: shots no longer carry their own
+    # audio, and this is what tells the model who sounds like what.
+    assert request["driving_audio"] == voices
     assert request["quality"] == "720p"
     assert request["prompt_extend"] is True
+
+
+def test_a_render_without_audio_sends_none() -> None:
+    image = {"name": "frame.png", "data": "data:image/png;base64,aW1hZ2U="}
+
+    succeeded, request = _render_scene_video(
+        {"quality": "720p", "resolution": None, "fps": None, "duration": 5, "promptExtend": False,
+         "voiceSheetPath": None},
+        [image],
+    )
+
+    assert succeeded
+    assert request["driving_audio"] is None
 
 
 if __name__ == "__main__":
@@ -197,3 +222,4 @@ if __name__ == "__main__":
     test_video_media_capabilities_are_enforced()
     test_qwen_native_url_detection_keeps_relays_configurable()
     test_storyboard_video_passes_scene_media_and_capabilities()
+    test_a_render_without_audio_sends_none()

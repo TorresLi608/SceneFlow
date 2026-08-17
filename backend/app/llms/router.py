@@ -62,6 +62,12 @@ class OptimizeResult:
 
 
 @dataclass
+class TextResult:
+    text: str
+    usage: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class ImageResult:
     data: bytes
     format: str = "png"
@@ -405,6 +411,40 @@ class ModelRouter:
             tips=tips or ["补充镜头情绪变化", "每段保持单一动作焦点", "减少重复描述，增加视觉细节"],
             usage=usage,
         )
+
+    async def complete_text(
+        self,
+        provider: str,
+        api_key: str,
+        model: str,
+        system: str,
+        user: str,
+        base_url: str = "",
+        temperature: float = 0.4,
+        max_tokens: int = 2048,
+    ) -> TextResult:
+        """One system+user turn in, plain prose out.
+
+        The prompt-shaped features (synopsis polish, a character state's final image
+        prompt) differ only in wording, so they share this instead of each growing its own
+        near-identical method. Anything needing a fixed schema stays on its own method —
+        `parse_script` binds a JSON response format this deliberately does not.
+        """
+        user = user.strip()
+        if not user:
+            raise ValueError("prompt is empty")
+        llm = self.chat_model(provider, api_key, model, base_url, temperature=temperature, max_tokens=max_tokens)
+        with get_usage_metadata_callback() as usage_callback:
+            response = await llm.ainvoke(
+                _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
+            )
+        text = _content_text(response.content).strip()
+        if not text:
+            raise ValueError("empty content from provider")
+        usage = aggregate_token_usage(usage_callback.usage_metadata)
+        if not any(usage.values()):
+            usage = aggregate_token_usage(response.usage_metadata)
+        return TextResult(text=text, usage=usage)
 
     async def chat(self, provider: str, api_key: str, model: str, messages: list[dict[str, Any]], base_url: str = "") -> str:
         content = ""

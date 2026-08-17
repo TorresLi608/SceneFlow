@@ -53,12 +53,19 @@ export interface EpisodeSummary {
   videoProgress: number;
   durationMs: number;
   sceneCount: number;
+  /** Whether this episode has been anchored yet; the shots are rendered against it. */
+  toneImageStatus: SceneTaskStatus | "idle";
   errorMessage: string;
   updatedAt: string;
 }
 
 export interface Episode extends EpisodeSummary {
   sourceText: string;
+  /**
+   * The style anchor: a thumbnail grid of every shot, generated in one pass before the
+   * full-resolution renders and carried by each of them as a reference. Never a deliverable.
+   */
+  toneImageUrl: string | null;
   videoUrl: string | null;
   scenes: Scene[];
 }
@@ -90,9 +97,18 @@ export interface ProductionSettings {
 export interface Project {
   id: string;
   title: string;
+  /** Shown on the series card. Optional — an empty synopsis renders a placeholder. */
+  description: string;
+  /** Signed and short-lived, minted per response. Null means "use the fallback cover". */
+  coverImageUrl: string | null;
   originalScript: string;
   /** World, tone, and running plot threads, carried into later episodes. */
   seriesBible: string;
+  /** The whole cast and every prop, each tiled into one sheet the renderer carries. */
+  characterSheetUrl: string | null;
+  propSheetUrl: string | null;
+  /** Every voice introducing itself, concatenated; a timbre reference for the video model. */
+  voiceSheetUrl: string | null;
   status: ProjectStatus;
   videoStatus: SceneTaskStatus | "idle";
   videoProgress: number;
@@ -117,20 +133,77 @@ export interface ProjectListResponse {
 
 export interface CreateProjectInput {
   title?: string;
+  description?: string;
   originalScript?: string;
   productionSettings?: Partial<ProductionSettings>;
 }
 
 export interface UpdateProjectInput {
   title?: string;
+  description?: string;
   originalScript?: string;
   seriesBible?: string;
 }
 
-export interface CreateEpisodeInput {
+export interface SetProjectCoverInput {
+  /** A `data:image/png|jpeg|webp;base64,` string. The API never takes multipart. */
+  imageData: string;
+}
+
+/**
+ * Cover generation and synopsis polish are project-less on purpose: the create dialog runs
+ * them before a project exists, and the edit dialog runs them on unsaved edits. Neither
+ * writes — the caller previews the result and applies it.
+ */
+export interface GenerateCoverInput {
   title?: string;
+  description?: string;
+  stylePrompt?: string;
+}
+
+export interface GenerateCoverResponse {
+  imageData: string;
+}
+
+export interface OptimizeDescriptionInput {
+  title?: string;
+  description: string;
+  model?: string;
+}
+
+export interface OptimizeDescriptionResponse {
+  description: string;
+}
+
+export interface CreateEpisodeInput {
+  /** Required: a list of "第 1 集 / 第 2 集" tells the user nothing. */
+  title: string;
   synopsis?: string;
   sourceText?: string;
+}
+
+/**
+ * Render an episode: one tone sheet to anchor the look, then a frame per shot.
+ *
+ * `mergeReferences` trades tokens for fidelity — merged, the cast sheet, prop sheet, and
+ * previous anchor arrive as one image; separate, they cost more. `regenerate` resamples the
+ * anchor instead of reusing it, which also restyles shots that were already approved.
+ */
+export interface GenerateStoryboardInput {
+  previousEpisodeId?: string;
+  mergeReferences?: boolean;
+  regenerate?: boolean;
+  sceneIds?: string[];
+}
+
+export interface GenerateStoryboardResponse {
+  projectId: string;
+  episodeId: string;
+  status: ProjectStatus;
+  shotCount: number;
+  referenceCount: number;
+  mergeReferences: boolean;
+  regeneratesToneSheet: boolean;
 }
 
 export interface UpdateEpisodeInput {
@@ -148,17 +221,29 @@ export interface EpisodeItemResponse {
   episode: Episode;
 }
 
-/** A deliberate change of look or voice over a range of episodes. */
-export interface CharacterVariant {
+/**
+ * One look a character can appear in: an age, an outfit, a transformation. States are
+ * parallel forms of the same person, not a timeline — an episode range is an optional
+ * narrowing, and a state that leaves it unset is simply always available.
+ */
+export interface CharacterState {
   id: string;
   characterId: string;
   name: string;
+  /** What this state is ("十六岁，校服"); feeds the model that drafts `finalPrompt`. */
+  description: string;
   /** Empty means "the look did not change"; the card's own prompt still applies. */
   appearancePrompt: string;
+  /** Overrides the built-in turnaround instructions when non-empty. */
+  systemPrompt: string;
+  /** The reviewed prompt that actually draws the sheet. */
+  finalPrompt: string;
+  /** The turnaround sheet: front, three-quarter, and profile in one image. */
   referenceImageUrl: string | null;
   voiceModel: string;
-  fromEpisode: number;
-  /** Null means the variant stays in effect for every later episode. */
+  orderNum: number;
+  /** Null on either means the state is not pinned to an episode range at all. */
+  fromEpisode: number | null;
   toEpisode: number | null;
   updatedAt: string;
 }
@@ -172,16 +257,21 @@ export interface Character {
   aliases: string;
   description: string;
   appearancePrompt: string;
+  /** Legacy card portrait from before looks were split into states; nothing writes it. */
   referenceImageUrl: string | null;
-  /** Frozen when the portrait was drawn, so a later default change cannot restyle them. */
+  /** Every state of this character tiled into one image. */
+  sheetImageUrl: string | null;
+  /** Frozen when the first image was drawn, so a later default change cannot restyle them. */
   imageProvider: string;
   imageModel: string;
   voiceProvider: string;
   voiceModel: string;
-  /** Set once the portrait is approved; a locked card is never redrawn. */
+  /** The bound voice profile, if any; it wins over the two columns above. */
+  voiceProfileId: string | null;
+  /** Set once the look is approved; a locked card is never redrawn. */
   isLocked: boolean;
   orderNum: number;
-  variants: CharacterVariant[];
+  states: CharacterState[];
   updatedAt: string;
 }
 
@@ -202,16 +292,49 @@ export interface UpdateCharacterInput {
   appearancePrompt?: string;
   voiceProvider?: string;
   voiceModel?: string;
+  /** "" unbinds. Not null: the backend reads an absent field as "leave it alone". */
+  voiceProfileId?: string;
   isLocked?: boolean;
   orderNum?: number;
 }
 
-export interface CreateCharacterVariantInput {
+export interface CreateCharacterStateInput {
   name: string;
+  description?: string;
   appearancePrompt?: string;
+  systemPrompt?: string;
+  finalPrompt?: string;
   voiceModel?: string;
-  fromEpisode?: number;
+  orderNum?: number;
+  fromEpisode?: number | null;
   toEpisode?: number | null;
+}
+
+export type UpdateCharacterStateInput = Partial<CreateCharacterStateInput>;
+
+/**
+ * Draft an image prompt for review. The fields come from the dialog rather than the stored
+ * row so drafting works against edits the user has not saved yet.
+ */
+export interface DraftPromptInput {
+  name?: string;
+  description?: string;
+  systemPrompt?: string;
+  model?: string;
+}
+
+export interface DraftPromptResponse {
+  prompt: string;
+}
+
+/** Empty falls back to the stored `finalPrompt`. */
+export interface GenerateReferenceImageInput {
+  prompt?: string;
+}
+
+export interface UploadReferenceImageInput {
+  /** A `data:image/png|jpeg|webp;base64,` string. The API never takes multipart. */
+  imageData: string;
 }
 
 export interface CharacterListResponse {
@@ -222,8 +345,87 @@ export interface CharacterItemResponse {
   character: Character;
 }
 
-export interface CharacterVariantItemResponse {
-  variant: CharacterVariant;
+export interface CharacterStateItemResponse {
+  state: CharacterState;
+}
+
+export interface CastSheetResponse {
+  characterSheetUrl: string | null;
+}
+
+/** One voice in the show: the narrator, or a character's timbre. */
+export interface VoiceProfile {
+  id: string;
+  projectId: string;
+  name: string;
+  /** Free-text note for the user ("沙哑，压低"); never sent to a provider. */
+  note: string;
+  /** A provider and a model, never credentials — those live on the account's audio config. */
+  voiceProvider: string;
+  voiceModel: string;
+  /** The line this voice says in the merged track; the wording tells the model when to use it. */
+  sampleText: string;
+  audioUrl: string | null;
+  orderNum: number;
+  updatedAt: string;
+}
+
+export interface CreateVoiceProfileInput {
+  name: string;
+  note?: string;
+  voiceProvider?: string;
+  voiceModel?: string;
+  sampleText?: string;
+  orderNum?: number;
+}
+
+export type UpdateVoiceProfileInput = Partial<CreateVoiceProfileInput>;
+
+export interface VoiceProfileListResponse {
+  voices: VoiceProfile[];
+}
+
+export interface VoiceProfileItemResponse {
+  voice: VoiceProfile;
+}
+
+export interface VoiceSheetResponse {
+  voiceSheetUrl: string | null;
+}
+
+/** An object the series has to draw the same way every time it appears. */
+export interface Prop {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  finalPrompt: string;
+  imageUrl: string | null;
+  orderNum: number;
+  updatedAt: string;
+}
+
+export interface CreatePropInput {
+  name: string;
+  description?: string;
+  systemPrompt?: string;
+  finalPrompt?: string;
+  orderNum?: number;
+}
+
+export type UpdatePropInput = Partial<CreatePropInput>;
+
+export interface PropListResponse {
+  props: Prop[];
+}
+
+export interface PropItemResponse {
+  prop: Prop;
+}
+
+export interface PropSheetResponse {
+  propSheetUrl: string | null;
 }
 
 export interface SetSceneCastInput {
@@ -316,7 +518,6 @@ export interface ParseProjectResponse {
 export interface GenerateProjectInput {
   model?: string;
   episodeId?: string;
-  media: "image" | "audio";
   sceneIds?: string[];
 }
 
@@ -352,6 +553,11 @@ export interface GenerateVideoInput {
   fps?: number;
   duration?: number;
   promptExtend?: boolean;
+  /**
+   * Pass the project's merged timbre reference. Costs more, and a model that does not accept
+   * driving audio returns 400 rather than silently dropping it.
+   */
+  withAudio?: boolean;
   sceneIds?: string[];
 }
 
@@ -361,6 +567,39 @@ export interface GenerateVideoResponse {
   model: string;
   episodeId: string;
   sceneCount: number;
+  withAudio: boolean;
+}
+
+export type ExportStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
+
+/** Several rendered shots merged into one file. Order follows the request, not shot number. */
+export interface ExportJob {
+  id: string;
+  projectId: string;
+  sceneIds: string[];
+  rangeLabel: string;
+  status: ExportStatus;
+  progress: number;
+  videoUrl: string | null;
+  fileSize: number;
+  errorMessage: string;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+export interface CreateExportInput {
+  /** Ordered: the video section assembles a cut, which need not follow the storyboard. */
+  sceneIds: string[];
+  rangeLabel?: string;
+}
+
+export interface ExportListResponse {
+  exports: ExportJob[];
+}
+
+export interface ExportItemResponse {
+  export: ExportJob;
 }
 
 export interface SceneUpdatePayload {

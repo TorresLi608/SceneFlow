@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 from typing import Any
@@ -17,16 +18,20 @@ from app.models import Episode, Project, Scene
 from app.schemas.requests import (
     CreateSceneRequest,
     CreateProjectRequest,
+    GenerateCoverRequest,
     GenerateProjectRequest,
     GenerateVideoRequest,
+    OptimizeDescriptionRequest,
     OptimizeProjectRequest,
     ParseProjectRequest,
     ProductionSettingsRequest,
     ReorderScenesRequest,
+    SetProjectCoverRequest,
     UpdateProjectRequest,
     UpdateSceneRequest,
 )
 from app.schemas.serializers import episode_summary_json, project_json, scene_json
+from app.services.artifact_service import decode_image_data_url, store_artifact
 from app.services.config_service import active_model_config
 from app.services.character_service import cast_for_episode, owned_character, scene_cast
 from app.services.episode_service import (
@@ -40,6 +45,7 @@ from app.services.episode_service import (
 )
 from app.services.generation_service import run_generation, run_video_generation
 from app.services.job_service import list_project_jobs
+from app.services.prompt_service import SYNOPSIS_SYSTEM, cover_prompt, synopsis_prompt
 from app.services.project_service import (
     IDLE_STATUSES,
     claim_project_status,
@@ -81,20 +87,23 @@ def _serialized(session: Session, project: Project, *, episode: Episode | None =
 
 def _scene_payloads(
     session: Session,
-    project_id: str,
+    project: Project,
     episode_number: int,
     scenes: list[Scene],
 ) -> list[dict[str, Any]]:
     """Scene rows plus the cast as it stands in this episode, ready for a background run.
 
-    Resolved here rather than in the worker: variants depend on the episode number, and the
-    task runs after this session closes.
+    Resolved here rather than in the worker: variants depend on the episode number, the
+    project's house style lives on a row the worker cannot read, and the task runs after
+    this session closes.
     """
-    cast = cast_for_episode(session, project_id, episode_number)
+    cast = cast_for_episode(session, project.id, episode_number)
     links = scene_cast(session, [scene.id for scene in scenes])
     payloads = []
     for scene in scenes:
         payload = scene.model_dump()
+        payload["style_prompt"] = project.style_prompt
+        payload["negative_prompt"] = project.negative_prompt
         payload["characters"] = [
             cast[character_id].as_payload() for character_id in links.get(scene.id, []) if character_id in cast
         ]
@@ -175,6 +184,7 @@ def create_project(body: CreateProjectRequest, user_id: int = Depends(current_us
             updated_at=stamp,
             user_id=user_id,
             title=body.title or "新项目",
+            description=body.description,
             original_script=body.original_script,
             status="idle",
             video_status="idle",
@@ -196,6 +206,9 @@ async def update_project(project_id: str, body: UpdateProjectRequest, user_id: i
     if body.title is not None:
         updates["title"] = body.title or "未命名项目"
         broadcast_data["title"] = updates["title"]
+    if body.description is not None:
+        updates["description"] = body.description
+        broadcast_data["description"] = body.description
     if body.original_script is not None:
         updates["original_script"] = body.original_script
         broadcast_data["originalScript"] = body.original_script
@@ -260,6 +273,121 @@ async def update_production_settings(
     }
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": data})
     return {"project": serialized}
+
+
+# These two literal paths must stay above the `/{project_id}/...` routes below. FastAPI
+# matches in declaration order, so moving them down would let `/{project_id}/generate` and
+# `/{project_id}/optimize` swallow them with project_id="cover"/"description".
+@router.post("/cover/generate")
+async def generate_cover(body: GenerateCoverRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Draw a cover and hand the bytes back as a data URL, without touching any project.
+
+    Synchronous like the character portrait it mirrors: it is one image, and the dialog the
+    user is looking at is the only thing waiting on it.
+    """
+    if not (body.title.strip() or body.description.strip()):
+        raise HTTPException(400, "name the project or write a synopsis before generating a cover")
+    with db() as session:
+        config = active_model_config(session, user_id, "image", "项目封面")
+        require_model_balance(session, user_id, config)
+    if config["provider"] not in {"openai", "gemini", "qwen"}:
+        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")
+
+    started_at = time.monotonic()
+    try:
+        image = await models.generate_image(
+            config["apiKey"],
+            config["model"],
+            cover_prompt(body.title, body.description, body.style_prompt),
+            base_url=config.get("baseUrl", ""),
+            provider=config["provider"],
+        )
+    except Exception as exc:
+        logger.warning("cover generation failed user=%s: %s", user_id, exc)
+        raise HTTPException(502, f"failed to generate cover: {str(exc)[:220]}") from exc
+    record_usage(user_id, config, "project_cover", started_at, quantity=1)
+    extension = (image.format or "png").lower()
+    media_type = "image/jpeg" if extension in {"jpg", "jpeg"} else f"image/{extension}"
+    encoded = base64.b64encode(image.data).decode("ascii")
+    return {"imageData": f"data:{media_type};base64,{encoded}"}
+
+
+@router.post("/description/optimize")
+async def optimize_description(
+    body: OptimizeDescriptionRequest,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    """Polish a synopsis and return it. Never saved — the user confirms the rewrite first."""
+    with db() as session:
+        config = active_model_config(session, user_id, "script", "项目简介优化")
+        require_model_balance(session, user_id, config)
+    started_at = time.monotonic()
+    try:
+        result = await models.complete_text(
+            config["provider"],
+            config["apiKey"],
+            body.model or config["model"],
+            SYNOPSIS_SYSTEM,
+            synopsis_prompt(body.title, body.description),
+            config.get("baseUrl", ""),
+        )
+    except Exception as exc:
+        logger.warning("description optimize failed user=%s: %s", user_id, exc)
+        raise HTTPException(502, f"failed to optimize description: {str(exc)[:220]}") from exc
+    record_usage(user_id, config, "description_optimize", started_at, result.usage)
+    return {"description": result.text[:4000]}
+
+
+@router.put("/{project_id}/cover")
+async def set_project_cover(
+    project_id: str,
+    body: SetProjectCoverRequest,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    """Store a cover, whether the user uploaded it or `POST /cover/generate` drew it."""
+    with db() as session:
+        owned_project(session, project_id, user_id)
+    try:
+        data, _, extension = decode_image_data_url(body.image_data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    stored = store_artifact("covers", project_id, f"{project_id}.{extension}", data)
+    stamp = now()
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        project.cover_image_path = stored
+        project.updated_at = stamp
+        session.add(project)
+        session.flush()
+        serialized = _serialized(session, project)
+    await broadcast(
+        project_id,
+        {
+            "type": "PROJECT_UPDATE",
+            "projectId": project_id,
+            "data": {"coverImageUrl": serialized["coverImageUrl"], "updatedAt": stamp},
+        },
+    )
+    return {"project": serialized}
+
+
+@router.delete("/{project_id}/cover")
+async def clear_project_cover(project_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Drop the cover so the card falls back to the placeholder. The file is left on disk."""
+    stamp = now()
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        project.cover_image_path = None
+        project.updated_at = stamp
+        session.add(project)
+        session.flush()
+        data = _serialized(session, project)
+    await broadcast(
+        project_id,
+        {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"coverImageUrl": None, "updatedAt": stamp}},
+    )
+    return {"project": data}
 
 
 @router.get("/{project_id}/jobs")
@@ -621,7 +749,7 @@ async def optimize_project(project_id: str, body: OptimizeProjectRequest, user_i
 @router.post("/{project_id}/generate", status_code=202)
 async def generate_project(project_id: str, body: GenerateProjectRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
-        owned_project(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         episode = resolve_episode(session, project_id, body.episode_id)
         scenes = episode_scenes(session, episode.id)
         if not scenes:
@@ -630,33 +758,25 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         pending = _selected_scenes(scenes, body.scene_ids)
         if not pending:
             raise HTTPException(400, "every scene in this episode is locked, unlock one to regenerate")
-        if body.media == "image":
-            config = active_model_config(session, user_id, "image", "分镜图片生成")
-        else:
-            try:
-                config = active_model_config(session, user_id, "audio", "场景配音")
-            except HTTPException:
-                config = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
-        if config["provider"] not in {"edge", "system"}:
-            require_model_balance(session, user_id, config)
+        config = active_model_config(session, user_id, "image", "分镜图片生成")
+        require_model_balance(session, user_id, config)
         # The lock stays on the project: one run owns the series, so a second episode
         # cannot start rendering into the same worker pool while this one is going.
         claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="generating")
         episode_id = episode.id
         touch_episode(session, episode, status="generating")
-        scene_payloads = _scene_payloads(session, project_id, episode.episode_number, pending)
+        scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
     await broadcast(
         project_id,
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
     )
-    asyncio.create_task(run_generation(project_id, scene_payloads, config, user_id, body.media, episode_id=episode_id))
+    asyncio.create_task(run_generation(project_id, scene_payloads, config, user_id, episode_id=episode_id))
     return {
         "projectId": project_id,
         "episodeId": episode_id,
         "status": "generating",
         "model": body.model or config["model"],
         "provider": config["provider"],
-        "media": body.media,
         "sceneCount": len(scene_payloads),
     }
 
@@ -664,7 +784,7 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
 @router.post("/{project_id}/generate-video", status_code=202)
 async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
-        owned_project(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         episode = resolve_episode(session, project_id, body.episode_id)
         scenes = episode_scenes(session, episode.id)
         if not scenes:
@@ -685,6 +805,15 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             raise HTTPException(400, "every scene video in this episode is locked")
         if config["videoCapabilities"]["referenceImagesRequired"] and not any(scene.image_path for scene in pending):
             raise HTTPException(400, "selected video model requires storyboard images, generate them first")
+        voice_sheet_path = None
+        if body.with_audio:
+            # Refused rather than downgraded: the user opted into a costlier render for a
+            # reason, and silently dropping the audio would bill them for something else.
+            if not config["videoCapabilities"]["drivingAudio"]:
+                raise HTTPException(400, "selected video model does not accept audio, turn withAudio off")
+            if not project.voice_sheet_path:
+                raise HTTPException(400, "merge the project's voices before rendering with audio")
+            voice_sheet_path = project.voice_sheet_path
         claim_project_status(
             session,
             project_id,
@@ -695,7 +824,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         )
         touch_episode(session, episode, status="generating", video_status="generating", video_progress=0)
         episode_id = episode.id
-        scene_payloads = _scene_payloads(session, project_id, episode.episode_number, pending)
+        scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
     await broadcast(
         project_id,
         {
@@ -711,10 +840,24 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             config,
             user_id,
             episode_id,
-            {"quality": quality, "resolution": resolution, "fps": fps, "duration": duration, "promptExtend": prompt_extend},
+            {
+                "quality": quality,
+                "resolution": resolution,
+                "fps": fps,
+                "duration": duration,
+                "promptExtend": prompt_extend,
+                "voiceSheetPath": voice_sheet_path,
+            },
         )
     )
-    return {"projectId": project_id, "episodeId": episode_id, "status": "video_generating", "model": model, "sceneCount": len(scene_payloads)}
+    return {
+        "projectId": project_id,
+        "episodeId": episode_id,
+        "status": "video_generating",
+        "model": model,
+        "sceneCount": len(scene_payloads),
+        "withAudio": bool(voice_sheet_path),
+    }
 
 
 @router.delete("/{project_id}", status_code=204)

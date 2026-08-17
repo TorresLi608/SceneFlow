@@ -1,11 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useParams } from "next/navigation";
-
-import { WorkbenchEditor } from "./_components/workbench-editor";
-
-export default function ProjectEditorPage() {
-  const params = useParams<{ projectId: string }>();
-
-  return <WorkbenchEditor projectId={params.projectId} />;
+/** The workbench opens on project info; the sections live under the `(workbench)` shell. */
+export default async function ProjectPage({ params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params;
+  redirect(`/projects/${projectId}/info`);
 }

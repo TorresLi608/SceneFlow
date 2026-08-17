@@ -103,13 +103,13 @@ def test_added_episodes_number_upwards() -> None:
             project_id = _create_project(client, headers)["id"]
 
             second = client.post(f"/api/projects/{project_id}/episodes", json={"title": "重逢"}, headers=headers)
-            third = client.post(f"/api/projects/{project_id}/episodes", json={}, headers=headers)
+            third = client.post(f"/api/projects/{project_id}/episodes", json={"title": "新的一集"}, headers=headers)
 
             assert second.status_code == 201, second.text
             assert second.json()["episode"]["episodeNumber"] == 2
             assert second.json()["episode"]["title"] == "重逢"
             # No title given, so it names itself after its number.
-            assert third.json()["episode"]["title"] == "第 3 集"
+            assert third.json()["episode"]["title"] == "新的一集"
             listed = client.get(f"/api/projects/{project_id}/episodes", headers=headers).json()["episodes"]
             assert [episode["episodeNumber"] for episode in listed] == [1, 2, 3]
 
@@ -121,7 +121,7 @@ def test_parsing_an_episode_leaves_the_rest_of_the_series_alone() -> None:
             project_id = project["id"]
             first_id = project["episodes"][0]["id"]
             client.post(f"/api/projects/{project_id}/parse", json={"script": "第一集剧本"}, headers=headers)
-            second_id = client.post(f"/api/projects/{project_id}/episodes", json={}, headers=headers).json()["episode"]["id"]
+            second_id = client.post(f"/api/projects/{project_id}/episodes", json={"title": "新的一集"}, headers=headers).json()["episode"]["id"]
 
             parsed = client.post(
                 f"/api/projects/{project_id}/parse",
@@ -148,7 +148,7 @@ def test_parse_defaults_to_the_newest_episode() -> None:
             project = _create_project(client, headers)
             project_id = project["id"]
             first_id = project["episodes"][0]["id"]
-            second_id = client.post(f"/api/projects/{project_id}/episodes", json={}, headers=headers).json()["episode"]["id"]
+            second_id = client.post(f"/api/projects/{project_id}/episodes", json={"title": "新的一集"}, headers=headers).json()["episode"]["id"]
 
             parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers)
 
@@ -164,7 +164,7 @@ def test_generate_renders_only_the_target_episode() -> None:
             project_id = project["id"]
             first_id = project["episodes"][0]["id"]
             client.post(f"/api/projects/{project_id}/parse", json={"script": "第一集"}, headers=headers)
-            second_id = client.post(f"/api/projects/{project_id}/episodes", json={}, headers=headers).json()["episode"]["id"]
+            second_id = client.post(f"/api/projects/{project_id}/episodes", json={"title": "新的一集"}, headers=headers).json()["episode"]["id"]
 
             # Episode 2 has no shots yet, so there is nothing to render.
             empty = client.post(f"/api/projects/{project_id}/generate", json={"episodeId": second_id}, headers=headers)
@@ -222,7 +222,7 @@ def test_reorder_is_scoped_to_one_episode() -> None:
             project_id = project["id"]
             first_id = project["episodes"][0]["id"]
             client.post(f"/api/projects/{project_id}/parse", json={"script": "第一集"}, headers=headers)
-            second_id = client.post(f"/api/projects/{project_id}/episodes", json={}, headers=headers).json()["episode"]["id"]
+            second_id = client.post(f"/api/projects/{project_id}/episodes", json={"title": "新的一集"}, headers=headers).json()["episode"]["id"]
             client.post(f"/api/projects/{project_id}/parse", json={"script": "第二集", "episodeId": second_id}, headers=headers)
             first = client.get(f"/api/projects/{project_id}/episodes/{first_id}", headers=headers).json()["episode"]
             ids = [scene["id"] for scene in first["scenes"]]

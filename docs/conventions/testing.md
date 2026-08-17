@@ -16,7 +16,7 @@ PYTHONPATH=. .venv/bin/python tests/test_episodes_api.py    # one file — the r
 
 It `runpy`s every file in one process. Two consequences:
 
-1. **Module-level state leaks between files.** As of 2026-08-12 all 22 files pass individually, but `run_all.py` fails inside `test_characters_api.py`; running `test_artifact_service.py` or `test_admin_usage_logs.py` first in the same process reproduces it deterministically.
+1. **Module-level state leaks between files.** As of 2026-08-17 all 28 files pass individually, but `run_all.py` fails inside `test_characters_api.py`; running `test_artifact_service.py` or `test_admin_usage_logs.py` first in the same process reproduces it deterministically.
 2. **The first failure aborts the run** — there is no error handling, so every later file is skipped and reports nothing.
 
 **Treat a `run_all.py` failure as unproven until you rerun that file on its own.** When you need a trustworthy full pass, loop the files in separate processes:

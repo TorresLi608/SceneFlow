@@ -14,13 +14,16 @@ from app.api.v1 import (
     characters,
     chat,
     episodes,
+    exports,
     images,
     jobs,
     projects,
+    props,
     settings,
     usage,
     users,
     videos,
+    voices,
     websocket,
 )
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
@@ -41,7 +44,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Origin", "Content-Type", "Authorization"],
 )
 
@@ -59,6 +62,9 @@ app.include_router(usage.router)
 app.include_router(projects.router)
 app.include_router(episodes.router)
 app.include_router(characters.router)
+app.include_router(props.router)
+app.include_router(voices.router)
+app.include_router(exports.router)
 app.include_router(jobs.router)
 app.include_router(websocket.router)
 

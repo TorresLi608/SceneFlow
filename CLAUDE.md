@@ -46,7 +46,7 @@ The usual pre-commit gate is: backend tests, then frontend `tsc --noEmit` and `p
 
 There is no pytest and no frontend test framework. Backend tests are plain modules that call their own test functions from `if __name__ == "__main__"`, driving the real ASGI app through `TestClient` with providers monkeypatched out. Frontend tests are `*.test.mts` run by Node's built-in runner with type stripping (note the `.ts` extension in their relative imports — required by stripping).
 
-**`tests/run_all.py` is not isolated.** It `runpy`s every file in one process, so module-level state from one file leaks into the next, and the first failure aborts the run — later files never execute. At the current HEAD all 22 files pass individually but `run_all.py` dies in `test_characters_api.py` (reproducible with `test_artifact_service.py` or `test_admin_usage_logs.py` running first in the same process). Treat a `run_all.py` failure as unproven until you rerun that file on its own.
+**`tests/run_all.py` is not isolated.** It `runpy`s every file in one process, so module-level state from one file leaks into the next, and the first failure aborts the run — later files never execute. At the current HEAD all 28 files pass individually but `run_all.py` dies in `test_characters_api.py` (reproducible with `test_artifact_service.py` or `test_admin_usage_logs.py` running first in the same process). Treat a `run_all.py` failure as unproven until you rerun that file on its own.
 
 ## Architecture
 
@@ -60,9 +60,15 @@ Server state is React Query, keyed through `src/actions/query-keys.ts`. Zustand 
 
 `Project` is a **series** and owns no shots directly. Content hangs off `Episode`, and each `Scene` is one shot inside an episode. Shot `order` restarts at 1 per episode, so a serialized project carries **one** episode's shots under `scenes`, plus `episodes` (summaries) and `currentEpisodeId`. Anything that renders or reorders resolves a target episode first; `episode_service.resolve_episode` defaults to the highest-numbered episode. `project_service.project_and_scenes` spans the whole series and is only for series-wide work.
 
-`Character` + `CharacterVariant` are the series bible that keeps a cast member's look, image model, and voice stable across episodes; `SceneCharacter` records who is in a shot. `character_service.resolve_character` folds the variant covering an episode over the card, and a variant overrides only the fields it sets. At render time a shot's cast contributes appearance prompts (work everywhere) and reference portraits (passed image-to-image through `edit_image` — this is what actually holds a face steady).
+`Character` + `CharacterState` are the series bible that keeps a cast member's look, image model, and voice stable across episodes; `Prop` does the same for objects; `SceneCharacter` records who is in a shot. A state is one look a character can appear in (an age, an outfit) and holds a turnaround sheet; states are parallel forms by default, and pinning `from_episode` is what turns one into a change at a point in the series. `character_service.resolve_character` folds the state covering an episode over the card, and a state overrides only the fields it sets. Because providers cap reference images at `MAX_REFERENCE_IMAGES` = 4, a cast of any size reaches the renderer as a merged sheet built by `media_service.merge_images` — sources scaled to one uniform width **before** tiling, then compressed under 10MB. At render time a shot's cast contributes appearance prompts (work everywhere) and reference images (passed image-to-image through `edit_image` — this is what actually holds a face steady).
+
+`VoiceProfile` is the same idea for sound, and there is **no per-shot TTS**: voices are managed once per project, auditioned one line at a time, and ffmpeg-concatenated into `projects.voice_sheet_path` — a timbre reference the video model hears, not a finished soundtrack. A character binds to a profile through `characters.voice_profile_id`, a plain column rather than a foreign key (SQLite cannot add a constrained column in place), so `voice_service.delete_voice_profile` clears bindings by hand.
 
 Starting work takes a conditional UPDATE on `projects.status` (`claim_project_status`), so a double-clicked button cannot start two runs. The lock is **project-level** even though rendering is per-episode: one run owns the series at a time.
+
+### Rendering an episode
+
+`storyboard_service.run_storyboard` is the path that matters. Rendering shots independently gives each frame its own sampling of lighting, palette, set dressing, and render style — the cast sheet pins faces and nothing else — so an episode renders in two passes: a **tone sheet** (thumbnails of every shot in one sampling, stored on `episodes.tone_image_path`, never a deliverable) fixes the look, then each shot renders full-resolution carrying that sheet, the merged context sheet, and **the previous shot's render**. Consequences: shots render sequentially, not fanned out, because each references its predecessor; a failed tone sheet aborts the batch rather than billing for unanchored frames; and re-running reuses the existing anchor unless `regenerate` is set, since resampling restyles shots the user already approved.
 
 ### Backend layers
 
@@ -97,6 +103,6 @@ Backend env vars, the full endpoint list, and provider support are documented in
 
 `docs/` (indexed at the top of this file) is the maintained knowledge base — architecture, conventions, feature designs, plans, and generated reference. Keep it current; it is the only place where a rule change belongs.
 
-The one doc outside it is `backend/README.md` — env vars, full endpoint list, provider support, data-model notes. Accurate except one stale line: it says image generation is OpenAI-only, but `app/llms/router.py` supports `openai` and `gemini`.
+The one doc outside it is `backend/README.md` — env vars, full endpoint list, provider support, data-model notes.
 
 Earlier notes (`AI_HANDOFF.md`, the `AI_SHORT_DRAMA_*.md` specs, `findings.md`, `RUNNING.md`, `progress.md`, `task_plan.md`) and the per-directory `AGENTS.md`/`CLAUDE.md` files were folded into `docs/` and removed. Their history is still in git — `git log --diff-filter=D --name-only` finds them, `git show <commit>^:<path>` reads one.
