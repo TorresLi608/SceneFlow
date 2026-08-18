@@ -11,11 +11,12 @@ from fastapi.testclient import TestClient
 
 from app.core import database
 from app.core.security import encrypt, token_for
+from app.api.v1.projects import _scene_payloads
 from app.llms.registry import models
 from app.llms.router import ParseResult, SceneDraft
-from app.models import ModelConfig, Project, Scene, User
+from app.models import Episode, ModelConfig, Project, Scene, User
 from app.services import artifact_service
-from app.services.generation_service import episode_media_status
+from app.services.generation_service import build_image_prompt, episode_media_status
 from app.utils.common import now
 
 
@@ -236,7 +237,7 @@ def test_scene_terminal_progress_survives_reload() -> None:
             assert scene["audio"]["progress"] == 20
 
 
-def test_selected_media_generation_and_scene_crud() -> None:
+def test_selected_scene_generation_and_scene_crud() -> None:
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers):
             project_id = _create_project(client, headers)
@@ -245,11 +246,10 @@ def test_selected_media_generation_and_scene_crud() -> None:
 
             started = client.post(
                 f"/api/projects/{project_id}/generate",
-                json={"media": "audio", "sceneIds": [selected_id]},
+                json={"sceneIds": [selected_id]},
                 headers=headers,
             )
             assert started.status_code == 202, started.text
-            assert started.json()["media"] == "audio"
             assert started.json()["sceneCount"] == 1
 
             # The test worker leaves the project busy, matching the lock test below.
@@ -266,6 +266,45 @@ def test_selected_media_generation_and_scene_crud() -> None:
             added_id = added.json()["scene"]["id"]
             deleted = client.delete(f"/api/projects/{project_id}/scenes/{added_id}", headers=headers)
             assert deleted.status_code == 204, deleted.text
+
+
+def test_the_projects_house_style_reaches_the_render_prompt() -> None:
+    """A style set on the project must survive the hand-off to the background worker.
+
+    Both halves of that contract are asserted together on purpose: `_scene_payloads` writes
+    the keys and `build_image_prompt` reads them, so renaming either side would silently
+    drop the style from every render instead of failing.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _create_project(client, headers)
+            parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers).json()
+            settings = client.patch(
+                f"/api/projects/{project_id}/production-settings",
+                json={"stylePrompt": "水墨写意", "negativePrompt": "文字水印"},
+                headers=headers,
+            )
+            assert settings.status_code == 200, settings.text
+
+            with database.db() as session:
+                project = session.exec(database.select(Project).where(Project.id == project_id)).first()
+                episode = session.exec(database.select(Episode).where(Episode.id == parsed["episodeId"])).first()
+                scenes = list(session.exec(database.select(Scene).where(Scene.project_id == project_id)).all())
+                payloads = _scene_payloads(session, project, episode.episode_number, scenes)
+
+            assert payloads[0]["style_prompt"] == "水墨写意"
+            assert payloads[0]["negative_prompt"] == "文字水印"
+            prompt = build_image_prompt(payloads[0])
+            assert "Overall style: 水墨写意." in prompt
+            assert "Avoid: 文字水印." in prompt
+
+
+def test_a_project_with_no_house_style_renders_a_clean_prompt() -> None:
+    """The empty default must not leak a dangling "Overall style:." into every prompt."""
+    prompt = build_image_prompt({"narration": "山门在雾里", "style_prompt": "", "negative_prompt": ""})
+
+    assert "Overall style" not in prompt
+    assert "Avoid" not in prompt
 
 
 def test_retry_status_keeps_other_failed_scenes_visible() -> None:
@@ -303,6 +342,8 @@ if __name__ == "__main__":
     test_reparse_holds_back_until_the_user_accepts_losing_rendered_shots()
     test_scene_assets_are_served_through_a_fresh_signed_link()
     test_scene_terminal_progress_survives_reload()
-    test_selected_media_generation_and_scene_crud()
+    test_selected_scene_generation_and_scene_crud()
+    test_the_projects_house_style_reaches_the_render_prompt()
+    test_a_project_with_no_house_style_renders_a_clean_prompt()
     test_retry_status_keeps_other_failed_scenes_visible()
     test_second_generate_is_refused_while_the_first_is_running()

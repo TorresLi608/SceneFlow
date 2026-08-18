@@ -13,7 +13,7 @@ from openai import RateLimitError
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
-from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _qwen_image_size, _qwen_image_url, image_base_url_for
+from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _is_native_qwen_image_url, _qwen_image_size, _qwen_image_url, image_base_url_for
 from app.models import User
 from app.utils.common import now
 
@@ -38,6 +38,22 @@ def test_generate_image_records_usage_without_references() -> None:
     assert result["image"]["url"] == "http://example.test/image.png"
     assert usage.call_args.args[:3] == (1, config, "image")
     assert isinstance(usage.call_args.args[3], float)
+
+
+def test_generate_image_enforces_configured_reference_limit() -> None:
+    config = {"provider": "openai", "apiKey": "test-key", "model": "gpt-image-1", "imageMaxReferenceImages": 2}
+    with (
+        patch("app.api.v1.images.db", _db),
+        patch("app.api.v1.images.active_model_config", return_value=config),
+        patch("app.api.v1.images.require_model_balance"),
+        patch("app.api.v1.images.models.edit_image", AsyncMock()) as edit_image,
+    ):
+        try:
+            asyncio.run(generate_image({"prompt": "a fox", "references": [{}, {}, {}]}, 1))
+            raise AssertionError("image generation should reject references above the configured limit")
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 400
+        edit_image.assert_not_awaited()
 
 
 def test_official_image_requires_balance_but_personal_config_does_not() -> None:
@@ -171,33 +187,38 @@ def test_qwen_image_reads_wan27_choice_result() -> None:
     ) == "https://image.test/wan27.png"
 
 
-def test_qwen_image_relay_keeps_http_compatibility() -> None:
-    created = SimpleNamespace(json=lambda: {"output": {"task_id": "task-1"}}, raise_for_status=lambda: None)
-    task = SimpleNamespace(json=lambda: {"output": {"task_status": "SUCCEEDED", "results": [{"url": "https://image.test/result.png"}]}}, raise_for_status=lambda: None)
-    image = SimpleNamespace(content=b"png", headers={"content-type": "image/png"}, raise_for_status=lambda: None)
-    client = AsyncMock()
-    client.post.return_value = created
-    client.get.side_effect = [task, image]
-    context = AsyncMock()
-    context.__aenter__.return_value = client
-    with patch("app.llms.router.httpx.AsyncClient", return_value=context), patch("app.llms.router.asyncio.sleep", new=AsyncMock()):
-        result = asyncio.run(ModelRouter()._generate_qwen_image("test-key", "wan2.7-image", "draw it", [], "1:1", "1K", "https://relay.example.com/api/v1"))
+def test_qwen_image_relay_uses_openai_compatibility() -> None:
+    generate = AsyncMock(
+        return_value=SimpleNamespace(data=[SimpleNamespace(b64_json="cG5n")])
+    )
+    client = Mock(return_value=SimpleNamespace(images=SimpleNamespace(generate=generate)))
+    with patch("app.llms.router.AsyncOpenAI", client):
+        result = asyncio.run(
+            ModelRouter().generate_image(
+                "test-key", "wan2.7-image", "draw it", "1:1", "1K", "https://relay.example.com/v1", "qwen"
+            )
+        )
 
     assert result.data == b"png"
-    assert client.post.call_args.args[0] == "https://relay.example.com/api/v1/services/aigc/image-generation/generation"
+    assert client.call_args.kwargs["base_url"] == "https://relay.example.com/v1"
+    assert generate.call_args.kwargs["size"] == "1024x1024"
+    assert generate.call_args.kwargs["quality"] == "low"
 
 
 def test_qwen_image_normalizes_only_the_official_dashscope_url() -> None:
+    assert _is_native_qwen_image_url("https://dashscope.aliyuncs.com/compatible-mode/v1")
+    assert not _is_native_qwen_image_url("https://relay.example.com/v1")
     assert image_base_url_for("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1") == "https://dashscope.aliyuncs.com/api/v1"
     assert image_base_url_for("qwen", "https://relay.example.com/compatible-mode/v1") == "https://relay.example.com/compatible-mode/v1"
 
 
 if __name__ == "__main__":
     test_generate_image_records_usage_without_references()
+    test_generate_image_enforces_configured_reference_limit()
     test_official_image_requires_balance_but_personal_config_does_not()
     test_gemini_image_uses_generate_content_without_duplicate_api_version()
     test_openai_image_does_not_retry_provider_errors()
     test_qwen_image_uses_async_task_with_reference_images()
     test_qwen_image_reads_wan27_choice_result()
-    test_qwen_image_relay_keeps_http_compatibility()
+    test_qwen_image_relay_uses_openai_compatibility()
     test_qwen_image_normalizes_only_the_official_dashscope_url()

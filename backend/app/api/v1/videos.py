@@ -27,14 +27,14 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
         raise HTTPException(400, "prompt is required")
 
     references = payload.get("references") or ([payload["reference"]] if payload.get("reference") else [])
-    reference_video = payload.get("referenceVideo")
-    driving_audio = payload.get("drivingAudio")
+    reference_videos = payload.get("referenceVideos") or ([payload["referenceVideo"]] if payload.get("referenceVideo") else [])
+    reference_audios = payload.get("referenceAudios") or ([payload.get("referenceAudio") or payload.get("drivingAudio")] if payload.get("referenceAudio") or payload.get("drivingAudio") else [])
     if not isinstance(references, list) or any(not isinstance(item, dict) for item in references):
         raise HTTPException(400, "references must be image data URLs")
-    if reference_video is not None and not isinstance(reference_video, dict):
-        raise HTTPException(400, "referenceVideo must be a video data URL")
-    if driving_audio is not None and not isinstance(driving_audio, dict):
-        raise HTTPException(400, "drivingAudio must be an audio data URL")
+    if not isinstance(reference_videos, list) or any(not isinstance(item, dict) for item in reference_videos):
+        raise HTTPException(400, "referenceVideos must be a list of video inputs")
+    if not isinstance(reference_audios, list) or any(not isinstance(item, dict) for item in reference_audios):
+        raise HTTPException(400, "referenceAudios must be a list of audio inputs")
 
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
@@ -49,14 +49,14 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
 
     started_at = time.monotonic()
     try:
-        quality, resolution, fps, duration, prompt_extend = resolve_video_options(payload, config["videoCapabilities"])
-        validate_video_inputs(config["videoCapabilities"], references, reference_video, driving_audio)
+        quality, aspect_ratio, fps, duration, prompt_extend = resolve_video_options(payload, config["videoCapabilities"])
+        validate_video_inputs(config["videoCapabilities"], references, reference_videos, reference_audios)
         if config["provider"] == "qwen":
             if quality:
                 quality = resolve_qwen_video_quality(str(quality))
-            validate_qwen_video_input(config["model"], references, reference_video)
-        elif resolution:
-            resolve_video_settings(config["provider"], resolution)
+            validate_qwen_video_input(config["model"], references, reference_videos)
+        elif aspect_ratio:
+            resolve_video_settings(config["provider"], aspect_ratio, str(quality or "720p"))
     except (TypeError, ValueError) as exc:
         raise HTTPException(400, str(exc)[:220]) from exc
 
@@ -66,14 +66,14 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
             api_key=config["apiKey"],
             model=config["model"],
             prompt=prompt,
-            resolution=resolution,
+            aspect_ratio=aspect_ratio,
             fps=fps,
             duration=duration,
             quality=quality,
             prompt_extend=prompt_extend,
             references=references,
-            reference_video=reference_video,
-            driving_audio=driving_audio,
+            reference_videos=reference_videos,
+            reference_audios=reference_audios,
             base_url=config.get("baseUrl", ""),
         )
     except Exception as exc:
@@ -83,7 +83,7 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
     video = {
         "url": persist_video(result.data),
         "model": config["model"],
-        "source": "video-to-video" if reference_video else ("image-to-video" if references else "text-to-video"),
+        "source": "video-to-video" if reference_videos else ("image-to-video" if references else "text-to-video"),
     }
     if fps is not None:
         video["fps"] = fps

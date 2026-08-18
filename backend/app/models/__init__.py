@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-from app.models.character import Character, CharacterVariant, SceneCharacter
+from app.models.character import Character, CharacterState, SceneCharacter
 from app.models.chat import ChatMessage, ChatSession
 from app.models.config import ModelConfig, UserOfficialConfigDefault
-from app.models.export import MAX_EXPORT_EPISODES, ExportJob
+from app.models.export import MAX_EXPORT_CLIPS, ExportJob
 from app.models.project import Episode, GenerationJob, Project, Scene
+from app.models.prop import Prop
 from app.models.usage import UsageLog
 from app.models.user import InvitationCode, RedemptionCode, User
+from app.models.voice import VoiceProfile
 
 
 __all__ = [
-    "MAX_EXPORT_EPISODES",
+    "MAX_EXPORT_CLIPS",
     "Character",
-    "CharacterVariant",
+    "CharacterState",
     "ChatMessage",
     "ChatSession",
     "Episode",
@@ -23,10 +25,12 @@ __all__ = [
     "InvitationCode",
     "ModelConfig",
     "Project",
+    "Prop",
     "RedemptionCode",
     "Scene",
     "SceneCharacter",
     "UsageLog",
     "User",
     "UserOfficialConfigDefault",
+    "VoiceProfile",
 ]

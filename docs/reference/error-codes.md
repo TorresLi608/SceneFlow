@@ -29,6 +29,7 @@ Every error response is `{"error": "<message>"}` — see `../conventions/error-h
 | `audio purpose only supports provider edge/system/openai/qwen` | model config write |
 | `video purpose only supports provider doubao/gemini/qwen` | model config write |
 | `video purpose requires modelSeries` | model config write |
+| `imageMaxReferenceImages must be an integer` / `imageMaxReferenceImages must be 0 or greater` | image model config write |
 | `image generation currently only supports provider openai/gemini/qwen` | image router |
 | `disabled config cannot be default` | model config activate |
 | `stored API key cannot be decrypted` | any config read whose ciphertext no longer decodes |
@@ -84,7 +85,7 @@ Raised by FastAPI, never by hand. Produced by an unknown field (`extra="forbid"`
 
 ### 502 — provider failure
 
-`failed to parse script: …` · `failed to optimize script: …` · `failed to chat: …` · `failed to generate portrait: …` · `AI 图片生成失败：…` · `AI 视频生成失败：…`
+`failed to parse script: …` · `failed to optimize script: …` · `failed to optimize prompt: …` · `failed to chat: …` · `failed to generate portrait: …` · `AI 图片生成失败：…` · `AI 视频生成失败：…`
 
 Provider text is truncated (180–220 chars) before it reaches the client or a log line.
 

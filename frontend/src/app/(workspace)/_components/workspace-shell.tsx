@@ -18,6 +18,7 @@ import { AppSidebar } from "./app-sidebar";
 
 function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/images")) return "home.images";
+  if (pathname.startsWith("/audio")) return "home.audioGeneration";
   if (pathname.startsWith("/videos")) return "home.videos";
   if (pathname.startsWith("/usage")) return "home.usageLogs";
   if (pathname.startsWith("/profile")) return "home.personalSettings";

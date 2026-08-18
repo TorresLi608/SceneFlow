@@ -5,14 +5,16 @@ from typing import Any
 
 from app.models import (
     Character,
-    CharacterVariant,
+    CharacterState,
     ChatMessage,
     ChatSession,
     Episode,
     ModelConfig,
     Project,
+    Prop,
     Scene,
     User,
+    VoiceProfile,
 )
 from app.services.artifact_service import signed_url_for_stored
 from app.services.config_service import video_capabilities
@@ -69,6 +71,7 @@ def config_json(config: ModelConfig) -> dict[str, Any]:
         "cacheWritePricePerMillion": price("cache_write_price_per_million", "0"),
         "unitPrice": price("unit_price", "0"),
         "unitName": config.unit_name,
+        "imageMaxReferenceImages": config.image_max_reference_images if config.image_max_reference_images is not None else 4,
         "videoCapabilities": video_capabilities(config) if config.purpose == "video" else None,
     }
 
@@ -151,6 +154,8 @@ def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, An
         "videoProgress": episode.video_progress or 0,
         "durationMs": episode.duration_ms or 0,
         "sceneCount": scene_count,
+        # Enough for a list row to show whether this episode has been anchored yet.
+        "toneImageStatus": episode.tone_image_status or "idle",
         "errorMessage": episode.error_message or "",
         "updatedAt": episode.updated_at,
     }
@@ -161,27 +166,36 @@ def episode_json(episode: Episode, scenes: list[Scene], cast: dict[str, list[str
     return {
         **episode_summary_json(episode, len(scenes)),
         "sourceText": episode.source_text or "",
+        # The style anchor the per-shot renders were matched against.
+        "toneImageUrl": scene_asset_url(episode.tone_image_path, f"{stem}-tone"),
+        "toneImageStatus": episode.tone_image_status or "idle",
         "videoUrl": scene_asset_url(episode.video_path, stem),
         "scenes": [scene_json(scene, (cast or {}).get(scene.id)) for scene in scenes],
     }
 
 
-def character_variant_json(variant: CharacterVariant) -> dict[str, Any]:
+def character_state_json(state: CharacterState) -> dict[str, Any]:
     return {
-        "id": variant.id,
-        "characterId": variant.character_id,
-        "name": variant.name,
-        "appearancePrompt": variant.appearance_prompt or "",
-        "referenceImageUrl": scene_asset_url(variant.reference_image_path, f"variant-{variant.id}"),
-        "voiceModel": variant.voice_model or "",
-        "fromEpisode": variant.from_episode,
-        # Null means the variant stays in effect for every later episode.
-        "toEpisode": variant.to_episode,
-        "updatedAt": variant.updated_at,
+        "id": state.id,
+        "characterId": state.character_id,
+        "name": state.name,
+        "description": state.description or "",
+        "appearancePrompt": state.appearance_prompt or "",
+        "systemPrompt": state.system_prompt or "",
+        "finalPrompt": state.final_prompt or "",
+        # The state's turnaround sheet: front, three-quarter, and profile in one image.
+        "referenceImageUrl": scene_asset_url(state.reference_image_path, f"state-{state.id}"),
+        "voiceModel": state.voice_model or "",
+        "orderNum": state.order_num or 0,
+        # Null on either means the state is not pinned to an episode range at all: it is one
+        # of several parallel looks rather than a change at a point in the timeline.
+        "fromEpisode": state.from_episode,
+        "toEpisode": state.to_episode,
+        "updatedAt": state.updated_at,
     }
 
 
-def character_json(character: Character, variants: list[CharacterVariant] | None = None) -> dict[str, Any]:
+def character_json(character: Character, states: list[CharacterState] | None = None) -> dict[str, Any]:
     return {
         "id": character.id,
         "projectId": character.project_id,
@@ -190,14 +204,46 @@ def character_json(character: Character, variants: list[CharacterVariant] | None
         "description": character.description or "",
         "appearancePrompt": character.appearance_prompt or "",
         "referenceImageUrl": scene_asset_url(character.reference_image_path, f"character-{character.id}"),
+        # Every state of this character tiled into one image.
+        "sheetImageUrl": scene_asset_url(character.sheet_image_path, f"character-sheet-{character.id}"),
         "imageProvider": character.image_provider or "",
         "imageModel": character.image_model or "",
         "voiceProvider": character.voice_provider or "",
         "voiceModel": character.voice_model or "",
+        "voiceProfileId": character.voice_profile_id,
         "isLocked": bool(character.is_locked),
         "orderNum": character.order_num or 0,
-        "variants": [character_variant_json(variant) for variant in variants or []],
+        "states": [character_state_json(state) for state in states or []],
         "updatedAt": character.updated_at,
+    }
+
+
+def voice_profile_json(profile: VoiceProfile) -> dict[str, Any]:
+    return {
+        "id": profile.id,
+        "projectId": profile.project_id,
+        "name": profile.name,
+        "note": profile.note or "",
+        "voiceProvider": profile.voice_provider or "",
+        "voiceModel": profile.voice_model or "",
+        "sampleText": profile.sample_text or "",
+        "audioUrl": scene_asset_url(profile.audio_path, f"voice-{profile.id}"),
+        "orderNum": profile.order_num or 0,
+        "updatedAt": profile.updated_at,
+    }
+
+
+def prop_json(prop: Prop) -> dict[str, Any]:
+    return {
+        "id": prop.id,
+        "projectId": prop.project_id,
+        "name": prop.name,
+        "description": prop.description or "",
+        "systemPrompt": prop.system_prompt or "",
+        "finalPrompt": prop.final_prompt or "",
+        "imageUrl": scene_asset_url(prop.image_path, f"prop-{prop.id}"),
+        "orderNum": prop.order_num or 0,
+        "updatedAt": prop.updated_at,
     }
 
 
@@ -218,8 +264,16 @@ def project_json(
     return {
         "id": project.id,
         "title": project.title or "未命名项目",
+        "description": project.description or "",
+        # Minted per response like every other asset: the row stores a path, not a URL.
+        "coverImageUrl": scene_asset_url(project.cover_image_path, f"cover-{project.id}"),
         "originalScript": project.original_script or "",
         "seriesBible": project.series_bible or "",
+        # The whole cast and every prop, each tiled into one sheet the renderer carries.
+        "characterSheetUrl": scene_asset_url(project.character_sheet_path, f"cast-{project.id}"),
+        "propSheetUrl": scene_asset_url(project.prop_sheet_path, f"props-{project.id}"),
+        # Every voice introducing itself, concatenated; a timbre reference for the video model.
+        "voiceSheetUrl": scene_asset_url(project.voice_sheet_path, f"voices-{project.id}"),
         "status": project.status or "idle",
         "videoStatus": project.video_status or "idle",
         "videoProgress": project.video_progress or 0,

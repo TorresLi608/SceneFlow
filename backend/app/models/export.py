@@ -1,4 +1,4 @@
-"""Merged delivery of several finished episodes as one file."""
+"""Merged delivery: several rendered shots joined into one file the user can export."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from sqlalchemy import CheckConstraint, Index, text
 from sqlmodel import Field, SQLModel
 
 
-# Concatenating a whole series in one pass would tie up the worker and produce a file nobody
-# can upload; ten episodes is the documented ceiling for a single export.
-MAX_EXPORT_EPISODES = 10
+# Concatenating an unbounded selection would tie up the process and produce a file nobody
+# can upload; this is the documented ceiling for a single export.
+MAX_EXPORT_CLIPS = 60
 
 
 class ExportJob(SQLModel, table=True):
@@ -26,9 +26,10 @@ class ExportJob(SQLModel, table=True):
     finished_at: str | None = None
     user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
     project_id: str = Field(foreign_key="projects.id", ondelete="CASCADE")
-    # JSON array of episode ids, in output order.
-    episode_ids: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
-    # Human-facing range such as "1-3", kept so the history list reads the way the user asked.
+    # JSON array of scene ids, in output order. The user picks and orders the clips, so this
+    # is the export, not a derived view of an episode.
+    source_scene_ids: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
+    # Human-facing label such as "第一集 1-6", kept so the history reads the way it was asked for.
     range_label: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     status: str = Field(default="queued", sa_column_kwargs={"server_default": text("'queued'")})
     progress: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})

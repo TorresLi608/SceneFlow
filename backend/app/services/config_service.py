@@ -13,9 +13,9 @@ from app.llms.router import pick_model
 from app.models import ModelConfig, UserOfficialConfigDefault
 
 
-VIDEO_QUALITIES = ("480p", "720p", "1080p")
+VIDEO_QUALITIES = ("480p", "720p", "1080p", "2K", "4K")
 VIDEO_FPS = (24, 30, 60)
-VIDEO_RESOLUTIONS = ("1280x720", "720x1280", "1024x1024", "1920x1080")
+VIDEO_ASPECT_RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive")
 
 
 def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]:
@@ -26,27 +26,36 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
         return {
             "qualities": list(VIDEO_QUALITIES),
             "fps": [],
-            "resolutions": [],
+            "aspectRatios": list(VIDEO_ASPECT_RATIOS),
             "promptExtend": is_i2v,
             "minDuration": 2 if is_i2v else 3,
             "maxDuration": 15,
+            "referenceImages": is_i2v or is_r2v,
             "referenceImagesRequired": is_i2v or is_r2v,
             "maxReferenceImages": 5 if is_r2v else (1 if is_i2v or is_video_edit else 0),
             "referenceVideo": is_video_edit,
-            "drivingAudio": is_i2v,
+            "maxReferenceVideos": 1 if is_video_edit else 0,
+            "referenceVideosRequired": False,
+            "referenceAudio": is_i2v,
+            "maxReferenceAudios": 1 if is_i2v else 0,
+            "referenceAudiosRequired": False,
         }
-    resolutions = [value for value in VIDEO_RESOLUTIONS if provider != "gemini" or value != "1024x1024"]
     return {
-        "qualities": [],
+        "qualities": list(VIDEO_QUALITIES),
         "fps": [24],
-        "resolutions": resolutions,
+        "aspectRatios": [value for value in VIDEO_ASPECT_RATIOS if provider != "gemini" or value != "1:1"],
         "promptExtend": False,
         "minDuration": 3,
         "maxDuration": 15,
+        "referenceImages": False,
         "referenceImagesRequired": False,
-        "maxReferenceImages": 1,
+        "maxReferenceImages": 0,
         "referenceVideo": False,
-        "drivingAudio": False,
+        "maxReferenceVideos": 0,
+        "referenceVideosRequired": False,
+        "referenceAudio": False,
+        "maxReferenceAudios": 0,
+        "referenceAudiosRequired": False,
     }
 
 
@@ -72,30 +81,83 @@ def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> 
     prompt_extend = value.get("promptExtend", False)
     if not isinstance(prompt_extend, bool):
         raise HTTPException(400, "videoCapabilities.promptExtend must be boolean")
-    try:
-        max_reference_images = int(value.get("maxReferenceImages", 0))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(400, "videoCapabilities.maxReferenceImages must be an integer") from exc
-    if isinstance(value.get("maxReferenceImages"), bool) or not 0 <= max_reference_images <= 9:
-        raise HTTPException(400, "videoCapabilities.maxReferenceImages must be between 0 and 9")
-    required = value.get("referenceImagesRequired", False)
-    reference_video = value.get("referenceVideo", False)
-    driving_audio = value.get("drivingAudio", False)
-    if not all(isinstance(item, bool) for item in (required, reference_video, driving_audio)):
-        raise HTTPException(400, "video input capability flags must be boolean")
-    if required and max_reference_images == 0:
+    def limit(name: str, supported: bool, maximum: int | None = 9) -> int:
+        try:
+            result = int(value.get(name, 0))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, f"videoCapabilities.{name} must be an integer") from exc
+        if isinstance(value.get(name), bool) or result < 0 or (maximum is not None and result > maximum):
+            if maximum is None:
+                raise HTTPException(400, f"videoCapabilities.{name} must be 0 or greater")
+            raise HTTPException(400, f"videoCapabilities.{name} must be between 0 and {maximum}")
+        if supported and result == 0:
+            raise HTTPException(400, f"videoCapabilities.{name} must be greater than 0 when supported")
+        return result if supported else 0
+
+    def flag(name: str, default: bool = False) -> bool:
+        result = value.get(name, default)
+        if not isinstance(result, bool):
+            raise HTTPException(400, f"videoCapabilities.{name} must be boolean")
+        return result
+
+    reference_images = flag("referenceImages", bool(value.get("maxReferenceImages", 0)))
+    max_reference_images = limit("maxReferenceImages", reference_images, None)
+    reference_images_required = flag("referenceImagesRequired")
+    reference_video = flag("referenceVideo")
+    legacy_reference_audio = flag("drivingAudio") if "referenceAudio" not in value else False
+    value = {
+        **value,
+        "maxReferenceVideos": value.get("maxReferenceVideos", 1 if reference_video else 0),
+        "maxReferenceAudios": value.get("maxReferenceAudios", 1 if legacy_reference_audio else 0),
+    }
+    max_reference_videos = limit("maxReferenceVideos", reference_video)
+    reference_videos_required = flag("referenceVideosRequired")
+    reference_audio = flag("referenceAudio", legacy_reference_audio)
+    max_reference_audios = limit("maxReferenceAudios", reference_audio)
+    reference_audios_required = flag("referenceAudiosRequired")
+    if reference_images_required and not reference_images:
+        raise HTTPException(400, "required reference images need referenceImages enabled")
+    if reference_images_required and max_reference_images == 0:
         raise HTTPException(400, "required reference images need maxReferenceImages greater than 0")
+    if reference_videos_required and not reference_video:
+        raise HTTPException(400, "required reference videos need referenceVideo enabled")
+    if reference_videos_required and max_reference_videos == 0:
+        raise HTTPException(400, "required reference videos need maxReferenceVideos greater than 0")
+    if reference_audios_required and not reference_audio:
+        raise HTTPException(400, "required reference audios need referenceAudio enabled")
+    if reference_audios_required and max_reference_audios == 0:
+        raise HTTPException(400, "required reference audios need maxReferenceAudios greater than 0")
+    raw_aspect_ratios = value.get("aspectRatios")
+    if raw_aspect_ratios is None and isinstance(value.get("resolutions"), list):
+        aspect_by_resolution = {
+            "1280x720": "16:9",
+            "720x1280": "9:16",
+            "1024x1024": "1:1",
+            "1920x1080": "16:9",
+        }
+        raw_aspect_ratios = [aspect_by_resolution[item] for item in value["resolutions"] if item in aspect_by_resolution]
+    if raw_aspect_ratios is None:
+        normalized_aspect_ratios = choices("aspectRatios", VIDEO_ASPECT_RATIOS)
+    elif not isinstance(raw_aspect_ratios, list) or any(item not in VIDEO_ASPECT_RATIOS for item in raw_aspect_ratios):
+        raise HTTPException(400, "videoCapabilities.aspectRatios contains an unsupported value")
+    else:
+        normalized_aspect_ratios = [item for item in VIDEO_ASPECT_RATIOS if item in raw_aspect_ratios]
     return {
         "qualities": choices("qualities", VIDEO_QUALITIES),
         "fps": choices("fps", VIDEO_FPS),
-        "resolutions": choices("resolutions", VIDEO_RESOLUTIONS),
+        "aspectRatios": normalized_aspect_ratios,
         "promptExtend": prompt_extend,
         "minDuration": minimum,
         "maxDuration": maximum,
-        "referenceImagesRequired": required,
+        "referenceImages": reference_images,
+        "referenceImagesRequired": reference_images_required,
         "maxReferenceImages": max_reference_images,
         "referenceVideo": reference_video,
-        "drivingAudio": driving_audio,
+        "maxReferenceVideos": max_reference_videos,
+        "referenceVideosRequired": reference_videos_required,
+        "referenceAudio": reference_audio,
+        "maxReferenceAudios": max_reference_audios,
+        "referenceAudiosRequired": reference_audios_required,
     }
 
 
@@ -164,7 +226,7 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
             raise HTTPException(400, "audio purpose only supports provider edge/system/openai/qwen")
         if not model.strip():
             raise HTTPException(400, "audio purpose requires a voice or modelSeries")
-        if provider == "qwen" and ":" not in model:
+        if provider == "qwen" and ":" not in model and model != "qwen-audio-3.0-tts-flash":
             raise HTTPException(400, "Qwen audio modelSeries must use model:voice")
         return
     if provider == "custom":
@@ -205,6 +267,16 @@ def normalize_config_payload(payload: dict[str, Any], current: ModelConfig | Non
     else:
         api_key = str(payload.get("apiKey", "")).strip()
     validate_config_fields(purpose, provider, model, base_url)
+    raw_image_limit = payload.get(
+        "imageMaxReferenceImages",
+        current.image_max_reference_images if current and current.image_max_reference_images is not None else 4,
+    )
+    try:
+        image_max_reference_images = int(raw_image_limit)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "imageMaxReferenceImages must be an integer") from exc
+    if isinstance(raw_image_limit, bool) or image_max_reference_images < 0:
+        raise HTTPException(400, "imageMaxReferenceImages must be 0 or greater")
     capabilities = None
     if purpose == "video":
         existing_capabilities = (
@@ -223,6 +295,7 @@ def normalize_config_payload(payload: dict[str, Any], current: ModelConfig | Non
         "base_url": base_url,
         "model": model,
         "api_key": api_key,
+        "image_max_reference_images": image_max_reference_images,
         "video_capabilities": capabilities,
     }
 
@@ -241,6 +314,7 @@ def config_create_fields(payload: dict[str, Any], normalized: dict[str, Any]) ->
         "encrypted_key": encrypt(normalized["api_key"]),
         "is_active": 1 if payload.get("isActive") else 0,
         "is_enabled": is_enabled,
+        "image_max_reference_images": normalized["image_max_reference_images"],
         "video_capabilities_json": json.dumps(normalized["video_capabilities"], separators=(",", ":")) if normalized["video_capabilities"] else None,
     }
 
@@ -269,6 +343,8 @@ def config_update_fields(payload: dict[str, Any], current: ModelConfig, normaliz
         updates["is_enabled"] = 1 if payload["isEnabled"] else 0
         if not payload["isEnabled"]:
             updates["is_active"] = 0
+    if "imageMaxReferenceImages" in payload or ("purpose" in payload and normalized["purpose"] != current.purpose):
+        updates["image_max_reference_images"] = normalized["image_max_reference_images"]
     if (
         "videoCapabilities" in payload
         or ("purpose" in payload and normalized["purpose"] != current.purpose)
@@ -308,6 +384,7 @@ def _model_config(config: ModelConfig | None, purpose: str, stage: str, source: 
         "source": source,
         "configId": config.id if source == "user" else None,
         "officialConfigId": config.id if source == "official" else None,
+        "imageMaxReferenceImages": config.image_max_reference_images if config.image_max_reference_images is not None else 4,
         "videoCapabilities": video_capabilities(config) if purpose == "video" else None,
     }
 

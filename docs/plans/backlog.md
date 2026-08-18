@@ -11,7 +11,6 @@
 
 ## Product gaps
 
-- **Export is schema only.** `ExportJob` and `MAX_EXPORT_EPISODES` (10) exist in `app/models/export.py`; no service or endpoint reads them. Merging up to ten episodes into one render is designed but unbuilt.
 - **Project jobs are invisible.** Cancel and retry endpoints have no UI.
 - **No search over domain content.** Scripts, shots, characters, and chat messages are not searchable; only admin lists have filters. See `../design/feature-search.md`.
 - **No sort controls** on any list; each has one fixed order.

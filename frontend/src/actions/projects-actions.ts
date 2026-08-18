@@ -1,35 +1,61 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
 import type {
+  CastSheetResponse,
   CharacterItemResponse,
   CharacterListResponse,
-  CharacterVariantItemResponse,
+  CharacterStateItemResponse,
   CreateCharacterInput,
-  CreateCharacterVariantInput,
+  CreateCharacterStateInput,
   CreateEpisodeInput,
+  CreatePropInput,
   CreateSceneInput,
+  DraftPromptInput,
+  DraftPromptResponse,
   EpisodeItemResponse,
   EpisodeListResponse,
+  ExportItemResponse,
+  ExportListResponse,
   GenerateProjectInput,
   GenerateProjectResponse,
+  GenerateCoverInput,
+  GenerateCoverResponse,
+  GenerateReferenceImageInput,
+  GenerateStoryboardInput,
+  GenerateStoryboardResponse,
   GenerateVideoInput,
   GenerateVideoResponse,
   OptimizeProjectInput,
   OptimizeProjectResponse,
   ParseProjectInput,
   ParseProjectResponse,
+  CreateExportInput,
   CreateProjectInput,
+  CreateVoiceProfileInput,
   ProjectItemResponse,
   ProjectListResponse,
+  PropItemResponse,
+  PropListResponse,
+  PropSheetResponse,
   GenerationJobListResponse,
+  OptimizeDescriptionInput,
+  OptimizeDescriptionResponse,
   ReorderScenesInput,
   Scene,
+  SetProjectCoverInput,
   SetSceneCastInput,
   SetSceneCastResponse,
   UpdateCharacterInput,
+  UpdateCharacterStateInput,
   UpdateEpisodeInput,
   UpdateProjectInput,
   UpdateProductionSettingsInput,
+  UpdatePropInput,
   UpdateSceneInput,
+  UpdateVoiceProfileInput,
+  UploadReferenceImageInput,
+  VoiceProfileItemResponse,
+  VoiceProfileListResponse,
+  VoiceSheetResponse,
 } from "@/types/project";
 
 export async function listProjectsAction() {
@@ -115,6 +141,37 @@ export async function deleteProjectAction(projectID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}`);
 }
 
+export async function setProjectCoverAction(projectID: string, payload: SetProjectCoverInput) {
+  const response = await httpClient.put<ProjectItemResponse>(`/api/bff/projects/${projectID}/cover`, payload);
+  return response.data;
+}
+
+export async function clearProjectCoverAction(projectID: string) {
+  const response = await httpClient.delete<ProjectItemResponse>(`/api/bff/projects/${projectID}/cover`);
+  return response.data;
+}
+
+/**
+ * Draws a cover and returns the bytes as a data URL without storing them, so the create
+ * dialog can use it before a project exists. Apply it with `setProjectCoverAction`.
+ */
+export async function generateCoverAction(payload: GenerateCoverInput) {
+  const response = await httpClient.post<GenerateCoverResponse>("/api/bff/projects/cover/generate", payload, {
+    timeout: generationRequestTimeout,
+  });
+  return response.data;
+}
+
+/** Returns the polished synopsis without saving it — the caller confirms before writing back. */
+export async function optimizeDescriptionAction(payload: OptimizeDescriptionInput) {
+  const response = await httpClient.post<OptimizeDescriptionResponse>(
+    "/api/bff/projects/description/optimize",
+    payload,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
 export async function listEpisodesAction(projectID: string) {
   const response = await httpClient.get<EpisodeListResponse>(`/api/bff/projects/${projectID}/episodes`);
   return response.data;
@@ -145,6 +202,22 @@ export async function updateEpisodeAction(projectID: string, episodeID: string, 
 
 export async function deleteEpisodeAction(projectID: string, episodeID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/episodes/${episodeID}`);
+}
+
+/**
+ * Starts the two-pass render: a tone sheet that anchors the episode's look, then a frame per
+ * shot carrying it. Returns as soon as the run is queued — progress arrives by refetch.
+ */
+export async function generateStoryboardAction(
+  projectID: string,
+  episodeID: string,
+  payload: GenerateStoryboardInput
+) {
+  const response = await httpClient.post<GenerateStoryboardResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}/storyboard`,
+    payload
+  );
+  return response.data;
 }
 
 export async function listCharactersAction(projectID: string) {
@@ -182,20 +255,213 @@ export async function generateCharacterPortraitAction(projectID: string, charact
   return response.data;
 }
 
-export async function createCharacterVariantAction(
+export async function createCharacterStateAction(
   projectID: string,
   characterID: string,
-  payload: CreateCharacterVariantInput
+  payload: CreateCharacterStateInput
 ) {
-  const response = await httpClient.post<CharacterVariantItemResponse>(
-    `/api/bff/projects/${projectID}/characters/${characterID}/variants`,
+  const response = await httpClient.post<CharacterStateItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/states`,
     payload
   );
   return response.data;
 }
 
-export async function deleteCharacterVariantAction(projectID: string, characterID: string, variantID: string) {
-  await httpClient.delete(`/api/bff/projects/${projectID}/characters/${characterID}/variants/${variantID}`);
+export async function updateCharacterStateAction(
+  projectID: string,
+  characterID: string,
+  stateID: string,
+  payload: UpdateCharacterStateInput
+) {
+  const response = await httpClient.patch<CharacterStateItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}`,
+    payload
+  );
+  return response.data;
+}
+
+export async function deleteCharacterStateAction(projectID: string, characterID: string, stateID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}`);
+}
+
+/** Returns the drafted prompt for review; it is not saved until the user applies it. */
+export async function draftCharacterStatePromptAction(
+  projectID: string,
+  characterID: string,
+  stateID: string,
+  payload: DraftPromptInput
+) {
+  const response = await httpClient.post<DraftPromptResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/prompt`,
+    payload,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function generateCharacterStateImageAction(
+  projectID: string,
+  characterID: string,
+  stateID: string,
+  payload: GenerateReferenceImageInput
+) {
+  const response = await httpClient.post<CharacterItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
+    payload,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function uploadCharacterStateImageAction(
+  projectID: string,
+  characterID: string,
+  stateID: string,
+  payload: UploadReferenceImageInput
+) {
+  const response = await httpClient.put<CharacterItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
+    payload
+  );
+  return response.data;
+}
+
+export async function mergeCharacterSheetAction(projectID: string, characterID: string) {
+  const response = await httpClient.post<CharacterItemResponse>(
+    `/api/bff/projects/${projectID}/characters/${characterID}/sheet`,
+    undefined,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+/** Tiles every character and state into the single sheet a storyboard render carries. */
+export async function mergeCastSheetAction(projectID: string) {
+  const response = await httpClient.post<CastSheetResponse>(
+    `/api/bff/projects/${projectID}/characters/sheet`,
+    undefined,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function listPropsAction(projectID: string) {
+  const response = await httpClient.get<PropListResponse>(`/api/bff/projects/${projectID}/props`);
+  return response.data;
+}
+
+export async function createPropAction(projectID: string, payload: CreatePropInput) {
+  const response = await httpClient.post<PropItemResponse>(`/api/bff/projects/${projectID}/props`, payload);
+  return response.data;
+}
+
+export async function updatePropAction(projectID: string, propID: string, payload: UpdatePropInput) {
+  const response = await httpClient.patch<PropItemResponse>(
+    `/api/bff/projects/${projectID}/props/${propID}`,
+    payload
+  );
+  return response.data;
+}
+
+export async function deletePropAction(projectID: string, propID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/props/${propID}`);
+}
+
+export async function draftPropPromptAction(projectID: string, propID: string, payload: DraftPromptInput) {
+  const response = await httpClient.post<DraftPromptResponse>(
+    `/api/bff/projects/${projectID}/props/${propID}/prompt`,
+    payload,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function generatePropImageAction(
+  projectID: string,
+  propID: string,
+  payload: GenerateReferenceImageInput
+) {
+  const response = await httpClient.post<PropItemResponse>(
+    `/api/bff/projects/${projectID}/props/${propID}/image`,
+    payload,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function uploadPropImageAction(projectID: string, propID: string, payload: UploadReferenceImageInput) {
+  const response = await httpClient.put<PropItemResponse>(
+    `/api/bff/projects/${projectID}/props/${propID}/image`,
+    payload
+  );
+  return response.data;
+}
+
+export async function mergePropSheetAction(projectID: string) {
+  const response = await httpClient.post<PropSheetResponse>(
+    `/api/bff/projects/${projectID}/props/sheet`,
+    undefined,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+export async function listExportsAction(projectID: string) {
+  const response = await httpClient.get<ExportListResponse>(`/api/bff/projects/${projectID}/exports`);
+  return response.data;
+}
+
+/** Queues the merge and returns immediately; the caller polls the job for progress. */
+export async function createExportAction(projectID: string, payload: CreateExportInput) {
+  const response = await httpClient.post<ExportItemResponse>(`/api/bff/projects/${projectID}/exports`, payload);
+  return response.data;
+}
+
+export async function getExportAction(projectID: string, exportID: string) {
+  const response = await httpClient.get<ExportItemResponse>(`/api/bff/projects/${projectID}/exports/${exportID}`);
+  return response.data;
+}
+
+export async function listVoicesAction(projectID: string) {
+  const response = await httpClient.get<VoiceProfileListResponse>(`/api/bff/projects/${projectID}/voices`);
+  return response.data;
+}
+
+export async function createVoiceAction(projectID: string, payload: CreateVoiceProfileInput) {
+  const response = await httpClient.post<VoiceProfileItemResponse>(`/api/bff/projects/${projectID}/voices`, payload);
+  return response.data;
+}
+
+export async function updateVoiceAction(projectID: string, voiceID: string, payload: UpdateVoiceProfileInput) {
+  const response = await httpClient.patch<VoiceProfileItemResponse>(
+    `/api/bff/projects/${projectID}/voices/${voiceID}`,
+    payload
+  );
+  return response.data;
+}
+
+export async function deleteVoiceAction(projectID: string, voiceID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/voices/${voiceID}`);
+}
+
+/** Synthesises the profile's sample line so the user can hear it before binding it. */
+export async function previewVoiceAction(projectID: string, voiceID: string) {
+  const response = await httpClient.post<VoiceProfileItemResponse>(
+    `/api/bff/projects/${projectID}/voices/${voiceID}/preview`,
+    undefined,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
+}
+
+/** Concatenates every auditioned voice into the timbre reference the video model hears. */
+export async function mergeVoiceSheetAction(projectID: string) {
+  const response = await httpClient.post<VoiceSheetResponse>(
+    `/api/bff/projects/${projectID}/voices/merge`,
+    undefined,
+    { timeout: generationRequestTimeout }
+  );
+  return response.data;
 }
 
 export async function setSceneCastAction(projectID: string, sceneID: string, payload: SetSceneCastInput) {

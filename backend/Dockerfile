@@ -5,6 +5,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app/backend
 
+# ffmpeg/ffprobe are runtime dependencies, not build ones: tts_service measures clip length
+# with ffprobe, and voice-sheet and export concatenation shell out to ffmpeg.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 

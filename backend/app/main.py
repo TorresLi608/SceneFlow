@@ -10,17 +10,22 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
     admin,
+    audio,
     auth,
     characters,
     chat,
     episodes,
+    exports,
     images,
     jobs,
+    prompts,
     projects,
+    props,
     settings,
     usage,
     users,
     videos,
+    voices,
     websocket,
 )
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
@@ -41,7 +46,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Origin", "Content-Type", "Authorization"],
 )
 
@@ -54,11 +59,16 @@ app.include_router(admin.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(images.router)
+app.include_router(audio.router)
 app.include_router(videos.router)
 app.include_router(usage.router)
+app.include_router(prompts.router)
 app.include_router(projects.router)
 app.include_router(episodes.router)
 app.include_router(characters.router)
+app.include_router(props.router)
+app.include_router(voices.router)
+app.include_router(exports.router)
 app.include_router(jobs.router)
 app.include_router(websocket.router)
 

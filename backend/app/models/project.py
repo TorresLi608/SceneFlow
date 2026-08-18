@@ -20,6 +20,12 @@ class Project(SQLModel, table=True):
     deleted_at: str | None = None
     user_id: int
     title: str | None = None
+    # Shown on the series card. Optional: a project with no synopsis falls back to a
+    # placeholder in the UI rather than blocking creation.
+    description: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # A path relative to PRIVATE_GENERATED_DIR, never a URL — same rule as every other
+    # asset column here, because signed links expire after ARTIFACT_TTL_DAYS.
+    cover_image_path: str | None = None
     original_script: str | None = None
     status: str | None = Field(default="idle", sa_column_kwargs={"server_default": text("'idle'")})
     video_url: str | None = None
@@ -38,6 +44,14 @@ class Project(SQLModel, table=True):
     # World, tone, and running plot threads. Fed to the model when drafting the next episode
     # so a long-running series stays coherent instead of restarting from scratch each time.
     series_bible: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # The whole cast, and every prop, each tiled into one sheet. Rebuilt on demand and
+    # carried into storyboard renders: providers cap how many reference images one request
+    # may hold, so a series of any size has to arrive as a couple of sheets, not a crowd.
+    character_sheet_path: str | None = None
+    prop_sheet_path: str | None = None
+    # Every voice in the show introducing itself in its own timbre, concatenated into one
+    # track. Passed to the video model as a reference so it can keep speakers apart.
+    voice_sheet_path: str | None = None
 
 
 class Episode(SQLModel, table=True):
@@ -67,6 +81,13 @@ class Episode(SQLModel, table=True):
     synopsis: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     source_text: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     status: str = Field(default="draft", sa_column_kwargs={"server_default": text("'draft'")})
+    # A thumbnail grid of every shot in this episode, generated in one pass before the
+    # full-resolution renders. It exists to be a *style anchor*, not a deliverable: one
+    # sampling fixes lighting, colour, and render style for the whole episode, and each
+    # per-shot render then carries it as a reference. Without it the shots agree on faces
+    # (via the cast sheet) and on nothing else.
+    tone_image_path: str | None = None
+    tone_image_status: str = Field(default="idle", sa_column_kwargs={"server_default": text("'idle'")})
     video_path: str | None = None
     video_status: str = Field(default="idle", sa_column_kwargs={"server_default": text("'idle'")})
     video_progress: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})

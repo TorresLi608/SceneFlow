@@ -201,24 +201,38 @@ def _migrate_scene_assets(session: Session) -> None:
 
 
 def _backfill_first_episode(session: Session) -> None:
-    projects = session.exec(select(Project).where(Project.deleted_at.is_(None))).all()
-    for project in projects:
+    # Read `projects` with core SQL naming only the columns this backfill needs, rather
+    # than through the Project model. The legacy table predates every column added since,
+    # and an ORM select would name today's full column list against yesterday's table —
+    # so any future column on Project would break upgrading a legacy database.
+    rows = session.execute(
+        sa.select(
+            sa.column("id"),
+            sa.column("created_at"),
+            sa.column("updated_at"),
+            sa.column("original_script"),
+        )
+        .select_from(sa.table("projects"))
+        .where(sa.column("deleted_at").is_(None))
+    ).mappings().all()
+    for row in rows:
+        project_id = row["id"]
         episodes = session.exec(
             select(Episode)
-            .where(Episode.project_id == project.id, Episode.deleted_at.is_(None))
+            .where(Episode.project_id == project_id, Episode.deleted_at.is_(None))
             .order_by(Episode.episode_number)
         ).all()
-        project_scenes = session.exec(select(Scene).where(Scene.project_id == project.id)).all()
+        project_scenes = session.exec(select(Scene).where(Scene.project_id == project_id)).all()
         if not episodes:
-            stamp = project.updated_at or project.created_at or now()
+            stamp = row["updated_at"] or row["created_at"] or now()
             episode = Episode(
                 id=new_id("ep"),
-                created_at=project.created_at or stamp,
+                created_at=row["created_at"] or stamp,
                 updated_at=stamp,
-                project_id=project.id,
+                project_id=project_id,
                 episode_number=1,
                 title="第 1 集",
-                source_text=project.original_script or "",
+                source_text=row["original_script"] or "",
                 status="storyboard" if any(scene.deleted_at is None for scene in project_scenes) else "draft",
             )
             session.add(episode)

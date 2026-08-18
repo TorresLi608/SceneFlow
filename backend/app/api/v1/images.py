@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import re
 import time
 from typing import Any
 
@@ -10,14 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import db
 from app.api.deps import current_user_id
 from app.llms.registry import models
-from app.services.artifact_service import save_binary_artifact
+from app.services.artifact_service import decode_image_data_url, save_binary_artifact
 from app.services.config_service import active_model_config, official_model_config_any, user_model_config_any
 from app.services.usage_service import record_usage, require_model_balance
 
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
-DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpeg|jpg|webp));base64,(.+)$", re.DOTALL)
 QUALITY = {"1K": "low", "2K": "medium", "4K": "high"}
 RATIO = {
     "1:1": "1024x1024",
@@ -33,17 +30,10 @@ RATIO = {
 
 
 def parse_reference(value: dict[str, Any], index: int) -> tuple[str, bytes, str]:
-    match = DATA_URL_RE.match(str(value.get("data", "")))
-    if not match:
-        raise HTTPException(400, "reference images must be png/jpeg/webp data URLs")
-    mime_type, encoded = match.groups()
     try:
-        data = base64.b64decode(encoded, validate=True)
-    except Exception as exc:
-        raise HTTPException(400, "invalid reference image data") from exc
-    if not data or len(data) > 10 * 1024 * 1024:
-        raise HTTPException(400, "reference image must be 1 byte to 10MB")
-    ext = "jpg" if mime_type == "image/jpeg" else mime_type.removeprefix("image/")
+        data, mime_type, ext = decode_image_data_url(str(value.get("data", "")))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     name = str(value.get("name") or f"reference-{index}.{ext}")[:120]
     return name, data, mime_type
 
@@ -62,8 +52,6 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
         raise HTTPException(400, "prompt is required")
 
     references = payload.get("references") if isinstance(payload.get("references"), list) else []
-    if len(references) > 4:
-        raise HTTPException(400, "at most 4 reference images are supported")
 
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
@@ -75,6 +63,10 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
         else:
             config = active_model_config(session, user_id, "image", "图片生成")
         require_model_balance(session, user_id, config)
+
+    maximum = int(config.get("imageMaxReferenceImages", 4))
+    if len(references) > maximum:
+        raise HTTPException(400, f"selected model accepts at most {maximum} reference images")
 
     if config["provider"] not in {"openai", "gemini", "qwen"}:
         raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")

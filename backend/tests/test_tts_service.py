@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.config_service import normalize_config_payload
-from app.services.tts_service import _duration, _openai_tts, _qwen_tts, _system_tts, synthesize
+from app.services.tts_service import _duration, _openai_tts, _qwen_tts, _qwen_tts_sdk, _system_tts, synthesize
 
 
 def test_system_audio_config_needs_no_api_key() -> None:
@@ -69,6 +69,39 @@ def test_qwen_tts_uses_model_and_voice() -> None:
         assert path.read_bytes() == b"wav"
 
 
+def test_qwen_native_tts_uses_official_websocket_sdk() -> None:
+    synthesizer = MagicMock()
+    synthesizer.call.return_value = b"mp3"
+    with TemporaryDirectory() as directory, patch("app.services.tts_service.SpeechSynthesizer", return_value=synthesizer) as constructor, patch("app.services.tts_service.dashscope.api_key", "old-key"), patch("app.services.tts_service.dashscope.base_websocket_api_url", "old-url"):
+        path = Path(directory) / "voice.wav"
+        _qwen_tts_sdk("hello", "new-key", "qwen-audio-3.0-tts-flash", "", path)
+        assert path.read_bytes() == b"mp3"
+        assert constructor.call_args.kwargs == {"model": "qwen-audio-3.0-tts-flash", "voice": ""}
+        synthesizer.call.assert_called_once_with("hello", timeout_millis=15 * 60 * 1000)
+
+
+def test_qwen_native_tts_passes_supported_generation_options() -> None:
+    synthesizer = MagicMock()
+    synthesizer.call.return_value = b"mp3"
+    options = {
+        "format": "MP3_24000HZ_MONO_256KBPS",
+        "volume": 70,
+        "speech_rate": 1.2,
+        "pitch_rate": 0.9,
+        "seed": 42,
+        "instruction": "warm",
+        "language_hints": ["zh"],
+    }
+    with TemporaryDirectory() as directory, patch("app.services.tts_service.SpeechSynthesizer", return_value=synthesizer) as constructor:
+        _qwen_tts_sdk("hello", "new-key", "qwen-audio-3.0-tts-flash", "Cherry", Path(directory) / "voice.mp3", options)
+    assert constructor.call_args.kwargs["volume"] == 70
+    assert constructor.call_args.kwargs["speech_rate"] == 1.2
+    assert constructor.call_args.kwargs["pitch_rate"] == 0.9
+    assert constructor.call_args.kwargs["seed"] == 42
+    assert constructor.call_args.kwargs["instruction"] == "warm"
+    assert constructor.call_args.kwargs["language_hints"] == ["zh"]
+
+
 if __name__ == "__main__":
     test_system_audio_config_needs_no_api_key()
     test_system_tts_uses_available_binary()
@@ -76,3 +109,5 @@ if __name__ == "__main__":
     test_openai_tts_requests_wav()
     test_duration_uses_ffprobe()
     test_qwen_tts_uses_model_and_voice()
+    test_qwen_native_tts_uses_official_websocket_sdk()
+    test_qwen_native_tts_passes_supported_generation_options()

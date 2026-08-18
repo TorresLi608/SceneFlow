@@ -7,6 +7,7 @@ import tempfile
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from app.core import database
 from app.services import artifact_service
@@ -160,7 +161,9 @@ def test_upgrade_records_revision_and_preserves_sqlite_settings() -> None:
                 foreign_keys = connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
                 busy_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
 
-            assert revision == "2df5b20c732e"
+            # Read from the migration tree rather than hard-coding the id: a literal here
+            # silently goes stale the next time someone adds a revision, and did.
+            assert revision == ScriptDirectory.from_config(Config(database.ALEMBIC_CONFIG)).get_current_head()
             assert foreign_keys == 1
             assert busy_timeout == 30_000
             assert stat.S_IMODE(Path(database.DB_PATH).stat().st_mode) == 0o600

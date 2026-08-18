@@ -40,7 +40,7 @@ interface SceneCardProps {
   selected: boolean;
   disabled: boolean;
   onSelectedChange: (selected: boolean) => void;
-  onGenerate: (media: "image" | "audio" | "video") => void;
+  onGenerate: (media: "image" | "video") => void;
   onDelete: () => void;
 }
 
@@ -147,10 +147,6 @@ export function SceneCard({
           <Button type="button" size="sm" variant="ghost" onClick={() => onGenerate("image")} disabled={disabled || scene.isLocked}>
             <ImageIcon />
             {scene.image.status === "error" ? t("scene.retryImage") : t("scene.generateImage")}
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => onGenerate("audio")} disabled={disabled || scene.isLocked}>
-            <Mic />
-            {scene.audio.status === "error" ? t("scene.retryAudio") : t("scene.generateAudio")}
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => onGenerate("video")} disabled={disabled || scene.isLocked}>
             <Film />

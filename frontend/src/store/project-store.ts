@@ -40,6 +40,9 @@ interface ProjectStoreState {
       Pick<
         Project,
         | "status"
+        | "title"
+        | "description"
+        | "coverImageUrl"
         | "originalScript"
         | "seriesBible"
         | "videoStatus"
@@ -109,6 +112,8 @@ function normalizeScene(scene: Scene): Scene {
 function normalizeProject(project: Project): Project {
   return {
     ...project,
+    description: project.description ?? "",
+    coverImageUrl: project.coverImageUrl ?? null,
     seriesBible: project.seriesBible ?? "",
     videoStatus: project.videoStatus ?? "idle",
     videoProgress: typeof project.videoProgress === "number" ? project.videoProgress : 0,
@@ -154,6 +159,7 @@ function toSummary(episode: EpisodeSummary | Episode): EpisodeSummary {
     videoProgress: episode.videoProgress,
     durationMs: episode.durationMs,
     sceneCount: episode.sceneCount,
+    toneImageStatus: episode.toneImageStatus,
     errorMessage: episode.errorMessage,
     updatedAt: episode.updatedAt,
   };

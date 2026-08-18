@@ -1,15 +1,16 @@
 export interface VideoReferenceInput {
-  data: string;
-  name: string;
+  data?: string;
+  name?: string;
+  url?: string;
 }
 
-export type VideoResolution = "1280x720" | "720x1280" | "1024x1024" | "1920x1080";
+export type VideoAspectRatio = "21:9" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "adaptive";
 export type VideoFps = 24 | 30 | 60;
-export type VideoQuality = "480p" | "720p" | "1080p";
+export type VideoQuality = "480p" | "720p" | "1080p" | "2K" | "4K";
 
 export interface GenerateVideoInput {
   prompt: string;
-  resolution?: VideoResolution;
+  aspectRatio?: VideoAspectRatio;
   fps?: VideoFps;
   quality?: VideoQuality;
   promptExtend?: boolean;
@@ -18,7 +19,9 @@ export interface GenerateVideoInput {
   officialConfigId?: number;
   references?: VideoReferenceInput[];
   referenceVideo?: VideoReferenceInput;
-  drivingAudio?: VideoReferenceInput;
+  referenceAudio?: VideoReferenceInput;
+  referenceVideos?: VideoReferenceInput[];
+  referenceAudios?: VideoReferenceInput[];
 }
 
 export interface GenerateVideoResponse {

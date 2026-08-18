@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Clapperboard,
@@ -9,7 +10,6 @@ import {
   Image as ImageIcon,
   LayoutDashboard,
   LogOut,
-  Mic,
   Plus,
   RefreshCw,
   Shield,
@@ -85,7 +85,6 @@ import type {
   SceneUpdatePayload,
 } from "@/types/project";
 import { ProductionSettingsForm } from "./production-settings";
-import { CharacterPanel } from "./character-panel";
 import { SceneCard } from "./scene-card";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -129,7 +128,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [videoQuality, setVideoQuality] = useState("");
-  const [videoResolution, setVideoResolution] = useState("");
+  const [videoAspectRatio, setVideoAspectRatio] = useState("");
   const [videoFps, setVideoFps] = useState("");
   const [videoDuration, setVideoDuration] = useState(3);
   const [videoPromptExtend, setVideoPromptExtend] = useState(false);
@@ -165,7 +164,6 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const upsertEpisode = useProjectStore((state) => state.upsertEpisode);
   const removeEpisode = useProjectStore((state) => state.removeEpisode);
   const setSceneCast = useProjectStore((state) => state.setSceneCast);
-  const dropCharacter = useProjectStore((state) => state.dropCharacter);
 
   const currentProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId),
@@ -363,7 +361,10 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const addEpisodeMutation = useMutation({
-    mutationFn: (projectId: string) => createEpisodeAction(projectId, {}),
+    // The episodes section is where episodes are named; this legacy path only needs a
+    // placeholder that satisfies the now-required title.
+    mutationFn: (projectId: string) =>
+      createEpisodeAction(projectId, { title: t("home.episodeLabel", { number: episodes.length + 1 }) }),
     onSuccess: (response, projectId) => {
       // A new episode is empty, so switching to it needs no extra fetch.
       upsertEpisode(projectId, response.episode);
@@ -396,11 +397,10 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   });
 
   const generateProjectMutation = useMutation({
-    mutationFn: (params: { projectId: string; model?: string; episodeId?: string; media: "image" | "audio"; sceneIds: string[] }) =>
+    mutationFn: (params: { projectId: string; model?: string; episodeId?: string; sceneIds: string[] }) =>
       generateProjectAction(params.projectId, {
         model: params.model,
         episodeId: params.episodeId,
-        media: params.media,
         sceneIds: params.sceneIds,
       }),
     onMutate: ({ projectId }) => {
@@ -454,7 +454,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       model?: string;
       episodeId?: string;
       quality?: string;
-      resolution?: string;
+      aspectRatio?: string;
       fps?: number;
       duration: number;
       promptExtend: boolean;
@@ -463,7 +463,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       model: params.model,
       episodeId: params.episodeId,
       quality: params.quality,
-      resolution: params.resolution,
+      aspectRatio: params.aspectRatio,
       fps: params.fps,
       duration: params.duration,
       promptExtend: params.promptExtend,
@@ -608,6 +608,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           const videoUrl = payload.data?.videoUrl;
           const productionSettings = payload.data?.productionSettings;
           const currentStage = payload.data?.currentStage;
+          const title = payload.data?.title;
+          const description = payload.data?.description;
 
           if (typeof status === "string") {
             setProjectStatus(payload.projectId, status as ProjectStatus);
@@ -631,6 +633,18 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           }
           if (typeof currentStage === "string") {
             patch.currentStage = currentStage as ProjectStage;
+          }
+          if (typeof title === "string") {
+            patch.title = title;
+          }
+          if (typeof description === "string") {
+            patch.description = description;
+          }
+          // Presence, not a type guard: clearing the cover broadcasts an explicit null, and
+          // the backend only sends the key when it changed. A typeof check would drop the clear.
+          if (payload.data && "coverImageUrl" in payload.data) {
+            const cover = payload.data.coverImageUrl;
+            patch.coverImageUrl = typeof cover === "string" ? cover : null;
           }
           if (Object.keys(patch).length > 0) {
             updateProjectFields(payload.projectId, patch);
@@ -749,14 +763,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     if (sceneIds && unlockedIds.length === 0) return;
     setVideoSceneIds(unlockedIds);
     setVideoQuality(capabilities.qualities[0] ?? "");
-    setVideoResolution(capabilities.resolutions[0] ?? "");
+    setVideoAspectRatio(capabilities.aspectRatios[0] ?? "");
     setVideoFps(capabilities.fps[0] ? String(capabilities.fps[0]) : "");
     setVideoDuration(capabilities.minDuration);
     setVideoPromptExtend(false);
     setVideoDialogOpen(true);
   };
 
-  const generateScenes = (media: "image" | "audio", sceneIds: string[]) => {
+  const generateScenes = (sceneIds: string[]) => {
     if (!currentProject) return;
     const unlockedIds = sceneIds.filter(
       (sceneId) => !currentProject.scenes.find((scene) => scene.id === sceneId)?.isLocked
@@ -764,9 +778,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     if (unlockedIds.length === 0) return;
     generateProjectMutation.mutate({
       projectId: currentProject.id,
-      model: media === "image" ? activeImageConfig?.modelSeries : activeAudioConfig?.modelSeries,
+      model: activeImageConfig?.modelSeries,
       episodeId: currentProject.currentEpisodeId ?? undefined,
-      media,
       sceneIds: unlockedIds,
     });
   };
@@ -1136,11 +1149,18 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
             </Card>
 
             {currentProject ? (
-              <CharacterPanel
-                projectId={currentProject.id}
-                onStatus={setStatusMessage}
-                onCharacterDeleted={dropCharacter}
-              />
+              <Card className="border-border/80">
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+                  <p className="text-xs text-muted-foreground">{t("home.castMovedHint")}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    render={<Link href={`/projects/${currentProject.id}/characters`} />}
+                  >
+                    {t("workbench.characters")}
+                  </Button>
+                </CardContent>
+              </Card>
             ) : null}
 
             <Card className="min-h-[500px] border-border/80">
@@ -1171,25 +1191,17 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                     {t("scene.selectAll")}
                   </label>
                   <Badge variant="outline">{t("scene.selectedCount", { count: selectedScenes.length })}</Badge>
-                  <Button size="sm" onClick={() => generateScenes("image", selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !hasUsableImageConfig || selectedScenes.length === 0}>
+                  <Button size="sm" onClick={() => generateScenes(selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !hasUsableImageConfig || selectedScenes.length === 0}>
                     <ImageIcon />
                     {t("scene.generateSelectedImages")}
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => generateScenes("audio", selectedScenes.map((scene) => scene.id))} disabled={generationBusy || selectedScenes.length === 0}>
-                    <Mic />
-                    {t("scene.generateSelectedAudio")}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => openVideoDialog(selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !activeVideoConfig?.videoCapabilities || selectedScenes.length === 0}>
                     <Film />
                     {t("scene.generateSelectedVideo")}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => generateScenes("image", failedSceneIds("image"))} disabled={generationBusy || !hasUsableImageConfig || failedSceneIds("image").length === 0}>
+                  <Button size="sm" variant="outline" onClick={() => generateScenes(failedSceneIds("image"))} disabled={generationBusy || !hasUsableImageConfig || failedSceneIds("image").length === 0}>
                     <RefreshCw />
                     {t("scene.retryFailedImages")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => generateScenes("audio", failedSceneIds("audio"))} disabled={generationBusy || failedSceneIds("audio").length === 0}>
-                    <RefreshCw />
-                    {t("scene.retryFailedAudio")}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => openVideoDialog(failedSceneIds("video"))} disabled={generationBusy || !activeVideoConfig?.videoCapabilities || failedSceneIds("video").length === 0}>
                     <RefreshCw />
@@ -1289,7 +1301,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                               })}
                               onGenerate={(media) => {
                                 if (media === "video") openVideoDialog([scene.id]);
-                                else generateScenes(media, [scene.id]);
+                                else if (media === "image") generateScenes([scene.id]);
                               }}
                               onDelete={() => {
                                 if (window.confirm(t("scene.deleteConfirm", { order: scene.order }))) {
@@ -1357,12 +1369,12 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   </Select>
                 </div>
               ) : null}
-              {activeVideoConfig.videoCapabilities.resolutions.length ? (
+              {activeVideoConfig.videoCapabilities.aspectRatios.length ? (
                 <div className="space-y-2">
-                  <Label>{t("videos.resolution")}</Label>
-                  <Select value={videoResolution} onValueChange={(value) => setVideoResolution(value ?? "")}>
+                  <Label>{t("videos.aspectRatio")}</Label>
+                  <Select value={videoAspectRatio} onValueChange={(value) => setVideoAspectRatio(value ?? "")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{activeVideoConfig.videoCapabilities.resolutions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                    <SelectContent>{activeVideoConfig.videoCapabilities.aspectRatios.map((value) => <SelectItem key={value} value={value}>{value === "adaptive" ? t("videos.aspectRatioAdaptive") : value}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               ) : null}
@@ -1402,7 +1414,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   model: activeVideoConfig.modelSeries,
                   episodeId: currentProject.currentEpisodeId ?? undefined,
                   quality: videoQuality || undefined,
-                  resolution: videoResolution || undefined,
+                  aspectRatio: videoAspectRatio || undefined,
                   fps: videoFps ? Number(videoFps) : undefined,
                   duration: videoDuration,
                   promptExtend: videoPromptExtend,
