@@ -1,20 +1,25 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Boxes, Clapperboard, Film, Info, Mic, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Boxes,
+  Clapperboard,
+  Film,
+  Info,
+  Mic,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { listProjectsAction } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-/**
- * The project workbench shell. Lives in a route group so it adds no path segment: the
- * sections below are `/projects/:id/info`, `/projects/:id/characters`, and so on.
- */
 export default function ProjectWorkbenchLayout({ children }: { children: ReactNode }) {
   const { projectId } = useParams<{ projectId: string }>();
   const pathname = usePathname();
@@ -38,22 +43,38 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border/70 px-4 py-3">
-        <Link
-          href="/ai-script"
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted/60"
-        >
-          <ArrowLeft className="size-4" />
-          {t("common.back")}
-        </Link>
-        <span className="truncate text-sm font-semibold">{project?.title ?? t("common.loading")}</span>
+      {/* 顶部工作台导航条 */}
+      <header className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card/50 px-4 py-3 backdrop-blur-xl md:px-6">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/ai-script"
+            className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:bg-card hover:text-foreground cursor-pointer shadow-xs"
+          >
+            <ArrowLeft className="size-3.5" />
+            {t("common.back")}
+          </Link>
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-bold text-foreground">
+              {project?.title ?? t("common.loading")}
+            </span>
+            {project?.status ? (
+              <Badge variant="outline" className="text-[10px]">
+                {project.status}
+              </Badge>
+            ) : null}
+          </div>
+        </div>
       </header>
 
+      {/* 主体工作台结构 */}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav
           aria-label={t("workbench.menu")}
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 bg-card/50 p-3 md:w-[220px] md:flex-col md:overflow-visible md:border-b-0 md:border-r"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 bg-card/30 p-3 backdrop-blur-md md:w-[230px] md:flex-col md:overflow-visible md:border-b-0 md:border-r md:p-4 chat-message-list-scrollbar"
         >
+          <p className="hidden px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:block">
+            剧作资产与分镜
+          </p>
           {sections.map((section) => {
             const href = `/projects/${projectId}/${section.key}`;
             const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -64,12 +85,22 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm",
-                  active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+                  "group relative flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-150 cursor-pointer",
+                  active
+                    ? "bg-primary/10 text-primary shadow-xs dark:bg-primary/15"
+                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 )}
               >
-                <Icon className="size-4" />
-                {section.label}
+                {active ? (
+                  <span className="hidden md:block absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+                ) : null}
+                <Icon
+                  className={cn(
+                    "size-4 shrink-0 transition-colors",
+                    active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                  )}
+                />
+                <span>{section.label}</span>
               </Link>
             );
           })}

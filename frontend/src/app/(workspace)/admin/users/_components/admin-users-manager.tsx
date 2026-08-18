@@ -314,11 +314,17 @@ export function AdminUsersManager() {
           >
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="adminCreateUsername">{t("auth.username")}</FieldLabel>
+                <FieldLabel htmlFor="adminCreateUsername">
+                  {t("auth.username")}
+                  <span className="ml-1 font-bold text-destructive" title="必填项">*</span>
+                </FieldLabel>
                 <Input id="adminCreateUsername" value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} maxLength={64} required />
               </Field>
               <Field>
-                <FieldLabel htmlFor="adminCreatePassword">{t("auth.password")}</FieldLabel>
+                <FieldLabel htmlFor="adminCreatePassword">
+                  {t("auth.password")}
+                  <span className="ml-1 font-bold text-destructive" title="必填项">*</span>
+                </FieldLabel>
                 <Input id="adminCreatePassword" type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} maxLength={128} required />
               </Field>
               <Field>

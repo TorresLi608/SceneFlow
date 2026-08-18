@@ -1,15 +1,30 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, LogOut, Settings, UserRound } from "lucide-react";
+import {
+  Activity,
+  ChevronDown,
+  Crown,
+  LogOut,
+  Settings,
+  UserRound,
+} from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { queryKeys } from "@/actions/query-keys";
 import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
@@ -42,6 +57,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const logout = useUserStore((state) => state.logout);
   const [accountOpen, setAccountOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const keepAccountOpen = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setAccountOpen(true);
@@ -77,60 +93,139 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }, [hydrated, token, meQuery.isError, logout, router]);
 
   if (!hydrated) {
-    return <main className="flex min-h-screen items-center justify-center">{t("common.initializing")}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-muted-foreground">{t("common.initializing")}</span>
+        </div>
+      </main>
+    );
   }
 
   if (!token || meQuery.isError) {
-    return <main className="flex min-h-screen items-center justify-center">{t("common.redirectingToLogin")}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-muted-foreground">{t("common.redirectingToLogin")}</span>
+        </div>
+      </main>
+    );
   }
+
+  const isSuperAdmin = user?.role === "superAdmin";
 
   return (
     <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      <AppSidebar showUserManagement={user?.role === "superAdmin"} />
+      <AppSidebar showUserManagement={isSuperAdmin} />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="border-b border-border/70 bg-card/60">
+        {/* 顶部毛玻璃导航栏 */}
+        <header className="shrink-0 border-b border-border/70 bg-card/40 backdrop-blur-xl">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-            <div>
-              <p className="text-base font-semibold">{t(pageTitleKey(pathname))}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("common.currentUser", {
-                  username: meQuery.isLoading ? t("common.loading") : user?.nickname || user?.username || t("common.unknownUser"),
-                })}
-              </p>
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+                  {t(pageTitleKey(pathname))}
+                </h1>
+                <p className="text-[11px] text-muted-foreground">
+                  {t("common.currentUser", {
+                    username: meQuery.isLoading
+                      ? t("common.loading")
+                      : user?.nickname || user?.username || t("common.unknownUser"),
+                  })}
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <PreferencesSwitcher />
+
+              {/* 用户快捷菜单 */}
               <Popover open={accountOpen} onOpenChange={setAccountOpen}>
                 <div onMouseEnter={keepAccountOpen} onMouseLeave={scheduleAccountClose}>
-                  <PopoverTrigger render={<Button variant="secondary" />}>
-                    <UserRound data-icon="inline-start" />
-                    {user?.nickname || user?.username || t("common.loading")}
-                    <ChevronDown data-icon="inline-end" />
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        className="h-9 gap-2 rounded-xl border-border/80 bg-card/60 px-3 backdrop-blur-md hover:bg-card hover:border-primary/40 cursor-pointer shadow-xs"
+                      />
+                    }
+                  >
+                    <div className="flex size-6 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      {isSuperAdmin ? <Crown className="size-3.5" /> : <UserRound className="size-3.5" />}
+                    </div>
+                    <span className="max-w-[120px] truncate text-xs font-semibold sm:max-w-[160px]">
+                      {user?.nickname || user?.username || t("common.loading")}
+                    </span>
+                    <ChevronDown className="size-3.5 text-muted-foreground" />
                   </PopoverTrigger>
                 </div>
-                <PopoverContent align="end" onMouseEnter={keepAccountOpen} onMouseLeave={scheduleAccountClose}>
-                  <PopoverHeader>
-                    <PopoverTitle>{user?.nickname || user?.username || t("common.unknownUser")}</PopoverTitle>
-                    <PopoverDescription>{t("admin.levelValue", { level: user?.level ?? 1 })}</PopoverDescription>
+
+                <PopoverContent
+                  align="end"
+                  className="w-56 rounded-2xl border-border/80 bg-card/90 p-2 shadow-2xl backdrop-blur-xl dark:border-white/10"
+                  onMouseEnter={keepAccountOpen}
+                  onMouseLeave={scheduleAccountClose}
+                >
+                  <PopoverHeader className="p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <PopoverTitle className="truncate text-sm font-semibold">
+                        {user?.nickname || user?.username || t("common.unknownUser")}
+                      </PopoverTitle>
+                      {isSuperAdmin ? (
+                        <Badge variant="default" className="text-[10px] uppercase font-bold">
+                          Admin
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">
+                          Lv.{user?.level ?? 1}
+                        </Badge>
+                      )}
+                    </div>
+                    <PopoverDescription className="text-xs text-muted-foreground">
+                      @{user?.username}
+                    </PopoverDescription>
                   </PopoverHeader>
-                  <Separator />
-                  <div className="flex flex-col gap-1">
-                    <Button variant="ghost" className="justify-start" onClick={() => { setAccountOpen(false); router.push("/profile"); }}>
-                      <Settings data-icon="inline-start" />
+                  <Separator className="my-1" />
+                  <div className="flex flex-col gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="justify-start gap-2 rounded-lg text-xs hover:bg-muted/80 cursor-pointer"
+                      onClick={() => {
+                        setAccountOpen(false);
+                        router.push("/profile");
+                      }}
+                    >
+                      <Settings className="size-3.5 text-muted-foreground" />
                       {t("home.personalSettings")}
                     </Button>
                     <Button
                       variant="ghost"
-                      className="justify-start"
+                      size="sm"
+                      className="justify-start gap-2 rounded-lg text-xs hover:bg-muted/80 cursor-pointer"
+                      onClick={() => {
+                        setAccountOpen(false);
+                        router.push("/usage");
+                      }}
+                    >
+                      <Activity className="size-3.5 text-muted-foreground" />
+                      {t("home.usageLogs")}
+                    </Button>
+                    <Separator className="my-1" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="justify-start gap-2 rounded-lg text-xs text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
                       onClick={() => {
                         setAccountOpen(false);
                         logout();
                         router.replace("/login");
                       }}
                     >
-                      <LogOut data-icon="inline-start" />
+                      <LogOut className="size-3.5" />
                       {t("common.logout")}
                     </Button>
                   </div>
@@ -140,7 +235,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {children}
+        {/* 页面内容注入 */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
       </section>
     </main>
   );
