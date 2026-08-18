@@ -1,11 +1,12 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Download, ImageIcon, RotateCcw, Sparkles, Upload, X } from "lucide-react";
+import { Download, ImageIcon, Loader2, RotateCcw, Sparkles, Upload, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { generateImageAction } from "@/actions/image-generation-actions";
+import { optimizePromptAction } from "@/actions/prompt-actions";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -107,6 +108,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<GenerateImageInput["resolution"]>("1K");
   const [ratio, setRatio] = useState<GenerateImageInput["ratio"]>("auto");
+  const [promptLanguage, setPromptLanguage] = useState<"auto" | "zh" | "en">("auto");
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState<ImageReferenceInput[]>([]);
   const [imageUrl, setImageUrl] = useState("");
@@ -125,6 +127,8 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   }, [imageConfigs]);
   const effectiveConfigId = imageConfigs.some((config) => configSelectValue(config) === selectedConfigId) ? selectedConfigId : defaultConfigId;
   const selectedConfig = imageConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
+  const maxReferenceImages = selectedConfig?.imageMaxReferenceImages ?? 4;
+  const visibleReferenceSlots = Math.min(maxReferenceImages, Math.max(4, references.length));
   const resolvedImageUrl = artifactBffUrl(imageUrl);
 
   const generateMutation = useMutation({
@@ -147,6 +151,19 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
     },
   });
 
+  const optimizeMutation = useMutation({
+    mutationFn: () => optimizePromptAction({
+      kind: "image",
+      prompt: prompt.trim(),
+      context: { outputLanguage: promptLanguage, aspectRatio: ratio, quality: resolution },
+    }),
+    onSuccess: (response) => {
+      setPrompt(response.prompt);
+      setErrorMessage(null);
+    },
+    onError: (error) => setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
+  });
+
   useEffect(() => {
     if (!generateMutation.isPending) {
       return;
@@ -166,7 +183,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
     }
     setErrorMessage(null);
     const next = [...references];
-    for (const file of Array.from(files).slice(0, 4 - next.length)) {
+    for (const file of Array.from(files).slice(0, Math.max(0, maxReferenceImages - next.length))) {
       if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
         setErrorMessage(t("images.referenceLimit"));
         continue;
@@ -174,6 +191,14 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
       next.push({ name: file.name, data: await readFileAsDataUrl(file) });
     }
     setReferences(next);
+  };
+
+  const selectModel = (value: string | null) => {
+    const nextValue = value ?? "";
+    setSelectedConfigId(nextValue);
+    const nextConfig = imageConfigs.find((config) => configSelectValue(config) === nextValue);
+    const nextMax = nextConfig?.imageMaxReferenceImages ?? 4;
+    setReferences((current) => current.slice(0, nextMax));
   };
 
   const generate = () => {
@@ -234,7 +259,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
         <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           <div className="space-y-1.5">
             <label className="text-sm font-medium">{t("images.model")}</label>
-            <Select value={effectiveConfigId} onValueChange={(value) => setSelectedConfigId(value ?? "")}>
+            <Select value={effectiveConfigId} onValueChange={selectModel}>
               <SelectTrigger>
                 <SelectValue placeholder={t("images.selectModel")}>{selectedConfig ? configName(selectedConfig, t) : undefined}</SelectValue>
               </SelectTrigger>
@@ -283,7 +308,23 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">{t("images.prompt")}</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-medium">{t("images.prompt")}</label>
+              <div className="flex items-center gap-1">
+                <Select value={promptLanguage} onValueChange={(value) => setPromptLanguage((value ?? "auto") as "auto" | "zh" | "en")}>
+                  <SelectTrigger className="h-8 w-24" aria-label={t("common.promptLanguage")}><SelectValue /></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectItem value="auto">{t("common.promptLanguageAuto")}</SelectItem>
+                    <SelectItem value="zh">{t("common.promptLanguageZh")}</SelectItem>
+                    <SelectItem value="en">{t("common.promptLanguageEn")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="ghost" size="sm" disabled={!prompt.trim() || optimizeMutation.isPending} onClick={() => optimizeMutation.mutate()}>
+                  {optimizeMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  {optimizeMutation.isPending ? t("common.optimizingPrompt") : t("common.optimizePrompt")}
+                </Button>
+              </div>
+            </div>
             <Textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
@@ -292,13 +333,13 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
             />
           </div>
 
-          <div className="space-y-2">
+          {maxReferenceImages > 0 ? <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-sm font-medium">{t("images.references")}</label>
+              <label className="text-sm font-medium">{t("images.references", { max: maxReferenceImages })}</label>
               <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{references.length ? t("images.imageToImage") : t("images.textToImage")}</span>
             </div>
             <div className="flex gap-2">
-              <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={references.length >= 4}>
+              <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={references.length >= maxReferenceImages}>
                 <Upload className="size-4" />
                 {t("images.uploadReference")}
               </Button>
@@ -318,7 +359,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
               }}
             />
             <div className="grid grid-cols-2 gap-2">
-              {Array.from({ length: 4 }).map((_, index) => {
+              {Array.from({ length: visibleReferenceSlots }).map((_, index) => {
                 const reference = references[index];
                 return (
                   <div
@@ -347,7 +388,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
                 );
               })}
             </div>
-          </div>
+          </div> : null}
         </div>
 
         <div className="mt-4 border-t border-border/70 pt-4">

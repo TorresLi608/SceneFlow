@@ -143,7 +143,7 @@ async def preview_voice(project_id: str, voice_id: str, user_id: int = Depends(c
             raise HTTPException(400, "sampleText is required")
         config = _synthesis_config(session, user_id, profile)
 
-    extension = "mp3" if config["provider"] == "edge" else "wav"
+    extension = "mp3" if config["provider"] in {"edge", "qwen"} else "wav"
     target = PRIVATE_GENERATED_DIR / "voices" / project_id / f"{voice_id}.{extension}"
     started_at = time.monotonic()
     try:

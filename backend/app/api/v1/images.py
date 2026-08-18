@@ -52,8 +52,6 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
         raise HTTPException(400, "prompt is required")
 
     references = payload.get("references") if isinstance(payload.get("references"), list) else []
-    if len(references) > 4:
-        raise HTTPException(400, "at most 4 reference images are supported")
 
     config_id = payload.get("configId")
     official_config_id = payload.get("officialConfigId")
@@ -65,6 +63,10 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
         else:
             config = active_model_config(session, user_id, "image", "图片生成")
         require_model_balance(session, user_id, config)
+
+    maximum = int(config.get("imageMaxReferenceImages", 4))
+    if len(references) > maximum:
+        raise HTTPException(400, f"selected model accepts at most {maximum} reference images")
 
     if config["provider"] not in {"openai", "gemini", "qwen"}:
         raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")

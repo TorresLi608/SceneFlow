@@ -795,7 +795,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         if model != config["model"]:
             raise HTTPException(400, "selected video model is not the active video configuration")
         try:
-            quality, resolution, fps, duration, prompt_extend = resolve_video_options(
+            quality, aspect_ratio, fps, duration, prompt_extend = resolve_video_options(
                 body.model_dump(by_alias=True, exclude_none=True), config["videoCapabilities"]
             )
         except (TypeError, ValueError) as exc:
@@ -809,7 +809,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         if body.with_audio:
             # Refused rather than downgraded: the user opted into a costlier render for a
             # reason, and silently dropping the audio would bill them for something else.
-            if not config["videoCapabilities"]["drivingAudio"]:
+            if not config["videoCapabilities"]["referenceAudio"]:
                 raise HTTPException(400, "selected video model does not accept audio, turn withAudio off")
             if not project.voice_sheet_path:
                 raise HTTPException(400, "merge the project's voices before rendering with audio")
@@ -842,7 +842,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             episode_id,
             {
                 "quality": quality,
-                "resolution": resolution,
+                "aspectRatio": aspect_ratio,
                 "fps": fps,
                 "duration": duration,
                 "promptExtend": prompt_extend,

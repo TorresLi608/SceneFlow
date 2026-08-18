@@ -264,7 +264,7 @@ async def _generate_scene_video(
     try:
         capabilities = config["videoCapabilities"]
         references = []
-        if capabilities["maxReferenceImages"] and scene.get("image_path"):
+        if capabilities["referenceImages"] and scene.get("image_path"):
             references.append(_stored_media(scene["image_path"]))
         if capabilities["referenceImagesRequired"] and not references:
             raise ValueError("该分镜缺少模型必需的参考图")
@@ -276,7 +276,7 @@ async def _generate_scene_video(
             # The project's timbre reference, not a per-shot track: shots no longer carry
             # their own audio, and this is what tells the model who sounds like what.
             _stored_media(options["voiceSheetPath"])
-            if capabilities["drivingAudio"] and options.get("voiceSheetPath")
+            if capabilities["referenceAudio"] and options.get("voiceSheetPath")
             else None
         )
         prompt = str(scene.get("visual_prompt") or scene.get("narration") or "").strip()
@@ -292,7 +292,7 @@ async def _generate_scene_video(
             model=config["model"],
             prompt=prompt,
             quality=options["quality"],
-            resolution=options["resolution"],
+            aspect_ratio=options["aspectRatio"],
             fps=options["fps"],
             duration=options["duration"],
             prompt_extend=options["promptExtend"],

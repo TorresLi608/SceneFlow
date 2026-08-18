@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Download, Film, Music2, RotateCcw, Sparkles, Upload, Video, X } from "lucide-react";
-import Image from "next/image";
+import { Download, Film, ImageIcon, Link2, Loader2, Music2, RotateCcw, Sparkles, Upload, Video, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { generateVideoAction } from "@/actions/video-generation-actions";
+import { optimizePromptAction } from "@/actions/prompt-actions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,14 +16,7 @@ import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import type { UserConfig } from "@/types/auth";
-import type { VideoFps, VideoQuality, VideoReferenceInput, VideoResolution } from "@/types/video-generation";
-
-const resolutionOptions: { value: VideoResolution; label: string; ratio: string }[] = [
-  { value: "1280x720", label: "1280 × 720", ratio: "16:9" },
-  { value: "720x1280", label: "720 × 1280", ratio: "9:16" },
-  { value: "1024x1024", label: "1024 × 1024", ratio: "1:1" },
-  { value: "1920x1080", label: "1920 × 1080", ratio: "16:9" },
-];
+import type { VideoAspectRatio, VideoFps, VideoQuality, VideoReferenceInput } from "@/types/video-generation";
 const historyStorageKey = "sceneflow-video-generation-history-v1";
 
 interface VideoHistoryItem {
@@ -84,15 +78,19 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
   const videoInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
-  const [resolution, setResolution] = useState<VideoResolution>("1280x720");
+  const [aspectRatio, setAspectRatio] = useState<VideoAspectRatio>("16:9");
   const [fps, setFps] = useState<VideoFps>(24);
   const [quality, setQuality] = useState<VideoQuality>("720p");
   const [duration, setDuration] = useState(3);
   const [promptExtend, setPromptExtend] = useState(false);
+  const [promptLanguage, setPromptLanguage] = useState<"auto" | "zh" | "en">("auto");
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState<VideoReferenceInput[]>([]);
-  const [referenceVideo, setReferenceVideo] = useState<VideoReferenceInput>();
-  const [drivingAudio, setDrivingAudio] = useState<VideoReferenceInput>();
+  const [referenceVideos, setReferenceVideos] = useState<VideoReferenceInput[]>([]);
+  const [referenceAudios, setReferenceAudios] = useState<VideoReferenceInput[]>([]);
+  const [referenceImageUrl, setReferenceImageUrl] = useState("");
+  const [referenceVideoUrl, setReferenceVideoUrl] = useState("");
+  const [referenceAudioUrl, setReferenceAudioUrl] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -113,7 +111,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
   const selectedConfig = videoConfigs.find((config) => configSelectValue(config) === effectiveConfigId);
   const capabilities = selectedConfig?.videoCapabilities;
   const selectedQuality = capabilities?.qualities.includes(quality) ? quality : capabilities?.qualities[0] ?? "720p";
-  const selectedResolution = capabilities?.resolutions.includes(resolution) ? resolution : capabilities?.resolutions[0] ?? "1280x720";
+  const selectedAspectRatio = capabilities?.aspectRatios.includes(aspectRatio) ? aspectRatio : capabilities?.aspectRatios[0] ?? "16:9";
   const selectedFps = capabilities?.fps.includes(fps) ? fps : capabilities?.fps[0] ?? 24;
   const selectedDuration = capabilities ? Math.min(capabilities.maxDuration, Math.max(capabilities.minDuration, duration)) : duration;
   const selectedPromptExtend = Boolean(capabilities?.promptExtend && promptExtend);
@@ -142,6 +140,25 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     onError: (error) => setErrorMessage(resolveRequestError(error, t("videos.generateFailed"))),
   });
 
+  const optimizeMutation = useMutation({
+    mutationFn: () => optimizePromptAction({
+      kind: "video",
+      prompt: prompt.trim(),
+      context: {
+        outputLanguage: promptLanguage,
+        aspectRatio: selectedAspectRatio,
+        quality: selectedQuality,
+        duration: selectedDuration,
+        fps: selectedFps,
+      },
+    }),
+    onSuccess: (response) => {
+      setPrompt(response.prompt);
+      setErrorMessage(null);
+    },
+    onError: (error) => setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
+  });
+
   useEffect(() => {
     if (!generateMutation.isPending) return;
     const startedAt = Date.now();
@@ -155,10 +172,10 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     const nextConfig = videoConfigs.find((config) => configSelectValue(config) === nextValue);
     const nextCapabilities = nextConfig?.videoCapabilities;
     setReferences((current) => nextCapabilities?.maxReferenceImages ? current.slice(0, nextCapabilities.maxReferenceImages) : []);
-    if (!nextCapabilities?.referenceVideo) setReferenceVideo(undefined);
-    if (!nextCapabilities?.drivingAudio) setDrivingAudio(undefined);
+    setReferenceVideos((current) => nextCapabilities?.maxReferenceVideos ? current.slice(0, nextCapabilities.maxReferenceVideos) : []);
+    setReferenceAudios((current) => nextCapabilities?.maxReferenceAudios ? current.slice(0, nextCapabilities.maxReferenceAudios) : []);
     setQuality(nextCapabilities?.qualities[0] ?? "720p");
-    setResolution(nextCapabilities?.resolutions[0] ?? "1280x720");
+    setAspectRatio(nextCapabilities?.aspectRatios[0] ?? "16:9");
     setFps(nextCapabilities?.fps[0] ?? 24);
     setDuration(nextCapabilities?.minDuration ?? 3);
     setPromptExtend(false);
@@ -171,9 +188,8 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
       setErrorMessage(t("videos.referenceLimit"));
       return;
     }
-    setReferences((current) => [...current, ...selected.map((file) => ({ name: file.name, data: "" }))]);
     const loaded = await Promise.all(selected.map(async (file) => ({ name: file.name, data: await readFileAsDataUrl(file) })));
-    setReferences((current) => [...current.slice(0, -selected.length), ...loaded]);
+    setReferences((current) => [...current, ...loaded].slice(0, capabilities.maxReferenceImages));
   };
 
   const addMedia = async (file: File | undefined, kind: "video" | "audio") => {
@@ -181,12 +197,36 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
     setErrorMessage(null);
     const allowed = kind === "video" ? /^video\/(mp4|quicktime|webm)$/ : /^audio\/(mpeg|wav|x-wav|mp4)$/;
     if (!allowed.test(file.type) || file.size > 50 * 1024 * 1024) {
-      setErrorMessage(t(kind === "video" ? "videos.referenceVideoLimit" : "videos.drivingAudioLimit"));
+      setErrorMessage(t(kind === "video" ? "videos.referenceVideoLimit" : "videos.referenceAudioLimit"));
       return;
     }
     const value = { name: file.name, data: await readFileAsDataUrl(file) };
-    if (kind === "video") setReferenceVideo(value);
-    else setDrivingAudio(value);
+    if (kind === "video") setReferenceVideos((current) => [...current, value].slice(0, capabilities?.maxReferenceVideos ?? 0));
+    else setReferenceAudios((current) => [...current, value].slice(0, capabilities?.maxReferenceAudios ?? 0));
+  };
+
+  const addUrl = (kind: "image" | "video" | "audio") => {
+    const current = kind === "image" ? referenceImageUrl : kind === "video" ? referenceVideoUrl : referenceAudioUrl;
+    const url = current.trim();
+    if (!url) return;
+    try {
+      const parsed = new URL(url);
+      if (!(parsed.protocol === "http:" || parsed.protocol === "https:")) throw new Error();
+    } catch {
+      setErrorMessage(t("videos.invalidReferenceUrl"));
+      return;
+    }
+    if (kind === "image") {
+      setReferences((items) => [...items, { url }].slice(0, capabilities?.maxReferenceImages ?? 0));
+      setReferenceImageUrl("");
+    } else if (kind === "video") {
+      setReferenceVideos((items) => [...items, { url }].slice(0, capabilities?.maxReferenceVideos ?? 0));
+      setReferenceVideoUrl("");
+    } else {
+      setReferenceAudios((items) => [...items, { url }].slice(0, capabilities?.maxReferenceAudios ?? 0));
+      setReferenceAudioUrl("");
+    }
+    setErrorMessage(null);
   };
 
   const generate = () => {
@@ -197,10 +237,10 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
       prompt: content,
       duration: selectedDuration,
       references,
-      ...(referenceVideo ? { referenceVideo } : {}),
-      ...(drivingAudio ? { drivingAudio } : {}),
+      ...(referenceVideos.length ? { referenceVideos } : {}),
+      ...(referenceAudios.length ? { referenceAudios } : {}),
       ...(capabilities?.qualities.length ? { quality: selectedQuality } : {}),
-      ...(capabilities?.resolutions.length ? { resolution: selectedResolution } : {}),
+      ...(capabilities?.aspectRatios.length ? { aspectRatio: selectedAspectRatio } : {}),
       ...(capabilities?.fps.length ? { fps: selectedFps } : {}),
       ...(capabilities?.promptExtend ? { promptExtend: selectedPromptExtend } : {}),
       ...selectedConfigPayload(selectedConfig),
@@ -261,7 +301,23 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">{t("videos.prompt")}</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-medium">{t("videos.prompt")}</label>
+              <div className="flex items-center gap-1">
+                <Select value={promptLanguage} onValueChange={(value) => setPromptLanguage((value ?? "auto") as "auto" | "zh" | "en")}>
+                  <SelectTrigger className="h-8 w-24" aria-label={t("common.promptLanguage")}><SelectValue /></SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectItem value="auto">{t("common.promptLanguageAuto")}</SelectItem>
+                    <SelectItem value="zh">{t("common.promptLanguageZh")}</SelectItem>
+                    <SelectItem value="en">{t("common.promptLanguageEn")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="ghost" size="sm" disabled={!prompt.trim() || optimizeMutation.isPending} onClick={() => optimizeMutation.mutate()}>
+                  {optimizeMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  {optimizeMutation.isPending ? t("common.optimizingPrompt") : t("common.optimizePrompt")}
+                </Button>
+              </div>
+            </div>
             <Textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
@@ -283,15 +339,13 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
               </div>
             ) : null}
 
-            {capabilities?.resolutions.length ? (
+            {capabilities?.aspectRatios.length ? (
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">{t("videos.resolution")}</label>
-                <Select value={selectedResolution} onValueChange={(value) => setResolution(value as VideoResolution)}>
+                <label className="text-sm font-medium">{t("videos.aspectRatio")}</label>
+                <Select value={selectedAspectRatio} onValueChange={(value) => setAspectRatio(value as VideoAspectRatio)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
-                    {resolutionOptions.filter((item) => capabilities.resolutions.includes(item.value)).map((item) => (
-                      <SelectItem key={item.value} value={item.value}>{item.label} ({item.ratio})</SelectItem>
-                    ))}
+                    {capabilities.aspectRatios.map((item) => <SelectItem key={item} value={item}>{item === "adaptive" ? t("videos.aspectRatioAdaptive") : item}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -327,31 +381,76 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
             ) : null}
           </div>
 
-          {capabilities && (capabilities.maxReferenceImages > 0 || capabilities.referenceVideo || capabilities.drivingAudio) ? <div className="space-y-3 border-t border-border/70 pt-4">
+          {capabilities && (capabilities.referenceImages || capabilities.referenceVideo || capabilities.referenceAudio) ? <div className="space-y-4 border-t border-border/70 pt-4">
             <div className="flex items-center justify-between gap-2">
               <label className="text-sm font-medium">{t("videos.inputMedia")}</label>
               <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                {referenceVideo ? t("videos.videoToVideo") : references.length ? t("videos.imageToVideo") : t("videos.textToVideo")}
+                {referenceVideos.length ? t("videos.videoToVideo") : references.length ? t("videos.imageToVideo") : t("videos.textToVideo")}
               </span>
             </div>
-            {capabilities.maxReferenceImages > 0 ? <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium">{t("videos.referenceImages", { count: references.length, max: capabilities.maxReferenceImages })}</span>
-                <Button type="button" size="sm" variant="secondary" disabled={references.length >= capabilities.maxReferenceImages} onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="size-4" /> {t("videos.uploadReference")}
-                </Button>
-              </div>
+            {capabilities.referenceImages ? <MediaReferenceSection
+              kind="image"
+              label={t("videos.referenceImagesLabel")}
+              values={references}
+              max={capabilities.maxReferenceImages}
+              required={capabilities.referenceImagesRequired}
+              draftUrl={referenceImageUrl}
+              setDraftUrl={setReferenceImageUrl}
+              onAddUrl={() => addUrl("image")}
+              onUpload={() => fileInputRef.current?.click()}
+              onClear={() => setReferences([])}
+              onRemove={(index) => setReferences((current) => current.filter((_, item) => item !== index))}
+              uploadEnabled={selectedConfig?.provider === "qwen"}
+              uploadLabel={t("videos.uploadReferenceImage")}
+              requiredLabel={t("videos.referenceRequired")}
+              urlPlaceholder={t("videos.referenceUrlPlaceholder")}
+              addUrlLabel={t("videos.addReferenceUrl")}
+              clearLabel={t("videos.clearReferences")}
+              removeLabel={t("videos.removeReference")}
+            /> : null}
+            {capabilities.referenceImages ? <>
               <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { void addReferences(event.target.files); event.currentTarget.value = ""; }} />
-              <div className="grid grid-cols-3 gap-2">
-                {references.map((reference, index) => <div key={`${reference.name}-${index}`} className="relative aspect-video overflow-hidden rounded-md border bg-background/40">
-                  {reference.data ? <Image src={reference.data} alt="" fill unoptimized sizes="120px" className="object-cover" /> : null}
-                  <button type="button" onClick={() => setReferences((current) => current.filter((_, item) => item !== index))} className="absolute top-1 right-1 inline-flex size-6 items-center justify-center rounded bg-background/85" aria-label={t("videos.removeReference")}><X className="size-3.5" /></button>
-                </div>)}
-              </div>
-              {capabilities.referenceImagesRequired && references.length === 0 ? <p className="text-xs text-amber-600">{t("videos.referenceRequired")}</p> : null}
-            </div> : null}
-            {capabilities.referenceVideo ? <MediaUpload icon={<Video className="size-4" />} label={t("videos.referenceVideo")} value={referenceVideo} uploadLabel={t("common.upload")} replaceLabel={t("common.replace")} clearLabel={t("common.clear")} onUpload={() => videoInputRef.current?.click()} onClear={() => setReferenceVideo(undefined)} /> : null}
-            {capabilities.drivingAudio ? <MediaUpload icon={<Music2 className="size-4" />} label={t("videos.drivingAudio")} value={drivingAudio} uploadLabel={t("common.upload")} replaceLabel={t("common.replace")} clearLabel={t("common.clear")} onUpload={() => audioInputRef.current?.click()} onClear={() => setDrivingAudio(undefined)} /> : null}
+            </> : null}
+            {capabilities.referenceVideo ? <MediaReferenceSection
+              kind="video"
+              label={t("videos.referenceVideo")}
+              values={referenceVideos}
+              max={capabilities.maxReferenceVideos}
+              required={capabilities.referenceVideosRequired}
+              draftUrl={referenceVideoUrl}
+              setDraftUrl={setReferenceVideoUrl}
+              onAddUrl={() => addUrl("video")}
+              onUpload={() => videoInputRef.current?.click()}
+              onClear={() => setReferenceVideos([])}
+              onRemove={(index) => setReferenceVideos((current) => current.filter((_, item) => item !== index))}
+              uploadEnabled={selectedConfig?.provider === "qwen"}
+              uploadLabel={t("videos.uploadReferenceVideo")}
+              requiredLabel={t("videos.referenceVideoRequired")}
+              urlPlaceholder={t("videos.referenceUrlPlaceholder")}
+              addUrlLabel={t("videos.addReferenceUrl")}
+              clearLabel={t("videos.clearReferenceVideos")}
+              removeLabel={t("videos.removeReference")}
+            /> : null}
+            {capabilities.referenceAudio ? <MediaReferenceSection
+              kind="audio"
+              label={t("videos.referenceAudio")}
+              values={referenceAudios}
+              max={capabilities.maxReferenceAudios}
+              required={capabilities.referenceAudiosRequired}
+              draftUrl={referenceAudioUrl}
+              setDraftUrl={setReferenceAudioUrl}
+              onAddUrl={() => addUrl("audio")}
+              onUpload={() => audioInputRef.current?.click()}
+              onClear={() => setReferenceAudios([])}
+              onRemove={(index) => setReferenceAudios((current) => current.filter((_, item) => item !== index))}
+              uploadEnabled={selectedConfig?.provider === "qwen"}
+              uploadLabel={t("videos.uploadReferenceAudio")}
+              requiredLabel={t("videos.referenceAudioRequired")}
+              urlPlaceholder={t("videos.referenceUrlPlaceholder")}
+              addUrlLabel={t("videos.addReferenceUrl")}
+              clearLabel={t("videos.clearReferenceAudios")}
+              removeLabel={t("videos.removeReference")}
+            /> : null}
             <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" className="hidden" onChange={(event) => { void addMedia(event.target.files?.[0], "video"); event.currentTarget.value = ""; }} />
             <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/wav,audio/mp4" className="hidden" onChange={(event) => { void addMedia(event.target.files?.[0], "audio"); event.currentTarget.value = ""; }} />
           </div> : null}
@@ -384,7 +483,7 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
         </div>
 
         <div className="mt-4 border-t border-border/70 pt-4">
-          <Button className="w-full" onClick={generate} disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending || Boolean(capabilities?.referenceImagesRequired && references.length === 0)}>
+          <Button className="w-full" onClick={generate} disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending || Boolean(capabilities?.referenceImagesRequired && references.length === 0) || Boolean(capabilities?.referenceVideosRequired && referenceVideos.length === 0) || Boolean(capabilities?.referenceAudiosRequired && referenceAudios.length === 0)}>
             <Sparkles className="size-4" />
             {generateMutation.isPending ? generatingLabel : t("videos.generateNow")}
           </Button>
@@ -427,12 +526,41 @@ export function VideoGenerationPanel({ configs, officialConfigs }: VideoGenerati
   );
 }
 
-function MediaUpload({ icon, label, value, uploadLabel, replaceLabel, clearLabel, onUpload, onClear }: { icon: React.ReactNode; label: string; value?: VideoReferenceInput; uploadLabel: string; replaceLabel: string; clearLabel: string; onUpload: () => void; onClear: () => void }) {
-  return <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 p-2 text-xs">
-    <span className="flex min-w-0 items-center gap-2">{icon}<span className="truncate">{value?.name || label}</span></span>
-    <div className="flex gap-1">
-      <Button type="button" size="icon-sm" variant="ghost" onClick={onUpload} title={value ? replaceLabel : uploadLabel} aria-label={value ? replaceLabel : uploadLabel}>{value ? <RotateCcw className="size-4" /> : <Upload className="size-4" />}</Button>
-      {value ? <Button type="button" size="icon-sm" variant="ghost" onClick={onClear} title={clearLabel} aria-label={clearLabel}><X className="size-4" /></Button> : null}
+function MediaReferenceSection({ kind, label, values, max, required, draftUrl, setDraftUrl, onAddUrl, onUpload, onClear, onRemove, uploadEnabled, uploadLabel, requiredLabel, urlPlaceholder, addUrlLabel, clearLabel, removeLabel }: {
+  kind: "image" | "video" | "audio";
+  label: string;
+  values: VideoReferenceInput[];
+  max: number;
+  required: boolean;
+  draftUrl: string;
+  setDraftUrl: (value: string) => void;
+  onAddUrl: () => void;
+  onUpload: () => void;
+  onClear: () => void;
+  onRemove: (index: number) => void;
+  uploadEnabled: boolean;
+  uploadLabel: string;
+  requiredLabel: string;
+  urlPlaceholder: string;
+  addUrlLabel: string;
+  clearLabel: string;
+  removeLabel: string;
+}) {
+  const Icon = kind === "image" ? ImageIcon : kind === "video" ? Video : Music2;
+  return <div className="space-y-2 rounded-md border border-border/70 p-3">
+    <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-2 text-xs font-medium"><Icon className="size-4" />{label}</span>
+      <span className="text-xs text-muted-foreground">{values.length}/{max}</span>
     </div>
+    <div className="flex gap-2">
+      {uploadEnabled ? <Button type="button" size="sm" variant="secondary" disabled={values.length >= max} onClick={onUpload}><Upload className="size-4" />{uploadLabel}</Button> : null}
+      {values.length ? <Button type="button" size="sm" variant="ghost" onClick={onClear}>{clearLabel}</Button> : null}
+    </div>
+    <div className="flex gap-2">
+      <Input value={draftUrl} onChange={(event) => setDraftUrl(event.target.value)} placeholder={urlPlaceholder} disabled={values.length >= max} />
+      <Button type="button" size="sm" variant="outline" disabled={!draftUrl.trim() || values.length >= max} onClick={onAddUrl}><Link2 className="size-4" />{addUrlLabel}</Button>
+    </div>
+    {values.length ? <div className="space-y-1.5">{values.map((value, index) => <div key={`${value.url || value.name || "media"}-${index}`} className="flex items-center gap-2 rounded bg-muted/40 px-2 py-1.5 text-xs"><span className="min-w-0 flex-1 truncate">{value.name || value.url}</span><Button type="button" size="icon-xs" variant="ghost" onClick={() => onRemove(index)} aria-label={removeLabel} title={removeLabel}><X className="size-3.5" /></Button></div>)}</div> : null}
+    {required && values.length === 0 ? <p className="text-xs text-amber-600">{requiredLabel}</p> : null}
   </div>;
 }

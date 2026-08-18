@@ -2,16 +2,21 @@ export type ConfigPurpose = "general" | "script" | "image" | "video" | "audio";
 export type PricingUnit = "token" | "request" | "image" | "second";
 
 export interface VideoCapabilities {
-  qualities: ("480p" | "720p" | "1080p")[];
+  qualities: ("480p" | "720p" | "1080p" | "2K" | "4K")[];
   fps: (24 | 30 | 60)[];
-  resolutions: ("1280x720" | "720x1280" | "1024x1024" | "1920x1080")[];
+  aspectRatios: ("21:9" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "adaptive")[];
   promptExtend: boolean;
   minDuration: number;
   maxDuration: number;
+  referenceImages: boolean;
   referenceImagesRequired: boolean;
   maxReferenceImages: number;
   referenceVideo: boolean;
-  drivingAudio: boolean;
+  maxReferenceVideos: number;
+  referenceVideosRequired: boolean;
+  referenceAudio: boolean;
+  maxReferenceAudios: number;
+  referenceAudiosRequired: boolean;
 }
 
 export interface ModelPricing {
@@ -80,6 +85,7 @@ export interface UserConfig extends ModelPricing {
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  imageMaxReferenceImages: number;
   videoCapabilities: VideoCapabilities | null;
 }
 
@@ -110,6 +116,7 @@ export interface CreateUserConfigInput extends Partial<ModelPricing> {
   apiKey: string;
   isActive: boolean;
   isEnabled?: boolean;
+  imageMaxReferenceImages?: number;
   videoCapabilities?: VideoCapabilities;
 }
 
@@ -123,5 +130,6 @@ export interface UpdateUserConfigInput extends Partial<ModelPricing> {
   apiKey?: string;
   isActive?: boolean;
   isEnabled?: boolean;
+  imageMaxReferenceImages?: number;
   videoCapabilities?: VideoCapabilities;
 }

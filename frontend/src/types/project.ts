@@ -549,13 +549,13 @@ export interface GenerateVideoInput {
   model?: string;
   episodeId?: string;
   quality?: string;
-  resolution?: string;
+  aspectRatio?: string;
   fps?: number;
   duration?: number;
   promptExtend?: boolean;
   /**
    * Pass the project's merged timbre reference. Costs more, and a model that does not accept
-   * driving audio returns 400 rather than silently dropping it.
+   * reference audio returns 400 rather than silently dropping it.
    */
   withAudio?: boolean;
   sceneIds?: string[];

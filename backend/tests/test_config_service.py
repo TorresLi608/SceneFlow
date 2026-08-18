@@ -15,7 +15,7 @@ from app.api.v1.settings import activate_official_config, create_config, deactiv
 from app.core import database
 from app.core.database import db, init_db
 from app.core.security import decrypt, encrypt
-from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, image_base_url_for
+from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, base_url_for, gemini_openai_base_url, image_base_url_for
 from app.models import ChatMessage, ChatSession, ModelConfig, User, UserOfficialConfigDefault
 from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
 
@@ -89,7 +89,20 @@ def test_discover_qwen_native_models_returns_all_known_models() -> None:
         )
 
     assert result == {
-        "models": ["wan2.7-image", "wan2.7-image-pro", "wan2.7-t2v", "wan2.7-i2v", "qwen3-tts-flash:Cherry"]
+        "models": [
+            "wan2.7-image",
+            "wan2.7-image-pro",
+            "wan2.7-t2v",
+            "wan2.7-i2v",
+            "wan2.7-r2v",
+            "wan-t2v",
+            "wan-r2v",
+            "kling-v3-omni-video-generation",
+            "kling/kling-v3-omni-video-generation",
+            "wan3.0-video",
+            "qwen-audio-3.0-tts-flash",
+            "qwen3-tts-flash:Cherry",
+        ]
     }
     list_models.assert_not_awaited()
 
@@ -177,7 +190,7 @@ def test_video_capabilities_are_normalized_and_stored() -> None:
         "videoCapabilities": {
             "qualities": ["1080p", "480p"],
             "fps": [],
-            "resolutions": [],
+            "aspectRatios": ["adaptive", "16:9"],
             "promptExtend": True,
             "minDuration": 3,
             "maxDuration": 12,
@@ -190,21 +203,43 @@ def test_video_capabilities_are_normalized_and_stored() -> None:
     assert video_capabilities(config) == {
         "qualities": ["480p", "1080p"],
         "fps": [],
-        "resolutions": [],
+        "aspectRatios": ["16:9", "adaptive"],
         "promptExtend": True,
         "minDuration": 3,
         "maxDuration": 12,
+        "referenceImages": False,
         "referenceImagesRequired": False,
         "maxReferenceImages": 0,
         "referenceVideo": False,
-        "drivingAudio": False,
+        "maxReferenceVideos": 0,
+        "referenceVideosRequired": False,
+        "referenceAudio": False,
+        "maxReferenceAudios": 0,
+        "referenceAudiosRequired": False,
     }
+    unlimited_images = normalize_video_capabilities({"referenceImages": True, "maxReferenceImages": 100}, "qwen")
+    assert unlimited_images["maxReferenceImages"] == 100
     try:
         normalize_video_capabilities({"minDuration": 15, "maxDuration": 3}, "qwen")
     except HTTPException as exc:
         assert exc.status_code == 400
     else:
         raise AssertionError("invalid video duration range should fail")
+
+    legacy = normalize_video_capabilities(
+        {
+            "qualities": ["720p"],
+            "fps": [],
+            "resolutions": ["1280x720", "720x1280"],
+            "maxReferenceImages": 1,
+            "referenceImagesRequired": True,
+            "referenceVideo": False,
+            "drivingAudio": True,
+        },
+        "qwen",
+    )
+    assert legacy["aspectRatios"] == ["16:9", "9:16"]
+    assert (legacy["referenceImages"], legacy["referenceAudio"], legacy["maxReferenceAudios"]) == (True, True, 1)
 
 
 def test_qwen_media_configs_are_valid() -> None:
@@ -219,6 +254,20 @@ def test_qwen_media_configs_are_valid() -> None:
     )
     assert (image["provider"], video["provider"], audio["model"]) == ("qwen", "qwen", "qwen3-tts-flash:Cherry")
 
+    image_with_many_references = normalize_config_payload({
+        "purpose": "image",
+        "provider": "qwen",
+        "modelSeries": "wan2.7-image",
+        "imageMaxReferenceImages": 100,
+        "apiKey": "new-secret-key",
+    })
+    assert image_with_many_references["image_max_reference_images"] == 100
+
+    native_audio = normalize_config_payload(
+        {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen-audio-3.0-tts-flash", "apiKey": "new-secret-key"}
+    )
+    assert native_audio["model"] == "qwen-audio-3.0-tts-flash"
+
     try:
         normalize_config_payload(
             {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen3-tts-flash", "apiKey": "new-secret-key"}
@@ -230,6 +279,8 @@ def test_qwen_media_configs_are_valid() -> None:
 
 
 def test_gemini_image_helpers() -> None:
+    assert gemini_openai_base_url("https://generativelanguage.googleapis.com/v1beta") == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert gemini_openai_base_url("https://relay.example.com/v1") == "https://relay.example.com/v1"
     assert image_base_url_for("gemini", "https://generativelanguage.googleapis.com/v1beta/openai") == "https://generativelanguage.googleapis.com"
     assert _is_native_gemini_image_url("https://generativelanguage.googleapis.com/v1beta/openai")
     assert not _is_native_gemini_image_url("https://relay.example.com/v1")
@@ -237,6 +288,12 @@ def test_gemini_image_helpers() -> None:
     assert _openai_image_quality("2K") == "medium"
     assert image_base_url_for("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1") == "https://dashscope.aliyuncs.com/api/v1"
     assert image_base_url_for("qwen", "https://relay.example.com/v1") == "https://relay.example.com/v1"
+
+
+def test_openai_compatible_base_urls_preserve_relays() -> None:
+    assert base_url_for("qwen") == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    for provider in ("qwen", "doubao", "deepseek", "openai", "gemini"):
+        assert base_url_for(provider, "https://relay.example.com/v1/") == "https://relay.example.com/v1"
 
 
 def test_user_config_pricing_round_trip() -> None:
@@ -502,6 +559,7 @@ if __name__ == "__main__":
     test_video_capabilities_are_normalized_and_stored()
     test_qwen_media_configs_are_valid()
     test_gemini_image_helpers()
+    test_openai_compatible_base_urls_preserve_relays()
     test_user_config_pricing_round_trip()
     test_price_only_admin_edit_skips_model_revalidation()
     test_model_config_source_switch_preserves_id_and_key()

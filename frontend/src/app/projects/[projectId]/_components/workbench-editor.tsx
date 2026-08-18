@@ -128,7 +128,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [videoQuality, setVideoQuality] = useState("");
-  const [videoResolution, setVideoResolution] = useState("");
+  const [videoAspectRatio, setVideoAspectRatio] = useState("");
   const [videoFps, setVideoFps] = useState("");
   const [videoDuration, setVideoDuration] = useState(3);
   const [videoPromptExtend, setVideoPromptExtend] = useState(false);
@@ -454,7 +454,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       model?: string;
       episodeId?: string;
       quality?: string;
-      resolution?: string;
+      aspectRatio?: string;
       fps?: number;
       duration: number;
       promptExtend: boolean;
@@ -463,7 +463,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       model: params.model,
       episodeId: params.episodeId,
       quality: params.quality,
-      resolution: params.resolution,
+      aspectRatio: params.aspectRatio,
       fps: params.fps,
       duration: params.duration,
       promptExtend: params.promptExtend,
@@ -763,7 +763,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     if (sceneIds && unlockedIds.length === 0) return;
     setVideoSceneIds(unlockedIds);
     setVideoQuality(capabilities.qualities[0] ?? "");
-    setVideoResolution(capabilities.resolutions[0] ?? "");
+    setVideoAspectRatio(capabilities.aspectRatios[0] ?? "");
     setVideoFps(capabilities.fps[0] ? String(capabilities.fps[0]) : "");
     setVideoDuration(capabilities.minDuration);
     setVideoPromptExtend(false);
@@ -1369,12 +1369,12 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   </Select>
                 </div>
               ) : null}
-              {activeVideoConfig.videoCapabilities.resolutions.length ? (
+              {activeVideoConfig.videoCapabilities.aspectRatios.length ? (
                 <div className="space-y-2">
-                  <Label>{t("videos.resolution")}</Label>
-                  <Select value={videoResolution} onValueChange={(value) => setVideoResolution(value ?? "")}>
+                  <Label>{t("videos.aspectRatio")}</Label>
+                  <Select value={videoAspectRatio} onValueChange={(value) => setVideoAspectRatio(value ?? "")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{activeVideoConfig.videoCapabilities.resolutions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                    <SelectContent>{activeVideoConfig.videoCapabilities.aspectRatios.map((value) => <SelectItem key={value} value={value}>{value === "adaptive" ? t("videos.aspectRatioAdaptive") : value}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               ) : null}
@@ -1414,7 +1414,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   model: activeVideoConfig.modelSeries,
                   episodeId: currentProject.currentEpisodeId ?? undefined,
                   quality: videoQuality || undefined,
-                  resolution: videoResolution || undefined,
+                  aspectRatio: videoAspectRatio || undefined,
                   fps: videoFps ? Number(videoFps) : undefined,
                   duration: videoDuration,
                   promptExtend: videoPromptExtend,

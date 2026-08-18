@@ -90,6 +90,25 @@ class OptimizeDescriptionRequest(CamelModel):
     model: str | None = Field(default=None, max_length=160)
 
 
+class PromptOptimizationContext(CamelModel):
+    output_language: Literal["auto", "zh", "en"] | None = None
+    aspect_ratio: str | None = Field(default=None, max_length=20)
+    quality: str | None = Field(default=None, max_length=20)
+    duration: int | None = Field(default=None, ge=1, le=600)
+    fps: int | None = Field(default=None, ge=1, le=240)
+    voice: str | None = Field(default=None, max_length=160)
+    speech_rate: float | None = Field(default=None, ge=0.1, le=10)
+    pitch_rate: float | None = Field(default=None, ge=0.1, le=10)
+    instruction: str | None = Field(default=None, max_length=1000)
+    language: str | None = Field(default=None, max_length=40)
+
+
+class OptimizePromptRequest(CamelModel):
+    kind: Literal["image", "video", "audio"]
+    prompt: str = Field(min_length=1, max_length=10_000)
+    context: PromptOptimizationContext = Field(default_factory=PromptOptimizationContext)
+
+
 EpisodeStatus = Literal["draft", "storyboard", "generating", "done", "partial", "failed"]
 
 
@@ -315,12 +334,12 @@ class GenerateVideoRequest(CamelModel):
     model: str | None = Field(default=None, max_length=160)
     episode_id: str | None = Field(default=None, max_length=64)
     quality: str | None = Field(default=None, max_length=16)
-    resolution: str | None = Field(default=None, max_length=32)
+    aspect_ratio: str | None = Field(default=None, max_length=16)
     fps: int | None = None
     duration: int | None = None
     prompt_extend: bool = False
     # Pass the project's merged timbre reference so the model can keep speakers apart. Costs
-    # more, and not every video model accepts driving audio — asking for it on one that does
+    # more, and not every video model accepts reference audio — asking for it on one that does
     # not is a 400 rather than a silent downgrade the user would pay for and not notice.
     with_audio: bool = False
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)

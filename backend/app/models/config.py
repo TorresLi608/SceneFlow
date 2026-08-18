@@ -40,6 +40,7 @@ class ModelConfig(SQLModel, table=True):
     unit_name: str | None = Field(default="token", sa_column_kwargs={"server_default": text("'token'")})
     pricing_json: str | None = None
     video_capabilities_json: str | None = None
+    image_max_reference_images: int = Field(default=4, sa_column_kwargs={"server_default": text("4")})
 
 
 class UserOfficialConfigDefault(SQLModel, table=True):

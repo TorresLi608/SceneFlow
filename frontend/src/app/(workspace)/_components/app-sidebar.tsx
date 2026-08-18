@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BadgeDollarSign, History, ImageIcon, KeyRound, LayoutDashboard, MessageSquare, Settings, Shield, SlidersHorizontal, Video } from "lucide-react";
+import { Activity, AudioLines, BadgeDollarSign, History, ImageIcon, KeyRound, LayoutDashboard, MessageSquare, Settings, Shield, SlidersHorizontal, Video } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -44,6 +44,10 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
         <SidebarLink href="/images" active={isActive("/images")}>
           <ImageIcon className="size-4" />
           {t("home.images")}
+        </SidebarLink>
+        <SidebarLink href="/audio" active={isActive("/audio")}>
+          <AudioLines className="size-4" />
+          {t("home.audioGeneration")}
         </SidebarLink>
         <SidebarLink href="/videos" active={isActive("/videos")}>
           <Video className="size-4" />

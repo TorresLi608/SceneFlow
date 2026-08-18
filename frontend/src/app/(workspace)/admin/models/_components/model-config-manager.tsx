@@ -55,9 +55,9 @@ import {
 import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig, VideoCapabilities } from "@/types/auth";
 
-const videoQualityOptions: VideoCapabilities["qualities"] = ["480p", "720p", "1080p"];
+const videoQualityOptions: VideoCapabilities["qualities"] = ["480p", "720p", "1080p", "2K", "4K"];
 const videoFpsOptions: VideoCapabilities["fps"] = [24, 30, 60];
-const videoResolutionOptions: VideoCapabilities["resolutions"] = ["1280x720", "720x1280", "1024x1024", "1920x1080"];
+const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"];
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
   const isI2v = model.includes("-i2v");
@@ -67,27 +67,67 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
     ? {
         qualities: videoQualityOptions,
         fps: [],
-        resolutions: [],
+        aspectRatios: videoAspectRatioOptions,
         promptExtend: isI2v,
         minDuration: isI2v ? 2 : 3,
         maxDuration: 15,
+        referenceImages: isI2v || isR2v,
         referenceImagesRequired: isI2v || isR2v,
         maxReferenceImages: isR2v ? 5 : isI2v || isVideoEdit ? 1 : 0,
         referenceVideo: isVideoEdit,
-        drivingAudio: isI2v,
+        maxReferenceVideos: isVideoEdit ? 1 : 0,
+        referenceVideosRequired: false,
+        referenceAudio: isI2v,
+        maxReferenceAudios: isI2v ? 1 : 0,
+        referenceAudiosRequired: false,
       }
     : {
-        qualities: [],
+        qualities: videoQualityOptions,
         fps: [24],
-        resolutions: provider === "gemini" ? videoResolutionOptions.filter((value) => value !== "1024x1024") : videoResolutionOptions,
+        aspectRatios: provider === "gemini" ? videoAspectRatioOptions.filter((value) => value !== "1:1") : videoAspectRatioOptions,
         promptExtend: false,
         minDuration: 3,
         maxDuration: 15,
+        referenceImages: false,
         referenceImagesRequired: false,
-        maxReferenceImages: 1,
+        maxReferenceImages: 0,
         referenceVideo: false,
-        drivingAudio: false,
+        maxReferenceVideos: 0,
+        referenceVideosRequired: false,
+        referenceAudio: false,
+        maxReferenceAudios: 0,
+        referenceAudiosRequired: false,
       };
+}
+
+function editableVideoCapabilities(config: UserConfig): VideoCapabilities {
+  const defaults = defaultVideoCapabilities(config.provider, config.modelSeries);
+  const current = config.videoCapabilities as (Partial<VideoCapabilities> & {
+    resolutions?: string[];
+    drivingAudio?: boolean;
+  }) | null;
+  if (!current) return defaults;
+  const aspectByResolution: Record<string, VideoCapabilities["aspectRatios"][number]> = {
+    "1280x720": "16:9",
+    "720x1280": "9:16",
+    "1024x1024": "1:1",
+    "1920x1080": "16:9",
+  };
+  const aspectRatios = current.aspectRatios ?? [...new Set(current.resolutions?.flatMap((value) => aspectByResolution[value] ? [aspectByResolution[value]] : []) ?? [])];
+  const maxReferenceImages = current.maxReferenceImages ?? 0;
+  const referenceVideo = current.referenceVideo ?? false;
+  const referenceAudio = current.referenceAudio ?? current.drivingAudio ?? false;
+  return {
+    ...defaults,
+    ...current,
+    aspectRatios,
+    referenceImages: current.referenceImages ?? maxReferenceImages > 0,
+    maxReferenceImages,
+    referenceVideo,
+    maxReferenceVideos: current.maxReferenceVideos ?? (referenceVideo ? 1 : 0),
+    referenceAudio,
+    maxReferenceAudios: current.maxReferenceAudios ?? (referenceAudio ? 1 : 0),
+  };
 }
 
 const pageSize = 10;
@@ -161,6 +201,7 @@ export function ModelConfigManager() {
   const [cacheReadPricePerMillion, setCacheReadPricePerMillion] = useState("0");
   const [cacheWritePricePerMillion, setCacheWritePricePerMillion] = useState("0");
   const [unitPrice, setUnitPrice] = useState("0");
+  const [imageMaxReferenceImages, setImageMaxReferenceImages] = useState(4);
   const [videoCapabilities, setVideoCapabilities] = useState<VideoCapabilities>(defaultVideoCapabilities(defaultOption.value));
   const purposeLabel: Record<ConfigPurpose, string> = {
     general: t("settings.generalPurpose"),
@@ -233,6 +274,9 @@ export function ModelConfigManager() {
   const usesKnownModelList = ["edge", "system"].includes(provider) || (
     provider === "qwen"
     && (!baseUrl.trim() || baseUrl.trim() === "https://dashscope.aliyuncs.com/api/v1")
+  ) || (
+    provider === "doubao"
+    && (!baseUrl.trim() || baseUrl.trim() === "https://ark.cn-beijing.volces.com/api/v3")
   );
   const isMutating = (isSuperAdmin && officialQuery.isLoading) || userQuery.isLoading;
 
@@ -265,6 +309,7 @@ export function ModelConfigManager() {
     setCacheReadPricePerMillion("0");
     setCacheWritePricePerMillion("0");
     setUnitPrice("0");
+    setImageMaxReferenceImages(4);
     setVideoCapabilities(defaultVideoCapabilities(option.value));
   };
 
@@ -303,7 +348,8 @@ export function ModelConfigManager() {
     setCacheReadPricePerMillion(String(config.cacheReadPricePerMillion));
     setCacheWritePricePerMillion(String(config.cacheWritePricePerMillion));
     setUnitPrice(String(config.unitPrice));
-    setVideoCapabilities(config.videoCapabilities ?? defaultVideoCapabilities(config.provider, config.modelSeries));
+    setImageMaxReferenceImages(config.imageMaxReferenceImages ?? 4);
+    setVideoCapabilities(editableVideoCapabilities(config));
     setFormOpen(true);
   };
 
@@ -319,6 +365,7 @@ export function ModelConfigManager() {
     setModelSeries(option.modelSeries);
     setModelOptions([]);
     setUnitPrice("0");
+    setImageMaxReferenceImages(4);
     setVideoCapabilities(defaultVideoCapabilities(option.value));
   };
 
@@ -333,6 +380,7 @@ export function ModelConfigManager() {
     setModelSeries(option.modelSeries);
     setModelOptions([]);
     setVideoCapabilities(defaultVideoCapabilities(value));
+    setImageMaxReferenceImages(4);
     if (["edge", "system"].includes(value)) setApiKey("");
   };
 
@@ -402,6 +450,7 @@ export function ModelConfigManager() {
         cacheWritePricePerMillion,
         unitPrice: purpose === "image" || purpose === "video" || purpose === "audio" ? unitPrice : "0",
         unitName: defaultPricingUnit(purpose),
+        imageMaxReferenceImages: purpose === "image" ? imageMaxReferenceImages : undefined,
         videoCapabilities: purpose === "video" ? videoCapabilities : undefined,
       };
 
@@ -693,7 +742,7 @@ export function ModelConfigManager() {
       </div>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingConfig ? t("settings.editConfig") : t("settings.newConfig")}</DialogTitle>
             <DialogDescription>{t("admin.emptyApiKeyKeepsCurrent")}</DialogDescription>
@@ -823,8 +872,20 @@ export function ModelConfigManager() {
               <Textarea id="adminConfigDescription" value={description} onChange={(event) => setDescription(event.target.value)} />
             </div>
 
+            {purpose === "image" ? (
+              <div className="border-t border-border/70 pt-4">
+                <NumberInput
+                  id="imageMaxReferenceImages"
+                  label={t("admin.maxReferenceImages")}
+                  value={imageMaxReferenceImages}
+                  min={0}
+                  onChange={setImageMaxReferenceImages}
+                />
+              </div>
+            ) : null}
+
             {purpose === "video" ? (
-              <div className="space-y-3 border-t border-border/70 pt-4">
+              <div className="space-y-4 border-t border-border/70 pt-4">
                 <p className="text-sm font-medium">{t("admin.videoCapabilities")}</p>
                 <CapabilitySelect
                   label={t("admin.supportsVideoQuality")}
@@ -840,10 +901,11 @@ export function ModelConfigManager() {
                   onChange={(fps) => setVideoCapabilities((current) => ({ ...current, fps }))}
                 />
                 <CapabilitySelect
-                  label={t("admin.supportsVideoResolution")}
-                  values={videoCapabilities.resolutions}
-                  options={videoResolutionOptions}
-                  onChange={(resolutions) => setVideoCapabilities((current) => ({ ...current, resolutions }))}
+                  label={t("admin.supportsAspectRatio")}
+                  values={videoCapabilities.aspectRatios}
+                  options={videoAspectRatioOptions}
+                  format={(value) => value === "adaptive" ? t("admin.aspectRatioAdaptive") : value}
+                  onChange={(aspectRatios) => setVideoCapabilities((current) => ({ ...current, aspectRatios }))}
                 />
                 <label className="flex items-center justify-between gap-3 text-sm">
                   <span>{t("admin.supportsPromptExtend")}</span>
@@ -852,16 +914,26 @@ export function ModelConfigManager() {
                     onCheckedChange={(promptExtend) => setVideoCapabilities((current) => ({ ...current, promptExtend }))}
                   />
                 </label>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center">
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>{t("admin.supportsReferenceImages")}</span>
+                    <Switch checked={videoCapabilities.referenceImages} onCheckedChange={(referenceImages) => setVideoCapabilities((current) => ({
+                      ...current,
+                      referenceImages,
+                      maxReferenceImages: referenceImages ? Math.max(1, current.maxReferenceImages) : 0,
+                      referenceImagesRequired: referenceImages && current.referenceImagesRequired,
+                    }))} />
+                  </label>
+                  {videoCapabilities.referenceImages ? <div className="grid gap-3 sm:grid-cols-2">
                   <NumberInput
                     id="videoMaxReferenceImages"
                     label={t("admin.maxReferenceImages")}
-                    value={videoCapabilities.maxReferenceImages}
-                    min={0}
-                    max={9}
-                    onChange={(maxReferenceImages) => setVideoCapabilities((current) => ({
+                  value={videoCapabilities.maxReferenceImages}
+                  min={1}
+                  onChange={(maxReferenceImages) => setVideoCapabilities((current) => ({
                       ...current,
                       maxReferenceImages,
+                      referenceImages: maxReferenceImages > 0,
                       referenceImagesRequired: maxReferenceImages > 0 && current.referenceImagesRequired,
                     }))}
                   />
@@ -873,22 +945,43 @@ export function ModelConfigManager() {
                       onCheckedChange={(referenceImagesRequired) => setVideoCapabilities((current) => ({ ...current, referenceImagesRequired }))}
                     />
                   </label>
+                  </div> : <span className="text-xs text-muted-foreground">-</span>}
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex items-center justify-between gap-3 text-sm">
                     <span>{t("admin.supportsReferenceVideo")}</span>
                     <Switch
                       checked={videoCapabilities.referenceVideo}
-                      onCheckedChange={(referenceVideo) => setVideoCapabilities((current) => ({ ...current, referenceVideo }))}
+                      onCheckedChange={(referenceVideo) => setVideoCapabilities((current) => ({
+                        ...current,
+                        referenceVideo,
+                        maxReferenceVideos: referenceVideo ? Math.max(1, current.maxReferenceVideos) : 0,
+                        referenceVideosRequired: referenceVideo && current.referenceVideosRequired,
+                      }))}
                     />
                   </label>
                   <label className="flex items-center justify-between gap-3 text-sm">
-                    <span>{t("admin.supportsDrivingAudio")}</span>
+                    <span>{t("admin.supportsReferenceAudio")}</span>
                     <Switch
-                      checked={videoCapabilities.drivingAudio}
-                      onCheckedChange={(drivingAudio) => setVideoCapabilities((current) => ({ ...current, drivingAudio }))}
+                      checked={videoCapabilities.referenceAudio}
+                      onCheckedChange={(referenceAudio) => setVideoCapabilities((current) => ({
+                        ...current,
+                        referenceAudio,
+                        maxReferenceAudios: referenceAudio ? Math.max(1, current.maxReferenceAudios) : 0,
+                        referenceAudiosRequired: referenceAudio && current.referenceAudiosRequired,
+                      }))}
                     />
                   </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {videoCapabilities.referenceVideo ? <div className="grid gap-3 sm:grid-cols-2">
+                    <NumberInput id="videoMaxReferenceVideos" label={t("admin.maxReferenceVideos")} value={videoCapabilities.maxReferenceVideos} min={1} max={9} onChange={(maxReferenceVideos) => setVideoCapabilities((current) => ({ ...current, maxReferenceVideos, referenceVideo: maxReferenceVideos > 0 }))} />
+                    <label className="flex items-center justify-between gap-3 text-sm sm:self-end sm:pb-2"><span>{t("admin.referenceVideosRequired")}</span><Switch checked={videoCapabilities.referenceVideosRequired} onCheckedChange={(referenceVideosRequired) => setVideoCapabilities((current) => ({ ...current, referenceVideosRequired }))} /></label>
+                  </div> : <span />}
+                  {videoCapabilities.referenceAudio ? <div className="grid gap-3 sm:grid-cols-2">
+                    <NumberInput id="videoMaxReferenceAudios" label={t("admin.maxReferenceAudios")} value={videoCapabilities.maxReferenceAudios} min={1} max={9} onChange={(maxReferenceAudios) => setVideoCapabilities((current) => ({ ...current, maxReferenceAudios, referenceAudio: maxReferenceAudios > 0 }))} />
+                    <label className="flex items-center justify-between gap-3 text-sm sm:self-end sm:pb-2"><span>{t("admin.referenceAudiosRequired")}</span><Switch checked={videoCapabilities.referenceAudiosRequired} onCheckedChange={(referenceAudiosRequired) => setVideoCapabilities((current) => ({ ...current, referenceAudiosRequired }))} /></label>
+                  </div> : <span />}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <NumberInput
@@ -1058,7 +1151,7 @@ function CapabilitySelect<T extends string | number>({
   );
 }
 
-function NumberInput({ id, label, value, onChange, min = 1, max = 60 }: { id: string; label: string; value: number; onChange: (value: number) => void; min?: number; max?: number }) {
+function NumberInput({ id, label, value, onChange, min = 1, max }: { id: string; label: string; value: number; onChange: (value: number) => void; min?: number; max?: number }) {
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>

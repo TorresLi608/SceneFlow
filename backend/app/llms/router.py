@@ -96,6 +96,22 @@ def base_url_for(provider: str, base_url: str = "") -> str:
     raise ValueError(f"unsupported provider: {provider}")
 
 
+def gemini_openai_base_url(base_url: str = "") -> str:
+    """Use Google's OpenAI-compatible suffix only for Google's own endpoint."""
+    base = base_url_for("gemini", base_url)
+    parsed = urlparse(base)
+    if (parsed.hostname or "").lower() != "generativelanguage.googleapis.com":
+        return base
+    path = parsed.path.rstrip("/")
+    if path.endswith("/openai"):
+        return base
+    if path.endswith("/v1beta"):
+        return f"{base.rstrip('/')}/openai"
+    if not path:
+        return "https://generativelanguage.googleapis.com/v1beta/openai"
+    return base
+
+
 def image_base_url_for(provider: str, base_url: str = "") -> str:
     provider = provider.strip().lower()
     if provider == "openai":
@@ -114,6 +130,10 @@ def image_base_url_for(provider: str, base_url: str = "") -> str:
 
 def _is_native_gemini_image_url(base_url: str = "") -> bool:
     return urlparse(image_base_url_for("gemini", base_url)).netloc == "generativelanguage.googleapis.com"
+
+
+def _is_native_qwen_image_url(base_url: str = "") -> bool:
+    return (urlparse(base_url or QWEN_MEDIA_BASE_URL).hostname or "").lower() == "dashscope.aliyuncs.com"
 
 
 def _qwen_image_url(output: dict[str, Any]) -> str:
@@ -291,10 +311,11 @@ class ModelRouter:
                 max_retries=1,
                 **kwargs,
             )
+        compatible_base_url = gemini_openai_base_url(base_url) if provider == "gemini" else base_url_for(provider, base_url)
         return ChatOpenAI(
             model=pick_model(provider, model),
             api_key=api_key.strip(),
-            base_url=base_url_for(provider, base_url),
+            base_url=compatible_base_url,
             # Explicit base URLs disable langchain-openai's automatic stream usage.
             stream_usage=True,
             timeout=GENERATION_TIMEOUT_SECONDS,
@@ -313,11 +334,9 @@ class ModelRouter:
             ) as client:
                 response = await client.models.list(limit=100)
         else:
-            if provider == "gemini" and base_url.strip() and not base_url.rstrip("/").endswith("/openai"):
-                base_url = base_url.rstrip("/") + "/openai"
             async with AsyncOpenAI(
                 api_key=api_key.strip(),
-                base_url=base_url_for(provider, base_url),
+                base_url=gemini_openai_base_url(base_url) if provider == "gemini" else base_url_for(provider, base_url),
                 timeout=20,
                 max_retries=1,
             ) as client:
@@ -502,7 +521,7 @@ class ModelRouter:
         provider: str = "openai",
     ) -> ImageResult:
         provider = provider.strip().lower()
-        if provider == "qwen":
+        if provider == "qwen" and _is_native_qwen_image_url(base_url):
             return await self._generate_qwen_image(api_key, model, prompt, [], size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
             return await self._generate_gemini_image(api_key, model, prompt, [], size, quality, base_url)
@@ -542,7 +561,7 @@ class ModelRouter:
         provider: str = "openai",
     ) -> ImageResult:
         provider = provider.strip().lower()
-        if provider == "qwen":
+        if provider == "qwen" and _is_native_qwen_image_url(base_url):
             return await self._generate_qwen_image(api_key, model, prompt, images, size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
             return await self._generate_gemini_image(api_key, model, prompt, images, size, quality, base_url)

@@ -20,7 +20,26 @@ from app.utils.common import now
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 KNOWN_MODELS = {
-    "qwen": ["wan2.7-image", "wan2.7-image-pro", "wan2.7-t2v", "wan2.7-i2v", "qwen3-tts-flash:Cherry"],
+    "qwen": [
+        "wan2.7-image",
+        "wan2.7-image-pro",
+        "wan2.7-t2v",
+        "wan2.7-i2v",
+        "wan2.7-r2v",
+        "wan-t2v",
+        "wan-r2v",
+        "kling-v3-omni-video-generation",
+        "kling/kling-v3-omni-video-generation",
+        "wan3.0-video",
+        "qwen-audio-3.0-tts-flash",
+        "qwen3-tts-flash:Cherry",
+    ],
+    "doubao": [
+        "doubao-seedance-2.0",
+        "doubao-seedance-2.0-fast",
+        "doubao-seedance-2.0-mini",
+        "doubao-seedance-2.5",
+    ],
     "edge": ["zh-CN-XiaoxiaoNeural"],
     "system": ["Tingting", "zh"],
 }
@@ -83,7 +102,12 @@ async def discover_models(payload: dict[str, Any], _: int = Depends(current_user
     base_url = normalize_base_url(str(payload.get("baseUrl", "")))
     api_key = str(payload.get("apiKey", "")).strip()
     known_models = KNOWN_MODELS.get(provider)
-    if known_models and (provider in {"edge", "system"} or not base_url or base_url == QWEN_NATIVE_MEDIA_BASE_URL):
+    if known_models and (
+        provider in {"edge", "system"}
+        or not base_url
+        or (provider == "qwen" and base_url == QWEN_NATIVE_MEDIA_BASE_URL)
+        or (provider == "doubao" and base_url == "https://ark.cn-beijing.volces.com/api/v3")
+    ):
         return {"models": known_models}
     if provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic", "custom"}:
         raise HTTPException(400, "provider does not support model discovery")

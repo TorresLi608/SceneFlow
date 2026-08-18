@@ -71,6 +71,7 @@ def config_json(config: ModelConfig) -> dict[str, Any]:
         "cacheWritePricePerMillion": price("cache_write_price_per_million", "0"),
         "unitPrice": price("unit_price", "0"),
         "unitName": config.unit_name,
+        "imageMaxReferenceImages": config.image_max_reference_images if config.image_max_reference_images is not None else 4,
         "videoCapabilities": video_capabilities(config) if config.purpose == "video" else None,
     }
 
