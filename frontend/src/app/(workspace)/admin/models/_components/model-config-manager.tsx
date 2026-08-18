@@ -745,7 +745,12 @@ export function ModelConfigManager() {
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingConfig ? t("settings.editConfig") : t("settings.newConfig")}</DialogTitle>
-            <DialogDescription>{t("admin.emptyApiKeyKeepsCurrent")}</DialogDescription>
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <DialogDescription>{t("admin.emptyApiKeyKeepsCurrent")}</DialogDescription>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                <span className="font-bold text-destructive mr-0.5">*</span>为必填项
+              </span>
+            </div>
           </DialogHeader>
           <div className="grid gap-4">
             {isSuperAdmin ? (
@@ -757,7 +762,10 @@ export function ModelConfigManager() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="adminConfigPurpose">{t("settings.purpose")}</Label>
+                <Label htmlFor="adminConfigPurpose">
+                  {t("settings.purpose")}
+                  <RequiredAsterisk />
+                </Label>
                 <Select value={purpose} onValueChange={onPurposeChange}>
                   <SelectTrigger id="adminConfigPurpose"><SelectValue>{purposeLabel[purpose]}</SelectValue></SelectTrigger>
                   <SelectContent>
@@ -768,7 +776,10 @@ export function ModelConfigManager() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="adminConfigProvider">{t("settings.provider")}</Label>
+                <Label htmlFor="adminConfigProvider">
+                  {t("settings.provider")}
+                  <RequiredAsterisk />
+                </Label>
                 <Select value={provider} onValueChange={onProviderChange}>
                   <SelectTrigger id="adminConfigProvider"><SelectValue>{providerLabel(provider, t)}</SelectValue></SelectTrigger>
                   <SelectContent>
@@ -786,7 +797,10 @@ export function ModelConfigManager() {
                 <Input id="adminConfigName" value={name} onChange={(event) => setName(event.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="adminConfigConnection">{t("settings.connectionMode")}</Label>
+                <Label htmlFor="adminConfigConnection">
+                  {t("settings.connectionMode")}
+                  <RequiredAsterisk />
+                </Label>
                 <Select value={isRelay ? "relay" : "direct"} onValueChange={onConnectionModeChange}>
                   <SelectTrigger id="adminConfigConnection"><SelectValue>{isRelay ? t("admin.connectionRelay") : t("settings.officialDirect")}</SelectValue></SelectTrigger>
                   <SelectContent>
@@ -799,7 +813,10 @@ export function ModelConfigManager() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="adminConfigBaseUrl">Base URL</Label>
+                <Label htmlFor="adminConfigBaseUrl">
+                  Base URL
+                  {isRelay || provider === "custom" ? <RequiredAsterisk /> : null}
+                </Label>
                 <Input
                   id="adminConfigBaseUrl"
                   value={baseUrl}
@@ -811,7 +828,10 @@ export function ModelConfigManager() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="adminConfigKey">API Key</Label>
+                <Label htmlFor="adminConfigKey">
+                  API Key
+                  {!editingConfig && !["edge", "system"].includes(provider) ? <RequiredAsterisk /> : null}
+                </Label>
                 <div className="flex gap-2">
                   <Input
                     id="adminConfigKey"
@@ -842,7 +862,10 @@ export function ModelConfigManager() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="adminConfigModel">{t("settings.modelSeries")}</Label>
+                <Label htmlFor="adminConfigModel">
+                  {t("settings.modelSeries")}
+                  <RequiredAsterisk />
+                </Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -883,119 +906,311 @@ export function ModelConfigManager() {
                 />
               </div>
             ) : null}
-
             {purpose === "video" ? (
-              <div className="space-y-4 border-t border-border/70 pt-4">
-                <p className="text-sm font-medium">{t("admin.videoCapabilities")}</p>
-                <CapabilitySelect
-                  label={t("admin.supportsVideoQuality")}
-                  values={videoCapabilities.qualities}
-                  options={videoQualityOptions}
-                  onChange={(qualities) => setVideoCapabilities((current) => ({ ...current, qualities }))}
-                />
-                <CapabilitySelect
-                  label={t("admin.supportsVideoFps")}
-                  values={videoCapabilities.fps}
-                  options={videoFpsOptions}
-                  format={(value) => `${value} FPS`}
-                  onChange={(fps) => setVideoCapabilities((current) => ({ ...current, fps }))}
-                />
-                <CapabilitySelect
-                  label={t("admin.supportsAspectRatio")}
-                  values={videoCapabilities.aspectRatios}
-                  options={videoAspectRatioOptions}
-                  format={(value) => value === "adaptive" ? t("admin.aspectRatioAdaptive") : value}
-                  onChange={(aspectRatios) => setVideoCapabilities((current) => ({ ...current, aspectRatios }))}
-                />
-                <label className="flex items-center justify-between gap-3 text-sm">
-                  <span>{t("admin.supportsPromptExtend")}</span>
-                  <Switch
-                    checked={videoCapabilities.promptExtend}
-                    onCheckedChange={(promptExtend) => setVideoCapabilities((current) => ({ ...current, promptExtend }))}
-                  />
-                </label>
-                <div className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center">
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    <span>{t("admin.supportsReferenceImages")}</span>
-                    <Switch checked={videoCapabilities.referenceImages} onCheckedChange={(referenceImages) => setVideoCapabilities((current) => ({
-                      ...current,
-                      referenceImages,
-                      maxReferenceImages: referenceImages ? Math.max(1, current.maxReferenceImages) : 0,
-                      referenceImagesRequired: referenceImages && current.referenceImagesRequired,
-                    }))} />
-                  </label>
-                  {videoCapabilities.referenceImages ? <div className="grid gap-3 sm:grid-cols-2">
-                  <NumberInput
-                    id="videoMaxReferenceImages"
-                    label={t("admin.maxReferenceImages")}
-                  value={videoCapabilities.maxReferenceImages}
-                  min={1}
-                  onChange={(maxReferenceImages) => setVideoCapabilities((current) => ({
-                      ...current,
-                      maxReferenceImages,
-                      referenceImages: maxReferenceImages > 0,
-                      referenceImagesRequired: maxReferenceImages > 0 && current.referenceImagesRequired,
-                    }))}
-                  />
-                  <label className="flex items-center justify-between gap-3 text-sm sm:self-end sm:pb-2">
-                    <span>{t("admin.referenceImagesRequired")}</span>
-                    <Switch
-                      checked={videoCapabilities.referenceImagesRequired}
-                      disabled={videoCapabilities.maxReferenceImages === 0}
-                      onCheckedChange={(referenceImagesRequired) => setVideoCapabilities((current) => ({ ...current, referenceImagesRequired }))}
-                    />
-                  </label>
-                  </div> : <span className="text-xs text-muted-foreground">-</span>}
+              <div className="space-y-4 rounded-2xl border border-border/80 bg-muted/20 p-4">
+                <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+                  <div>
+                    <p className="text-xs font-bold text-foreground">
+                      {t("admin.videoCapabilities")}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      配置该视频模型支持的分辨率、比例、时长与参考素材限制
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">
+                    Video Specs
+                  </Badge>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    <span>{t("admin.supportsReferenceVideo")}</span>
-                    <Switch
-                      checked={videoCapabilities.referenceVideo}
-                      onCheckedChange={(referenceVideo) => setVideoCapabilities((current) => ({
-                        ...current,
-                        referenceVideo,
-                        maxReferenceVideos: referenceVideo ? Math.max(1, current.maxReferenceVideos) : 0,
-                        referenceVideosRequired: referenceVideo && current.referenceVideosRequired,
-                      }))}
+
+                {/* 分组 1: 输出格式与规格 */}
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    🎞️ 输出格式与规格
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <CapabilitySelect
+                      label={t("admin.supportsVideoQuality")}
+                      values={videoCapabilities.qualities}
+                      options={videoQualityOptions}
+                      onChange={(qualities) =>
+                        setVideoCapabilities((current) => ({ ...current, qualities }))
+                      }
                     />
-                  </label>
-                  <label className="flex items-center justify-between gap-3 text-sm">
-                    <span>{t("admin.supportsReferenceAudio")}</span>
-                    <Switch
-                      checked={videoCapabilities.referenceAudio}
-                      onCheckedChange={(referenceAudio) => setVideoCapabilities((current) => ({
-                        ...current,
-                        referenceAudio,
-                        maxReferenceAudios: referenceAudio ? Math.max(1, current.maxReferenceAudios) : 0,
-                        referenceAudiosRequired: referenceAudio && current.referenceAudiosRequired,
-                      }))}
+                    <CapabilitySelect
+                      label={t("admin.supportsVideoFps")}
+                      values={videoCapabilities.fps}
+                      options={videoFpsOptions}
+                      format={(value) => `${value} FPS`}
+                      onChange={(fps) =>
+                        setVideoCapabilities((current) => ({ ...current, fps }))
+                      }
                     />
-                  </label>
+                    <CapabilitySelect
+                      label={t("admin.supportsAspectRatio")}
+                      values={videoCapabilities.aspectRatios}
+                      options={videoAspectRatioOptions}
+                      format={(value) =>
+                        value === "adaptive" ? t("admin.aspectRatioAdaptive") : value
+                      }
+                      onChange={(aspectRatios) =>
+                        setVideoCapabilities((current) => ({ ...current, aspectRatios }))
+                      }
+                    />
+                  </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {videoCapabilities.referenceVideo ? <div className="grid gap-3 sm:grid-cols-2">
-                    <NumberInput id="videoMaxReferenceVideos" label={t("admin.maxReferenceVideos")} value={videoCapabilities.maxReferenceVideos} min={1} max={9} onChange={(maxReferenceVideos) => setVideoCapabilities((current) => ({ ...current, maxReferenceVideos, referenceVideo: maxReferenceVideos > 0 }))} />
-                    <label className="flex items-center justify-between gap-3 text-sm sm:self-end sm:pb-2"><span>{t("admin.referenceVideosRequired")}</span><Switch checked={videoCapabilities.referenceVideosRequired} onCheckedChange={(referenceVideosRequired) => setVideoCapabilities((current) => ({ ...current, referenceVideosRequired }))} /></label>
-                  </div> : <span />}
-                  {videoCapabilities.referenceAudio ? <div className="grid gap-3 sm:grid-cols-2">
-                    <NumberInput id="videoMaxReferenceAudios" label={t("admin.maxReferenceAudios")} value={videoCapabilities.maxReferenceAudios} min={1} max={9} onChange={(maxReferenceAudios) => setVideoCapabilities((current) => ({ ...current, maxReferenceAudios, referenceAudio: maxReferenceAudios > 0 }))} />
-                    <label className="flex items-center justify-between gap-3 text-sm sm:self-end sm:pb-2"><span>{t("admin.referenceAudiosRequired")}</span><Switch checked={videoCapabilities.referenceAudiosRequired} onCheckedChange={(referenceAudiosRequired) => setVideoCapabilities((current) => ({ ...current, referenceAudiosRequired }))} /></label>
-                  </div> : <span />}
+
+                {/* 分组 2: 时长控制与智能扩写 */}
+                <div className="space-y-3 border-t border-border/50 pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    ⏱️ 时长限制与生成增强
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <NumberInput
+                      id="videoMinDuration"
+                      label={t("admin.videoMinDuration")}
+                      value={videoCapabilities.minDuration}
+                      min={1}
+                      max={60}
+                      onChange={(minDuration) =>
+                        setVideoCapabilities((current) => ({ ...current, minDuration }))
+                      }
+                    />
+                    <NumberInput
+                      id="videoMaxDuration"
+                      label={t("admin.videoMaxDuration")}
+                      value={videoCapabilities.maxDuration}
+                      min={1}
+                      max={120}
+                      onChange={(maxDuration) =>
+                        setVideoCapabilities((current) => ({ ...current, maxDuration }))
+                      }
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/50 p-3">
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">
+                        {t("admin.supportsPromptExtend")}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        允许模型根据简短提示词自动扩写丰富运镜与动作细节
+                      </p>
+                    </div>
+                    <Switch
+                      checked={videoCapabilities.promptExtend}
+                      onCheckedChange={(promptExtend) =>
+                        setVideoCapabilities((current) => ({ ...current, promptExtend }))
+                      }
+                    />
+                  </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <NumberInput
-                    id="videoMinDuration"
-                    label={t("admin.videoMinDuration")}
-                    value={videoCapabilities.minDuration}
-                    onChange={(minDuration) => setVideoCapabilities((current) => ({ ...current, minDuration }))}
-                  />
-                  <NumberInput
-                    id="videoMaxDuration"
-                    label={t("admin.videoMaxDuration")}
-                    value={videoCapabilities.maxDuration}
-                    onChange={(maxDuration) => setVideoCapabilities((current) => ({ ...current, maxDuration }))}
-                  />
+
+                {/* 分组 3: 多模态参考素材 (图片/视频/音频) */}
+                <div className="space-y-3 border-t border-border/50 pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    🖼️ 多模态参考素材 (图/视/音生视频)
+                  </p>
+
+                  {/* 3.1 参考图片 */}
+                  <div className="rounded-xl border border-border/70 bg-card/60 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="flex size-6 items-center justify-center rounded-lg bg-primary/10 text-primary text-xs font-bold">
+                          图
+                        </span>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">
+                            {t("admin.supportsReferenceImages")}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            支持以首尾帧或角色垫图生成视频
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={videoCapabilities.referenceImages}
+                        onCheckedChange={(referenceImages) =>
+                          setVideoCapabilities((current) => ({
+                            ...current,
+                            referenceImages,
+                            maxReferenceImages: referenceImages
+                              ? Math.max(1, current.maxReferenceImages)
+                              : 0,
+                            referenceImagesRequired:
+                              referenceImages && current.referenceImagesRequired,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    {videoCapabilities.referenceImages ? (
+                      <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t border-border/40">
+                        <NumberInput
+                          id="videoMaxReferenceImages"
+                          label={t("admin.maxReferenceImages")}
+                          value={videoCapabilities.maxReferenceImages}
+                          min={1}
+                          max={9}
+                          onChange={(maxReferenceImages) =>
+                            setVideoCapabilities((current) => ({
+                              ...current,
+                              maxReferenceImages,
+                              referenceImages: maxReferenceImages > 0,
+                              referenceImagesRequired:
+                                maxReferenceImages > 0 && current.referenceImagesRequired,
+                            }))
+                          }
+                        />
+                        <div className="flex items-center justify-between rounded-lg bg-muted/40 p-2.5 sm:self-end">
+                          <span className="text-xs font-medium">
+                            {t("admin.referenceImagesRequired")}
+                          </span>
+                          <Switch
+                            checked={videoCapabilities.referenceImagesRequired}
+                            disabled={videoCapabilities.maxReferenceImages === 0}
+                            onCheckedChange={(referenceImagesRequired) =>
+                              setVideoCapabilities((current) => ({
+                                ...current,
+                                referenceImagesRequired,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* 3.2 参考视频 */}
+                  <div className="rounded-xl border border-border/70 bg-card/60 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="flex size-6 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 text-xs font-bold">
+                          视
+                        </span>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">
+                            {t("admin.supportsReferenceVideo")}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            支持视频续写、视频编辑与风格重绘
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={videoCapabilities.referenceVideo}
+                        onCheckedChange={(referenceVideo) =>
+                          setVideoCapabilities((current) => ({
+                            ...current,
+                            referenceVideo,
+                            maxReferenceVideos: referenceVideo
+                              ? Math.max(1, current.maxReferenceVideos)
+                              : 0,
+                            referenceVideosRequired:
+                              referenceVideo && current.referenceVideosRequired,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    {videoCapabilities.referenceVideo ? (
+                      <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t border-border/40">
+                        <NumberInput
+                          id="videoMaxReferenceVideos"
+                          label={t("admin.maxReferenceVideos")}
+                          value={videoCapabilities.maxReferenceVideos}
+                          min={1}
+                          max={9}
+                          onChange={(maxReferenceVideos) =>
+                            setVideoCapabilities((current) => ({
+                              ...current,
+                              maxReferenceVideos,
+                              referenceVideo: maxReferenceVideos > 0,
+                            }))
+                          }
+                        />
+                        <div className="flex items-center justify-between rounded-lg bg-muted/40 p-2.5 sm:self-end">
+                          <span className="text-xs font-medium">
+                            {t("admin.referenceVideosRequired")}
+                          </span>
+                          <Switch
+                            checked={videoCapabilities.referenceVideosRequired}
+                            onCheckedChange={(referenceVideosRequired) =>
+                              setVideoCapabilities((current) => ({
+                                ...current,
+                                referenceVideosRequired,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* 3.3 参考音频 */}
+                  <div className="rounded-xl border border-border/70 bg-card/60 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="flex size-6 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-bold">
+                          音
+                        </span>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground">
+                            {t("admin.supportsReferenceAudio")}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            支持音频对口型驱动（Lip-sync）生成
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={videoCapabilities.referenceAudio}
+                        onCheckedChange={(referenceAudio) =>
+                          setVideoCapabilities((current) => ({
+                            ...current,
+                            referenceAudio,
+                            maxReferenceAudios: referenceAudio
+                              ? Math.max(1, current.maxReferenceAudios)
+                              : 0,
+                            referenceAudiosRequired:
+                              referenceAudio && current.referenceAudiosRequired,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    {videoCapabilities.referenceAudio ? (
+                      <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t border-border/40">
+                        <NumberInput
+                          id="videoMaxReferenceAudios"
+                          label={t("admin.maxReferenceAudios")}
+                          value={videoCapabilities.maxReferenceAudios}
+                          min={1}
+                          max={9}
+                          onChange={(maxReferenceAudios) =>
+                            setVideoCapabilities((current) => ({
+                              ...current,
+                              maxReferenceAudios,
+                              referenceAudio: maxReferenceAudios > 0,
+                            }))
+                          }
+                        />
+                        <div className="flex items-center justify-between rounded-lg bg-muted/40 p-2.5 sm:self-end">
+                          <span className="text-xs font-medium">
+                            {t("admin.referenceAudiosRequired")}
+                          </span>
+                          <Switch
+                            checked={videoCapabilities.referenceAudiosRequired}
+                            onCheckedChange={(referenceAudiosRequired) =>
+                              setVideoCapabilities((current) => ({
+                                ...current,
+                                referenceAudiosRequired,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -1006,18 +1221,37 @@ export function ModelConfigManager() {
                 <p className="mt-1 text-xs text-muted-foreground">{t("admin.pricingHint")}</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <PricingInput id="pricingMultiplier" label={t("admin.pricingMultiplier")} value={pricingMultiplier} onChange={setPricingMultiplier} />
+                <PricingInput
+                  id="pricingMultiplier"
+                  label={t("admin.pricingMultiplier")}
+                  value={pricingMultiplier}
+                  onChange={setPricingMultiplier}
+                  required
+                />
                 {purpose === "image" || purpose === "video" || purpose === "audio" ? (
                   <PricingInput
                     id="unitPrice"
                     label={t(purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}
                     value={unitPrice}
                     onChange={setUnitPrice}
+                    required
                   />
                 ) : (
                   <>
-                    <PricingInput id="inputPrice" label={t("admin.inputPrice")} value={inputPricePerMillion} onChange={setInputPricePerMillion} />
-                    <PricingInput id="outputPrice" label={t("admin.outputPrice")} value={outputPricePerMillion} onChange={setOutputPricePerMillion} />
+                    <PricingInput
+                      id="inputPrice"
+                      label={t("admin.inputPrice")}
+                      value={inputPricePerMillion}
+                      onChange={setInputPricePerMillion}
+                      required
+                    />
+                    <PricingInput
+                      id="outputPrice"
+                      label={t("admin.outputPrice")}
+                      value={outputPricePerMillion}
+                      onChange={setOutputPricePerMillion}
+                      required
+                    />
                     <PricingInput id="cacheReadPrice" label={t("admin.cacheReadPrice")} value={cacheReadPricePerMillion} onChange={setCacheReadPricePerMillion} />
                     <PricingInput id="cacheWritePrice" label={t("admin.cacheWritePrice")} value={cacheWritePricePerMillion} onChange={setCacheWritePricePerMillion} />
                   </>
@@ -1111,10 +1345,33 @@ export function ModelConfigManager() {
   );
 }
 
-function PricingInput({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
+function RequiredAsterisk() {
+  return (
+    <span className="ml-1 font-bold text-destructive" title="必填项">
+      *
+    </span>
+  );
+}
+
+function PricingInput({
+  id,
+  label,
+  value,
+  onChange,
+  required = false,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-xs">
+        {label}
+        {required ? <RequiredAsterisk /> : null}
+      </Label>
       <Input id={id} type="number" min="0" step="any" value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
@@ -1134,27 +1391,53 @@ function CapabilitySelect<T extends string | number>({
   format?: (value: T) => string;
 }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center">
-      <label className="flex items-center justify-between gap-3 text-sm">
-        <span>{label}</span>
-        <Switch checked={values.length > 0} onCheckedChange={(checked) => onChange(checked ? options : [])} />
-      </label>
-      {values.length ? (
-        <Select multiple value={values} onValueChange={(value) => onChange(value as T[])}>
-          <SelectTrigger><SelectValue>{values.map(format).join(", ")}</SelectValue></SelectTrigger>
-          <SelectContent alignItemWithTrigger={false}>
-            {options.map((option) => <SelectItem key={option} value={option}>{format(option)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      ) : <span className="text-xs text-muted-foreground">-</span>}
+    <div className="space-y-1.5">
+      <Label className="text-xs font-semibold text-foreground/90">{label}</Label>
+      <Select
+        multiple
+        value={values}
+        onValueChange={(value) => onChange((value ?? []) as T[])}
+      >
+        <SelectTrigger className="h-9 text-xs">
+          <SelectValue placeholder="请选择支持项">
+            {values.length ? values.map(format).join(", ") : "未选择"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false} className="max-h-60">
+          {options.map((option) => (
+            <SelectItem key={option} value={option} className="text-xs">
+              {format(option)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
 
-function NumberInput({ id, label, value, onChange, min = 1, max }: { id: string; label: string; value: number; onChange: (value: number) => void; min?: number; max?: number }) {
+function NumberInput({
+  id,
+  label,
+  value,
+  onChange,
+  min = 1,
+  max,
+  required = false,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  required?: boolean;
+}) {
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className="text-xs">
+        {label}
+        {required ? <RequiredAsterisk /> : null}
+      </Label>
       <Input id={id} type="number" min={min} max={max} step="1" value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </div>
   );

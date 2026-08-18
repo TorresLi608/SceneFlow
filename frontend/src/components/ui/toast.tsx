@@ -9,8 +9,8 @@ import { XIcon, CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Load
 
 const toast = ToastPrimitive.createToastManager()
 
-function ToastProvider({ ...props }: ToastPrimitive.Provider.Props) {
-  return <ToastPrimitive.Provider {...props} />
+function ToastProvider({ timeout = 4000, ...props }: ToastPrimitive.Provider.Props) {
+  return <ToastPrimitive.Provider timeout={timeout} {...props} />
 }
 
 function ToastPortal({ ...props }: ToastPrimitive.Portal.Props) {
@@ -199,11 +199,12 @@ function ToastList() {
 
 function Toaster({
   children,
+  timeout = 4000,
   toastManager = toast,
   ...props
 }: ToastPrimitive.Provider.Props) {
   return (
-    <ToastProvider toastManager={toastManager} {...props}>
+    <ToastProvider toastManager={toastManager} timeout={timeout} {...props}>
       {children}
       <ToastPortal>
         <ToastViewport>
