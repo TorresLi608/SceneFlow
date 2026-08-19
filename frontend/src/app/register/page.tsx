@@ -88,7 +88,7 @@ function RegisterForm() {
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               placeholder="your_name"
-              className="h-9 pl-9 pr-3 text-xs sm:text-sm focus-visible:ring-primary/40"
+              className="h-9 pl-9 pr-3 text-xs sm:text-sm"
               required
               autoComplete="username"
             />
@@ -107,7 +107,7 @@ function RegisterForm() {
               onChange={(event) => setNickname(event.target.value)}
               maxLength={64}
               placeholder="显示昵称"
-              className="h-9 pl-9 pr-3 text-xs sm:text-sm focus-visible:ring-primary/40"
+              className="h-9 pl-9 pr-3 text-xs sm:text-sm"
             />
           </div>
         </div>
@@ -125,7 +125,7 @@ function RegisterForm() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="••••••••"
-            className="h-9 pl-9 pr-10 text-xs sm:text-sm focus-visible:ring-primary/40"
+            className="h-9 pl-9 pr-10 text-xs sm:text-sm"
             required
             autoComplete="new-password"
           />
@@ -156,7 +156,7 @@ function RegisterForm() {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             placeholder="••••••••"
-            className="h-9 pl-9 pr-3 text-xs sm:text-sm focus-visible:ring-primary/40"
+            className="h-9 pl-9 pr-3 text-xs sm:text-sm"
             required
             autoComplete="new-password"
           />
@@ -174,7 +174,7 @@ function RegisterForm() {
             value={invitationCode}
             onChange={(event) => setInvitationCode(event.target.value.toUpperCase())}
             placeholder="INVITE-XXXX"
-            className="h-9 pl-9 pr-3 uppercase tracking-wider text-xs sm:text-sm focus-visible:ring-primary/40"
+            className="h-9 pl-9 pr-3 uppercase tracking-wider text-xs sm:text-sm"
             required
           />
         </div>

@@ -240,7 +240,7 @@ export function AudioGenerationPanel({
           </Badge>
         </div>
 
-        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 chat-message-list-scrollbar">
+        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 chat-message-list-scrollbar">
           {/* 模型与音色选择 */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground/90">{t("audio.model")}</label>
@@ -279,7 +279,7 @@ export function AudioGenerationPanel({
               value={voice}
               onChange={(event) => setVoiceOverride(event.target.value)}
               placeholder="zh_female_cancan / custom_voice"
-              className="h-9 text-xs focus-visible:ring-primary/40"
+              className="h-9 text-xs"
             />
           </div>
 
@@ -354,7 +354,7 @@ export function AudioGenerationPanel({
               value={text}
               onChange={(event) => setText(event.target.value)}
               placeholder={t("audio.textPlaceholder")}
-              className="min-h-28 rounded-xl text-xs focus-visible:ring-primary/40 resize-none"
+              className="min-h-28 rounded-xl text-xs resize-none"
             />
           </div>
         </div>

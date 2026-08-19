@@ -174,7 +174,7 @@ export default function AiScriptPage() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("home.searchProjects")}
-              className="h-9 pl-8 text-xs focus-visible:ring-primary/40"
+              className="h-9 pl-8 text-xs"
             />
           </div>
           <Select

@@ -1050,7 +1050,6 @@ export function ModelConfigManager() {
                           label={t("admin.maxReferenceImages")}
                           value={videoCapabilities.maxReferenceImages}
                           min={1}
-                          max={9}
                           onChange={(maxReferenceImages) =>
                             setVideoCapabilities((current) => ({
                               ...current,

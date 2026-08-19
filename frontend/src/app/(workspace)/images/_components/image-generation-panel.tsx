@@ -291,7 +291,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
           </Badge>
         </div>
 
-        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 chat-message-list-scrollbar">
+        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 chat-message-list-scrollbar">
           {/* 模型选择 */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground/90">{t("images.model")}</label>
@@ -413,7 +413,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder={t("images.promptPlaceholder")}
-              className="min-h-28 rounded-xl text-xs focus-visible:ring-primary/40 resize-none"
+              className="min-h-28 rounded-xl text-xs resize-none"
             />
           </div>
 

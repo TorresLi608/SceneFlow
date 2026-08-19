@@ -2,15 +2,18 @@
 
 import { useMutation } from "@tanstack/react-query";
 import {
+  AudioLines,
   Download,
   Film,
   History,
+  ImageIcon,
   Loader2,
+  Plus,
   RotateCcw,
   Sparkles,
+  Trash2,
   Upload,
   Video,
-  X,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -19,6 +22,7 @@ import { generateVideoAction } from "@/actions/video-generation-actions";
 import { optimizePromptAction } from "@/actions/prompt-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -141,6 +145,14 @@ export function VideoGenerationPanel({
     (config) => configSelectValue(config) === effectiveConfigId
   );
   const capabilities = selectedConfig?.videoCapabilities;
+  const usesQwenTemporaryUpload = selectedConfig?.provider === "qwen";
+  const visibleReferences = usesQwenTemporaryUpload ? references : references.filter((item) => item.url);
+  const visibleReferenceVideos = usesQwenTemporaryUpload
+    ? referenceVideos
+    : referenceVideos.filter((item) => item.url);
+  const visibleReferenceAudios = usesQwenTemporaryUpload
+    ? referenceAudios
+    : referenceAudios.filter((item) => item.url);
   const selectedQuality = capabilities?.qualities.includes(quality)
     ? quality
     : capabilities?.qualities[0] ?? "720p";
@@ -222,8 +234,8 @@ export function VideoGenerationPanel({
       const limit = capabilities?.maxReferenceImages ?? 1;
       const next = [...references];
       for (const file of Array.from(files).slice(0, Math.max(0, limit - next.length))) {
-        if (!file.type.startsWith("image/") || file.size > 20 * 1024 * 1024) {
-          setErrorMessage(t("videos.referenceImageLimit"));
+        if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
+          setErrorMessage(t("videos.referenceLimit"));
           continue;
         }
         next.push({ name: file.name, data: await readFileAsDataUrl(file) });
@@ -241,9 +253,10 @@ export function VideoGenerationPanel({
       }
       setReferenceVideos(next);
     } else {
+      const limit = capabilities?.maxReferenceAudios ?? 1;
       const next = [...referenceAudios];
-      for (const file of Array.from(files).slice(0, Math.max(0, 1 - next.length))) {
-        if (!file.type.startsWith("audio/") || file.size > 20 * 1024 * 1024) {
+      for (const file of Array.from(files).slice(0, Math.max(0, limit - next.length))) {
+        if (!file.type.startsWith("audio/") || file.size > 50 * 1024 * 1024) {
           setErrorMessage(t("videos.referenceAudioLimit"));
           continue;
         }
@@ -251,6 +264,50 @@ export function VideoGenerationPanel({
       }
       setReferenceAudios(next);
     }
+  };
+
+  const addReferenceUrl = (target: "images" | "videos" | "audios") => {
+    const value = (
+      target === "images"
+        ? referenceImageUrl
+        : target === "videos"
+          ? referenceVideoUrl
+          : referenceAudioUrl
+    ).trim();
+    if (!value) return;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    } catch {
+      setErrorMessage(t("videos.invalidReferenceUrl"));
+      return;
+    }
+
+    const items =
+      target === "images"
+        ? visibleReferences
+        : target === "videos"
+          ? visibleReferenceVideos
+          : visibleReferenceAudios;
+    const maximum =
+      target === "images"
+        ? capabilities?.maxReferenceImages
+        : target === "videos"
+          ? capabilities?.maxReferenceVideos
+          : capabilities?.maxReferenceAudios;
+    if (!maximum || items.length >= maximum) return;
+
+    if (target === "images") {
+      setReferences((current) => [...current, { url: value }]);
+      setReferenceImageUrl("");
+    } else if (target === "videos") {
+      setReferenceVideos((current) => [...current, { url: value }]);
+      setReferenceVideoUrl("");
+    } else {
+      setReferenceAudios((current) => [...current, { url: value }]);
+      setReferenceAudioUrl("");
+    }
+    setErrorMessage(null);
   };
 
   const generate = () => {
@@ -264,18 +321,9 @@ export function VideoGenerationPanel({
       quality: selectedQuality,
       duration: selectedDuration,
       promptExtend: selectedPromptExtend,
-      references: [
-        ...references,
-        ...(referenceImageUrl.trim() ? [{ url: referenceImageUrl.trim() }] : []),
-      ],
-      referenceVideos: [
-        ...referenceVideos,
-        ...(referenceVideoUrl.trim() ? [{ url: referenceVideoUrl.trim() }] : []),
-      ],
-      referenceAudios: [
-        ...referenceAudios,
-        ...(referenceAudioUrl.trim() ? [{ url: referenceAudioUrl.trim() }] : []),
-      ],
+      references: visibleReferences,
+      referenceVideos: visibleReferenceVideos,
+      referenceAudios: visibleReferenceAudios,
       ...selectedConfigPayload(selectedConfig),
     });
   };
@@ -325,7 +373,7 @@ export function VideoGenerationPanel({
           </Badge>
         </div>
 
-        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 chat-message-list-scrollbar">
+        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 chat-message-list-scrollbar">
           {/* 模型选择 */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground/90">
@@ -503,67 +551,59 @@ export function VideoGenerationPanel({
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder={t("videos.promptPlaceholder")}
-              className="min-h-24 rounded-xl text-xs focus-visible:ring-primary/40 resize-none"
+              className="min-h-24 rounded-xl text-xs resize-none"
             />
           </div>
 
-          {/* 垫图参考 */}
           {capabilities?.referenceImages ? (
             <div className="space-y-2 rounded-2xl border border-border/70 bg-card/30 p-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-foreground/90">
-                  {t("videos.referenceImages")}
-                </label>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="xs"
-                  className="h-7 gap-1 text-[11px] cursor-pointer"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={references.length >= (capabilities.maxReferenceImages || 1)}
-                >
-                  <Upload className="size-3" />
-                  {t("videos.uploadReferenceImage")}
-                </Button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  addReferences(e.target.files, "images");
-                  e.currentTarget.value = "";
-                }}
-              />
-              {references.length ? (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {references.map((ref, idx) => (
-                    <div
-                      key={idx}
-                      className="relative size-14 overflow-hidden rounded-xl border border-border bg-background shadow-xs"
-                    >
-                      <Image
-                        src={ref.data || ref.url || ""}
-                        alt=""
-                        fill
-                        unoptimized
-                        sizes="56px"
-                        className="object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setReferences((curr) => curr.filter((_, i) => i !== idx))
-                        }
-                        className="absolute top-0.5 right-0.5 inline-flex size-4 items-center justify-center rounded-full bg-background/90 text-foreground hover:bg-destructive hover:text-white cursor-pointer"
-                      >
-                        <X className="size-2.5" />
-                      </button>
-                    </div>
-                  ))}
+              <div className="flex items-center justify-between gap-2 text-xs font-semibold">
+                <div className="flex items-center gap-1.5">
+                  <ImageIcon className="size-4 text-primary" />
+                  <span>{t("videos.referenceImagesLabel")}</span>
                 </div>
-              ) : null}
+                <Badge variant="secondary" className="text-[10px]">{visibleReferences.length}/{capabilities.maxReferenceImages}</Badge>
+              </div>
+              <div className="flex items-center gap-1">
+                {usesQwenTemporaryUpload ? (
+                  <Button type="button" variant="secondary" size="xs" className="h-8 gap-1 text-xs" onClick={() => fileInputRef.current?.click()} disabled={visibleReferences.length >= capabilities.maxReferenceImages}>
+                    <Upload className="size-3.5" />{t("videos.uploadReferenceImage")}
+                  </Button>
+                ) : null}
+                <Button type="button" variant="ghost" size="xs" onClick={() => setReferences([])} disabled={!visibleReferences.length}>{t("common.clear")}</Button>
+              </div>
+              {usesQwenTemporaryUpload ? <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { addReferences(event.target.files, "images"); event.currentTarget.value = ""; }} /> : null}
+              <div className="flex gap-2">
+                <Input value={referenceImageUrl} onChange={(event) => setReferenceImageUrl(event.target.value)} placeholder={t("videos.referenceUrlPlaceholder")} aria-label={t("videos.referenceImagesLabel")} className="h-8 text-xs" />
+                <Button type="button" variant="secondary" size="xs" className="h-8 shrink-0 gap-1" onClick={() => addReferenceUrl("images")} disabled={visibleReferences.length >= capabilities.maxReferenceImages}><Plus className="size-3.5" />{t("videos.addReferenceUrl")}</Button>
+              </div>
+              <div className="space-y-1.5">
+                {visibleReferences.map((reference, index) => (
+                  <div key={`${reference.name || reference.url}-${index}`} className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 p-1.5">
+                    <Image src={reference.data || reference.url || ""} alt="" width={40} height={40} unoptimized className="size-10 shrink-0 rounded-md object-cover" />
+                    <span className="min-w-0 flex-1 truncate text-xs">{reference.name || reference.url}</span>
+                    <Button type="button" variant="ghost" size="icon-xs" onClick={() => setReferences((current) => current.filter((item) => item !== reference))} aria-label={t("common.delete")}><Trash2 className="size-3.5 text-destructive" /></Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {capabilities?.referenceVideo ? (
+            <div className="space-y-2 rounded-2xl border border-border/70 bg-card/30 p-3">
+              <div className="flex items-center justify-between gap-2 text-xs font-semibold"><div className="flex items-center gap-1.5"><Video className="size-4 text-primary" /><span>{t("videos.referenceVideo")}</span></div><Badge variant="secondary" className="text-[10px]">{visibleReferenceVideos.length}/{capabilities.maxReferenceVideos}</Badge></div>
+              <div className="flex items-center gap-1">{usesQwenTemporaryUpload ? <><Button type="button" variant="secondary" size="xs" className="h-8 gap-1 text-xs" onClick={() => videoInputRef.current?.click()} disabled={visibleReferenceVideos.length >= capabilities.maxReferenceVideos}><Upload className="size-3.5" />{t("videos.uploadReferenceVideo")}</Button><input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" multiple={capabilities.maxReferenceVideos > 1} className="hidden" onChange={(event) => { addReferences(event.target.files, "videos"); event.currentTarget.value = ""; }} /></> : null}<Button type="button" variant="ghost" size="xs" onClick={() => setReferenceVideos([])} disabled={!visibleReferenceVideos.length}>{t("common.clear")}</Button></div>
+              <div className="flex gap-2"><Input value={referenceVideoUrl} onChange={(event) => setReferenceVideoUrl(event.target.value)} placeholder={t("videos.referenceUrlPlaceholder")} aria-label={t("videos.referenceVideo")} className="h-8 text-xs" /><Button type="button" variant="secondary" size="xs" className="h-8 shrink-0 gap-1" onClick={() => addReferenceUrl("videos")} disabled={visibleReferenceVideos.length >= capabilities.maxReferenceVideos}><Plus className="size-3.5" />{t("videos.addReferenceUrl")}</Button></div>
+              <div className="space-y-1.5">{visibleReferenceVideos.map((reference, index) => <div key={`${reference.name || reference.url}-${index}`} className="flex items-center gap-2"><Input value={reference.name || reference.url || ""} readOnly className="h-8 text-xs" /><Button type="button" variant="ghost" size="icon-xs" onClick={() => setReferenceVideos((current) => current.filter((item) => item !== reference))} aria-label={t("common.delete")}><Trash2 className="size-3.5 text-destructive" /></Button></div>)}</div>
+            </div>
+          ) : null}
+
+          {capabilities?.referenceAudio ? (
+            <div className="space-y-2 rounded-2xl border border-border/70 bg-card/30 p-3">
+              <div className="flex items-center justify-between gap-2 text-xs font-semibold"><div className="flex items-center gap-1.5"><AudioLines className="size-4 text-primary" /><span>{t("videos.referenceAudio")}</span></div><Badge variant="secondary" className="text-[10px]">{visibleReferenceAudios.length}/{capabilities.maxReferenceAudios}</Badge></div>
+              <div className="flex items-center gap-1">{usesQwenTemporaryUpload ? <><Button type="button" variant="secondary" size="xs" className="h-8 gap-1 text-xs" onClick={() => audioInputRef.current?.click()} disabled={visibleReferenceAudios.length >= capabilities.maxReferenceAudios}><Upload className="size-3.5" />{t("videos.uploadReferenceAudio")}</Button><input ref={audioInputRef} type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,.mp3,.wav,.m4a" multiple={capabilities.maxReferenceAudios > 1} className="hidden" onChange={(event) => { addReferences(event.target.files, "audios"); event.currentTarget.value = ""; }} /></> : null}<Button type="button" variant="ghost" size="xs" onClick={() => setReferenceAudios([])} disabled={!visibleReferenceAudios.length}>{t("common.clear")}</Button></div>
+              <div className="flex gap-2"><Input value={referenceAudioUrl} onChange={(event) => setReferenceAudioUrl(event.target.value)} placeholder={t("videos.referenceUrlPlaceholder")} aria-label={t("videos.referenceAudio")} className="h-8 text-xs" /><Button type="button" variant="secondary" size="xs" className="h-8 shrink-0 gap-1" onClick={() => addReferenceUrl("audios")} disabled={visibleReferenceAudios.length >= capabilities.maxReferenceAudios}><Plus className="size-3.5" />{t("videos.addReferenceUrl")}</Button></div>
+              <div className="space-y-1.5">{visibleReferenceAudios.map((reference, index) => <div key={`${reference.name || reference.url}-${index}`} className="flex items-center gap-2"><Input value={reference.name || reference.url || ""} readOnly className="h-8 text-xs" /><Button type="button" variant="ghost" size="icon-xs" onClick={() => setReferenceAudios((current) => current.filter((item) => item !== reference))} aria-label={t("common.delete")}><Trash2 className="size-3.5 text-destructive" /></Button></div>)}</div>
             </div>
           ) : null}
         </div>

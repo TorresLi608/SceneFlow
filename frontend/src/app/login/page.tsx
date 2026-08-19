@@ -202,7 +202,7 @@ export default function LoginPage() {
                       value={username}
                       onChange={(event) => setUsername(event.target.value)}
                       placeholder="admin / 您的用户名"
-                      className="h-10 pl-9 pr-3 text-sm focus-visible:ring-primary/40"
+                      className="h-10 pl-9 pr-3 text-sm"
                       required
                       autoComplete="username"
                     />
@@ -221,7 +221,7 @@ export default function LoginPage() {
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       placeholder="••••••••"
-                      className="h-10 pl-9 pr-10 text-sm focus-visible:ring-primary/40"
+                      className="h-10 pl-9 pr-10 text-sm"
                       required
                       autoComplete="current-password"
                     />
