@@ -109,14 +109,6 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       docsUrl: "https://www.volcengine.com/docs/82379",
     },
     {
-      value: "gemini",
-      label: "Gemini",
-      modelSeries: "",
-      modelPlaceholder: "veo-3.1-generate-preview",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      docsUrl: "https://ai.google.dev/gemini-api/docs/video",
-    },
-    {
       value: "qwen",
       label: "Qwen",
       modelSeries: "",

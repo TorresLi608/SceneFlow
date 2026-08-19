@@ -66,7 +66,7 @@ function selectedConfigPayload(config: UserConfig | undefined) {
 function isVideoConfig(config: UserConfig) {
   return (
     config.purpose === "video" &&
-    ["doubao", "gemini", "qwen"].includes(config.provider) &&
+    ["doubao", "qwen"].includes(config.provider) &&
     config.isEnabled &&
     Boolean(config.modelSeries.trim())
   );
