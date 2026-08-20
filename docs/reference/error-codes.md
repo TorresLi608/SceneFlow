@@ -26,7 +26,7 @@ Every error response is `{"error": "<message>"}` — see `../conventions/error-h
 | `custom provider requires baseUrl` | model config write |
 | `baseUrl must not target a private network` | model config write — SSRF guard |
 | `invalid purpose` | model config write |
-| `audio purpose only supports provider edge/system/openai/qwen` | model config write |
+| `audio purpose only supports provider qwen` | model config write |
 | `video purpose only supports provider doubao/gemini/qwen` | model config write |
 | `video purpose requires modelSeries` | model config write |
 | `imageMaxReferenceImages must be an integer` / `imageMaxReferenceImages must be 0 or greater` | image model config write |

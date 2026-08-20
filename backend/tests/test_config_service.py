@@ -100,8 +100,6 @@ def test_discover_qwen_native_models_returns_all_known_models() -> None:
             "kling-v3-omni-video-generation",
             "kling/kling-v3-omni-video-generation",
             "wan3.0-video",
-            "qwen-audio-3.0-tts-flash",
-            "qwen3-tts-flash:Cherry",
         ]
     }
     list_models.assert_not_awaited()
@@ -250,9 +248,9 @@ def test_qwen_media_configs_are_valid() -> None:
         {"purpose": "video", "provider": "qwen", "modelSeries": "wan2.7-t2v", "apiKey": "new-secret-key"}
     )
     audio = normalize_config_payload(
-        {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen3-tts-flash:Cherry", "apiKey": "new-secret-key"}
+        {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen3-tts-vd-2026-01-26", "apiKey": "new-secret-key"}
     )
-    assert (image["provider"], video["provider"], audio["model"]) == ("qwen", "qwen", "qwen3-tts-flash:Cherry")
+    assert (image["provider"], video["provider"], audio["model"]) == ("qwen", "qwen", "qwen3-tts-vd-2026-01-26")
 
     image_with_many_references = normalize_config_payload({
         "purpose": "image",
@@ -263,19 +261,19 @@ def test_qwen_media_configs_are_valid() -> None:
     })
     assert image_with_many_references["image_max_reference_images"] == 100
 
-    native_audio = normalize_config_payload(
-        {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen-audio-3.0-tts-flash", "apiKey": "new-secret-key"}
+    custom_voice_target = normalize_config_payload(
+        {"purpose": "audio", "provider": "qwen", "modelSeries": "custom-voice-target", "apiKey": "new-secret-key"}
     )
-    assert native_audio["model"] == "qwen-audio-3.0-tts-flash"
+    assert custom_voice_target["model"] == "custom-voice-target"
 
     try:
         normalize_config_payload(
-            {"purpose": "audio", "provider": "qwen", "modelSeries": "qwen3-tts-flash", "apiKey": "new-secret-key"}
+            {"purpose": "audio", "provider": "qwen", "modelSeries": "", "apiKey": "new-secret-key"}
         )
     except HTTPException as exc:
-        assert exc.detail == "Qwen audio modelSeries must use model:voice"
+        assert exc.detail == "audio purpose requires modelSeries"
     else:
-        raise AssertionError("Qwen TTS must require a voice")
+        raise AssertionError("voice design must require a target model")
 
 
 def test_gemini_image_helpers() -> None:

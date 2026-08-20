@@ -1,7 +1,7 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
 
 export interface OptimizePromptInput {
-  kind: "image" | "video" | "audio";
+  kind: "image" | "video";
   prompt: string;
   context?: {
     outputLanguage?: "auto" | "zh" | "en";
@@ -9,11 +9,6 @@ export interface OptimizePromptInput {
     quality?: string;
     duration?: number;
     fps?: number;
-    voice?: string;
-    speechRate?: number;
-    pitchRate?: number;
-    instruction?: string;
-    language?: string;
   };
 }
 

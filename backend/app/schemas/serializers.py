@@ -14,6 +14,7 @@ from app.models import (
     Prop,
     Scene,
     User,
+    UserVoice,
     VoiceProfile,
 )
 from app.services.artifact_service import signed_url_for_stored
@@ -230,6 +231,20 @@ def voice_profile_json(profile: VoiceProfile) -> dict[str, Any]:
         "audioUrl": scene_asset_url(profile.audio_path, f"voice-{profile.id}"),
         "orderNum": profile.order_num or 0,
         "updatedAt": profile.updated_at,
+    }
+
+
+def user_voice_json(voice: UserVoice) -> dict[str, Any]:
+    return {
+        "id": voice.id,
+        "voiceId": voice.voice_id,
+        "targetModel": voice.target_model,
+        "name": voice.name or "",
+        "voicePrompt": voice.voice_prompt or "",
+        "previewText": voice.preview_text or "",
+        "previewAudioUrl": scene_asset_url(voice.preview_audio_path, f"voice-{voice.id}"),
+        "createdAt": voice.created_at,
+        "updatedAt": voice.updated_at,
     }
 
 

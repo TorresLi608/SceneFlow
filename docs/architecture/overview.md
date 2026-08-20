@@ -43,7 +43,7 @@ A standing product rule: project and shot CRUD always goes to the backend. Do no
 | Path | Owns |
 |---|---|
 | `app/api/v1/` | Endpoints, request/response orchestration, auth dependencies |
-| `app/services/` | Business logic (project, episode, character, generation, chat, usage, job, artifact, tts, video, config, agent) |
+| `app/services/` | Business logic (project, episode, character, generation, chat, usage, job, artifact, voice, video, config, agent) |
 | `app/models/` | SQLModel tables — the schema source used by Alembic autogenerate |
 | `migrations/` | Alembic schema versions and historical data migrations |
 | `app/schemas/` | `requests.py` (Pydantic bodies), `serializers.py` (response shaping) |

@@ -8,7 +8,6 @@ model given it as a reference can keep speakers apart.
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,12 +19,10 @@ from app.core.realtime import broadcast
 from app.schemas.requests import CreateVoiceProfileRequest, UpdateVoiceProfileRequest
 from app.schemas.serializers import project_json, voice_profile_json
 from app.services.artifact_service import artifact_absolute_path, artifact_relative_path, store_artifact
-from app.services.config_service import active_model_config
 from app.services.media_service import concat_audio
 from app.services.project_service import owned_project
 from app.services.prompt_service import NARRATOR_SAMPLE_TEXT
 from app.services.tts_service import synthesize
-from app.services.usage_service import record_usage, require_model_balance
 from app.services.voice_service import (
     create_voice_profile,
     delete_voice_profile,
@@ -39,29 +36,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["voices"])
 
-# Providers that need no key, so a project with no audio configuration can still audition.
-LOCAL_TTS_PROVIDERS = {"edge", "system"}
 BUILTIN_TTS = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
-
-
-def _synthesis_config(session, user_id: int, profile) -> dict[str, Any]:
-    """The account's audio configuration, with the profile's own voice swapped in.
-
-    A profile stores a provider and a model but never credentials, so a model from a
-    provider the project is not configured for cannot be honoured — the default voice reads
-    the line instead of the request failing on a key we do not have.
-    """
-    try:
-        config = active_model_config(session, user_id, "audio", "语音管理")
-    except HTTPException:
-        config = dict(BUILTIN_TTS)
-    if config["provider"] not in LOCAL_TTS_PROVIDERS:
-        require_model_balance(session, user_id, config)
-    model = (profile.voice_model or "").strip()
-    provider = (profile.voice_provider or "").strip().lower()
-    if model and (not provider or provider == config["provider"]):
-        config = {**config, "model": model}
-    return config
 
 
 @router.get("/{project_id}/voices")
@@ -141,19 +116,18 @@ async def preview_voice(project_id: str, voice_id: str, user_id: int = Depends(c
         line = (profile.sample_text or NARRATOR_SAMPLE_TEXT).strip()
         if not line:
             raise HTTPException(400, "sampleText is required")
-        config = _synthesis_config(session, user_id, profile)
+        config = dict(BUILTIN_TTS)
+        if profile.voice_provider in {"edge", "system"}:
+            config.update(provider=profile.voice_provider, model=profile.voice_model or "")
 
-    extension = "mp3" if config["provider"] in {"edge", "qwen"} else "wav"
+    extension = "mp3"
     target = PRIVATE_GENERATED_DIR / "voices" / project_id / f"{voice_id}.{extension}"
-    started_at = time.monotonic()
     try:
-        target, duration = await synthesize(line, config, target)
+        target, _ = await synthesize(line, config, target)
     except Exception as exc:
         logger.warning("voice preview failed project=%s voice=%s: %s", project_id, voice_id, exc)
         raise HTTPException(502, f"failed to synthesize voice: {str(exc)[:220]}") from exc
     target.chmod(0o600)
-    if config["provider"] not in LOCAL_TTS_PROVIDERS:
-        record_usage(user_id, config, "voice_preview", started_at, quantity=duration)
     stored = artifact_relative_path(target)
 
     with db() as session:

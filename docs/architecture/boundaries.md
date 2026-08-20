@@ -59,7 +59,7 @@ Generated media is referenced by a **path relative to `SCENEFLOW_PRIVATE_GENERAT
 ## Orchestration boundary
 
 - **LangGraph** is reserved for checkpointed LLM decisions and human approval (script structure, continuity review).
-- **`generation_jobs`** is the intended home for deterministic image/TTS/video/FFmpeg work, and today provides persistence, idempotency, leases, cancel, and retry.
+- **`generation_jobs`** is the intended home for deterministic image/video/FFmpeg work, and today provides persistence, idempotency, leases, cancel, and retry.
 - **Not yet true:** there is no worker process. Generation still starts in the API process via `asyncio.create_task`. Treat the jobs table as the destination, not the current path.
 
 ## Concurrency boundary

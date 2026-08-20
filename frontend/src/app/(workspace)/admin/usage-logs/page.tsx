@@ -29,6 +29,12 @@ export default function AdminUsageLogsPage() {
   });
   const pagination = query.data?.pagination ?? { total: 0, page, pageSize, pageCount: 1 };
 
+  const featureLabel = (feature: string) => {
+    const key = `usage.feature.${feature}`;
+    const label = t(key);
+    return label === key ? feature : label;
+  };
+
   if (user?.role !== "superAdmin") {
     return <div className="p-6 text-sm text-muted-foreground">{user ? t("home.noAllUsageRecordsPermission") : t("common.loading")}</div>;
   }
@@ -76,7 +82,7 @@ export default function AdminUsageLogsPage() {
                 <TableRow key={item.id}>
                   <TableCell><p className="font-medium">{item.user.username}</p><p className="text-xs text-muted-foreground">ID {item.user.id}</p></TableCell>
                   <TableCell className="whitespace-nowrap">{formatDateTime(item.createdAt)}</TableCell>
-                  <TableCell>{t(`usage.feature.${item.feature}`)}</TableCell>
+                  <TableCell>{featureLabel(item.feature)}</TableCell>
                   <TableCell><Badge variant={item.source === "official" ? "default" : "secondary"}>{item.source === "official" ? t("config.source.official") : t("config.source.user")}</Badge></TableCell>
                   <TableCell><p className="max-w-40 truncate font-medium">{item.configName || "—"}</p></TableCell>
                   <TableCell><p className="max-w-52 truncate font-medium">{item.model}</p><p className="text-xs text-muted-foreground">{providerLabel(item.provider, t)}</p></TableCell>

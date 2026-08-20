@@ -222,12 +222,10 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
     if purpose not in {"general", "script", "image", "video", "audio"}:
         raise HTTPException(400, "invalid purpose")
     if purpose == "audio":
-        if provider not in {"edge", "system", "openai", "qwen"}:
-            raise HTTPException(400, "audio purpose only supports provider edge/system/openai/qwen")
+        if provider != "qwen":
+            raise HTTPException(400, "audio purpose only supports provider qwen")
         if not model.strip():
-            raise HTTPException(400, "audio purpose requires a voice or modelSeries")
-        if provider == "qwen" and ":" not in model and model != "qwen-audio-3.0-tts-flash":
-            raise HTTPException(400, "Qwen audio modelSeries must use model:voice")
+            raise HTTPException(400, "audio purpose requires modelSeries")
         return
     if provider == "custom":
         if purpose not in {"general", "script"}:

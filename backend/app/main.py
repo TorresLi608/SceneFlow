@@ -10,7 +10,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
     admin,
-    audio,
     auth,
     characters,
     chat,
@@ -26,6 +25,7 @@ from app.api.v1 import (
     users,
     videos,
     voices,
+    user_voices,
     websocket,
 )
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
@@ -59,7 +59,6 @@ app.include_router(admin.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(images.router)
-app.include_router(audio.router)
 app.include_router(videos.router)
 app.include_router(usage.router)
 app.include_router(prompts.router)
@@ -68,6 +67,7 @@ app.include_router(episodes.router)
 app.include_router(characters.router)
 app.include_router(props.router)
 app.include_router(voices.router)
+app.include_router(user_voices.router)
 app.include_router(exports.router)
 app.include_router(jobs.router)
 app.include_router(websocket.router)

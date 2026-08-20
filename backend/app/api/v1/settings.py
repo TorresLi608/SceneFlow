@@ -31,8 +31,6 @@ KNOWN_MODELS = {
         "kling-v3-omni-video-generation",
         "kling/kling-v3-omni-video-generation",
         "wan3.0-video",
-        "qwen-audio-3.0-tts-flash",
-        "qwen3-tts-flash:Cherry",
     ],
     "doubao": [
         "doubao-seedance-2.0",

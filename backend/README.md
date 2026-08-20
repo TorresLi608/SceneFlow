@@ -67,10 +67,10 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 - Chat context assembly lives in `app/graph/`: SQLite history -> token budget check -> old-context summary compression -> model messages.
 - Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.
 - Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
-- Image generation supports OpenAI, Gemini, and Qwen/Wan; video supports Doubao, Gemini, and Qwen/Wan; audio supports Edge, system, OpenAI, and Qwen TTS. `/api/audio/generate` provides standalone Qwen voice generation with the official SDK parameters; project voice-profile auditioning continues to use the configured audio provider.
-- Qwen chat defaults to the OpenAI-compatible `https://dashscope.aliyuncs.com/compatible-mode/v1` endpoint. Native image/video calls use DashScope's media APIs; native Qwen TTS uses the official `dashscope.audio.tts_v2.SpeechSynthesizer` WebSocket SDK with `qwen-audio-3.0-tts-flash` (voice may be empty) or legacy `model:voice` values such as `qwen3-tts-flash:Cherry`. Qwen image relays use the OpenAI image API, while video/TTS relays receive the configured `baseUrl` unchanged. Video models include `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, `wan-t2v`, `wan-r2v`, `kling-v3-omni-video-generation`, `kling/kling-v3-omni-video-generation`, and `wan3.0-video`. Configurable video quality is `480p`, `720p`, `1080p`, `2K`, or `4K`.
+- Image generation supports OpenAI, Gemini, and Qwen/Wan; video supports Doubao, Gemini, and Qwen/Wan; standalone voice work supports Qwen Voice Design only. `/api/voices/design` creates an unsaved preview and `/api/voices/:id/save` saves it.
+- Qwen chat defaults to the OpenAI-compatible `https://dashscope.aliyuncs.com/compatible-mode/v1` endpoint. Native image/video calls use DashScope's media APIs; voice design uses the configured Qwen `baseUrl`, with fixed API model `qwen-voice-design` and the user-entered `modelSeries` as `target_model`. Video models include `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, `wan-t2v`, `wan-r2v`, `kling-v3-omni-video-generation`, `kling/kling-v3-omni-video-generation`, and `wan3.0-video`. Configurable video quality is `480p`, `720p`, `1080p`, `2K`, or `4K`.
 - Doubao Seedance video uses the official `volcengine-python-sdk[ark]` `Ark.content_generation.tasks` API, with the configured `baseUrl` passed through unchanged so official and relay endpoints use the same code. Known model IDs include `doubao-seedance-2.0`, `doubao-seedance-2.0-fast`, `doubao-seedance-2.0-mini`, and `doubao-seedance-2.5`.
-- New model configurations start with an empty `modelSeries`. Model discovery does not filter by purpose: it uses the provider or relay `/models` endpoint when available, while native Qwen media and local TTS return all known models for that provider. Saving never performs a remote connectivity check; enabled configs still require their local fields and API key.
+- New model configurations start with an empty `modelSeries`. Model discovery does not filter by purpose: it uses the provider or relay `/models` endpoint when available, while native Qwen media returns its known models. Voice Design leaves `modelSeries` user-editable and does not run discovery. Saving never performs a remote connectivity check; enabled configs still require their local fields and API key.
 - Image configurations store `imageMaxReferenceImages` (default 4, non-negative); image generation rejects reference uploads above the selected model's configured limit.
 - `POST /api/prompts/optimize` uses the active script model to optimize image, video, or voice-generation text with media-specific instructions and returns the result for review without starting generation. Image/video callers may choose automatic, Chinese, or English output; voice text always keeps its source language.
 
@@ -93,6 +93,11 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 - `DELETE /api/settings/keys/:id`
 - `POST /api/settings/official/:id/activate`
 - `DELETE /api/settings/official/:id/activate`
+
+### Voice design (JWT required)
+- `GET /api/voices`
+- `POST /api/voices/design`
+- `POST /api/voices/:id/save`
 
 ### Admin (superAdmin required)
 - `GET /api/admin/users`
@@ -196,9 +201,8 @@ it as a reference can keep speakers apart.
 - `GET /api/projects/:id/voices`, `POST /api/projects/:id/voices`, `PATCH .../:voiceId`, `DELETE .../:voiceId`
   - deleting releases every character bound to the profile; the binding is a plain column
     rather than a foreign key, so the service does what ON DELETE SET NULL would have
-- `POST /api/projects/:id/voices/:voiceId/preview` — synthesises the sample line so the user
-  can audition it. A model from a provider the project is not configured for falls back to
-  the default voice, because a profile stores a provider and a model but never credentials
+- `POST /api/projects/:id/voices/:voiceId/preview` — synthesises the sample line with local
+  Edge/system TTS so the user can audition it; unsupported providers fall back to built-in Edge
 - `POST /api/projects/:id/voices/merge` — ffmpeg-concatenates every auditioned clip into
   `projects.voice_sheet_path`; 400 when nothing has been auditioned yet
 - bind one to a character with `PATCH .../characters/:characterId` and `voiceProfileId`;
@@ -282,13 +286,12 @@ sheets live on `characters.sheet_image_path`, `projects.character_sheet_path`, a
 At render time a shot's cast contributes two things: the appearance prompts, which work on
 every provider, and the reference images, which are passed image-to-image through
 `edit_image` and are what actually holds a face steady. The project's `style_prompt` and
-`negative_prompt` ride along on the same payload. A voice override is honoured only on the
-configured audio provider, because a card stores a provider and a model but never
-credentials.
+`negative_prompt` ride along on the same payload. Project voice-profile auditions use local
+Edge/system TTS and do not consume the standalone Voice Design configuration.
 
 ## Short-drama orchestration
 - LangGraph is reserved for checkpointed LLM decisions and human approval, such as script structure and continuity review.
-- `generation_jobs` plus a worker owns deterministic image, TTS, video, and FFmpeg tasks.
+- `generation_jobs` plus a worker owns deterministic image, video, and FFmpeg tasks; project voice auditions remain local.
 - Rollback means selecting an earlier asset version and marking downstream results stale, not deleting generated assets.
 - LangGraph is already installed through LangChain; no extra dependency is needed.
 

@@ -194,7 +194,7 @@ def compress_under(data: bytes, *, limit: int = MAX_SHEET_BYTES, image: Image.Im
     return encoded
 
 
-# Fixed output format for concatenation. Sources come from different TTS providers at
+# Fixed output format for concatenation. Sources come from local voice-audition providers at
 # different sample rates and codecs, so a stream copy would produce a file that plays only
 # up to the first boundary — everything is re-encoded to one format instead.
 CONCAT_SAMPLE_RATE = 24_000

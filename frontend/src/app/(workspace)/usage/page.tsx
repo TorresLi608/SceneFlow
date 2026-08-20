@@ -13,7 +13,29 @@ import { formatMoney, isZeroDecimal } from "@/lib/money";
 import { providerLabel } from "@/lib/model-providers";
 import type { UsageLogItem } from "@/types/usage";
 
-const featureValues = ["all", "chat", "image", "video", "agent_image", "script_parse", "script_optimize", "storyboard_image"];
+const featureValues = [
+  "all",
+  "chat",
+  "image",
+  "video",
+  "voice_design",
+  "voice_preview",
+  "agent_image",
+  "script_parse",
+  "script_optimize",
+  "description_optimize",
+  "storyboard_tone_sheet",
+  "storyboard_image",
+  "scene_video",
+  "project_cover",
+  "character_state_prompt",
+  "character_state_image",
+  "prop_prompt",
+  "prop_image",
+  "image_prompt_optimize",
+  "video_prompt_optimize",
+  "prompt_optimize",
+];
 const dayValues = ["7", "30", "90"];
 const pageSize = 10;
 type UsageSource = "all" | "official" | "user";
@@ -37,7 +59,11 @@ export default function UsagePage() {
   const pageCount = Math.max(1, Math.ceil(logs.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageLogs = logs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const featureLabel = (value: string) => t(`usage.feature.${value}`);
+  const featureLabel = (value: string) => {
+    const key = `usage.feature.${value}`;
+    const label = t(key);
+    return label === key ? value : label;
+  };
   const featureItems = featureValues.map((value) => ({ value, label: featureLabel(value) }));
   const dayItems = dayValues.map((value) => ({ value, label: t("usage.days", { days: Number(value) }) }));
   const sourceItems = [
