@@ -11,7 +11,11 @@ export async function saveVoiceAction(id: string) {
   return response.data;
 }
 
-export async function designVoiceAction(payload: { name: string; voicePrompt: string; previewText: string; configId?: number; officialConfigId?: number }) {
-  const response = await httpClient.post<{ voice: UserVoice }>("/api/bff/voices/design", payload, { timeout: generationRequestTimeout });
+export async function designVoiceAction(payload: { name: string; voicePrompt: string; previewText: string; configId?: number; officialConfigId?: number }, signal?: AbortSignal) {
+  const response = await httpClient.post<{ voice: UserVoice }>("/api/bff/voices/design", payload, { timeout: generationRequestTimeout, signal });
   return response.data;
+}
+
+export async function deleteVoiceAction(id: string) {
+  await httpClient.delete(`/api/bff/voices/${id}`);
 }

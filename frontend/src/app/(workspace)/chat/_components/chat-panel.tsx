@@ -60,8 +60,9 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
             sessionId={chat.effectiveSessionId}
             messages={chat.messages}
             disabled={!chat.selectedConfig || chat.isBusy}
-            isRunning={chat.isBusy}
+            isRunning={chat.isStreaming}
             onSend={chat.sendMessage}
+            onStop={chat.stop}
           />
         </div>
       </section>

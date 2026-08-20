@@ -39,7 +39,7 @@ export interface ChatMessage {
 export interface ChatAgentStep {
   id: string;
   label: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "stopped";
   detail?: string;
 }
 

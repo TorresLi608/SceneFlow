@@ -1,11 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Check, Loader2, Save, Sparkles, Volume2, Wand2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AudioLines, Check, Loader2, Save, Sparkles, Square, Trash2, Volume2, Wand2 } from "lucide-react";
+import { isCancel } from "axios";
+import { useMemo, useRef, useState } from "react";
 
 import {
   designVoiceAction,
+  deleteVoiceAction,
   listUserVoicesAction,
   saveVoiceAction,
 } from "@/actions/voice-generation-actions";
@@ -54,6 +56,7 @@ export function VoiceGenerationPanel({
   const [previewText, setPreviewText] = useState("");
   const [draftVoice, setDraftVoice] = useState<UserVoice | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const requestController = useRef<AbortController | null>(null);
 
   const voiceConfigs = useMemo(
     () => [...officialConfigs.filter(isVoiceConfig), ...configs.filter(isVoiceConfig)],
@@ -86,12 +89,16 @@ export function VoiceGenerationPanel({
         voicePrompt: voicePrompt.trim(),
         previewText: previewText.trim(),
         ...configPayload(selectedConfig),
-      }),
+      }, requestController.current?.signal),
     onSuccess: ({ voice }) => {
       setDraftVoice(voice);
       setErrorMessage(null);
     },
-    onError: (error) => setErrorMessage(resolveRequestError(error, t("voice.designFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setErrorMessage(resolveRequestError(error, t("voice.designFailed")));
+    },
+    onSettled: () => { requestController.current = null; },
   });
 
   const saveMutation = useMutation({
@@ -110,7 +117,31 @@ export function VoiceGenerationPanel({
     onError: (error) => setErrorMessage(resolveRequestError(error, t("voice.saveFailed"))),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteVoiceAction,
+    onSuccess: (_, deletedId) => {
+      queryClient.setQueryData(
+        queryKeys.userVoices,
+        (current: { voices: UserVoice[] } | undefined) => ({ voices: (current?.voices ?? []).filter((item) => item.id !== deletedId) })
+      );
+      if (selectedVoiceId === deletedId) setSelectedVoiceId("");
+      setErrorMessage(null);
+    },
+    onError: (error) => setErrorMessage(resolveRequestError(error, t("voice.deleteFailed"))),
+  });
+
   const canGenerate = Boolean(selectedConfig && name.trim() && voicePrompt.trim() && previewText.trim());
+
+  const stopGeneration = () => {
+    requestController.current?.abort();
+    requestController.current = null;
+    designMutation.reset();
+  };
+
+  const startGeneration = () => {
+    requestController.current = new AbortController();
+    designMutation.mutate();
+  };
 
   return (
     <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[340px_minmax(0,1fr)]">
@@ -156,19 +187,11 @@ export function VoiceGenerationPanel({
           </div>
           <div className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
             {savedVoices.map((voice) => (
+              <div key={voice.id} className={cn("flex w-full items-center gap-1 rounded-xl px-1", !draftVoice && effectiveSavedVoiceId === voice.id ? "bg-primary/10" : "hover:bg-muted/60")}>
               <button
-                key={voice.id}
                 type="button"
-                onClick={() => {
-                  setSelectedVoiceId(voice.id);
-                  setDraftVoice(null);
-                }}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
-                  !draftVoice && effectiveSavedVoiceId === voice.id
-                    ? "bg-primary/10 text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
+                onClick={() => { setSelectedVoiceId(voice.id); setDraftVoice(null); }}
+                className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors", !draftVoice && effectiveSavedVoiceId === voice.id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/80 text-primary shadow-xs">
                   <Volume2 className="size-4" />
@@ -179,6 +202,10 @@ export function VoiceGenerationPanel({
                 </span>
                 {!draftVoice && effectiveSavedVoiceId === voice.id ? <Check className="size-3.5 text-primary" /> : null}
               </button>
+              <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteMutation.mutate(voice.id)} disabled={deleteMutation.isPending} aria-label={t("voice.delete")} className="shrink-0 text-muted-foreground hover:text-destructive">
+                <Trash2 className="size-3.5" />
+              </Button>
+              </div>
             ))}
             {!voicesQuery.isPending && savedVoices.length === 0 ? (
               <p className="py-8 text-center text-xs text-muted-foreground">{t("voice.savedEmpty")}</p>
@@ -216,11 +243,12 @@ export function VoiceGenerationPanel({
           <div className="flex justify-end">
             <Button
               className="min-w-36"
-              onClick={() => designMutation.mutate()}
-              disabled={!canGenerate || designMutation.isPending}
+              onClick={designMutation.isPending ? stopGeneration : startGeneration}
+              disabled={!canGenerate && !designMutation.isPending}
+              variant={designMutation.isPending ? "destructive" : "default"}
             >
-              {designMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-              {designMutation.isPending ? t("voice.generating") : t("voice.generatePreview")}
+              {designMutation.isPending ? <Square className="size-3.5 fill-current" /> : <Sparkles className="size-4" />}
+              {designMutation.isPending ? t("common.stopGeneration") : t("voice.generatePreview")}
             </Button>
           </div>
 

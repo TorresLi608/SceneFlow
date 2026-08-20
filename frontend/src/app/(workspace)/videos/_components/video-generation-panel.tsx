@@ -14,6 +14,7 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
+  Square,
   Trash2,
   Upload,
   Video,
@@ -22,6 +23,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { generateVideoAction } from "@/actions/video-generation-actions";
+import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,7 @@ import type {
   VideoFps,
   VideoQuality,
   VideoReferenceInput,
+  GenerateVideoInput,
 } from "@/types/video-generation";
 
 const historyStorageKey = "sceneflow-video-generation-history-v1";
@@ -144,6 +147,7 @@ export function VideoGenerationPanel({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [history, setHistory] = useState<VideoHistoryItem[]>(readVideoHistory);
+  const requestController = useRef<AbortController | null>(null);
 
   // 多模态参考素材 Tab
   const [activeAssetTab, setActiveAssetTab] = useState<AssetTab>("images");
@@ -212,7 +216,7 @@ export function VideoGenerationPanel({
   );
 
   const generateMutation = useMutation({
-    mutationFn: generateVideoAction,
+    mutationFn: (payload: GenerateVideoInput) => generateVideoAction(payload, requestController.current?.signal),
     onSuccess: (response, variables) => {
       const item: VideoHistoryItem = {
         id: `${Date.now()}`,
@@ -232,8 +236,11 @@ export function VideoGenerationPanel({
       });
       setErrorMessage(null);
     },
-    onError: (error) =>
-      setErrorMessage(resolveRequestError(error, t("videos.generateFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setErrorMessage(resolveRequestError(error, t("videos.generateFailed")));
+    },
+    onSettled: () => { requestController.current = null; },
   });
 
   const optimizeMutation = useMutation({
@@ -354,6 +361,7 @@ export function VideoGenerationPanel({
   const generate = () => {
     const content = prompt.trim();
     if (!content || !selectedConfig || generateMutation.isPending) return;
+    requestController.current = new AbortController();
     setElapsedSeconds(0);
     generateMutation.mutate({
       prompt: content,
@@ -366,6 +374,20 @@ export function VideoGenerationPanel({
       referenceVideos: visibleReferenceVideos,
       referenceAudios: visibleReferenceAudios,
       ...selectedConfigPayload(selectedConfig),
+    });
+  };
+
+  const stopGeneration = () => {
+    requestController.current?.abort();
+    requestController.current = null;
+    generateMutation.reset();
+  };
+
+  const deleteHistory = (id: string) => {
+    setHistory((current) => {
+      const next = current.filter((item) => item.id !== id);
+      saveVideoHistory(next);
+      return next;
     });
   };
 
@@ -1015,14 +1037,11 @@ export function VideoGenerationPanel({
           {history.length ? (
             <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
               {history.map((item) => (
+                <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
                 <button
-                  key={item.id}
                   type="button"
-                  onClick={() => {
-                    setVideoUrl(item.videoUrl);
-                    setPrompt(item.prompt);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-xl border border-border/60 bg-card/60 p-2 text-left transition-all hover:border-primary/40 hover:bg-card cursor-pointer"
+                  onClick={() => { setVideoUrl(item.videoUrl); setPrompt(item.prompt); }}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
                 >
                   <Film className="size-4 shrink-0 text-primary" />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
@@ -1032,6 +1051,10 @@ export function VideoGenerationPanel({
                     {formatDateTime(item.createdAt)}
                   </span>
                 </button>
+                <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("videos.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
+                  <Trash2 className="size-3.5" />
+                </Button>
+                </div>
               ))}
             </div>
           ) : (
@@ -1043,14 +1066,20 @@ export function VideoGenerationPanel({
 
         {/* 立即生成主按钮 */}
         <div className="mt-3 border-t border-border/70 pt-3">
-          <Button
+          {generateMutation.isPending ? (
+            <Button variant="destructive" className="h-10 w-full gap-2 rounded-xl font-bold" onClick={stopGeneration}>
+              <Square className="size-3.5 fill-current" />
+              {t("common.stopGeneration")}
+            </Button>
+          ) : <Button
             className="h-10 w-full gap-2 rounded-xl font-bold shadow-md cursor-pointer transition-all active:scale-[0.99]"
             onClick={generate}
             disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}
           >
             <Sparkles className="size-4" />
-            {generateMutation.isPending ? generatingLabel : t("videos.generateNow")}
-          </Button>
+            <Sparkles className="size-4" />
+            {t("videos.generateNow")}
+          </Button>}
         </div>
       </aside>
 

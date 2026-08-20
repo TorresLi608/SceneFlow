@@ -14,7 +14,7 @@ import {
   useAuiEvent,
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
-import { Paperclip, Send, X } from "lucide-react";
+import { Paperclip, Send, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/lib/i18n";
@@ -27,6 +27,7 @@ interface AssistantComposerProps {
   disabled: boolean;
   isRunning: boolean;
   onSend: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
+  onStop: () => void;
 }
 
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -291,7 +292,7 @@ function AttachmentError({ onError }: { onError: (message: string) => void }) {
   return null;
 }
 
-export function AssistantComposer({ sessionId, messages, disabled, isRunning, onSend }: AssistantComposerProps) {
+export function AssistantComposer({ sessionId, messages, disabled, isRunning, onSend, onStop }: AssistantComposerProps) {
   const { t } = useI18n();
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -365,14 +366,23 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
                 placeholder={t("chat.inputPlaceholder")}
                 className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground"
               />
-              <ComposerPrimitive.Send
-                className={cn(
-                  "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground"
-                )}
-                aria-label={t("chat.send")}
-              >
-                <Send className="size-4" />
-              </ComposerPrimitive.Send>
+              {isRunning ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition hover:bg-destructive/90"
+                  aria-label={t("common.stopGeneration")}
+                >
+                  <Square className="size-3.5 fill-current" />
+                </button>
+              ) : (
+                <ComposerPrimitive.Send
+                  className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground")}
+                  aria-label={t("chat.send")}
+                >
+                  <Send className="size-4" />
+                </ComposerPrimitive.Send>
+              )}
             </div>
           </ComposerPrimitive.AttachmentDropzone>
         </ComposerPrimitive.Root>

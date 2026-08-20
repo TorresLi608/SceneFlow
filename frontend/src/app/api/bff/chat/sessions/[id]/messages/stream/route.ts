@@ -53,6 +53,7 @@ export async function POST(request: NextRequest, context: Context) {
       ...(authorization ? { Authorization: authorization } : {}),
     },
     body: await request.text(),
+    signal: request.signal,
   });
 
   if (!upstream.ok || !upstream.body) {

@@ -4,7 +4,7 @@ import { TextMessagePartProvider } from "@assistant-ui/react";
 import { StreamdownTextPrimitive, type ControlsConfig } from "@assistant-ui/react-streamdown";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
-import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, XCircle } from "lucide-react";
+import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, Square, XCircle } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
@@ -27,6 +27,9 @@ function StepIcon({ status }: { status: ChatAgentStep["status"] }) {
   }
   if (status === "error") {
     return <XCircle className="size-3.5 text-destructive" />;
+  }
+  if (status === "stopped") {
+    return <Square className="size-3.5 fill-current text-muted-foreground" />;
   }
   return <Loader2 className="size-3.5 animate-spin text-muted-foreground" />;
 }

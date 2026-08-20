@@ -7,7 +7,7 @@ import {
   type UIMessage,
 } from "ai";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createChatSessionAction,
@@ -125,6 +125,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const [input, setInput] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [agentSteps, setAgentSteps] = useState<ChatAgentStep[]>([]);
+  const stoppedRef = useRef(false);
   const setRouteSessionId = useCallback((sessionId: string | null) => {
     const params = new URLSearchParams(window.location.search);
     if (sessionId) {
@@ -194,6 +195,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     transport,
     onData: (part) => {
       if (part.type === "data-agent_step") {
+        if (stoppedRef.current && part.data.status === "running") return;
         setAgentSteps((current) => upsertAgentStep(current, part.data));
       }
     },
@@ -204,6 +206,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const {
     messages: aiMessages,
     sendMessage: sendAiMessage,
+    stop: stopAiMessage,
     setMessages: setAiMessages,
     status: chatStatus,
   } = chat;
@@ -263,6 +266,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   };
 
   const selectSession = (id: string) => {
+    stoppedRef.current = false;
     setSelectedSessionId(id);
     setAgentSteps([]);
   };
@@ -280,6 +284,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     }
 
     setErrorMessage(null);
+    stoppedRef.current = false;
     setAgentSteps([]);
     await sendAiMessage(
       {
@@ -328,6 +333,12 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     }
   };
 
+  const stop = () => {
+    stoppedRef.current = true;
+    stopAiMessage();
+    setAgentSteps((current) => current.map((step) => step.status === "running" ? { ...step, status: "stopped", detail: t("chat.stopped") } : step));
+  };
+
   return {
     chatConfigs,
     effectiveConfigId,
@@ -347,6 +358,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     selectSession,
     deleteSession,
     sendMessage,
+    stop,
     setSelectedConfigId,
   };
 }
