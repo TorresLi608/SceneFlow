@@ -9,7 +9,6 @@ import {
   Film,
   History,
   ImageIcon,
-  Loader2,
   Maximize2,
   Plus,
   RotateCcw,
@@ -148,6 +147,18 @@ export function VideoGenerationPanel({
   const [isDownloading, setIsDownloading] = useState(false);
   const [history, setHistory] = useState<VideoHistoryItem[]>(readVideoHistory);
   const requestController = useRef<AbortController | null>(null);
+  const optimizeController = useRef<AbortController | null>(null);
+
+  const stopOptimize = () => {
+    optimizeController.current?.abort();
+    optimizeController.current = null;
+    optimizeMutation.reset();
+  };
+
+  const startOptimize = () => {
+    optimizeController.current = new AbortController();
+    optimizeMutation.mutate();
+  };
 
   // 多模态参考素材 Tab
   const [activeAssetTab, setActiveAssetTab] = useState<AssetTab>("images");
@@ -206,9 +217,9 @@ export function VideoGenerationPanel({
   const resolvedVideoUrl = artifactBffUrl(videoUrl);
   const durationOptions = capabilities
     ? Array.from(
-        { length: capabilities.maxDuration - capabilities.minDuration + 1 },
-        (_, index) => capabilities.minDuration + index
-      )
+      { length: capabilities.maxDuration - capabilities.minDuration + 1 },
+      (_, index) => capabilities.minDuration + index
+    )
     : [];
 
   const hasAnyReferenceCapabilities = Boolean(
@@ -245,22 +256,30 @@ export function VideoGenerationPanel({
 
   const optimizeMutation = useMutation({
     mutationFn: () =>
-      optimizePromptAction({
-        kind: "video",
-        prompt: prompt.trim(),
-        context: {
-          outputLanguage: promptLanguage,
-          aspectRatio: selectedAspectRatio,
-          quality: selectedQuality,
-          duration: selectedDuration,
+      optimizePromptAction(
+        {
+          kind: "video",
+          prompt: prompt.trim(),
+          context: {
+            outputLanguage: promptLanguage,
+            aspectRatio: selectedAspectRatio,
+            quality: selectedQuality,
+            duration: selectedDuration,
+          },
         },
-      }),
+        optimizeController.current?.signal
+      ),
     onSuccess: (response) => {
       setPrompt(response.prompt);
       setErrorMessage(null);
     },
-    onError: (error) =>
-      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed")));
+    },
+    onSettled: () => {
+      optimizeController.current = null;
+    },
   });
 
   useEffect(() => {
@@ -618,19 +637,27 @@ export function VideoGenerationPanel({
                 </Select>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={optimizeMutation.isPending ? "destructive" : "outline"}
                   size="xs"
-                  disabled={!prompt.trim() || optimizeMutation.isPending}
-                  onClick={() => optimizeMutation.mutate()}
-                  className="h-7 gap-1 text-[11px] cursor-pointer"
+                  disabled={!prompt.trim() && !optimizeMutation.isPending}
+                  onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
+                  className={cn(
+                    "h-7 gap-1 text-[11px] cursor-pointer transition-colors",
+                    optimizeMutation.isPending && "animate-pulse font-medium"
+                  )}
+                  title={
+                    optimizeMutation.isPending
+                      ? t("common.stopOptimizePrompt")
+                      : t("common.optimizePrompt")
+                  }
                 >
                   {optimizeMutation.isPending ? (
-                    <Loader2 className="size-3 animate-spin text-primary" />
+                    <Square className="size-2.5 fill-current" />
                   ) : (
                     <Sparkles className="size-3 text-primary" />
                   )}
                   {optimizeMutation.isPending
-                    ? t("common.optimizingPrompt")
+                    ? t("common.stopOptimizePrompt")
                     : t("common.optimizePrompt")}
                 </Button>
               </div>
@@ -1038,22 +1065,22 @@ export function VideoGenerationPanel({
             <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
               {history.map((item) => (
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
-                <button
-                  type="button"
-                  onClick={() => { setVideoUrl(item.videoUrl); setPrompt(item.prompt); }}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
-                >
-                  <Film className="size-4 shrink-0 text-primary" />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                    {item.prompt}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {formatDateTime(item.createdAt)}
-                  </span>
-                </button>
-                <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("videos.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
-                  <Trash2 className="size-3.5" />
-                </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setVideoUrl(item.videoUrl); setPrompt(item.prompt); }}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+                  >
+                    <Film className="size-4 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                      {item.prompt}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {formatDateTime(item.createdAt)}
+                    </span>
+                  </button>
+                  <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("videos.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>

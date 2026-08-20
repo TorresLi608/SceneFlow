@@ -8,7 +8,6 @@ import {
   Eye,
   History,
   ImageIcon,
-  Loader2,
   Maximize2,
   Plus,
   RotateCcw,
@@ -150,6 +149,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   const [isDownloading, setIsDownloading] = useState(false);
   const [history, setHistory] = useState<ImageHistoryItem[]>(readImageHistory);
   const requestController = useRef<AbortController | null>(null);
+  const optimizeController = useRef<AbortController | null>(null);
 
   // 灯箱大图预览 Dialog 状态
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -181,22 +181,43 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   const visibleReferenceSlots = Math.min(maxReferenceImages, Math.max(4, references.length));
   const resolvedImageUrl = artifactBffUrl(imageUrl);
 
+  const stopOptimize = () => {
+    optimizeController.current?.abort();
+    optimizeController.current = null;
+    optimizeMutation.reset();
+  };
+
+  const startOptimize = () => {
+    optimizeController.current = new AbortController();
+    optimizeMutation.mutate();
+  };
+
   const generateMutation = useMutation({
-    mutationFn: (payload: GenerateImageInput) => generateImageAction(payload, requestController.current?.signal),
-    onSuccess: (response, variables) => {
-      const item: ImageHistoryItem = {
-        id: `${Date.now()}`,
-        imageUrl: response.image.url,
-        prompt: variables.prompt,
-        resolution: variables.resolution,
-        ratio: variables.ratio,
-        createdAt: new Date().toISOString(),
-      };
-      const nextHistory = [item, ...history].slice(0, 20);
-      setImageUrl(response.image.url);
-      setHistory(nextHistory);
-      saveImageHistory(nextHistory);
+    mutationFn: () =>
+      generateImageAction(
+        {
+          prompt: prompt.trim(),
+          resolution,
+          ratio,
+          references,
+          ...selectedConfigPayload(selectedConfig),
+        },
+        requestController.current?.signal
+      ),
+    onSuccess: (data) => {
+      setImageUrl(data.image.url);
       setErrorMessage(null);
+      setHistory((current) => [
+        {
+          id: `${Date.now()}`,
+          prompt: prompt.trim(),
+          imageUrl: data.image.url,
+          resolution,
+          ratio,
+          createdAt: new Date().toISOString(),
+        },
+        ...current,
+      ]);
     },
     onError: (error) => {
       if (isCancel(error)) return;
@@ -207,17 +228,25 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
 
   const optimizeMutation = useMutation({
     mutationFn: () =>
-      optimizePromptAction({
-        kind: "image",
-        prompt: prompt.trim(),
-        context: { outputLanguage: promptLanguage, aspectRatio: ratio, quality: resolution },
-      }),
+      optimizePromptAction(
+        {
+          kind: "image",
+          prompt: prompt.trim(),
+          context: { outputLanguage: promptLanguage, aspectRatio: ratio, quality: resolution },
+        },
+        optimizeController.current?.signal
+      ),
     onSuccess: (response) => {
       setPrompt(response.prompt);
       setErrorMessage(null);
     },
-    onError: (error) =>
-      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed")));
+    },
+    onSettled: () => {
+      optimizeController.current = null;
+    },
   });
 
   useEffect(() => {
@@ -264,13 +293,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
     }
     requestController.current = new AbortController();
     setElapsedSeconds(0);
-    generateMutation.mutate({
-      prompt: content,
-      resolution,
-      ratio,
-      references,
-      ...selectedConfigPayload(selectedConfig),
-    });
+    generateMutation.mutate();
   };
 
   const stopGeneration = () => {
@@ -467,19 +490,27 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
                 </Select>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={optimizeMutation.isPending ? "destructive" : "outline"}
                   size="xs"
-                  disabled={!prompt.trim() || optimizeMutation.isPending}
-                  onClick={() => optimizeMutation.mutate()}
-                  className="h-7 gap-1 text-[11px] cursor-pointer"
+                  disabled={!prompt.trim() && !optimizeMutation.isPending}
+                  onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
+                  className={cn(
+                    "h-7 gap-1 text-[11px] cursor-pointer transition-colors",
+                    optimizeMutation.isPending && "animate-pulse font-medium"
+                  )}
+                  title={
+                    optimizeMutation.isPending
+                      ? t("common.stopOptimizePrompt")
+                      : t("common.optimizePrompt")
+                  }
                 >
                   {optimizeMutation.isPending ? (
-                    <Loader2 className="size-3 animate-spin text-primary" />
+                    <Square className="size-2.5 fill-current" />
                   ) : (
                     <Sparkles className="size-3 text-primary" />
                   )}
                   {optimizeMutation.isPending
-                    ? t("common.optimizingPrompt")
+                    ? t("common.stopOptimizePrompt")
                     : t("common.optimizePrompt")}
                 </Button>
               </div>
@@ -613,34 +644,34 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
             <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
               {history.map((item) => (
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
-                <button
-                  type="button"
-                  onClick={() => { setImageUrl(item.imageUrl); setPrompt(item.prompt); }}
-                  className="flex min-w-0 flex-1 gap-2.5 text-left cursor-pointer"
-                  aria-label={t("images.viewHistoryItem")}
-                >
-                  <span className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/50">
-                    <Image
-                      src={artifactBffUrl(item.imageUrl)}
-                      alt=""
-                      fill
-                      unoptimized
-                      sizes="44px"
-                      className="object-cover"
-                    />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-semibold text-foreground">
-                      {item.prompt}
+                  <button
+                    type="button"
+                    onClick={() => { setImageUrl(item.imageUrl); setPrompt(item.prompt); }}
+                    className="flex min-w-0 flex-1 gap-2.5 text-left cursor-pointer"
+                    aria-label={t("images.viewHistoryItem")}
+                  >
+                    <span className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/50">
+                      <Image
+                        src={artifactBffUrl(item.imageUrl)}
+                        alt=""
+                        fill
+                        unoptimized
+                        sizes="44px"
+                        className="object-cover"
+                      />
                     </span>
-                    <span className="mt-1 block text-[10px] text-muted-foreground">
-                      {formatDateTime(item.createdAt)}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold text-foreground">
+                        {item.prompt}
+                      </span>
+                      <span className="mt-1 block text-[10px] text-muted-foreground">
+                        {formatDateTime(item.createdAt)}
+                      </span>
                     </span>
-                  </span>
-                </button>
-                <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("images.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
-                  <Trash2 className="size-3.5" />
-                </Button>
+                  </button>
+                  <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("images.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>

@@ -59,6 +59,18 @@ export function VoiceGenerationPanel({
   const [draftVoice, setDraftVoice] = useState<UserVoice | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestController = useRef<AbortController | null>(null);
+  const optimizeController = useRef<AbortController | null>(null);
+
+  const stopOptimize = () => {
+    optimizeController.current?.abort();
+    optimizeController.current = null;
+    optimizeMutation.reset();
+  };
+
+  const startOptimize = () => {
+    optimizeController.current = new AbortController();
+    optimizeMutation.mutate();
+  };
 
   const voiceConfigs = useMemo(
     () => [...officialConfigs.filter(isVoiceConfig), ...configs.filter(isVoiceConfig)],
@@ -105,17 +117,25 @@ export function VoiceGenerationPanel({
 
   const optimizeMutation = useMutation({
     mutationFn: () =>
-      optimizePromptAction({
-        kind: "voice",
-        prompt: voicePrompt.trim(),
-        context: { outputLanguage: promptLanguage },
-      }),
+      optimizePromptAction(
+        {
+          kind: "voice",
+          prompt: voicePrompt.trim(),
+          context: { outputLanguage: promptLanguage },
+        },
+        optimizeController.current?.signal
+      ),
     onSuccess: (response) => {
       setVoicePrompt(response.prompt);
       setErrorMessage(null);
     },
-    onError: (error) =>
-      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed")));
+    },
+    onSettled: () => {
+      optimizeController.current = null;
+    },
   });
 
   const saveMutation = useMutation({
@@ -205,23 +225,23 @@ export function VoiceGenerationPanel({
           <div className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
             {savedVoices.map((voice) => (
               <div key={voice.id} className={cn("flex w-full items-center gap-1 rounded-xl px-1", !draftVoice && effectiveSavedVoiceId === voice.id ? "bg-primary/10" : "hover:bg-muted/60")}>
-              <button
-                type="button"
-                onClick={() => { setSelectedVoiceId(voice.id); setDraftVoice(null); }}
-                className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors", !draftVoice && effectiveSavedVoiceId === voice.id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/80 text-primary shadow-xs">
-                  <Volume2 className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold">{voice.name || voice.voiceId}</span>
-                  <span className="block truncate text-[10px] opacity-70">{voice.targetModel}</span>
-                </span>
-                {!draftVoice && effectiveSavedVoiceId === voice.id ? <Check className="size-3.5 text-primary" /> : null}
-              </button>
-              <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteMutation.mutate(voice.id)} disabled={deleteMutation.isPending} aria-label={t("voice.delete")} className="shrink-0 text-muted-foreground hover:text-destructive">
-                <Trash2 className="size-3.5" />
-              </Button>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedVoiceId(voice.id); setDraftVoice(null); }}
+                  className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors", !draftVoice && effectiveSavedVoiceId === voice.id ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/80 text-primary shadow-xs">
+                    <Volume2 className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold">{voice.name || voice.voiceId}</span>
+                    <span className="block truncate text-[10px] opacity-70">{voice.targetModel}</span>
+                  </span>
+                  {!draftVoice && effectiveSavedVoiceId === voice.id ? <Check className="size-3.5 text-primary" /> : null}
+                </button>
+                <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteMutation.mutate(voice.id)} disabled={deleteMutation.isPending} aria-label={t("voice.delete")} className="shrink-0 text-muted-foreground hover:text-destructive">
+                  <Trash2 className="size-3.5" />
+                </Button>
               </div>
             ))}
             {!voicesQuery.isPending && savedVoices.length === 0 ? (
@@ -284,19 +304,27 @@ export function VoiceGenerationPanel({
                   </Select>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant={optimizeMutation.isPending ? "destructive" : "outline"}
                     size="xs"
-                    disabled={!voicePrompt.trim() || optimizeMutation.isPending}
-                    onClick={() => optimizeMutation.mutate()}
-                    className="h-7 gap-1 text-[11px] cursor-pointer"
+                    disabled={!voicePrompt.trim() && !optimizeMutation.isPending}
+                    onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
+                    className={cn(
+                      "h-7 gap-1 text-[11px] cursor-pointer transition-colors",
+                      optimizeMutation.isPending && "animate-pulse font-medium"
+                    )}
+                    title={
+                      optimizeMutation.isPending
+                        ? t("common.stopOptimizePrompt")
+                        : t("common.optimizePrompt")
+                    }
                   >
                     {optimizeMutation.isPending ? (
-                      <Loader2 className="size-3 animate-spin text-primary" />
+                      <Square className="size-2.5 fill-current" />
                     ) : (
                       <Sparkles className="size-3 text-primary" />
                     )}
                     {optimizeMutation.isPending
-                      ? t("common.optimizingPrompt")
+                      ? t("common.stopOptimizePrompt")
                       : t("common.optimizePrompt")}
                   </Button>
                 </div>

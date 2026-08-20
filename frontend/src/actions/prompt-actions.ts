@@ -12,9 +12,10 @@ export interface OptimizePromptInput {
   };
 }
 
-export async function optimizePromptAction(payload: OptimizePromptInput) {
+export async function optimizePromptAction(payload: OptimizePromptInput, signal?: AbortSignal) {
   const response = await httpClient.post<{ prompt: string }>("/api/bff/prompts/optimize", payload, {
     timeout: generationRequestTimeout,
+    signal,
   });
   return response.data;
 }

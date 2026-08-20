@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { ImagePlus, Loader2, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { isCancel } from "axios";
+import { ImagePlus, Loader2, Sparkles, Square, Trash2, Upload, X } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState } from "react";
 
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { IMAGE_TYPES, readImageFile } from "@/lib/image-file";
 import type { Project } from "@/types/project";
 
@@ -38,6 +40,8 @@ interface ProjectFormProps {
 function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
   const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const optimizeController = useRef<AbortController | null>(null);
+  const coverController = useRef<AbortController | null>(null);
   const [title, setTitle] = useState(project?.title ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   /**
@@ -50,20 +54,62 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
   const [coverCleared, setCoverCleared] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const stopOptimize = () => {
+    optimizeController.current?.abort();
+    optimizeController.current = null;
+    optimizeMutation.reset();
+  };
+
+  const startOptimize = () => {
+    optimizeController.current = new AbortController();
+    optimizeMutation.mutate();
+  };
+
+  const stopCover = () => {
+    coverController.current?.abort();
+    coverController.current = null;
+    coverMutation.reset();
+  };
+
+  const startCover = () => {
+    coverController.current = new AbortController();
+    coverMutation.mutate();
+  };
+
   const optimizeMutation = useMutation({
-    mutationFn: () => optimizeDescriptionAction({ title: title.trim(), description: description.trim() }),
+    mutationFn: () =>
+      optimizeDescriptionAction(
+        { title: title.trim(), description: description.trim() },
+        optimizeController.current?.signal
+      ),
     onSuccess: (response) => setDescription(response.description),
-    onError: (error) => setMessage(resolveRequestError(error, t("home.optimizeDescriptionFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setMessage(resolveRequestError(error, t("home.optimizeDescriptionFailed")));
+    },
+    onSettled: () => {
+      optimizeController.current = null;
+    },
   });
 
   const coverMutation = useMutation({
-    mutationFn: () => generateCoverAction({ title: title.trim(), description: description.trim() }),
+    mutationFn: () =>
+      generateCoverAction(
+        { title: title.trim(), description: description.trim() },
+        coverController.current?.signal
+      ),
     onSuccess: (response) => {
       setCoverPreview(response.imageData);
       setCoverData(response.imageData);
       setCoverCleared(false);
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("home.generateCoverFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setMessage(resolveRequestError(error, t("home.generateCoverFailed")));
+    },
+    onSettled: () => {
+      coverController.current = null;
+    },
   });
 
   const saveMutation = useMutation({
@@ -113,21 +159,27 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>{project ? t("home.editProjectTitle") : t("home.createProject")}</DialogTitle>
-        <DialogDescription>{t("home.projectDescriptionPlaceholder")}</DialogDescription>
+      <DialogHeader className="pb-2">
+        <DialogTitle className="text-lg font-bold text-foreground">
+          {project ? t("home.editProjectTitle") : t("home.createProject")}
+        </DialogTitle>
+        <DialogDescription className="text-xs text-muted-foreground">
+          {t("home.projectDescriptionPlaceholder")}
+        </DialogDescription>
       </DialogHeader>
 
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-4 pt-1"
         onSubmit={(event) => {
           event.preventDefault();
           saveMutation.mutate();
         }}
       >
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="projectTitle">{t("home.projectTitle")}</FieldLabel>
+        <FieldGroup className="space-y-4">
+          <Field className="space-y-1.5">
+            <FieldLabel htmlFor="projectTitle" className="text-xs font-medium text-foreground">
+              {t("home.projectTitle")}
+            </FieldLabel>
             <Input
               id="projectTitle"
               value={title}
@@ -135,11 +187,45 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
               required
               placeholder={t("home.projectTitlePlaceholder")}
               onChange={(event) => setTitle(event.target.value)}
+              className="h-10 rounded-xl text-xs bg-muted/20 focus-visible:bg-background"
             />
           </Field>
 
-          <Field>
-            <FieldLabel htmlFor="projectDescription">{t("home.projectDescription")}</FieldLabel>
+          <Field className="space-y-1.5">
+            <div className="flex h-7 items-center justify-between">
+              <FieldLabel htmlFor="projectDescription" className="text-xs font-medium text-foreground">
+                {t("home.projectDescription")}
+              </FieldLabel>
+              <Button
+                type="button"
+                variant={optimizeMutation.isPending ? "destructive" : "outline"}
+                size="xs"
+                disabled={
+                  (!description.trim() && !optimizeMutation.isPending) ||
+                  saveMutation.isPending ||
+                  coverMutation.isPending
+                }
+                onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
+                className={cn(
+                  "h-7 gap-1 text-[11px] rounded-lg cursor-pointer transition-colors",
+                  optimizeMutation.isPending && "animate-pulse font-medium"
+                )}
+                title={
+                  optimizeMutation.isPending
+                    ? t("home.stopOptimizingDescription")
+                    : t("home.optimizeDescription")
+                }
+              >
+                {optimizeMutation.isPending ? (
+                  <Square data-icon="inline-start" className="size-2.5 fill-current" />
+                ) : (
+                  <Sparkles data-icon="inline-start" className="size-3 text-primary" />
+                )}
+                {optimizeMutation.isPending
+                  ? t("home.stopOptimizingDescription")
+                  : t("home.optimizeDescription")}
+              </Button>
+            </div>
             <Textarea
               id="projectDescription"
               value={description}
@@ -147,101 +233,129 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
               rows={4}
               placeholder={t("home.projectDescriptionPlaceholder")}
               onChange={(event) => setDescription(event.target.value)}
+              className="min-h-24 resize-none rounded-xl text-xs bg-muted/20 focus-visible:bg-background leading-relaxed"
             />
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || !description.trim()}
-                onClick={() => optimizeMutation.mutate()}
-              >
-                {optimizeMutation.isPending ? (
-                  <Loader2 data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <Sparkles data-icon="inline-start" />
-                )}
-                {optimizeMutation.isPending ? t("home.optimizingDescription") : t("home.optimizeDescription")}
-              </Button>
-            </div>
           </Field>
 
-          <Field>
-            <FieldLabel>{t("home.projectCover")}</FieldLabel>
-            <div className="flex items-start gap-3">
-              <span className="relative flex h-24 w-[168px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted">
+          <Field className="space-y-1.5">
+            <FieldLabel className="text-xs font-medium text-foreground">
+              {t("home.projectCover")}
+            </FieldLabel>
+            <div className="flex items-start gap-3.5 rounded-2xl border border-border/60 bg-muted/20 p-3">
+              <span className="relative flex aspect-[16/10] w-40 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/80 bg-muted/60 shadow-inner">
                 {coverPreview ? (
-                  <Image src={coverPreview} alt="" fill unoptimized sizes="168px" className="object-cover" />
+                  <Image src={coverPreview} alt="" fill unoptimized sizes="160px" className="object-cover" />
                 ) : (
-                  <ImagePlus className="size-6 text-muted-foreground" />
+                  <div className="flex flex-col items-center gap-1 text-muted-foreground/60">
+                    <ImagePlus className="size-6" />
+                    <span className="text-[10px]">16:10 封面</span>
+                  </div>
                 )}
               </span>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={IMAGE_TYPES.join(",")}
-                  className="hidden"
-                  onChange={(event) => {
-                    void pickCover(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload data-icon="inline-start" />
-                  {t("home.uploadCover")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy || !canGenerateCover}
-                  title={canGenerateCover ? undefined : t("home.generateCoverNeedsContent")}
-                  onClick={() => coverMutation.mutate()}
-                >
-                  {coverMutation.isPending ? (
-                    <Loader2 data-icon="inline-start" className="animate-spin" />
-                  ) : (
-                    <Sparkles data-icon="inline-start" />
-                  )}
-                  {coverMutation.isPending ? t("home.generatingCover") : t("home.generateCover")}
-                </Button>
-                {coverPreview ? (
+
+              <div className="flex flex-1 flex-col justify-between self-stretch py-0.5">
+                <div>
+                  <p className="text-xs font-medium text-foreground">自定义或 AI 渲染封面</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    支持上传 10MB 内的图片，或根据标题与故事简介一键生成专属封面。
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={IMAGE_TYPES.join(",")}
+                    className="hidden"
+                    onChange={(event) => {
+                      void pickCover(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="sm"
+                    variant="outline"
+                    size="xs"
                     disabled={busy}
-                    onClick={() => {
-                      setCoverPreview(null);
-                      setCoverData(null);
-                      setCoverCleared(true);
-                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-7 gap-1 rounded-lg text-xs cursor-pointer"
                   >
-                    <Trash2 data-icon="inline-start" />
-                    {t("home.removeCover")}
+                    <Upload data-icon="inline-start" className="size-3" />
+                    {t("home.uploadCover")}
                   </Button>
-                ) : null}
+                  <Button
+                    type="button"
+                    variant={coverMutation.isPending ? "destructive" : "outline"}
+                    size="xs"
+                    disabled={
+                      (!canGenerateCover && !coverMutation.isPending) ||
+                      saveMutation.isPending ||
+                      optimizeMutation.isPending
+                    }
+                    title={canGenerateCover ? undefined : t("home.generateCoverNeedsContent")}
+                    onClick={coverMutation.isPending ? stopCover : startCover}
+                    className={cn(
+                      "h-7 gap-1 rounded-lg text-xs cursor-pointer transition-colors",
+                      coverMutation.isPending && "animate-pulse font-medium"
+                    )}
+                  >
+                    {coverMutation.isPending ? (
+                      <Square data-icon="inline-start" className="size-2.5 fill-current" />
+                    ) : (
+                      <Sparkles data-icon="inline-start" className="size-3 text-primary" />
+                    )}
+                    {coverMutation.isPending
+                      ? t("home.stopGeneratingCover")
+                      : t("home.generateCover")}
+                  </Button>
+                  {coverPreview ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      disabled={busy}
+                      onClick={() => {
+                        setCoverPreview(null);
+                        setCoverData(null);
+                        setCoverCleared(true);
+                      }}
+                      className="h-7 gap-1 rounded-lg text-xs cursor-pointer text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 data-icon="inline-start" className="size-3" />
+                      {t("home.removeCover")}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </Field>
         </FieldGroup>
 
-        {message ? <p className="text-sm text-amber-600">{message}</p> : null}
+        {message ? (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
+            {message}
+          </div>
+        ) : null}
 
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
-            <X data-icon="inline-start" />
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={onClose}
+            className="h-9 rounded-xl text-xs cursor-pointer"
+          >
+            <X data-icon="inline-start" className="size-3.5" />
             {t("common.cancel")}
           </Button>
-          <Button type="submit" disabled={busy || !title.trim()}>
-            {saveMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || !title.trim()}
+            className="h-9 rounded-xl px-4 text-xs font-semibold shadow-xs cursor-pointer"
+          >
+            {saveMutation.isPending ? <Loader2 data-icon="inline-start" className="size-3.5 animate-spin" /> : null}
             {saveMutation.isPending
               ? project
                 ? t("common.saving")
@@ -265,7 +379,7 @@ export interface ProjectFormDialogProps {
 export function ProjectFormDialog({ open, onOpenChange, project, onSaved }: ProjectFormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl rounded-3xl p-5 sm:p-6 shadow-2xl border-border/80 backdrop-blur-xl">
         {/* Keyed remount is what resets the form between "new" and each project it edits. */}
         {open ? (
           <ProjectForm

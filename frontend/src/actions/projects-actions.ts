@@ -105,9 +105,10 @@ export async function reorderProjectScenesAction(projectID: string, payload: Reo
   return response.data;
 }
 
-export async function parseProjectAction(projectID: string, payload: ParseProjectInput) {
+export async function parseProjectAction(projectID: string, payload: ParseProjectInput, signal?: AbortSignal) {
   const response = await httpClient.post<ParseProjectResponse>(`/api/bff/projects/${projectID}/parse`, payload, {
     timeout: generationRequestTimeout,
+    signal,
   });
   return response.data;
 }
@@ -120,11 +121,11 @@ export async function generateProjectAction(projectID: string, payload: Generate
   return response.data;
 }
 
-export async function optimizeProjectAction(projectID: string, payload: OptimizeProjectInput) {
+export async function optimizeProjectAction(projectID: string, payload: OptimizeProjectInput, signal?: AbortSignal) {
   const response = await httpClient.post<OptimizeProjectResponse>(
     `/api/bff/projects/${projectID}/optimize`,
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -155,19 +156,20 @@ export async function clearProjectCoverAction(projectID: string) {
  * Draws a cover and returns the bytes as a data URL without storing them, so the create
  * dialog can use it before a project exists. Apply it with `setProjectCoverAction`.
  */
-export async function generateCoverAction(payload: GenerateCoverInput) {
+export async function generateCoverAction(payload: GenerateCoverInput, signal?: AbortSignal) {
   const response = await httpClient.post<GenerateCoverResponse>("/api/bff/projects/cover/generate", payload, {
     timeout: generationRequestTimeout,
+    signal,
   });
   return response.data;
 }
 
 /** Returns the polished synopsis without saving it — the caller confirms before writing back. */
-export async function optimizeDescriptionAction(payload: OptimizeDescriptionInput) {
+export async function optimizeDescriptionAction(payload: OptimizeDescriptionInput, signal?: AbortSignal) {
   const response = await httpClient.post<OptimizeDescriptionResponse>(
     "/api/bff/projects/description/optimize",
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
