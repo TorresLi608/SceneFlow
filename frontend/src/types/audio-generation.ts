@@ -3,15 +3,20 @@ export type AudioFormat = "mp3_24000" | "wav_24000";
 export interface GenerateAudioInput {
   text: string;
   voice: string;
-  format: AudioFormat;
-  volume: number;
-  speechRate: number;
-  pitchRate: number;
-  seed: number;
-  instruction?: string;
-  languageHints?: ("zh" | "en")[];
   configId?: number;
   officialConfigId?: number;
+}
+
+export interface UserVoice {
+  id: string;
+  voiceId: string;
+  targetModel: string;
+  name: string;
+  voicePrompt: string;
+  previewText: string;
+  previewAudioUrl: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface GenerateAudioResponse {

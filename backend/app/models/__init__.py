@@ -11,6 +11,7 @@ from app.models.prop import Prop
 from app.models.usage import UsageLog
 from app.models.user import InvitationCode, RedemptionCode, User
 from app.models.voice import VoiceProfile
+from app.models.user_voice import UserVoice
 
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "User",
     "UserOfficialConfigDefault",
     "VoiceProfile",
+    "UserVoice",
 ]

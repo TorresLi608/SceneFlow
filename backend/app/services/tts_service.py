@@ -6,13 +6,18 @@ import json
 import shutil
 import subprocess
 import threading
+import time
+import wave
 from pathlib import Path
 from typing import Any
 
 import httpx
 import edge_tts
 import dashscope
+from dashscope.audio.qwen_tts_realtime import AudioFormat as RealtimeAudioFormat, QwenTtsRealtime, QwenTtsRealtimeCallback
 from dashscope.audio.tts_v2 import AudioFormat, SpeechSynthesizer
+
+from app.services.config_service import QWEN_VD_MODEL
 
 
 DASHSCOPE_TTS_WS_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
@@ -36,7 +41,10 @@ async def synthesize(text: str, config: dict[str, str], output: Path, options: d
     elif provider == "openai":
         await _openai_tts(text, config, output)
     elif provider == "qwen":
-        await _qwen_tts(text, config, output, options)
+        if str(config.get("model") or "").split(":", 1)[0] == QWEN_VD_MODEL:
+            await qwen_vd_tts(text, str(config.get("voice") or "").strip(), config, output)
+        else:
+            await _qwen_tts(text, config, output, options)
     else:
         raise ValueError("audio purpose only supports provider edge/system/openai/qwen")
     return output, _duration(output, len(text) / 4.5)
@@ -88,7 +96,7 @@ async def _openai_tts(text: str, config: dict[str, str], output: Path) -> None:
 async def _qwen_tts(text: str, config: dict[str, str], output: Path, options: dict[str, Any] | None = None) -> None:
     model, separator, voice = config["model"].partition(":")
     if not model or (not separator and model != "qwen-audio-3.0-tts-flash") or (separator and not voice):
-        raise ValueError("Qwen audio modelSeries must use model:voice, for example qwen3-tts-flash:Cherry")
+        raise ValueError("Qwen audio modelSeries must use model:voice")
     base_url = (config.get("baseUrl") or "https://dashscope.aliyuncs.com/api/v1").rstrip("/")
     if (httpx.URL(base_url).host or "").lower() == "dashscope.aliyuncs.com":
         await asyncio.to_thread(_qwen_tts_sdk, text, config["apiKey"], model, voice, output, options)
@@ -116,6 +124,84 @@ async def _qwen_tts(text: str, config: dict[str, str], output: Path, options: di
             output.write_bytes(base64.b64decode(audio["data"]))
             return
         raise ValueError("Qwen TTS returned no audio")
+
+
+async def qwen_vd_tts(text: str, voice: str, config: dict[str, str], output: Path) -> None:
+    """Synthesize a built-in or designed voice through Qwen's realtime API."""
+    if not voice:
+        raise ValueError("Qwen voice is required")
+    await asyncio.to_thread(_qwen_vd_tts_realtime, text, voice, config["apiKey"], output)
+
+
+class _RealtimeCallback(QwenTtsRealtimeCallback):
+    def __init__(self) -> None:
+        self.audio = bytearray()
+        self.finished = threading.Event()
+        self.error: Exception | None = None
+
+    def on_event(self, response: dict[str, Any]) -> None:
+        event_type = response.get("type")
+        if event_type == "response.audio.delta":
+            self.audio.extend(base64.b64decode(response.get("delta", "")))
+        elif event_type == "error":
+            self.error = RuntimeError(str(response.get("error") or "Qwen realtime TTS failed"))
+            self.finished.set()
+        elif event_type in {"response.done", "session.finished"}:
+            self.finished.set()
+
+    def on_close(self, close_status_code: int | None, close_msg: str | None) -> None:
+        if not self.finished.is_set():
+            self.error = RuntimeError(f"Qwen realtime TTS connection closed: {close_status_code} {close_msg or ''}".strip())
+            self.finished.set()
+
+    def on_error(self, error: Exception) -> None:
+        self.error = error
+        self.finished.set()
+
+
+class _RealtimeClient(QwenTtsRealtime):
+    def on_error(self, ws: Any, error: Exception) -> None:
+        self.callback.on_error(RuntimeError(f"Qwen realtime TTS connection failed: {error}"))
+        ws.close()
+
+
+def _qwen_vd_tts_realtime(text: str, voice: str, api_key: str, output: Path) -> None:
+    with _DASHSCOPE_TTS_LOCK:
+        previous_key = dashscope.api_key
+        dashscope.api_key = api_key.strip()
+        callback = _RealtimeCallback()
+        realtime = _RealtimeClient(
+            model=QWEN_VD_MODEL,
+            callback=callback,
+            url="wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
+        )
+        try:
+            realtime.connect()
+            realtime.update_session(
+                voice=voice,
+                response_format=RealtimeAudioFormat.PCM_24000HZ_MONO_16BIT,
+                mode="server_commit",
+            )
+            realtime.append_text(text)
+            time.sleep(0.1)
+            realtime.finish()
+            timeout = max(60, min(15 * 60, len(text) // 5))
+            if not callback.finished.wait(timeout):
+                raise TimeoutError("Qwen realtime TTS timed out")
+            if callback.error:
+                raise callback.error
+            if not callback.audio:
+                raise ValueError("Qwen realtime TTS returned no audio")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with wave.open(str(output), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(24000)
+                wav.writeframes(callback.audio)
+        finally:
+            if getattr(realtime, "ws", None) is not None:
+                realtime.close()
+            dashscope.api_key = previous_key
 
 
 def _qwen_tts_sdk(text: str, api_key: str, model: str, voice: str, output: Path, options: dict[str, Any] | None = None) -> None:

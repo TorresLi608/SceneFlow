@@ -58,6 +58,7 @@ import type { ConfigPurpose, UserConfig, VideoCapabilities } from "@/types/auth"
 const videoQualityOptions: VideoCapabilities["qualities"] = ["480p", "720p", "1080p", "2K", "4K"];
 const videoFpsOptions: VideoCapabilities["fps"] = [24, 30, 60];
 const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"];
+const QWEN_VOICE_MODEL = "qwen3-tts-vd-2026-01-26";
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
   const isI2v = model.includes("-i2v");
@@ -362,7 +363,7 @@ export function ModelConfigManager() {
     setName(providerLabel(option.value, t));
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
-    setModelSeries(option.modelSeries);
+    setModelSeries(value === "audio" ? QWEN_VOICE_MODEL : option.modelSeries);
     setModelOptions([]);
     setUnitPrice("0");
     setImageMaxReferenceImages(4);
@@ -377,7 +378,7 @@ export function ModelConfigManager() {
     setName(providerLabel(option.value, t));
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, value, mode));
-    setModelSeries(option.modelSeries);
+    setModelSeries(purpose === "audio" ? QWEN_VOICE_MODEL : option.modelSeries);
     setModelOptions([]);
     setVideoCapabilities(defaultVideoCapabilities(value));
     setImageMaxReferenceImages(4);
@@ -866,7 +867,7 @@ export function ModelConfigManager() {
                   {t("settings.modelSeries")}
                   <RequiredAsterisk />
                 </Label>
-                <Button
+                {purpose === "audio" ? null : <Button
                   type="button"
                   variant="outline"
                   size="sm"
@@ -874,9 +875,13 @@ export function ModelConfigManager() {
                   disabled={discoverModelsMutation.isPending}
                 >
                   {discoverModelsMutation.isPending ? t("admin.fetchingModels") : t("admin.fetchModels")}
-                </Button>
+                </Button>}
               </div>
-              <ModelSeriesCombobox
+              {purpose === "audio" ? (
+                <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  {QWEN_VOICE_MODEL}
+                </p>
+              ) : <ModelSeriesCombobox
                 id="adminConfigModel"
                 value={modelSeries}
                 options={modelOptions}
@@ -887,7 +892,7 @@ export function ModelConfigManager() {
                 placeholder={selectedProviderOption?.modelPlaceholder}
                 selectLabel={t("admin.selectModelSeries")}
                 emptyLabel={t("admin.noMatchingModels")}
-              />
+              />}
             </div>
 
             <div className="space-y-2">

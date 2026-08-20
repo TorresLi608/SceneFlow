@@ -119,33 +119,12 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
   ],
   audio: [
     {
-      value: "edge",
-      label: "Edge-TTS",
-      modelSeries: "",
-      modelPlaceholder: "zh-CN-XiaoxiaoNeural",
-      docsUrl: "https://github.com/rany2/edge-tts",
-    },
-    {
-      value: "system",
-      label: "System TTS",
-      modelSeries: "",
-      modelPlaceholder: "Tingting / zh",
-    },
-    {
-      value: "openai",
-      label: "OpenAI TTS",
-      modelSeries: "",
-      modelPlaceholder: "gpt-4o-mini-tts",
-      baseUrl: "https://api.openai.com/v1",
-      docsUrl: "https://platform.openai.com/docs/guides/text-to-speech",
-    },
-    {
       value: "qwen",
-      label: "Qwen TTS",
-      modelSeries: "",
-      modelPlaceholder: "qwen-audio-3.0-tts-flash / qwen3-tts-flash:Cherry",
-      baseUrl: "https://dashscope.aliyuncs.com/api/v1",
-      docsUrl: "https://platform.qianwenai.com/docs/developer-guides/speech/tts-models",
+      label: "Qwen Voice",
+      modelSeries: "qwen3-tts-vd-2026-01-26",
+      modelPlaceholder: "qwen3-tts-vd-2026-01-26",
+      baseUrl: "",
+      docsUrl: "https://help.aliyun.com/zh/model-studio/qwen-voice-design",
     },
   ],
 };

@@ -4,16 +4,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.config_service import normalize_config_payload
-from app.services.tts_service import _duration, _openai_tts, _qwen_tts, _qwen_tts_sdk, _system_tts, synthesize
+from app.services.tts_service import _duration, _openai_tts, _qwen_tts, _qwen_tts_sdk, _qwen_vd_tts_realtime, _system_tts, synthesize
 
 
 def test_system_audio_config_needs_no_api_key() -> None:
-    config = normalize_config_payload({"purpose": "audio", "provider": "system", "modelSeries": "Tingting", "apiKey": ""})
-    assert config["provider"] == "system"
-    assert config["model"] == "Tingting"
-
-    edge = normalize_config_payload({"purpose": "audio", "provider": "edge", "modelSeries": "zh-CN-XiaoxiaoNeural", "apiKey": ""})
-    assert edge["provider"] == "edge"
+    config = normalize_config_payload({"purpose": "audio", "provider": "qwen", "modelSeries": "", "apiKey": "secret"})
+    assert config["provider"] == "qwen"
+    assert config["model"] == "qwen3-tts-vd-2026-01-26"
 
 
 def test_system_tts_uses_available_binary() -> None:
@@ -102,6 +99,35 @@ def test_qwen_native_tts_passes_supported_generation_options() -> None:
     assert constructor.call_args.kwargs["language_hints"] == ["zh"]
 
 
+def test_qwen_voice_design_uses_realtime_pcm_and_writes_wav() -> None:
+    class FakeRealtime:
+        def __init__(self, *, callback, **_kwargs):
+            self.callback = callback
+
+        def connect(self):
+            self.callback.on_open()
+
+        def update_session(self, **kwargs):
+            assert kwargs["voice"] == "voice-1"
+            assert "instructions" not in kwargs
+
+        def append_text(self, text):
+            assert text == "你好"
+            self.callback.on_event({"type": "response.audio.delta", "delta": "aGk="})
+
+        def finish(self):
+            self.callback.on_event({"type": "response.done"})
+
+        def close(self):
+            pass
+
+    with TemporaryDirectory() as directory, patch("app.services.tts_service._RealtimeClient", FakeRealtime), patch("app.services.tts_service.dashscope.api_key", "old-key"), patch("app.services.tts_service.time.sleep"):
+        path = Path(directory) / "voice.wav"
+        _qwen_vd_tts_realtime("你好", "voice-1", "new-key", path)
+        assert path.read_bytes()[0:4] == b"RIFF"
+        assert path.read_bytes()[-2:] == b"hi"
+
+
 if __name__ == "__main__":
     test_system_audio_config_needs_no_api_key()
     test_system_tts_uses_available_binary()
@@ -111,3 +137,4 @@ if __name__ == "__main__":
     test_qwen_tts_uses_model_and_voice()
     test_qwen_native_tts_uses_official_websocket_sdk()
     test_qwen_native_tts_passes_supported_generation_options()
+    test_qwen_voice_design_uses_realtime_pcm_and_writes_wav()

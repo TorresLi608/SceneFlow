@@ -1,9 +1,24 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
-import type { GenerateAudioInput, GenerateAudioResponse } from "@/types/audio-generation";
+import type { GenerateAudioInput, GenerateAudioResponse, UserVoice } from "@/types/audio-generation";
 
 export async function generateAudioAction(payload: GenerateAudioInput) {
   const response = await httpClient.post<GenerateAudioResponse>("/api/bff/audio/generate", payload, {
     timeout: generationRequestTimeout,
   });
+  return response.data;
+}
+
+export async function listUserVoicesAction() {
+  const response = await httpClient.get<{ voices: UserVoice[] }>("/api/bff/voices");
+  return response.data;
+}
+
+export async function saveVoiceAction(id: string) {
+  const response = await httpClient.post<{ voice: UserVoice }>(`/api/bff/voices/${id}/save`);
+  return response.data;
+}
+
+export async function designVoiceAction(payload: { name: string; voicePrompt: string; previewText: string; configId?: number; officialConfigId?: number }) {
+  const response = await httpClient.post<{ voice: UserVoice }>("/api/bff/voices/design", payload, { timeout: generationRequestTimeout });
   return response.data;
 }

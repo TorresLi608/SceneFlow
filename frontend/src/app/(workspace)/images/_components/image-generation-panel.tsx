@@ -306,6 +306,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
                   <SelectItem
                     key={configSelectValue(config)}
                     value={configSelectValue(config)}
+                    label={configName(config, t)}
                     className="text-xs"
                   >
                     {configName(config, t)}

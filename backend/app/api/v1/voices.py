@@ -20,7 +20,7 @@ from app.core.realtime import broadcast
 from app.schemas.requests import CreateVoiceProfileRequest, UpdateVoiceProfileRequest
 from app.schemas.serializers import project_json, voice_profile_json
 from app.services.artifact_service import artifact_absolute_path, artifact_relative_path, store_artifact
-from app.services.config_service import active_model_config
+from app.services.config_service import QWEN_VD_MODEL, active_model_config
 from app.services.media_service import concat_audio
 from app.services.project_service import owned_project
 from app.services.prompt_service import NARRATOR_SAMPLE_TEXT
@@ -59,7 +59,9 @@ def _synthesis_config(session, user_id: int, profile) -> dict[str, Any]:
         require_model_balance(session, user_id, config)
     model = (profile.voice_model or "").strip()
     provider = (profile.voice_provider or "").strip().lower()
-    if model and (not provider or provider == config["provider"]):
+    if config["provider"] == "qwen":
+        config = {**config, "model": QWEN_VD_MODEL, "voice": model or "Cherry"}
+    elif model and (not provider or provider == config["provider"]):
         config = {**config, "model": model}
     return config
 

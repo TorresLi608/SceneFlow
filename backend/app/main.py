@@ -26,6 +26,7 @@ from app.api.v1 import (
     users,
     videos,
     voices,
+    user_voices,
     websocket,
 )
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
@@ -68,6 +69,7 @@ app.include_router(episodes.router)
 app.include_router(characters.router)
 app.include_router(props.router)
 app.include_router(voices.router)
+app.include_router(user_voices.router)
 app.include_router(exports.router)
 app.include_router(jobs.router)
 app.include_router(websocket.router)

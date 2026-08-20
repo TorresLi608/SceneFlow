@@ -16,6 +16,7 @@ from app.models import ModelConfig, UserOfficialConfigDefault
 VIDEO_QUALITIES = ("480p", "720p", "1080p", "2K", "4K")
 VIDEO_FPS = (24, 30, 60)
 VIDEO_ASPECT_RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive")
+QWEN_VD_MODEL = "qwen3-tts-vd-2026-01-26"
 
 
 def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]:
@@ -222,12 +223,10 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
     if purpose not in {"general", "script", "image", "video", "audio"}:
         raise HTTPException(400, "invalid purpose")
     if purpose == "audio":
-        if provider not in {"edge", "system", "openai", "qwen"}:
-            raise HTTPException(400, "audio purpose only supports provider edge/system/openai/qwen")
+        if provider != "qwen":
+            raise HTTPException(400, "audio purpose only supports provider qwen")
         if not model.strip():
-            raise HTTPException(400, "audio purpose requires a voice or modelSeries")
-        if provider == "qwen" and ":" not in model and model != "qwen-audio-3.0-tts-flash":
-            raise HTTPException(400, "Qwen audio modelSeries must use model:voice")
+            raise HTTPException(400, f"audio purpose requires {QWEN_VD_MODEL}")
         return
     if provider == "custom":
         if purpose not in {"general", "script"}:
@@ -259,7 +258,11 @@ def normalize_config_payload(payload: dict[str, Any], current: ModelConfig | Non
     provider = normalize_provider(str(payload.get("provider", current.provider if current else "")))
     base_url = normalize_base_url(str(payload.get("baseUrl", (current.base_url or "") if current else "")))
     model_value = payload.get("modelSeries") or payload.get("model") or ((current.model_name or "") if current else "")
+    if purpose == "audio" and provider == "qwen" and not str(model_value).strip():
+        model_value = QWEN_VD_MODEL
     model = normalize_model(provider, str(model_value))
+    if purpose == "audio" and provider == "qwen":
+        model = QWEN_VD_MODEL
     if "apiKey" in payload:
         api_key = str(payload["apiKey"]).strip()
     elif current:
