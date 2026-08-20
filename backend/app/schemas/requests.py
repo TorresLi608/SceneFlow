@@ -96,15 +96,10 @@ class PromptOptimizationContext(CamelModel):
     quality: str | None = Field(default=None, max_length=20)
     duration: int | None = Field(default=None, ge=1, le=600)
     fps: int | None = Field(default=None, ge=1, le=240)
-    voice: str | None = Field(default=None, max_length=160)
-    speech_rate: float | None = Field(default=None, ge=0.1, le=10)
-    pitch_rate: float | None = Field(default=None, ge=0.1, le=10)
-    instruction: str | None = Field(default=None, max_length=1000)
-    language: str | None = Field(default=None, max_length=40)
 
 
 class OptimizePromptRequest(CamelModel):
-    kind: Literal["image", "video", "audio"]
+    kind: Literal["image", "video"]
     prompt: str = Field(min_length=1, max_length=10_000)
     context: PromptOptimizationContext = Field(default_factory=PromptOptimizationContext)
 

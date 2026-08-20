@@ -1,12 +1,5 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
-import type { GenerateAudioInput, GenerateAudioResponse, UserVoice } from "@/types/audio-generation";
-
-export async function generateAudioAction(payload: GenerateAudioInput) {
-  const response = await httpClient.post<GenerateAudioResponse>("/api/bff/audio/generate", payload, {
-    timeout: generationRequestTimeout,
-  });
-  return response.data;
-}
+import type { UserVoice } from "@/types/voice-generation";
 
 export async function listUserVoicesAction() {
   const response = await httpClient.get<{ voices: UserVoice[] }>("/api/bff/voices");

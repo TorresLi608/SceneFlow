@@ -1440,44 +1440,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/audio/generate:
-    post:
-      tags:
-      - audio
-      summary: Generate Audio
-      operationId: generate_audio_api_audio_generate_post
-      parameters:
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-              title: Payload
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Generate Audio Api Audio Generate Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/videos/generate:
     post:
       tags:
@@ -4667,7 +4629,6 @@ components:
           enum:
           - image
           - video
-          - audio
           title: Kind
         prompt:
           type: string
@@ -4835,38 +4796,6 @@ components:
             minimum: 1.0
           - type: 'null'
           title: Fps
-        voice:
-          anyOf:
-          - type: string
-            maxLength: 160
-          - type: 'null'
-          title: Voice
-        speechRate:
-          anyOf:
-          - type: number
-            maximum: 10.0
-            minimum: 0.1
-          - type: 'null'
-          title: Speechrate
-        pitchRate:
-          anyOf:
-          - type: number
-            maximum: 10.0
-            minimum: 0.1
-          - type: 'null'
-          title: Pitchrate
-        instruction:
-          anyOf:
-          - type: string
-            maxLength: 1000
-          - type: 'null'
-          title: Instruction
-        language:
-          anyOf:
-          - type: string
-            maxLength: 40
-          - type: 'null'
-          title: Language
       additionalProperties: false
       type: object
       title: PromptOptimizationContext

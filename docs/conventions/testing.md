@@ -40,7 +40,7 @@ Follow `tests/test_episodes_api.py`:
 
 ### What is covered today
 
-Auth and admin (users, usage logs, invitation/redemption codes), model config resolution and the legacy table merge, project guards and production settings, the episode layer and its migration, characters and casting, artifacts and signed paths, jobs (lease/cancel/retry), TTS, video, usage/billing, websocket, and the database migrations themselves.
+Auth and admin (users, usage logs, invitation/redemption codes), model config resolution and the legacy table merge, project guards and production settings, the episode layer and its migration, characters and casting, artifacts and signed paths, jobs (lease/cancel/retry), local voice audition, video, usage/billing, websocket, and the database migrations themselves.
 
 ## Frontend
 

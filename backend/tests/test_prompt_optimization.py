@@ -1,4 +1,4 @@
-"""One shared prompt optimizer serves the three standalone media generators."""
+"""One shared prompt optimizer serves the standalone image and video generators."""
 
 from __future__ import annotations
 
@@ -62,7 +62,6 @@ def test_media_prompt_optimization_uses_distinct_instructions_and_records_usage(
             for kind, context in (
                 ("image", {"outputLanguage": "en", "aspectRatio": "16:9", "quality": "2K"}),
                 ("video", {"outputLanguage": "zh", "duration": 5, "fps": 24}),
-                ("audio", {"voice": "Cherry", "speechRate": 1.2}),
             ):
                 response = client.post(
                     "/api/prompts/optimize",
@@ -72,12 +71,11 @@ def test_media_prompt_optimization_uses_distinct_instructions_and_records_usage(
                 assert response.status_code == 200, response.text
                 assert response.json()["prompt"].startswith("optimized-")
 
-            assert len({system for system, _user in CALLS}) == 3
+            assert len({system for system, _user in CALLS}) == 2
             assert '"aspectRatio": "16:9"' in CALLS[0][1]
             assert "输出语言：英文" in CALLS[0][1]
             assert "输出语言：中文" in CALLS[1][1]
-            assert "输出语言：" not in CALLS[2][1]
-            assert usage == ["image_prompt_optimize", "video_prompt_optimize", "audio_prompt_optimize"]
+            assert usage == ["image_prompt_optimize", "video_prompt_optimize"]
 
 
 def test_media_prompt_optimization_validates_kind_and_content() -> None:

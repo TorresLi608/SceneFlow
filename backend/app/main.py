@@ -10,7 +10,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
     admin,
-    audio,
     auth,
     characters,
     chat,
@@ -60,7 +59,6 @@ app.include_router(admin.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(images.router)
-app.include_router(audio.router)
 app.include_router(videos.router)
 app.include_router(usage.router)
 app.include_router(prompts.router)

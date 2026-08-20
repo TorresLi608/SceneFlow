@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app/backend
 
-# ffmpeg/ffprobe are runtime dependencies, not build ones: tts_service measures clip length
+# ffmpeg/ffprobe are runtime dependencies for audio audition and media merging
 # with ffprobe, and voice-sheet and export concatenation shell out to ffmpeg.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,7 +11,7 @@ from app.core.database import db
 from app.models import ModelConfig, UserVoice
 from app.schemas.serializers import user_voice_json
 from app.services.artifact_service import store_artifact
-from app.services.config_service import QWEN_VD_MODEL, active_model_config, official_model_config, user_model_config
+from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.qwen_voice_service import create_voice
 from app.services.usage_service import record_usage, require_model_balance
 from app.utils.common import new_id, now
@@ -38,7 +37,7 @@ def list_user_voices(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
 
 
 @router.post("/design")
-async def design_voice(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+def design_voice(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     prompt = str(payload.get("voicePrompt") or "").strip()
     preview_text = str(payload.get("previewText") or "").strip()
     name = str(payload.get("name") or "custom_voice").strip()
@@ -54,19 +53,9 @@ async def design_voice(payload: dict[str, Any], user_id: int = Depends(current_u
     started_at = time.monotonic()
     try:
         voice_id, audio = create_voice(config, prompt, preview_text, name)
-        if not audio:
-            from app.services.tts_service import qwen_vd_tts
-            preview_path = Path("/tmp") / f"sceneflow-voice-preview-{time.time_ns()}.wav"
-            try:
-                await qwen_vd_tts(preview_text, voice_id, {**config, "model": QWEN_VD_MODEL}, preview_path)
-                audio = preview_path.read_bytes()
-            finally:
-                preview_path.unlink(missing_ok=True)
     except Exception as exc:
         raise HTTPException(502, f"音色设计失败：{str(exc)[:220]}") from exc
-    stored = None
-    if audio:
-        stored = store_artifact("voices", str(user_id), f"{voice_id}.wav", audio)
+    stored = store_artifact("voices", str(user_id), f"{voice_id}.wav", audio)
     with db() as session:
         voice = UserVoice(
             id=new_id("user-voice"),
@@ -74,7 +63,7 @@ async def design_voice(payload: dict[str, Any], user_id: int = Depends(current_u
             updated_at=now(),
             user_id=user_id,
             voice_id=voice_id,
-            target_model=QWEN_VD_MODEL,
+            target_model=str(config["model"]),
             name=name,
             voice_prompt=prompt,
             preview_text=preview_text,

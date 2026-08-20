@@ -6,9 +6,6 @@ from typing import Any
 
 import httpx
 
-from app.services.config_service import QWEN_VD_MODEL
-
-
 DESIGN_MODEL = "qwen-voice-design"
 
 
@@ -30,13 +27,16 @@ def _call(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     return data["output"]
 
 
-def create_voice(config: dict[str, Any], voice_prompt: str, preview_text: str, preferred_name: str) -> tuple[str, bytes | None]:
+def create_voice(config: dict[str, Any], voice_prompt: str, preview_text: str, preferred_name: str) -> tuple[str, bytes]:
     preferred_name = re.sub(r"[^A-Za-z0-9_]", "_", preferred_name).strip("_")[:64] or "sceneflow_voice"
+    target_model = str(config.get("model") or "").strip()
+    if not target_model:
+        raise ValueError("Qwen voice design target model is required")
     output = _call(
         config,
         {
             "action": "create",
-            "target_model": QWEN_VD_MODEL,
+            "target_model": target_model,
             "preferred_name": preferred_name,
             "voice_prompt": voice_prompt,
             "preview_text": preview_text,
@@ -57,4 +57,4 @@ def create_voice(config: dict[str, Any], voice_prompt: str, preview_text: str, p
         response = httpx.get(str(audio["url"]), timeout=15 * 60)
         response.raise_for_status()
         return voice_id, response.content
-    return voice_id, None
+    raise ValueError("Qwen voice design returned no preview audio")

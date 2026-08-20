@@ -58,7 +58,6 @@ import type { ConfigPurpose, UserConfig, VideoCapabilities } from "@/types/auth"
 const videoQualityOptions: VideoCapabilities["qualities"] = ["480p", "720p", "1080p", "2K", "4K"];
 const videoFpsOptions: VideoCapabilities["fps"] = [24, 30, 60];
 const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"];
-const QWEN_VOICE_MODEL = "qwen3-tts-vd-2026-01-26";
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
   const isI2v = model.includes("-i2v");
@@ -160,7 +159,7 @@ function isDefaultConfig(config: UserConfig, activeUserByPurpose: Partial<Record
 function defaultPricingUnit(purpose: ConfigPurpose): UserConfig["unitName"] {
   if (purpose === "image") return "image";
   if (purpose === "video") return "second";
-  if (purpose === "audio") return "second";
+  if (purpose === "audio") return "request";
   return "token";
 }
 
@@ -363,7 +362,7 @@ export function ModelConfigManager() {
     setName(providerLabel(option.value, t));
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(value, option.value, mode));
-    setModelSeries(value === "audio" ? QWEN_VOICE_MODEL : option.modelSeries);
+    setModelSeries(option.modelSeries);
     setModelOptions([]);
     setUnitPrice("0");
     setImageMaxReferenceImages(4);
@@ -378,7 +377,7 @@ export function ModelConfigManager() {
     setName(providerLabel(option.value, t));
     setConnectionMode(mode);
     setBaseUrl(baseUrlForConnection(purpose, value, mode));
-    setModelSeries(purpose === "audio" ? QWEN_VOICE_MODEL : option.modelSeries);
+    setModelSeries(option.modelSeries);
     setModelOptions([]);
     setVideoCapabilities(defaultVideoCapabilities(value));
     setImageMaxReferenceImages(4);
@@ -877,11 +876,7 @@ export function ModelConfigManager() {
                   {discoverModelsMutation.isPending ? t("admin.fetchingModels") : t("admin.fetchModels")}
                 </Button>}
               </div>
-              {purpose === "audio" ? (
-                <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  {QWEN_VOICE_MODEL}
-                </p>
-              ) : <ModelSeriesCombobox
+              <ModelSeriesCombobox
                 id="adminConfigModel"
                 value={modelSeries}
                 options={modelOptions}
@@ -892,7 +887,7 @@ export function ModelConfigManager() {
                 placeholder={selectedProviderOption?.modelPlaceholder}
                 selectLabel={t("admin.selectModelSeries")}
                 emptyLabel={t("admin.noMatchingModels")}
-              />}
+              />
             </div>
 
             <div className="space-y-2">
@@ -1235,7 +1230,7 @@ export function ModelConfigManager() {
                 {purpose === "image" || purpose === "video" || purpose === "audio" ? (
                   <PricingInput
                     id="unitPrice"
-                    label={t(purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}
+                    label={t(purpose === "image" ? "admin.imageUnitPrice" : purpose === "audio" ? "admin.audioUnitPrice" : "admin.videoUnitPrice")}
                     value={unitPrice}
                     onChange={setUnitPrice}
                     required
@@ -1302,8 +1297,8 @@ export function ModelConfigManager() {
               <p className="break-all">Base URL：{viewingConfig.baseUrl || "-"}</p>
               <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")}</p>
               <p>
-                {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {viewingConfig.purpose === "image" || viewingConfig.purpose === "video"
-                  ? `${t(viewingConfig.purpose === "image" ? "admin.imageUnitPrice" : "admin.videoUnitPrice")}: $${viewingConfig.unitPrice}`
+                {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {viewingConfig.purpose === "image" || viewingConfig.purpose === "video" || viewingConfig.purpose === "audio"
+                  ? `${t(viewingConfig.purpose === "image" ? "admin.imageUnitPrice" : viewingConfig.purpose === "audio" ? "admin.audioUnitPrice" : "admin.videoUnitPrice")}: $${viewingConfig.unitPrice}`
                   : `${t("admin.inputPrice")}: $${viewingConfig.inputPricePerMillion} · ${t("admin.outputPrice")}: $${viewingConfig.outputPricePerMillion}`}
               </p>
             </div>
