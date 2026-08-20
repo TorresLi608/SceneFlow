@@ -29,6 +29,15 @@ SYSTEM_PROMPTS = {
         "光线与连续性，使提示词适合视频生成并符合给定时长和画面参数。"
         "只输出最终提示词，不要标题、解释、引号或 Markdown。"
     ),
+    "voice": (
+        "你是专业的 AI 声音与音色设计提示词编辑。保留用户原意，从性别、年龄段、音质音色（如清亮、沙哑、磁性、温润、浑厚等）、"
+        "语调语速、情绪情感色彩、说话风格及适用场景等维度补充专业的声音听感特征描述，使提示词清晰精准且适合用于音色定制模型。"
+        "只输出最终音色描述提示词，不要标题、解释、引号或 Markdown。"
+    ),
+    "audio": (
+        "你是专业的配音文稿编辑。保留原意、事实、语言和人称，改善断句、标点、口语自然度与朗读节奏，"
+        "并适配给定音色和语气；不要扩写新信息。只输出最终朗读文本，不要标题、解释、引号或 Markdown。"
+    ),
 }
 
 OUTPUT_LANGUAGES = {
@@ -50,8 +59,8 @@ async def optimize_prompt(
     context = body.context.model_dump(by_alias=True, exclude_none=True)
     output_language = context.pop("outputLanguage", "auto")
     user_prompt = f"待优化内容：\n{body.prompt}"
-    if body.kind in {"image", "video"}:
-        user_prompt += f"\n\n输出语言：{OUTPUT_LANGUAGES[output_language]}"
+    if body.kind in {"image", "video", "voice", "audio"}:
+        user_prompt += f"\n\n输出语言：{OUTPUT_LANGUAGES.get(output_language, '跟随原始输入语言')}"
     if context:
         user_prompt += "\n\n生成参数（仅作适配上下文）：\n" + json.dumps(context, ensure_ascii=False)
 

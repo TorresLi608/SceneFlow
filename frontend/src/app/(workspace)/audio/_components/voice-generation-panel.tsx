@@ -5,6 +5,7 @@ import { AudioLines, Check, Loader2, Save, Sparkles, Square, Trash2, Volume2, Wa
 import { isCancel } from "axios";
 import { useMemo, useRef, useState } from "react";
 
+import { optimizePromptAction } from "@/actions/prompt-actions";
 import {
   designVoiceAction,
   deleteVoiceAction,
@@ -53,6 +54,7 @@ export function VoiceGenerationPanel({
   const [selectedVoiceId, setSelectedVoiceId] = useState("");
   const [name, setName] = useState("");
   const [voicePrompt, setVoicePrompt] = useState("");
+  const [promptLanguage, setPromptLanguage] = useState<"auto" | "zh" | "en">("auto");
   const [previewText, setPreviewText] = useState("");
   const [draftVoice, setDraftVoice] = useState<UserVoice | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -99,6 +101,21 @@ export function VoiceGenerationPanel({
       setErrorMessage(resolveRequestError(error, t("voice.designFailed")));
     },
     onSettled: () => { requestController.current = null; },
+  });
+
+  const optimizeMutation = useMutation({
+    mutationFn: () =>
+      optimizePromptAction({
+        kind: "voice",
+        prompt: voicePrompt.trim(),
+        context: { outputLanguage: promptLanguage },
+      }),
+    onSuccess: (response) => {
+      setVoicePrompt(response.prompt);
+      setErrorMessage(null);
+    },
+    onError: (error) =>
+      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
   });
 
   const saveMutation = useMutation({
@@ -227,16 +244,85 @@ export function VoiceGenerationPanel({
 
           <div className="grid gap-5 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
-              <label htmlFor="voice-name" className="text-xs font-semibold">{t("voice.name")}</label>
-              <Input id="voice-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={t("voice.namePlaceholder")} />
+              <label htmlFor="voice-name" className="text-xs font-semibold text-foreground/90">
+                {t("voice.name")}
+              </label>
+              <Input
+                id="voice-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t("voice.namePlaceholder")}
+                className="h-10 text-xs rounded-xl"
+              />
             </div>
             <div className="space-y-2">
-              <label htmlFor="voice-prompt" className="text-xs font-semibold">{t("voice.prompt")}</label>
-              <Textarea id="voice-prompt" value={voicePrompt} onChange={(event) => setVoicePrompt(event.target.value)} placeholder={t("voice.promptPlaceholder")} className="min-h-36 resize-none" />
+              <div className="flex h-7 items-center justify-between gap-2">
+                <label htmlFor="voice-prompt" className="text-xs font-semibold text-foreground/90">
+                  {t("voice.prompt")}
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <Select
+                    value={promptLanguage}
+                    onValueChange={(value) =>
+                      setPromptLanguage((value ?? "auto") as "auto" | "zh" | "en")
+                    }
+                  >
+                    <SelectTrigger className="h-7 min-w-20 text-[11px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectItem value="auto" label={t("common.promptLanguageAuto")} className="text-xs">
+                        {t("common.promptLanguageAuto")}
+                      </SelectItem>
+                      <SelectItem value="zh" label={t("common.promptLanguageZh")} className="text-xs">
+                        {t("common.promptLanguageZh")}
+                      </SelectItem>
+                      <SelectItem value="en" label={t("common.promptLanguageEn")} className="text-xs">
+                        {t("common.promptLanguageEn")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled={!voicePrompt.trim() || optimizeMutation.isPending}
+                    onClick={() => optimizeMutation.mutate()}
+                    className="h-7 gap-1 text-[11px] cursor-pointer"
+                  >
+                    {optimizeMutation.isPending ? (
+                      <Loader2 className="size-3 animate-spin text-primary" />
+                    ) : (
+                      <Sparkles className="size-3 text-primary" />
+                    )}
+                    {optimizeMutation.isPending
+                      ? t("common.optimizingPrompt")
+                      : t("common.optimizePrompt")}
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                id="voice-prompt"
+                value={voicePrompt}
+                onChange={(event) => setVoicePrompt(event.target.value)}
+                placeholder={t("voice.promptPlaceholder")}
+                className="min-h-36 resize-none rounded-xl text-xs"
+              />
             </div>
             <div className="space-y-2">
-              <label htmlFor="voice-preview-text" className="text-xs font-semibold">{t("voice.previewText")}</label>
-              <Textarea id="voice-preview-text" value={previewText} onChange={(event) => setPreviewText(event.target.value)} placeholder={t("voice.previewTextPlaceholder")} className="min-h-36 resize-none" />
+              <div className="flex h-7 items-center justify-between gap-2">
+                <label htmlFor="voice-preview-text" className="text-xs font-semibold text-foreground/90">
+                  {t("voice.previewText")}
+                </label>
+                <span className="text-[11px] text-muted-foreground">试听文案</span>
+              </div>
+              <Textarea
+                id="voice-preview-text"
+                value={previewText}
+                onChange={(event) => setPreviewText(event.target.value)}
+                placeholder={t("voice.previewTextPlaceholder")}
+                className="min-h-36 resize-none rounded-xl text-xs"
+              />
             </div>
           </div>
 

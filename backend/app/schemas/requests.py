@@ -99,7 +99,7 @@ class PromptOptimizationContext(CamelModel):
 
 
 class OptimizePromptRequest(CamelModel):
-    kind: Literal["image", "video"]
+    kind: Literal["image", "video", "voice", "audio"]
     prompt: str = Field(min_length=1, max_length=10_000)
     context: PromptOptimizationContext = Field(default_factory=PromptOptimizationContext)
 
