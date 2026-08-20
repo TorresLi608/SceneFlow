@@ -748,82 +748,93 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
         ) : null}
       </section>
 
-      {/* 图片全屏与参数详情 Dialog */}
+      {/* 图片全屏与参数详情 Dialog（大屏沉浸式视窗） */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="max-w-3xl overflow-hidden p-0 gap-0">
-          <DialogHeader className="p-4 border-b border-border/70 flex flex-row items-center justify-between">
+        <DialogContent className="sm:max-w-6xl xl:max-w-7xl w-[94vw] h-[86vh] max-h-[88vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl">
+          <DialogHeader className="p-4 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
             <div className="space-y-0.5">
               <DialogTitle className="text-sm font-bold flex items-center gap-2">
                 <ImageIcon className="size-4 text-primary" />
-                图片详情预览
+                高清图片详情预览
               </DialogTitle>
               <DialogDescription className="text-xs">
-                查看高清大图、生成参数及提示词
+                大屏原图细节浏览、生成参数及完整提示词
               </DialogDescription>
             </div>
           </DialogHeader>
 
           {lightboxItem ? (
-            <div className="grid md:grid-cols-[1fr_280px] min-h-[420px] bg-card/60">
-              {/* 大图视口 */}
-              <div className="relative flex items-center justify-center bg-black/40 p-4 min-h-[320px]">
-                <Image
-                  src={lightboxItem.url}
-                  alt=""
-                  fill
-                  unoptimized
-                  sizes="600px"
-                  className="object-contain"
-                />
+            <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_360px] flex-1 min-h-0 bg-background/50 overflow-hidden">
+              {/* 大图主视窗：深色暗影影院背景 */}
+              <div className="relative flex items-center justify-center bg-black/90 p-4 sm:p-6 overflow-hidden min-h-0">
+                <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-10" />
+                <div className="relative h-full w-full flex items-center justify-center">
+                  <Image
+                    src={lightboxItem.url}
+                    alt=""
+                    fill
+                    unoptimized
+                    sizes="(min-width: 1024px) 70vw, 90vw"
+                    className="object-contain drop-shadow-2xl select-none"
+                  />
+                </div>
               </div>
 
-              {/* 右侧参数面板 */}
-              <div className="flex flex-col justify-between border-t md:border-t-0 md:border-l border-border/70 p-4 space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {lightboxItem.resolution ? (
-                      <Badge variant="secondary" className="text-[10px]">
-                        {lightboxItem.resolution}
+              {/* 右侧参数与操作面板 */}
+              <div className="flex flex-col justify-between border-t md:border-t-0 md:border-l border-border/70 bg-card/60 p-5 space-y-4 overflow-y-auto chat-message-list-scrollbar">
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                      规格与参数
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {lightboxItem.resolution ? (
+                        <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
+                          {lightboxItem.resolution}
+                        </Badge>
+                      ) : null}
+                      {lightboxItem.ratio ? (
+                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                          比例 {lightboxItem.ratio}
+                        </Badge>
+                      ) : null}
+                      <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                        PNG / WebP
                       </Badge>
-                    ) : null}
-                    {lightboxItem.ratio ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        比例 {lightboxItem.ratio}
-                      </Badge>
-                    ) : null}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-muted-foreground">
-                      画面提示词
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                      画面生成提示词
                     </label>
-                    <div className="rounded-xl border border-border/70 bg-muted/40 p-2.5 text-xs leading-relaxed max-h-48 overflow-y-auto text-foreground">
+                    <div className="rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs leading-relaxed max-h-64 overflow-y-auto text-foreground whitespace-pre-wrap font-mono chat-message-list-scrollbar">
                       {lightboxItem.prompt}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-2 border-t border-border/70">
+                <div className="space-y-2.5 pt-3 border-t border-border/70 shrink-0">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 w-full gap-1.5 text-xs"
+                    className="h-10 w-full gap-2 text-xs font-medium cursor-pointer shadow-2xs"
                     onClick={() => copyPrompt(lightboxItem.prompt)}
                   >
                     {copied ? (
-                      <Check className="size-3.5 text-emerald-500" />
+                      <Check className="size-4 text-emerald-500" />
                     ) : (
-                      <Copy className="size-3.5" />
+                      <Copy className="size-4" />
                     )}
-                    {copied ? "已复制提示词" : "复制提示词"}
+                    {copied ? "已复制提示词到剪贴板" : "复制生成提示词"}
                   </Button>
                   <Button
                     size="sm"
-                    className="h-9 w-full gap-1.5 text-xs font-semibold"
+                    className="h-10 w-full gap-2 text-xs font-bold cursor-pointer shadow-sm"
                     onClick={() => downloadImage(lightboxItem.url)}
                   >
-                    <Download className="size-3.5" />
-                    下载原图
+                    <Download className="size-4" />
+                    下载高清原图
                   </Button>
                 </div>
               </div>

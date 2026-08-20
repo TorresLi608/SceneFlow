@@ -1,7 +1,25 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Coins,
+  Cpu,
+  Eye,
+  EyeOff,
+  Globe,
+  ImageIcon,
+  Layers,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Video,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -34,13 +52,20 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { ModelSeriesCombobox } from "@/components/model-series-combobox";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import {
   type ConnectionMode,
   baseUrlForConnection,
@@ -55,9 +80,23 @@ import {
 import { useUserStore } from "@/store/user-store";
 import type { ConfigPurpose, UserConfig, VideoCapabilities } from "@/types/auth";
 
-const videoQualityOptions: VideoCapabilities["qualities"] = ["480p", "720p", "1080p", "2K", "4K"];
+const videoQualityOptions: VideoCapabilities["qualities"] = [
+  "480p",
+  "720p",
+  "1080p",
+  "2K",
+  "4K",
+];
 const videoFpsOptions: VideoCapabilities["fps"] = [24, 30, 60];
-const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"];
+const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = [
+  "21:9",
+  "16:9",
+  "4:3",
+  "1:1",
+  "3:4",
+  "9:16",
+  "adaptive",
+];
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
   const isI2v = model.includes("-i2v");
@@ -84,7 +123,10 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
     : {
         qualities: videoQualityOptions,
         fps: [24],
-        aspectRatios: provider === "gemini" ? videoAspectRatioOptions.filter((value) => value !== "1:1") : videoAspectRatioOptions,
+        aspectRatios:
+          provider === "gemini"
+            ? videoAspectRatioOptions.filter((value) => value !== "1:1")
+            : videoAspectRatioOptions,
         promptExtend: false,
         minDuration: 3,
         maxDuration: 15,
@@ -102,10 +144,12 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
 
 function editableVideoCapabilities(config: UserConfig): VideoCapabilities {
   const defaults = defaultVideoCapabilities(config.provider, config.modelSeries);
-  const current = config.videoCapabilities as (Partial<VideoCapabilities> & {
-    resolutions?: string[];
-    drivingAudio?: boolean;
-  }) | null;
+  const current = config.videoCapabilities as
+    | (Partial<VideoCapabilities> & {
+        resolutions?: string[];
+        drivingAudio?: boolean;
+      })
+    | null;
   if (!current) return defaults;
   const aspectByResolution: Record<string, VideoCapabilities["aspectRatios"][number]> = {
     "1280x720": "16:9",
@@ -113,7 +157,14 @@ function editableVideoCapabilities(config: UserConfig): VideoCapabilities {
     "1024x1024": "1:1",
     "1920x1080": "16:9",
   };
-  const aspectRatios = current.aspectRatios ?? [...new Set(current.resolutions?.flatMap((value) => aspectByResolution[value] ? [aspectByResolution[value]] : []) ?? [])];
+  const aspectRatios =
+    current.aspectRatios ?? [
+      ...new Set(
+        current.resolutions?.flatMap((value) =>
+          aspectByResolution[value] ? [aspectByResolution[value]] : []
+        ) ?? []
+      ),
+    ];
   const maxReferenceImages = current.maxReferenceImages ?? 0;
   const referenceVideo = current.referenceVideo ?? false;
   const referenceAudio = current.referenceAudio ?? current.drivingAudio ?? false;
@@ -149,7 +200,10 @@ function rowKey(config: UserConfig) {
   return `${config.source}:${config.id}`;
 }
 
-function isDefaultConfig(config: UserConfig, activeUserByPurpose: Partial<Record<ConfigPurpose, UserConfig>>) {
+function isDefaultConfig(
+  config: UserConfig,
+  activeUserByPurpose: Partial<Record<ConfigPurpose, UserConfig>>
+) {
   if (config.source === "user") {
     return config.isActive;
   }
@@ -182,6 +236,7 @@ export function ModelConfigManager() {
   const [formOpen, setFormOpen] = useState(false);
   const [deletingConfig, setDeletingConfig] = useState<UserConfig | null>(null);
 
+  // 表单状态
   const [isOfficial, setIsOfficial] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -202,7 +257,10 @@ export function ModelConfigManager() {
   const [cacheWritePricePerMillion, setCacheWritePricePerMillion] = useState("0");
   const [unitPrice, setUnitPrice] = useState("0");
   const [imageMaxReferenceImages, setImageMaxReferenceImages] = useState(4);
-  const [videoCapabilities, setVideoCapabilities] = useState<VideoCapabilities>(defaultVideoCapabilities(defaultOption.value));
+  const [videoCapabilities, setVideoCapabilities] = useState<VideoCapabilities>(
+    defaultVideoCapabilities(defaultOption.value)
+  );
+
   const purposeLabel: Record<ConfigPurpose, string> = {
     general: t("settings.generalPurpose"),
     script: t("settings.scriptPurpose"),
@@ -222,7 +280,9 @@ export function ModelConfigManager() {
   });
 
   const userConfigs = userQuery.data?.configs ?? emptyConfigs;
-  const officialConfigs = isSuperAdmin ? officialQuery.data?.configs ?? emptyConfigs : userQuery.data?.officialConfigs ?? emptyConfigs;
+  const officialConfigs = isSuperAdmin
+    ? officialQuery.data?.configs ?? emptyConfigs
+    : userQuery.data?.officialConfigs ?? emptyConfigs;
   const activeUserByPurpose = useMemo(
     () => configsByPurpose(userConfigs, (config) => config.isActive && config.isEnabled),
     [userConfigs]
@@ -230,9 +290,13 @@ export function ModelConfigManager() {
 
   const rows = useMemo(() => [...officialConfigs, ...userConfigs], [officialConfigs, userConfigs]);
   const providerFilters = useMemo(
-    () => Array.from(new Set(Object.values(providerOptions).flat().map((option) => option.value))).filter(Boolean),
+    () =>
+      Array.from(
+        new Set(Object.values(providerOptions).flat().map((option) => option.value))
+      ).filter(Boolean),
     []
   );
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((config) => {
@@ -263,7 +327,16 @@ export function ModelConfigManager() {
       }
       return `${config.name} ${config.description}`.toLowerCase().includes(q);
     });
-  }, [activeUserByPurpose, defaultFilter, enabledFilter, providerFilter, purposeFilter, rows, search, sourceFilter]);
+  }, [
+    activeUserByPurpose,
+    defaultFilter,
+    enabledFilter,
+    providerFilter,
+    purposeFilter,
+    rows,
+    search,
+    sourceFilter,
+  ]);
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -271,13 +344,12 @@ export function ModelConfigManager() {
   const options = providerOptions[purpose];
   const isRelay = isRelayConnection(provider, connectionMode);
   const selectedProviderOption = providerOption(purpose, provider);
-  const usesKnownModelList = ["edge", "system"].includes(provider) || (
-    provider === "qwen"
-    && (!baseUrl.trim() || baseUrl.trim() === "https://dashscope.aliyuncs.com/api/v1")
-  ) || (
-    provider === "doubao"
-    && (!baseUrl.trim() || baseUrl.trim() === "https://ark.cn-beijing.volces.com/api/v3")
-  );
+  const usesKnownModelList =
+    ["edge", "system"].includes(provider) ||
+    (provider === "qwen" &&
+      (!baseUrl.trim() || baseUrl.trim() === "https://dashscope.aliyuncs.com/api/v1")) ||
+    (provider === "doubao" &&
+      (!baseUrl.trim() || baseUrl.trim() === "https://ark.cn-beijing.volces.com/api/v3"));
   const isMutating = (isSuperAdmin && officialQuery.isLoading) || userQuery.isLoading;
 
   const refreshConfigs = async () => {
@@ -325,7 +397,11 @@ export function ModelConfigManager() {
         : await getUserConfigSecretAction(config.id);
       setApiKey(secret.apiKey);
     } catch (error) {
-      toast.add({ title: resolveRequestError(error, t("admin.loadApiKeyFailed")), type: "error", priority: "high" });
+      toast.add({
+        title: resolveRequestError(error, t("admin.loadApiKeyFailed")),
+        type: "error",
+        priority: "high",
+      });
       return;
     }
     setEditingConfig(config);
@@ -405,7 +481,15 @@ export function ModelConfigManager() {
       setModelOptions(models);
       toast.add({ title: t("admin.modelsFetched", { count: models.length }), type: "success" });
     },
-    onError: (error) => toast.add({ title: resolveRequestError(error, error instanceof Error ? error.message : t("admin.fetchModelsFailed")), type: "error", priority: "high" }),
+    onError: (error) =>
+      toast.add({
+        title: resolveRequestError(
+          error,
+          error instanceof Error ? error.message : t("admin.fetchModelsFailed")
+        ),
+        type: "error",
+        priority: "high",
+      }),
   });
 
   const saveMutation = useMutation({
@@ -423,10 +507,20 @@ export function ModelConfigManager() {
       if (editingConfig?.source === "official" && !isSuperAdmin) {
         throw new Error(t("admin.noEditOfficialPermission"));
       }
-      if (!["edge", "system"].includes(provider) && !editingConfig && !saveAsOfficial && !apiKey.trim()) {
+      if (
+        !["edge", "system"].includes(provider) &&
+        !editingConfig &&
+        !saveAsOfficial &&
+        !apiKey.trim()
+      ) {
         throw new Error(t("admin.userConfigNeedsApiKey"));
       }
-      if (!["edge", "system"].includes(provider) && saveAsOfficial && isEnabled && !apiKey.trim()) {
+      if (
+        !["edge", "system"].includes(provider) &&
+        saveAsOfficial &&
+        isEnabled &&
+        !apiKey.trim()
+      ) {
         throw new Error(t("admin.officialEnabledNeedsApiKey"));
       }
       if (editingConfig && isDefaultConfig(editingConfig, activeUserByPurpose) && !isDefault) {
@@ -448,7 +542,8 @@ export function ModelConfigManager() {
         outputPricePerMillion,
         cacheReadPricePerMillion,
         cacheWritePricePerMillion,
-        unitPrice: purpose === "image" || purpose === "video" || purpose === "audio" ? unitPrice : "0",
+        unitPrice:
+          purpose === "image" || purpose === "video" || purpose === "audio" ? unitPrice : "0",
         unitName: defaultPricingUnit(purpose),
         imageMaxReferenceImages: purpose === "image" ? imageMaxReferenceImages : undefined,
         videoCapabilities: purpose === "video" ? videoCapabilities : undefined,
@@ -456,7 +551,10 @@ export function ModelConfigManager() {
 
       if (editingConfig) {
         if (isSuperAdmin) {
-          await updateModelConfigAction(editingConfig.id, { ...payload, source: saveAsOfficial ? "official" : "user" });
+          await updateModelConfigAction(editingConfig.id, {
+            ...payload,
+            source: saveAsOfficial ? "official" : "user",
+          });
         } else {
           await updateUserConfigAction(editingConfig.id, payload);
         }
@@ -474,7 +572,15 @@ export function ModelConfigManager() {
       toast.add({ title: t("admin.saveConfigSuccess"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => toast.add({ title: resolveRequestError(error, error instanceof Error ? error.message : t("admin.saveConfigFailed")), type: "error", priority: "high" }),
+    onError: (error) =>
+      toast.add({
+        title: resolveRequestError(
+          error,
+          error instanceof Error ? error.message : t("admin.saveConfigFailed")
+        ),
+        type: "error",
+        priority: "high",
+      }),
   });
 
   const defaultMutation = useMutation({
@@ -504,7 +610,15 @@ export function ModelConfigManager() {
       toast.add({ title: t("admin.defaultUpdated"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => toast.add({ title: resolveRequestError(error, error instanceof Error ? error.message : t("admin.updateDefaultFailed")), type: "error", priority: "high" }),
+    onError: (error) =>
+      toast.add({
+        title: resolveRequestError(
+          error,
+          error instanceof Error ? error.message : t("admin.updateDefaultFailed")
+        ),
+        type: "error",
+        priority: "high",
+      }),
   });
 
   const enabledMutation = useMutation({
@@ -523,7 +637,12 @@ export function ModelConfigManager() {
       toast.add({ title: t("admin.enabledUpdated"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.updateEnabledFailed")), type: "error", priority: "high" }),
+    onError: (error) =>
+      toast.add({
+        title: resolveRequestError(error, t("admin.updateEnabledFailed")),
+        type: "error",
+        priority: "high",
+      }),
   });
 
   const deleteMutation = useMutation({
@@ -531,33 +650,60 @@ export function ModelConfigManager() {
       if (config.source === "official" && !isSuperAdmin) {
         throw new Error(t("admin.noDeleteOfficialPermission"));
       }
-      return config.source === "official" ? deleteOfficialConfigAction(config.id) : deleteUserConfigAction(config.id);
+      return config.source === "official"
+        ? deleteOfficialConfigAction(config.id)
+        : deleteUserConfigAction(config.id);
     },
     onSuccess: async () => {
       setDeletingConfig(null);
       toast.add({ title: t("admin.configDeleted"), type: "success" });
       await refreshConfigs();
     },
-    onError: (error) => toast.add({ title: resolveRequestError(error, t("admin.deleteConfigFailed")), type: "error", priority: "high" }),
+    onError: (error) =>
+      toast.add({
+        title: resolveRequestError(error, t("admin.deleteConfigFailed")),
+        type: "error",
+        priority: "high",
+      }),
   });
 
-  const busy = saveMutation.isPending || defaultMutation.isPending || enabledMutation.isPending || deleteMutation.isPending || isMutating;
-  const filtersActive = Boolean(search.trim()) || purposeFilter !== "all" || providerFilter !== "all" || sourceFilter !== "all" || defaultFilter !== "all" || enabledFilter !== "all";
+  const busy =
+    saveMutation.isPending ||
+    defaultMutation.isPending ||
+    enabledMutation.isPending ||
+    deleteMutation.isPending ||
+    isMutating;
+  const filtersActive =
+    Boolean(search.trim()) ||
+    purposeFilter !== "all" ||
+    providerFilter !== "all" ||
+    sourceFilter !== "all" ||
+    defaultFilter !== "all" ||
+    enabledFilter !== "all";
 
   return (
     <div className="min-w-0 space-y-4">
+      {/* 顶部标题与新建按钮 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">{t("admin.configTitle")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t("admin.configDescription")}</p>
+          <h2 className="text-base font-bold tracking-tight text-foreground">
+            {t("admin.configTitle")}
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t("admin.configDescription")}
+          </p>
         </div>
-        <Button onClick={openCreate}>
+        <Button
+          onClick={openCreate}
+          className="h-9 gap-1.5 rounded-xl font-semibold shadow-xs cursor-pointer"
+        >
           <Plus className="size-4" />
           {t("settings.newConfig")}
         </Button>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_150px_150px_150px_150px_150px_auto]">
+      {/* 筛选与搜索卡片 */}
+      <div className="grid gap-2.5 rounded-2xl border border-border/70 bg-card/40 p-3.5 backdrop-blur-xl md:grid-cols-2 xl:grid-cols-[minmax(180px,1.2fr)_140px_140px_140px_130px_130px_auto]">
         <Input
           value={search}
           onChange={(event) => {
@@ -565,159 +711,281 @@ export function ModelConfigManager() {
             setPage(1);
           }}
           placeholder={t("admin.searchConfig")}
+          className="h-9 text-xs"
         />
-        <Select value={purposeFilter} onValueChange={(value) => {
-          setPurposeFilter((value ?? "all") as "all" | ConfigPurpose);
-          setPage(1);
-        }}>
-          <SelectTrigger>
-            <SelectValue>{purposeFilter === "all" ? t("admin.allPurposes") : purposeLabel[purposeFilter]}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("admin.allPurposes")}</SelectItem>
-            {Object.entries(purposeLabel).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={providerFilter} onValueChange={(value) => {
-          setProviderFilter(value ?? "all");
-          setPage(1);
-        }}>
-          <SelectTrigger>
-            <SelectValue>{providerFilter === "all" ? t("admin.allProviders") : providerLabel(providerFilter, t)}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("admin.allProviders")}</SelectItem>
-            {providerFilters.map((value) => (
-              <SelectItem key={value} value={value}>{providerLabel(value, t)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sourceFilter} onValueChange={(value) => {
-          setSourceFilter((value ?? "all") as SourceFilter);
-          setPage(1);
-        }}>
-          <SelectTrigger>
-            <SelectValue>{sourceFilter === "all" ? t("admin.allSources") : sourceFilter === "official" ? t("settings.officialConfig") : t("admin.userConfig")}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("admin.allSources")}</SelectItem>
-            <SelectItem value="official">{t("settings.officialConfig")}</SelectItem>
-            <SelectItem value="user">{t("admin.userConfig")}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={defaultFilter} onValueChange={(value) => {
-          setDefaultFilter((value ?? "all") as DefaultFilter);
-          setPage(1);
-        }}>
-          <SelectTrigger>
-            <SelectValue>{defaultFilter === "all" ? t("admin.allDefaults") : defaultFilter === "default" ? t("admin.default") : t("admin.notDefault")}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("admin.allDefaults")}</SelectItem>
-            <SelectItem value="default">{t("admin.default")}</SelectItem>
-            <SelectItem value="not-default">{t("admin.notDefault")}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={enabledFilter} onValueChange={(value) => {
-          setEnabledFilter((value ?? "all") as EnabledFilter);
-          setPage(1);
-        }}>
-          <SelectTrigger>
-            <SelectValue>{enabledFilter === "all" ? t("admin.allStatuses") : enabledFilter === "enabled" ? t("settings.enable") : t("settings.disable")}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("admin.allStatuses")}</SelectItem>
-            <SelectItem value="enabled">{t("settings.enable")}</SelectItem>
-            <SelectItem value="disabled">{t("settings.disable")}</SelectItem>
-          </SelectContent>
-        </Select>
-        {filtersActive ? (
-          <Button variant="outline" onClick={() => {
-            setSearch("");
-            setPurposeFilter("all");
-            setProviderFilter("all");
-            setSourceFilter("all");
-            setDefaultFilter("all");
-            setEnabledFilter("all");
+        <Select
+          value={purposeFilter}
+          onValueChange={(value) => {
+            setPurposeFilter((value ?? "all") as "all" | ConfigPurpose);
             setPage(1);
-          }}>
-            <RotateCcw data-icon="inline-start" />
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue>
+              {purposeFilter === "all" ? t("admin.allPurposes") : purposeLabel[purposeFilter]}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectItem value="all" label={t("admin.allPurposes")} className="text-xs">
+              {t("admin.allPurposes")}
+            </SelectItem>
+            {Object.entries(purposeLabel).map(([value, label]) => (
+              <SelectItem key={value} value={value} label={label} className="text-xs">
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={providerFilter}
+          onValueChange={(value) => {
+            setProviderFilter(value ?? "all");
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue>
+              {providerFilter === "all"
+                ? t("admin.allProviders")
+                : providerLabel(providerFilter, t)}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectItem value="all" label={t("admin.allProviders")} className="text-xs">
+              {t("admin.allProviders")}
+            </SelectItem>
+            {providerFilters.map((value) => (
+              <SelectItem
+                key={value}
+                value={value}
+                label={providerLabel(value, t)}
+                className="text-xs"
+              >
+                {providerLabel(value, t)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={sourceFilter}
+          onValueChange={(value) => {
+            setSourceFilter((value ?? "all") as SourceFilter);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue>
+              {sourceFilter === "all"
+                ? t("admin.allSources")
+                : sourceFilter === "official"
+                  ? t("settings.officialConfig")
+                  : t("admin.userConfig")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectItem value="all" label={t("admin.allSources")} className="text-xs">
+              {t("admin.allSources")}
+            </SelectItem>
+            <SelectItem value="official" label={t("settings.officialConfig")} className="text-xs">
+              {t("settings.officialConfig")}
+            </SelectItem>
+            <SelectItem value="user" label={t("admin.userConfig")} className="text-xs">
+              {t("admin.userConfig")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={defaultFilter}
+          onValueChange={(value) => {
+            setDefaultFilter((value ?? "all") as DefaultFilter);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue>
+              {defaultFilter === "all"
+                ? t("admin.allDefaults")
+                : defaultFilter === "default"
+                  ? t("admin.default")
+                  : t("admin.notDefault")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectItem value="all" label={t("admin.allDefaults")} className="text-xs">
+              {t("admin.allDefaults")}
+            </SelectItem>
+            <SelectItem value="default" label={t("admin.default")} className="text-xs">
+              {t("admin.default")}
+            </SelectItem>
+            <SelectItem value="not-default" label={t("admin.notDefault")} className="text-xs">
+              {t("admin.notDefault")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={enabledFilter}
+          onValueChange={(value) => {
+            setEnabledFilter((value ?? "all") as EnabledFilter);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue>
+              {enabledFilter === "all"
+                ? t("admin.allStatuses")
+                : enabledFilter === "enabled"
+                  ? t("settings.enable")
+                  : t("settings.disable")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectItem value="all" label={t("admin.allStatuses")} className="text-xs">
+              {t("admin.allStatuses")}
+            </SelectItem>
+            <SelectItem value="enabled" label={t("settings.enable")} className="text-xs">
+              {t("settings.enable")}
+            </SelectItem>
+            <SelectItem value="disabled" label={t("settings.disable")} className="text-xs">
+              {t("settings.disable")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        {filtersActive ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1 text-xs cursor-pointer"
+            onClick={() => {
+              setSearch("");
+              setPurposeFilter("all");
+              setProviderFilter("all");
+              setSourceFilter("all");
+              setDefaultFilter("all");
+              setEnabledFilter("all");
+              setPage(1);
+            }}
+          >
+            <RotateCcw className="size-3.5" />
             {t("common.clearFilters")}
           </Button>
         ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border/70">
+      {/* 配置数据表格 */}
+      <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/30 backdrop-blur-sm shadow-xs">
         <table className="w-full min-w-[1120px] text-sm">
-          <thead className="bg-muted/40 text-xs text-muted-foreground">
+          <thead className="border-b border-border/70 bg-muted/40 text-xs font-semibold text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">{t("settings.name")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("settings.purpose")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("settings.provider")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.tableModel")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.status")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.tableDefault")}</th>
-              <th className="px-3 py-2 text-left font-medium">{t("admin.tableUpdatedAt")}</th>
-              <th className="px-3 py-2 text-center font-medium">{t("admin.tableActions")}</th>
+              <th className="px-4 py-3 text-left">{t("settings.name")}</th>
+              <th className="px-3 py-3 text-left">{t("settings.purpose")}</th>
+              <th className="px-3 py-3 text-left">{t("settings.provider")}</th>
+              <th className="px-3 py-3 text-left">{t("admin.tableModel")}</th>
+              <th className="px-3 py-3 text-left">{t("admin.status")}</th>
+              <th className="px-3 py-3 text-center">{t("admin.tableDefault")}</th>
+              <th className="px-3 py-3 text-left">{t("admin.tableUpdatedAt")}</th>
+              <th className="px-4 py-3 text-center">{t("admin.tableActions")}</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-border/60">
             {pageRows.map((config) => {
               const checked = isDefaultConfig(config, activeUserByPurpose);
               const canManageConfig = config.source === "user" || isSuperAdmin;
               return (
-                <tr key={rowKey(config)} className="border-t border-border/70">
-                  <td className="max-w-64 px-3 py-3">
-                    <p className="truncate font-medium">{configTitle(config, purposeLabel, t)}</p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">{config.description || config.baseUrl || "-"}</p>
+                <tr
+                  key={rowKey(config)}
+                  className="transition-colors hover:bg-muted/30"
+                >
+                  <td className="max-w-64 px-4 py-3">
+                    <p className="truncate font-semibold text-foreground">
+                      {configTitle(config, purposeLabel, t)}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground font-mono">
+                      {config.description || config.baseUrl || "—"}
+                    </p>
                   </td>
-                  <td className="px-3 py-3">{purposeLabel[config.purpose]}</td>
-                  <td className="px-3 py-3">{providerLabel(config.provider, t)}</td>
-                  <td className="max-w-44 truncate px-3 py-3">{config.modelSeries}</td>
                   <td className="px-3 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      <Badge variant={config.source === "official" ? "default" : "secondary"}>
-                        {config.source === "official" ? t("config.source.official") : t("config.source.user")}
+                    <Badge variant="secondary" className="text-[11px] font-medium">
+                      {purposeLabel[config.purpose]}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="font-medium text-xs text-foreground">
+                      {providerLabel(config.provider, t)}
+                    </span>
+                  </td>
+                  <td className="max-w-44 truncate px-3 py-3 font-mono text-xs text-foreground/90">
+                    {config.modelSeries}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        variant={config.source === "official" ? "default" : "secondary"}
+                        className="text-[10px]"
+                      >
+                        {config.source === "official"
+                          ? t("config.source.official")
+                          : t("config.source.user")}
                       </Badge>
-                      <Badge variant={config.isEnabled ? "outline" : "destructive"}>
+                      <Badge
+                        variant={config.isEnabled ? "outline" : "destructive"}
+                        className="text-[10px]"
+                      >
                         {config.isEnabled ? t("settings.enable") : t("settings.disable")}
                       </Badge>
                     </div>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 text-center">
                     <Switch
                       checked={checked}
                       disabled={busy || !config.isEnabled}
                       onCheckedChange={(next) => defaultMutation.mutate({ config, checked: next })}
+                      className="mx-auto cursor-pointer"
                     />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
+                  <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
                     {formatDateTime(config.updatedAt)}
                   </td>
-                  <td className="px-3 py-3">
-                    <div className="flex justify-center gap-1">
-                      <Button size="icon-sm" variant="ghost" onClick={() => setViewingConfig(config)} title={t("admin.view")}>
-                        <Eye className="size-4" />
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-center gap-1">
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => setViewingConfig(config)}
+                        title={t("admin.view")}
+                        className="cursor-pointer text-muted-foreground hover:text-foreground"
+                      >
+                        <Eye className="size-3.5" />
                       </Button>
-                      <Button size="icon-sm" variant="ghost" disabled={!canManageConfig} onClick={() => void openEdit(config)} title={t("common.edit")}>
-                        <Pencil className="size-4" />
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        disabled={!canManageConfig}
+                        onClick={() => void openEdit(config)}
+                        title={t("common.edit")}
+                        className="cursor-pointer text-muted-foreground hover:text-foreground"
+                      >
+                        <Pencil className="size-3.5" />
                       </Button>
                       <Switch
                         checked={config.isEnabled}
                         disabled={busy || !canManageConfig}
                         onCheckedChange={() => enabledMutation.mutate(config)}
-                        className="mx-1 self-center"
+                        className="mx-1 self-center scale-90 cursor-pointer"
                       />
                       <Button
-                        size="icon-sm"
+                        size="icon-xs"
                         variant="ghost"
-                        disabled={busy || !canManageConfig}
+                        disabled={!canManageConfig}
                         onClick={() => setDeletingConfig(config)}
                         title={t("common.delete")}
+                        className="cursor-pointer text-muted-foreground hover:text-destructive"
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-3.5" />
                       </Button>
                     </div>
                   </td>
@@ -726,196 +994,340 @@ export function ModelConfigManager() {
             })}
             {!busy && pageRows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">{t("admin.noMatchingConfigs")}</td>
+                <td colSpan={8} className="px-4 py-10 text-center text-xs text-muted-foreground">
+                  {t("admin.noMatchingConfigs")}
+                </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-        <span>{t("admin.pagination", { total: filteredRows.length, page: currentPage, pageCount })}</span>
+      {/* 分页控制 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>
+          {t("admin.pagination", { total: filteredRows.length, page: currentPage, pageCount })}
+        </span>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("common.previous")}</Button>
-          <Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>{t("common.next")}</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs cursor-pointer"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((value) => Math.max(1, value - 1))}
+          >
+            {t("common.previous")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs cursor-pointer"
+            disabled={currentPage >= pageCount}
+            onClick={() => setPage((value) => Math.min(pageCount, value + 1))}
+          >
+            {t("common.next")}
+          </Button>
         </div>
       </div>
 
+      {/* 模型配置 新建 / 编辑 Dialog（全量卡片化重构） */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{editingConfig ? t("settings.editConfig") : t("settings.newConfig")}</DialogTitle>
-            <div className="flex items-center justify-between gap-2 pt-0.5">
-              <DialogDescription>{t("admin.emptyApiKeyKeepsCurrent")}</DialogDescription>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                <span className="font-bold text-destructive mr-0.5">*</span>为必填项
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden gap-0">
+          <DialogHeader className="p-5 border-b border-border/70">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Cpu className="size-4" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold">
+                    {editingConfig ? t("settings.editConfig") : t("settings.newConfig")}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs mt-0.5">
+                    {t("admin.emptyApiKeyKeepsCurrent")}
+                  </DialogDescription>
+                </div>
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground bg-muted/40 px-2 py-1 rounded-md border border-border/50">
+                <span className="font-bold text-destructive mr-0.5">*</span>为必填字段
               </span>
             </div>
           </DialogHeader>
-          <div className="grid gap-4">
+
+          {/* 表单滚动主体区 */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 chat-message-list-scrollbar">
+            {/* 官方配置标识开关（超管可见） */}
             {isSuperAdmin ? (
-              <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-                <span>{t("admin.asOfficialConfig")}</span>
-                <Switch checked={isOfficial} onCheckedChange={setIsOfficial} />
-              </label>
-            ) : null}
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="adminConfigPurpose">
-                  {t("settings.purpose")}
-                  <RequiredAsterisk />
-                </Label>
-                <Select value={purpose} onValueChange={onPurposeChange}>
-                  <SelectTrigger id="adminConfigPurpose"><SelectValue>{purposeLabel[purpose]}</SelectValue></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(purposeLabel).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="adminConfigProvider">
-                  {t("settings.provider")}
-                  <RequiredAsterisk />
-                </Label>
-                <Select value={provider} onValueChange={onProviderChange}>
-                  <SelectTrigger id="adminConfigProvider"><SelectValue>{providerLabel(provider, t)}</SelectValue></SelectTrigger>
-                  <SelectContent>
-                    {options.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{providerLabel(option.value, t)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="adminConfigName">{t("settings.name")}</Label>
-                <Input id="adminConfigName" value={name} onChange={(event) => setName(event.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="adminConfigConnection">
-                  {t("settings.connectionMode")}
-                  <RequiredAsterisk />
-                </Label>
-                <Select value={isRelay ? "relay" : "direct"} onValueChange={onConnectionModeChange}>
-                  <SelectTrigger id="adminConfigConnection"><SelectValue>{isRelay ? t("admin.connectionRelay") : t("settings.officialDirect")}</SelectValue></SelectTrigger>
-                  <SelectContent>
-                    {provider !== "custom" ? <SelectItem value="direct">{t("settings.officialDirect")}</SelectItem> : null}
-                    <SelectItem value="relay">{t("admin.connectionRelay")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="adminConfigBaseUrl">
-                  Base URL
-                  {isRelay || provider === "custom" ? <RequiredAsterisk /> : null}
-                </Label>
-                <Input
-                  id="adminConfigBaseUrl"
-                  value={baseUrl}
-                  onChange={(event) => {
-                    setBaseUrl(event.target.value);
-                    setModelOptions([]);
-                  }}
-                  placeholder="https://api.example.com/v1"
+              <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 p-3.5">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Sparkles className="size-3.5 text-primary" />
+                    {t("admin.asOfficialConfig")}
+                  </span>
+                  <p className="text-[11px] text-muted-foreground">
+                    作为全站官方共享模型，所有用户可直接选用
+                  </p>
+                </div>
+                <Switch
+                  checked={isOfficial}
+                  onCheckedChange={setIsOfficial}
+                  className="cursor-pointer"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="adminConfigKey">
-                  API Key
-                  {!editingConfig && !["edge", "system"].includes(provider) ? <RequiredAsterisk /> : null}
-                </Label>
-                <div className="flex gap-2">
+            ) : null}
+
+            {/* 模块 1: 基础属性与服务商 */}
+            <div className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                <Layers className="size-3.5 text-primary" />
+                <span>基础信息与服务商</span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="adminConfigPurpose" className="text-xs font-semibold text-foreground/90">
+                    {t("settings.purpose")}
+                    <RequiredAsterisk />
+                  </Label>
+                  <Select value={purpose} onValueChange={onPurposeChange}>
+                    <SelectTrigger id="adminConfigPurpose" className="h-9 w-full text-xs">
+                      <SelectValue>{purposeLabel[purpose]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {Object.entries(purposeLabel).map(([value, label]) => (
+                        <SelectItem key={value} value={value} label={label} className="text-xs">
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="adminConfigProvider" className="text-xs font-semibold text-foreground/90">
+                    {t("settings.provider")}
+                    <RequiredAsterisk />
+                  </Label>
+                  <Select value={provider} onValueChange={onProviderChange}>
+                    <SelectTrigger id="adminConfigProvider" className="h-9 w-full text-xs">
+                      <SelectValue>{providerLabel(provider, t)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {options.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value}
+                          label={providerLabel(option.value, t)}
+                          className="text-xs"
+                        >
+                          {providerLabel(option.value, t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="adminConfigName" className="text-xs font-semibold text-foreground/90">
+                    {t("settings.name")}
+                  </Label>
                   <Input
-                    id="adminConfigKey"
-                    type={showApiKey ? "text" : "password"}
-                    value={apiKey}
-                    autoComplete="off"
-                    onChange={(event) => {
-                      setApiKey(event.target.value);
-                      setModelOptions([]);
-                    }}
-                    placeholder={editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")}
-                    disabled={["edge", "system"].includes(provider)}
+                    id="adminConfigName"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="例如：通义千问 2.5 旗舰"
+                    className="h-9 text-xs"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    aria-label={showApiKey ? t("admin.hideApiKey") : t("admin.showApiKey")}
-                    title={showApiKey ? t("admin.hideApiKey") : t("admin.showApiKey")}
-                    disabled={["edge", "system"].includes(provider)}
-                    onClick={() => setShowApiKey((value) => !value)}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="adminConfigConnection" className="text-xs font-semibold text-foreground/90">
+                    {t("settings.connectionMode")}
+                    <RequiredAsterisk />
+                  </Label>
+                  <Select
+                    value={isRelay ? "relay" : "direct"}
+                    onValueChange={onConnectionModeChange}
                   >
-                    {showApiKey ? <EyeOff data-icon="inline-start" /> : <Eye data-icon="inline-start" />}
-                  </Button>
+                    <SelectTrigger id="adminConfigConnection" className="h-9 w-full text-xs">
+                      <SelectValue>
+                        {isRelay ? t("admin.connectionRelay") : t("settings.officialDirect")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      {provider !== "custom" ? (
+                        <SelectItem value="direct" label={t("settings.officialDirect")} className="text-xs">
+                          {t("settings.officialDirect")}
+                        </SelectItem>
+                      ) : null}
+                      <SelectItem value="relay" label={t("admin.connectionRelay")} className="text-xs">
+                        {t("admin.connectionRelay")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="adminConfigModel">
-                  {t("settings.modelSeries")}
-                  <RequiredAsterisk />
-                </Label>
-                {purpose === "audio" ? null : <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => discoverModelsMutation.mutate()}
-                  disabled={discoverModelsMutation.isPending}
-                >
-                  {discoverModelsMutation.isPending ? t("admin.fetchingModels") : t("admin.fetchModels")}
-                </Button>}
+            {/* 模块 2: 连接凭证与模型系列 */}
+            <div className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                <Globe className="size-3.5 text-primary" />
+                <span>连接凭据与模型系列</span>
               </div>
-              <ModelSeriesCombobox
-                id="adminConfigModel"
-                value={modelSeries}
-                options={modelOptions}
-                onChange={(value) => {
-                  setModelSeries(value);
-                  if (purpose === "video") setVideoCapabilities(defaultVideoCapabilities(provider, value));
-                }}
-                placeholder={selectedProviderOption?.modelPlaceholder}
-                selectLabel={t("admin.selectModelSeries")}
-                emptyLabel={t("admin.noMatchingModels")}
-              />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="adminConfigBaseUrl" className="text-xs font-semibold text-foreground/90">
+                    Base URL
+                    {isRelay || provider === "custom" ? <RequiredAsterisk /> : null}
+                  </Label>
+                  <Input
+                    id="adminConfigBaseUrl"
+                    value={baseUrl}
+                    onChange={(event) => {
+                      setBaseUrl(event.target.value);
+                      setModelOptions([]);
+                    }}
+                    placeholder="https://api.example.com/v1"
+                    className="h-9 text-xs font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="adminConfigKey" className="text-xs font-semibold text-foreground/90">
+                    API Key
+                    {!editingConfig && !["edge", "system"].includes(provider) ? (
+                      <RequiredAsterisk />
+                    ) : null}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="adminConfigKey"
+                      type={showApiKey ? "text" : "password"}
+                      value={apiKey}
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setApiKey(event.target.value);
+                        setModelOptions([]);
+                      }}
+                      placeholder={
+                        editingConfig ? t("admin.apiKeyKeepCurrent") : t("admin.apiKeyInput")
+                      }
+                      disabled={["edge", "system"].includes(provider)}
+                      className="h-9 text-xs font-mono"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label={showApiKey ? t("admin.hideApiKey") : t("admin.showApiKey")}
+                      title={showApiKey ? t("admin.hideApiKey") : t("admin.showApiKey")}
+                      disabled={["edge", "system"].includes(provider)}
+                      onClick={() => setShowApiKey((value) => !value)}
+                      className="h-9 w-9 shrink-0 cursor-pointer"
+                    >
+                      {showApiKey ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 模型系列 + 发现模型 */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="adminConfigModel" className="text-xs font-semibold text-foreground/90">
+                    {t("settings.modelSeries")}
+                    <RequiredAsterisk />
+                  </Label>
+                  {purpose === "audio" ? null : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      onClick={() => discoverModelsMutation.mutate()}
+                      disabled={discoverModelsMutation.isPending}
+                      className="h-7 gap-1 text-[11px] cursor-pointer"
+                    >
+                      <RefreshCw
+                        className={cn(
+                          "size-3 text-primary",
+                          discoverModelsMutation.isPending && "animate-spin"
+                        )}
+                      />
+                      {discoverModelsMutation.isPending
+                        ? t("admin.fetchingModels")
+                        : t("admin.fetchModels")}
+                    </Button>
+                  )}
+                </div>
+                <ModelSeriesCombobox
+                  id="adminConfigModel"
+                  value={modelSeries}
+                  options={modelOptions}
+                  onChange={(value) => {
+                    setModelSeries(value);
+                    if (purpose === "video")
+                      setVideoCapabilities(defaultVideoCapabilities(provider, value));
+                  }}
+                  placeholder={selectedProviderOption?.modelPlaceholder}
+                  selectLabel={t("admin.selectModelSeries")}
+                  emptyLabel={t("admin.noMatchingModels")}
+                />
+              </div>
+
+              {/* 描述备注 */}
+              <div className="space-y-1.5 pt-1">
+                <Label htmlFor="adminConfigDescription" className="text-xs font-semibold text-foreground/90">
+                  {t("settings.descriptionLabel")}
+                </Label>
+                <Textarea
+                  id="adminConfigDescription"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="请输入该模型配置的用途说明或特点备注..."
+                  className="min-h-20 text-xs resize-none rounded-xl"
+                />
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="adminConfigDescription">{t("settings.descriptionLabel")}</Label>
-              <Textarea id="adminConfigDescription" value={description} onChange={(event) => setDescription(event.target.value)} />
-            </div>
-
+            {/* 模块 3: 专业能力与媒体规格 (图片/视频专用) */}
             {purpose === "image" ? (
-              <div className="border-t border-border/70 pt-4">
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  <ImageIcon className="size-3.5 text-primary" />
+                  <span>图像模型规格</span>
+                </div>
                 <NumberInput
                   id="imageMaxReferenceImages"
                   label={t("admin.maxReferenceImages")}
                   value={imageMaxReferenceImages}
                   min={0}
+                  max={10}
                   onChange={setImageMaxReferenceImages}
                 />
               </div>
             ) : null}
+
             {purpose === "video" ? (
-              <div className="space-y-4 rounded-2xl border border-border/80 bg-muted/20 p-4">
+              <div className="space-y-4 rounded-2xl border border-border/80 bg-card/40 p-4">
                 <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
-                  <div>
-                    <p className="text-xs font-bold text-foreground">
-                      {t("admin.videoCapabilities")}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      配置该视频模型支持的分辨率、比例、时长与参考素材限制
-                    </p>
+                  <div className="flex items-center gap-1.5">
+                    <Video className="size-4 text-primary" />
+                    <div>
+                      <p className="text-xs font-bold text-foreground">
+                        {t("admin.videoCapabilities")}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        配置该视频模型支持的分辨率、比例、时长与参考素材限制
+                      </p>
+                    </div>
                   </div>
                   <Badge variant="outline" className="text-[10px]">
                     Video Specs
@@ -923,8 +1335,8 @@ export function ModelConfigManager() {
                 </div>
 
                 {/* 分组 1: 输出格式与规格 */}
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="space-y-2.5">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
                     🎞️ 输出格式与规格
                   </p>
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -961,7 +1373,7 @@ export function ModelConfigManager() {
 
                 {/* 分组 2: 时长控制与智能扩写 */}
                 <div className="space-y-3 border-t border-border/50 pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
                     ⏱️ 时长限制与生成增强
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -987,7 +1399,7 @@ export function ModelConfigManager() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-card/50 p-3">
+                  <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 p-3">
                     <div>
                       <p className="text-xs font-semibold text-foreground">
                         {t("admin.supportsPromptExtend")}
@@ -1001,13 +1413,14 @@ export function ModelConfigManager() {
                       onCheckedChange={(promptExtend) =>
                         setVideoCapabilities((current) => ({ ...current, promptExtend }))
                       }
+                      className="cursor-pointer"
                     />
                   </div>
                 </div>
 
                 {/* 分组 3: 多模态参考素材 (图片/视频/音频) */}
                 <div className="space-y-3 border-t border-border/50 pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p className="text-[11px] font-semibold text-muted-foreground">
                     🖼️ 多模态参考素材 (图/视/音生视频)
                   </p>
 
@@ -1040,6 +1453,7 @@ export function ModelConfigManager() {
                               referenceImages && current.referenceImagesRequired,
                           }))
                         }
+                        className="cursor-pointer"
                       />
                     </div>
 
@@ -1073,6 +1487,7 @@ export function ModelConfigManager() {
                                 referenceImagesRequired,
                               }))
                             }
+                            className="cursor-pointer"
                           />
                         </div>
                       </div>
@@ -1108,6 +1523,7 @@ export function ModelConfigManager() {
                               referenceVideo && current.referenceVideosRequired,
                           }))
                         }
+                        className="cursor-pointer"
                       />
                     </div>
 
@@ -1139,6 +1555,7 @@ export function ModelConfigManager() {
                                 referenceVideosRequired,
                               }))
                             }
+                            className="cursor-pointer"
                           />
                         </div>
                       </div>
@@ -1157,7 +1574,7 @@ export function ModelConfigManager() {
                             {t("admin.supportsReferenceAudio")}
                           </p>
                           <p className="text-[10px] text-muted-foreground">
-                            支持音频对口型驱动（Lip-sync）生成
+                            支持音频驱动配音对口型（Lip-sync）生成
                           </p>
                         </div>
                       </div>
@@ -1174,6 +1591,7 @@ export function ModelConfigManager() {
                               referenceAudio && current.referenceAudiosRequired,
                           }))
                         }
+                        className="cursor-pointer"
                       />
                     </div>
 
@@ -1205,6 +1623,7 @@ export function ModelConfigManager() {
                                 referenceAudiosRequired,
                               }))
                             }
+                            className="cursor-pointer"
                           />
                         </div>
                       </div>
@@ -1214,11 +1633,16 @@ export function ModelConfigManager() {
               </div>
             ) : null}
 
-            <div className="space-y-3 border-t border-border/70 pt-4">
-              <div>
-                <p className="text-sm font-medium">{t("admin.pricingTitle")}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{t("admin.pricingHint")}</p>
+            {/* 模块 4: 计费与价格设定 */}
+            <div className="space-y-3 rounded-2xl border border-border/70 bg-card/40 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                  <Coins className="size-3.5 text-primary" />
+                  <span>{t("admin.pricingTitle")}</span>
+                </div>
+                <span className="text-[11px] text-muted-foreground">{t("admin.pricingHint")}</span>
               </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <PricingInput
                   id="pricingMultiplier"
@@ -1230,7 +1654,13 @@ export function ModelConfigManager() {
                 {purpose === "image" || purpose === "video" || purpose === "audio" ? (
                   <PricingInput
                     id="unitPrice"
-                    label={t(purpose === "image" ? "admin.imageUnitPrice" : purpose === "audio" ? "admin.audioUnitPrice" : "admin.videoUnitPrice")}
+                    label={t(
+                      purpose === "image"
+                        ? "admin.imageUnitPrice"
+                        : purpose === "audio"
+                          ? "admin.audioUnitPrice"
+                          : "admin.videoUnitPrice"
+                    )}
                     value={unitPrice}
                     onChange={setUnitPrice}
                     required
@@ -1251,90 +1681,209 @@ export function ModelConfigManager() {
                       onChange={setOutputPricePerMillion}
                       required
                     />
-                    <PricingInput id="cacheReadPrice" label={t("admin.cacheReadPrice")} value={cacheReadPricePerMillion} onChange={setCacheReadPricePerMillion} />
-                    <PricingInput id="cacheWritePrice" label={t("admin.cacheWritePrice")} value={cacheWritePricePerMillion} onChange={setCacheWritePricePerMillion} />
+                    <PricingInput
+                      id="cacheReadPrice"
+                      label={t("admin.cacheReadPrice")}
+                      value={cacheReadPricePerMillion}
+                      onChange={setCacheReadPricePerMillion}
+                    />
+                    <PricingInput
+                      id="cacheWritePrice"
+                      label={t("admin.cacheWritePrice")}
+                      value={cacheWritePricePerMillion}
+                      onChange={setCacheWritePricePerMillion}
+                    />
                   </>
                 )}
               </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-                <span>{t("admin.enabledStatus")}</span>
-                <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
+            {/* 模块 5: 状态与生效 */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between rounded-xl border border-border/70 bg-card/40 p-3.5 text-xs font-medium cursor-pointer transition-colors hover:bg-card/60">
+                <div className="space-y-0.5">
+                  <span className="text-foreground font-semibold">{t("admin.enabledStatus")}</span>
+                  <p className="text-[11px] text-muted-foreground">控制此模型是否对调用开放</p>
+                </div>
+                <Switch
+                  checked={isEnabled}
+                  onCheckedChange={setIsEnabled}
+                  className="cursor-pointer"
+                />
               </label>
-              <label className="flex items-center justify-between rounded-lg border border-border/70 p-3 text-sm">
-                <span>{t("admin.setDefault")}</span>
-                <Switch checked={isDefault} onCheckedChange={setIsDefault} />
+              <label className="flex items-center justify-between rounded-xl border border-border/70 bg-card/40 p-3.5 text-xs font-medium cursor-pointer transition-colors hover:bg-card/60">
+                <div className="space-y-0.5">
+                  <span className="text-foreground font-semibold">{t("admin.setDefault")}</span>
+                  <p className="text-[11px] text-muted-foreground">设为对应用途的默认优先模型</p>
+                </div>
+                <Switch
+                  checked={isDefault}
+                  onCheckedChange={setIsDefault}
+                  className="cursor-pointer"
+                />
               </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setFormOpen(false)}>
-                <X className="size-4" />
-                {t("common.cancel")}
-              </Button>
-              <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? t("settings.saving") : t("common.save")}
-              </Button>
             </div>
           </div>
+
+          {/* 弹窗底部操作按钮 */}
+          <DialogFooter className="m-0 p-4 border-t border-border/70 bg-muted/20 sm:gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFormOpen(false)}
+              className="h-9 gap-1 text-xs cursor-pointer"
+            >
+              <X className="size-3.5" />
+              {t("common.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              className="h-9 gap-1.5 text-xs font-bold cursor-pointer"
+            >
+              {saveMutation.isPending ? (
+                <RefreshCw className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              {saveMutation.isPending ? t("settings.saving") : t("common.save")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(viewingConfig)} onOpenChange={(open) => !open && setViewingConfig(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{viewingConfig ? configTitle(viewingConfig, purposeLabel, t) : t("admin.configDetails")}</DialogTitle>
-            <DialogDescription>{viewingConfig?.description || t("common.noDescription")}</DialogDescription>
+      {/* 模型详情查看 Dialog */}
+      <Dialog
+        open={Boolean(viewingConfig)}
+        onOpenChange={(open) => !open && setViewingConfig(null)}
+      >
+        <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border/70">
+            <div className="flex items-center justify-between gap-2">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <Cpu className="size-4 text-primary" />
+                {viewingConfig ? configTitle(viewingConfig, purposeLabel, t) : t("admin.configDetails")}
+              </DialogTitle>
+              {viewingConfig ? (
+                <Badge
+                  variant={viewingConfig.source === "official" ? "default" : "secondary"}
+                  className="text-[10px]"
+                >
+                  {viewingConfig.source === "official"
+                    ? t("settings.officialConfig")
+                    : t("admin.userConfig")}
+                </Badge>
+              ) : null}
+            </div>
+            <DialogDescription className="text-xs mt-1">
+              {viewingConfig?.description || t("common.noDescription")}
+            </DialogDescription>
           </DialogHeader>
+
           {viewingConfig ? (
-            <div className="grid gap-2 text-sm">
-              <p>{t("admin.source")}: {viewingConfig.source === "official" ? t("settings.officialConfig") : t("admin.userConfig")}</p>
-              <p>{t("settings.purpose")}: {purposeLabel[viewingConfig.purpose]}</p>
-              <p>{t("settings.provider")}: {providerLabel(viewingConfig.provider, t)}</p>
-              <p>{t("admin.tableModel")}: {viewingConfig.modelSeries}</p>
-              <p className="break-all">Base URL：{viewingConfig.baseUrl || "-"}</p>
-              <p>{t("admin.status")}: {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")}</p>
-              <p>
-                {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x · {viewingConfig.purpose === "image" || viewingConfig.purpose === "video" || viewingConfig.purpose === "audio"
-                  ? `${t(viewingConfig.purpose === "image" ? "admin.imageUnitPrice" : viewingConfig.purpose === "audio" ? "admin.audioUnitPrice" : "admin.videoUnitPrice")}: $${viewingConfig.unitPrice}`
-                  : `${t("admin.inputPrice")}: $${viewingConfig.inputPricePerMillion} · ${t("admin.outputPrice")}: $${viewingConfig.outputPricePerMillion}`}
-              </p>
+            <div className="p-5 space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                  <span className="text-[11px] text-muted-foreground block">{t("settings.purpose")}</span>
+                  <span className="font-semibold text-foreground mt-0.5 block">
+                    {purposeLabel[viewingConfig.purpose]}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                  <span className="text-[11px] text-muted-foreground block">{t("settings.provider")}</span>
+                  <span className="font-semibold text-foreground mt-0.5 block">
+                    {providerLabel(viewingConfig.provider, t)}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                  <span className="text-[11px] text-muted-foreground block">{t("admin.tableModel")}</span>
+                  <span className="font-mono font-semibold text-foreground mt-0.5 block truncate">
+                    {viewingConfig.modelSeries}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                  <span className="text-[11px] text-muted-foreground block">{t("admin.status")}</span>
+                  <span className="font-semibold text-foreground mt-0.5 block">
+                    {viewingConfig.isEnabled ? t("settings.enable") : t("settings.disable")}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                <span className="text-[11px] text-muted-foreground block">Base URL</span>
+                <span className="font-mono text-xs text-foreground mt-0.5 block break-all">
+                  {viewingConfig.baseUrl || "—"}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-1">
+                <span className="text-[11px] font-semibold text-primary block">计费策略</span>
+                <p className="text-xs text-foreground font-medium">
+                  {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x ·{" "}
+                  {viewingConfig.purpose === "image" ||
+                  viewingConfig.purpose === "video" ||
+                  viewingConfig.purpose === "audio"
+                    ? `${t(
+                        viewingConfig.purpose === "image"
+                          ? "admin.imageUnitPrice"
+                          : viewingConfig.purpose === "audio"
+                            ? "admin.audioUnitPrice"
+                            : "admin.videoUnitPrice"
+                      )}: $${viewingConfig.unitPrice}`
+                    : `${t("admin.inputPrice")}: $${viewingConfig.inputPricePerMillion} · ${t("admin.outputPrice")}: $${viewingConfig.outputPricePerMillion}`}
+                </p>
+              </div>
             </div>
           ) : null}
         </DialogContent>
       </Dialog>
 
+      {/* 删除配置确认 Dialog */}
       <Dialog
         open={Boolean(deletingConfig)}
         onOpenChange={(open) => {
           if (!open && !deleteMutation.isPending) setDeletingConfig(null);
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("common.delete")}</DialogTitle>
-            <DialogDescription>
-              {deletingConfig
-                ? t("admin.confirmDeleteConfig", { name: configTitle(deletingConfig, purposeLabel, t) })
-                : ""}
-            </DialogDescription>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <DialogHeader className="p-5 border-b border-border/70">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+                <AlertTriangle className="size-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">
+                  {t("common.delete")}
+                </DialogTitle>
+                <DialogDescription className="text-xs mt-0.5">
+                  {deletingConfig
+                    ? t("admin.confirmDeleteConfig", {
+                        name: configTitle(deletingConfig, purposeLabel, t),
+                      })
+                    : ""}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="m-0 p-4 border-t border-border/70 bg-muted/20 sm:gap-2.5">
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setDeletingConfig(null)}
               disabled={deleteMutation.isPending}
+              className="h-9 text-xs cursor-pointer"
             >
               {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
+              size="sm"
               onClick={() => deletingConfig && deleteMutation.mutate(deletingConfig)}
               disabled={!deletingConfig || deleteMutation.isPending}
+              className="h-9 gap-1.5 text-xs font-bold cursor-pointer"
             >
-              <Trash2 data-icon="inline-start" />
+              <Trash2 className="size-3.5" />
               {deleteMutation.isPending ? t("common.loading") : t("common.delete")}
             </Button>
           </DialogFooter>
@@ -1366,12 +1915,20 @@ function PricingInput({
   required?: boolean;
 }) {
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id} className="text-xs">
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-xs font-semibold text-foreground/90">
         {label}
         {required ? <RequiredAsterisk /> : null}
       </Label>
-      <Input id={id} type="number" min="0" step="any" value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input
+        id={id}
+        type="number"
+        min="0"
+        step="any"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 text-xs font-mono"
+      />
     </div>
   );
 }
@@ -1397,14 +1954,14 @@ function CapabilitySelect<T extends string | number>({
         value={values}
         onValueChange={(value) => onChange((value ?? []) as T[])}
       >
-        <SelectTrigger className="h-9 text-xs">
+        <SelectTrigger className="h-9 w-full text-xs">
           <SelectValue placeholder="请选择支持项">
             {values.length ? values.map(format).join(", ") : "未选择"}
           </SelectValue>
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false} className="max-h-60">
           {options.map((option) => (
-            <SelectItem key={option} value={option} className="text-xs">
+            <SelectItem key={option} value={option} label={format(option)} className="text-xs">
               {format(option)}
             </SelectItem>
           ))}
@@ -1432,12 +1989,21 @@ function NumberInput({
   required?: boolean;
 }) {
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id} className="text-xs">
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-xs font-semibold text-foreground/90">
         {label}
         {required ? <RequiredAsterisk /> : null}
       </Label>
-      <Input id={id} type="number" min={min} max={max} step="1" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <Input
+        id={id}
+        type="number"
+        min={min}
+        max={max}
+        step="1"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="h-9 text-xs font-mono"
+      />
     </div>
   );
 }

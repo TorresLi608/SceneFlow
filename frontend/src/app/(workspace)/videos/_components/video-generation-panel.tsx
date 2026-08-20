@@ -1172,91 +1172,100 @@ export function VideoGenerationPanel({
         ) : null}
       </section>
 
-      {/* 视频详情与全屏播放 Dialog */}
+      {/* 视频详情与全屏播放 Dialog（大屏沉浸式视窗） */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-3xl overflow-hidden p-0 gap-0">
-          <DialogHeader className="p-4 border-b border-border/70 flex flex-row items-center justify-between">
+        <DialogContent className="sm:max-w-6xl xl:max-w-7xl w-[94vw] h-[86vh] max-h-[88vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl">
+          <DialogHeader className="p-4 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
             <div className="space-y-0.5">
               <DialogTitle className="text-sm font-bold flex items-center gap-2">
                 <Film className="size-4 text-primary" />
-                视频播放与详情
+                大屏视频播放与详情
               </DialogTitle>
               <DialogDescription className="text-xs">
-                大屏高清回放与生成参数
+                高清全尺寸无损回放、规格参数及生成提示词
               </DialogDescription>
             </div>
           </DialogHeader>
 
           {modalItem ? (
-            <div className="grid md:grid-cols-[1fr_280px] min-h-[420px] bg-card/60">
-              {/* 大屏播放器 */}
-              <div className="relative flex items-center justify-center bg-black p-4 min-h-[320px]">
+            <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_360px] flex-1 min-h-0 bg-background/50 overflow-hidden">
+              {/* 大屏播放器主视窗：深色暗影影院背景 */}
+              <div className="relative flex items-center justify-center bg-black/95 p-4 sm:p-6 overflow-hidden min-h-0">
+                <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-10" />
                 <video
                   src={modalItem.url}
                   controls
                   autoPlay
                   loop
-                  className="max-h-full max-w-full rounded-xl shadow-lg"
+                  className="max-h-full max-w-full rounded-2xl shadow-2xl object-contain border border-white/10"
                 />
               </div>
 
-              {/* 右侧参数与提示词 */}
-              <div className="flex flex-col justify-between border-t md:border-t-0 md:border-l border-border/70 p-4 space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {modalItem.quality ? (
-                      <Badge variant="secondary" className="text-[10px]">
-                        {modalItem.quality}
+              {/* 右侧参数与提示词面板 */}
+              <div className="flex flex-col justify-between border-t md:border-t-0 md:border-l border-border/70 bg-card/60 p-5 space-y-4 overflow-y-auto chat-message-list-scrollbar">
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                      视频生成规格
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {modalItem.quality ? (
+                        <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
+                          {modalItem.quality}
+                        </Badge>
+                      ) : null}
+                      {modalItem.aspectRatio ? (
+                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                          比例 {modalItem.aspectRatio}
+                        </Badge>
+                      ) : null}
+                      {modalItem.duration ? (
+                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                          {modalItem.duration}s
+                        </Badge>
+                      ) : null}
+                      {modalItem.fps ? (
+                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                          {modalItem.fps} FPS
+                        </Badge>
+                      ) : null}
+                      <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                        MP4 H.264
                       </Badge>
-                    ) : null}
-                    {modalItem.aspectRatio ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        比例 {modalItem.aspectRatio}
-                      </Badge>
-                    ) : null}
-                    {modalItem.duration ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        {modalItem.duration}s
-                      </Badge>
-                    ) : null}
-                    {modalItem.fps ? (
-                      <Badge variant="outline" className="text-[10px]">
-                        {modalItem.fps} FPS
-                      </Badge>
-                    ) : null}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-muted-foreground">
-                      视频提示词
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                      视频运镜提示词
                     </label>
-                    <div className="rounded-xl border border-border/70 bg-muted/40 p-2.5 text-xs leading-relaxed max-h-48 overflow-y-auto text-foreground">
+                    <div className="rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs leading-relaxed max-h-64 overflow-y-auto text-foreground whitespace-pre-wrap font-mono chat-message-list-scrollbar">
                       {modalItem.prompt}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-2 border-t border-border/70">
+                <div className="space-y-2.5 pt-3 border-t border-border/70 shrink-0">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 w-full gap-1.5 text-xs"
+                    className="h-10 w-full gap-2 text-xs font-medium cursor-pointer shadow-2xs"
                     onClick={() => copyPrompt(modalItem.prompt)}
                   >
                     {copied ? (
-                      <Check className="size-3.5 text-emerald-500" />
+                      <Check className="size-4 text-emerald-500" />
                     ) : (
-                      <Copy className="size-3.5" />
+                      <Copy className="size-4" />
                     )}
-                    {copied ? "已复制提示词" : "复制提示词"}
+                    {copied ? "已复制提示词到剪贴板" : "复制视频提示词"}
                   </Button>
                   <Button
                     size="sm"
-                    className="h-9 w-full gap-1.5 text-xs font-semibold"
+                    className="h-10 w-full gap-2 text-xs font-bold cursor-pointer shadow-sm"
                     onClick={() => downloadVideo(modalItem.url)}
                   >
-                    <Download className="size-3.5" />
-                    下载视频
+                    <Download className="size-4" />
+                    下载高清视频文件
                   </Button>
                 </div>
               </div>
