@@ -73,7 +73,7 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
           className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 bg-card/30 p-3 backdrop-blur-md md:w-[230px] md:flex-col md:overflow-visible md:border-b-0 md:border-r md:p-4 chat-message-list-scrollbar"
         >
           <p className="hidden px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:block">
-            剧作资产与分镜
+            {t("workbench.menuHeading")}
           </p>
           {sections.map((section) => {
             const href = `/projects/${projectId}/${section.key}`;

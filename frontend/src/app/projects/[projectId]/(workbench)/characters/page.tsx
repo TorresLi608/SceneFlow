@@ -1,9 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isCancel } from "axios";
 import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   createCharacterAction,
@@ -22,6 +23,7 @@ import {
   uploadCharacterStateImageAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { DraftPromptButton, PromptField } from "@/components/prompt-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -132,10 +134,10 @@ function StateEditor({
   const queryClient = useQueryClient();
   const [name, setName] = useState(state.name);
   const [description, setDescription] = useState(state.description);
-  const [systemPrompt, setSystemPrompt] = useState(state.systemPrompt);
-  const [finalPrompt, setFinalPrompt] = useState(state.finalPrompt);
+  const [prompt, setPrompt] = useState(state.finalPrompt);
   const [fromEpisode, setFromEpisode] = useState(state.fromEpisode?.toString() ?? "");
   const [toEpisode, setToEpisode] = useState(state.toEpisode?.toString() ?? "");
+  const draftController = useRef<AbortController | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.characters(projectId) });
   const episodeNumber = (value: string) => (value.trim() ? Number(value) : null);
@@ -145,8 +147,7 @@ function StateEditor({
       updateCharacterStateAction(projectId, character.id, state.id, {
         name: name.trim(),
         description: description.trim(),
-        systemPrompt,
-        finalPrompt,
+        finalPrompt: prompt,
         fromEpisode: episodeNumber(fromEpisode),
         toEpisode: episodeNumber(toEpisode),
       }),
@@ -157,20 +158,41 @@ function StateEditor({
   // Drafting returns the prompt for review; it only reaches the row when the user saves.
   const draftMutation = useMutation({
     mutationFn: () =>
-      draftCharacterStatePromptAction(projectId, character.id, state.id, {
-        name: name.trim(),
-        description: description.trim(),
-        systemPrompt,
-      }),
-    onSuccess: (response) => setFinalPrompt(response.prompt),
-    onError: (error) => onError(resolveRequestError(error, t("character.draftPromptFailed"))),
+      draftCharacterStatePromptAction(
+        projectId,
+        character.id,
+        state.id,
+        { name: name.trim(), description: description.trim() },
+        draftController.current?.signal
+      ),
+    onSuccess: (response) => setPrompt(response.prompt),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      onError(resolveRequestError(error, t("character.draftPromptFailed")));
+    },
+    onSettled: () => {
+      draftController.current = null;
+    },
   });
 
+  const drawController = useRef<AbortController | null>(null);
   const drawMutation = useMutation({
     mutationFn: () =>
-      generateCharacterStateImageAction(projectId, character.id, state.id, { prompt: finalPrompt.trim() }),
+      generateCharacterStateImageAction(
+        projectId,
+        character.id,
+        state.id,
+        { prompt: prompt.trim() },
+        drawController.current?.signal
+      ),
     onSuccess: () => void refresh(),
-    onError: (error) => onError(resolveRequestError(error, t("character.generateSheetFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      onError(resolveRequestError(error, t("character.generateSheetFailed")));
+    },
+    onSettled: () => {
+      drawController.current = null;
+    },
   });
 
   const uploadMutation = useMutation({
@@ -244,34 +266,40 @@ function StateEditor({
           </div>
           <FieldDescription>{t("character.episodeRangeHint")}</FieldDescription>
 
-          <Field>
-            <FieldLabel htmlFor={`stateSystem-${state.id}`}>{t("character.systemPrompt")}</FieldLabel>
-            <Textarea
-              id={`stateSystem-${state.id}`}
-              value={systemPrompt}
-              maxLength={4000}
-              rows={2}
-              onChange={(event) => setSystemPrompt(event.target.value)}
-            />
-          </Field>
-
-          <Field>
-            <FieldLabel htmlFor={`stateFinal-${state.id}`}>{t("character.finalPrompt")}</FieldLabel>
-            <Textarea
-              id={`stateFinal-${state.id}`}
-              value={finalPrompt}
-              maxLength={4000}
-              rows={4}
-              onChange={(event) => setFinalPrompt(event.target.value)}
-            />
-          </Field>
+          {/*
+            One prompt field, not two. The built-in instruction template lives on the
+            backend and is not editable — offering a copy of it beside this one only ever
+            left users unsure which of the two actually drew the picture.
+          */}
+          <PromptField
+            id={`statePrompt-${state.id}`}
+            label={t("character.prompt")}
+            kind="character"
+            presetKind="character"
+            value={prompt}
+            onChange={setPrompt}
+            placeholder={t("character.promptPlaceholder")}
+            busy={busy}
+            onError={onError}
+            actions={
+              <DraftPromptButton
+                drafting={draftMutation.isPending}
+                disabled={busy}
+                onStart={() => {
+                  draftController.current = new AbortController();
+                  draftMutation.mutate();
+                }}
+                onStop={() => {
+                  draftController.current?.abort();
+                  draftController.current = null;
+                  draftMutation.reset();
+                }}
+              />
+            }
+          />
         </FieldGroup>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => draftMutation.mutate()}>
-            {draftMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-            {draftMutation.isPending ? t("character.draftingPrompt") : t("character.draftPrompt")}
-          </Button>
           <Button type="button" size="sm" disabled={busy} onClick={() => saveMutation.mutate()}>
             {saveMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
             {t("common.save")}
@@ -290,7 +318,15 @@ function StateEditor({
         uploadLabel={t("character.uploadSheet")}
         busy={busy}
         generating={drawMutation.isPending}
-        onGenerate={() => drawMutation.mutate()}
+        onGenerate={() => {
+          drawController.current = new AbortController();
+          drawMutation.mutate();
+        }}
+        onStop={() => {
+          drawController.current?.abort();
+          drawController.current = null;
+          drawMutation.reset();
+        }}
         onUpload={(dataUrl) => uploadMutation.mutate(dataUrl)}
         onError={onError}
       />

@@ -186,18 +186,31 @@ def _migrate_legacy_model_configs(session: Session) -> None:
 
 
 def _migrate_scene_assets(session: Session) -> None:
-    scenes = session.exec(
-        select(Scene).where(or_(Scene.image_path.like("http%"), Scene.audio_path.like("http%")))
-    ).all()
-    for scene in scenes:
+    # Core SQL naming only the columns this rewrite touches, for the same reason as
+    # `_backfill_first_episode` below: the legacy `scenes` table predates every column
+    # added since, and an ORM select would name today's full column list against
+    # yesterday's table — so any future column on Scene would break upgrading a legacy
+    # database. (It did, when `transition` and `video_prompt` were added.)
+    scenes = sa.table("scenes", sa.column("id"), sa.column("image_path"), sa.column("audio_path"))
+    rows = session.execute(
+        sa.select(scenes.c.id, scenes.c.image_path, scenes.c.audio_path).where(
+            or_(scenes.c.image_path.like("http%"), scenes.c.audio_path.like("http%"))
+        )
+    ).mappings().all()
+    for row in rows:
+        updates: dict[str, str | None] = {}
         for field in ("image_path", "audio_path"):
-            value = str(getattr(scene, field) or "")
-            if value.startswith("http"):
-                try:
-                    setattr(scene, field, stored_relative_path(value))
-                except Exception:
-                    setattr(scene, field, None)
-        session.add(scene)
+            value = str(row[field] or "")
+            if not value.startswith("http"):
+                continue
+            try:
+                updates[field] = stored_relative_path(value)
+            except Exception:
+                # The token no longer decodes, so the link was already dead; drop it rather
+                # than carrying a reference that can only ever 404.
+                updates[field] = None
+        if updates:
+            session.execute(sa.update(scenes).where(scenes.c.id == row["id"]).values(**updates))
 
 
 def _backfill_first_episode(session: Session) -> None:
@@ -222,7 +235,14 @@ def _backfill_first_episode(session: Session) -> None:
             .where(Episode.project_id == project_id, Episode.deleted_at.is_(None))
             .order_by(Episode.episode_number)
         ).all()
-        project_scenes = session.exec(select(Scene).where(Scene.project_id == project_id)).all()
+        # Core SQL for `scenes` too, and for the same reason as `projects` above: an ORM
+        # select here names today's full column list against the legacy table, so every
+        # column later added to Scene would break this upgrade. Episodes are exempt — that
+        # table is created by this very revision, so it always matches the model.
+        scenes = sa.table("scenes", sa.column("id"), sa.column("project_id"), sa.column("deleted_at"), sa.column("episode_id"))
+        project_scenes = session.execute(
+            sa.select(scenes.c.id, scenes.c.deleted_at, scenes.c.episode_id).where(scenes.c.project_id == project_id)
+        ).mappings().all()
         if not episodes:
             stamp = row["updated_at"] or row["created_at"] or now()
             episode = Episode(
@@ -233,15 +253,16 @@ def _backfill_first_episode(session: Session) -> None:
                 episode_number=1,
                 title="第 1 集",
                 source_text=row["original_script"] or "",
-                status="storyboard" if any(scene.deleted_at is None for scene in project_scenes) else "draft",
+                status="storyboard" if any(scene["deleted_at"] is None for scene in project_scenes) else "draft",
             )
             session.add(episode)
             session.flush()
             episodes = [episode]
-        for scene in project_scenes:
-            if scene.episode_id is None:
-                scene.episode_id = episodes[0].id
-                session.add(scene)
+        orphans = [scene["id"] for scene in project_scenes if scene["episode_id"] is None]
+        if orphans:
+            session.execute(
+                sa.update(scenes).where(scenes.c.id.in_(orphans)).values(episode_id=episodes[0].id)
+            )
 
 
 def _rebuild_schema() -> None:

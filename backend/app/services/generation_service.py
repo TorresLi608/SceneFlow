@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.core.database import db
 from app.core.realtime import broadcast
+from app.core import runs
 from app.llms.registry import models
 from app.models import Episode, Project, Scene
 from app.services.artifact_service import (
@@ -180,17 +181,36 @@ async def run_generation(
     config: dict[str, Any],
     user_id: int,
     episode_id: str | None = None,
+    cancellation: asyncio.Event | None = None,
 ) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCENES)
 
-    async def one(scene: dict[str, Any]) -> bool:
+    async def one(scene: dict[str, Any]) -> bool | None:
         async with semaphore:
+            # Checked after acquiring the slot, not before: a queued shot that has not
+            # started costs nothing to skip, and this is the last moment before it would.
+            if runs.is_cancelled(cancellation):
+                return None
             return await _generate_scene_image(project_id, scene, config, user_id)
 
-    results = await asyncio.gather(*(one(scene) for scene in scenes))
+    try:
+        outcomes = await asyncio.gather(*(one(scene) for scene in scenes))
+    finally:
+        runs.release(project_id, cancellation)
+    # None marks a shot that never ran. It is neither a success nor a failure, and counting
+    # it as either would make a cancelled run report an outcome nobody asked it to produce.
+    results = [outcome for outcome in outcomes if outcome is not None]
+    skipped = len(outcomes) - len(results)
     status = episode_media_status(episode_id, results) if episode_id else terminal_status(results)
+    if skipped:
+        status = "partial" if any(results) else "idle"
     logger.info(
-        "generation finished project=%s episode=%s scenes=%d status=%s", project_id, episode_id, len(scenes), status
+        "generation finished project=%s episode=%s scenes=%d skipped=%d status=%s",
+        project_id,
+        episode_id,
+        len(scenes),
+        skipped,
+        status,
     )
     # Both levels carry the outcome: the project because it holds the busy lock, the
     # episode because that is what the user was actually rendering.
@@ -199,7 +219,11 @@ async def run_generation(
         update_episode_row(episode_id, status=status)
     await broadcast(
         project_id,
-        {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "episodeId": episode_id}},
+        {
+            "type": "PROJECT_UPDATE",
+            "projectId": project_id,
+            "data": {"status": status, "episodeId": episode_id, "canceled": bool(skipped)},
+        },
     )
 
 
@@ -247,6 +271,22 @@ def _stored_media(stored: str) -> dict[str, str]:
     }
 
 
+def _scene_duration(scene: dict[str, Any], options: dict[str, Any], capabilities: dict[str, Any]) -> int:
+    """How many seconds this shot runs for.
+
+    The breakdown estimates a length per shot, which is the whole reason it asks the model
+    for one — a six-second beat and a two-second reaction rendered at the same fixed
+    duration is exactly the pacing problem the estimate exists to fix. A shot that never
+    got an estimate falls back to the batch default, and everything is clamped to what the
+    model will actually accept rather than refused.
+    """
+    milliseconds = int(scene.get("duration_ms") or 0)
+    seconds = round(milliseconds / 1000) if milliseconds else int(options["duration"])
+    minimum = int(capabilities.get("minDuration") or 1)
+    maximum = int(capabilities.get("maxDuration") or max(seconds, minimum))
+    return min(max(seconds, minimum), maximum)
+
+
 async def _generate_scene_video(
     project_id: str,
     scene: dict[str, Any],
@@ -279,9 +319,26 @@ async def _generate_scene_video(
             if capabilities["referenceAudio"] and options.get("voiceSheetPath")
             else None
         )
-        prompt = str(scene.get("visual_prompt") or scene.get("narration") or "").strip()
+        # The motion prompt first: `visual_prompt` describes a frame, and a clip generated
+        # from it tends to hold still. Narration is the last resort.
+        prompt = str(
+            scene.get("video_prompt") or scene.get("visual_prompt") or scene.get("narration") or ""
+        ).strip()
         if not prompt:
             raise ValueError("该分镜缺少画面提示词")
+        # Camera and transition reach the video model or nothing does — they are the two
+        # things the breakdown works out that the still prompt has no place to carry.
+        direction = "；".join(
+            part
+            for part in (
+                f"运镜：{str(scene.get('camera_move') or '').strip()}" if scene.get("camera_move") else "",
+                f"转场：{str(scene.get('transition') or '').strip()}" if scene.get("transition") else "",
+            )
+            if part
+        )
+        if direction:
+            prompt = f"{prompt}\n{direction}"
+        duration = _scene_duration(scene, options, capabilities)
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
@@ -294,13 +351,13 @@ async def _generate_scene_video(
             quality=options["quality"],
             aspect_ratio=options["aspectRatio"],
             fps=options["fps"],
-            duration=options["duration"],
+            duration=duration,
             prompt_extend=options["promptExtend"],
             references=references,
             driving_audio=driving_audio,
             base_url=config.get("baseUrl", ""),
         )
-        record_usage(user_id, config, "scene_video", started_at, quantity=options["duration"])
+        record_usage(user_id, config, "scene_video", started_at, quantity=duration)
         video_path = store_artifact("projects", project_id, f"{scene_id}.{result.format}", result.data)
     except Exception as exc:
         detail = str(exc)[:ERROR_DETAIL_CHARS]
@@ -328,14 +385,17 @@ async def run_video_generation(
     user_id: int,
     episode_id: str,
     options: dict[str, Any],
+    cancellation: asyncio.Event | None = None,
 ) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_VIDEO_SCENES)
     completed = 0
     completed_lock = asyncio.Lock()
 
-    async def run(scene: dict[str, Any]) -> bool:
+    async def run(scene: dict[str, Any]) -> bool | None:
         nonlocal completed
         async with semaphore:
+            if runs.is_cancelled(cancellation):
+                return None
             succeeded = await _generate_scene_video(project_id, scene, config, user_id, options)
         async with completed_lock:
             completed += 1
@@ -345,12 +405,22 @@ async def run_video_generation(
             await broadcast(project_id, {"type": "VIDEO_UPDATE", "projectId": project_id, "data": {"videoStatus": "generating", "videoProgress": progress, "videoModel": config["model"]}})
         return succeeded
 
-    results = await asyncio.gather(*(run(scene) for scene in scenes))
+    try:
+        outcomes = await asyncio.gather(*(run(scene) for scene in scenes))
+    finally:
+        runs.release(project_id, cancellation)
+    results = [outcome for outcome in outcomes if outcome is not None]
+    skipped = len(outcomes) - len(results)
     successes = sum(results)
     batch_status = terminal_status(results)
     status = episode_media_status(episode_id, results)
-    video_status = "success" if batch_status == "done" else "error"
-    detail = "" if batch_status == "done" else f"{len(scenes) - successes} 个分镜视频生成失败"
+    video_status = "success" if batch_status == "done" and not skipped else "error" if not skipped else "idle"
+    detail = ""
+    if skipped:
+        status = "partial" if any(results) else "idle"
+        detail = f"已停止，剩余 {skipped} 个分镜未生成"
+    elif batch_status != "done":
+        detail = f"{len(results) - successes} 个分镜视频生成失败"
     update_project_row(project_id, status=status, video_status=video_status, video_progress=100, video_url=None)
     update_episode_row(episode_id, status=status, video_status=video_status, video_progress=100, error_message=detail or None)
-    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"]}})
+    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"], "canceled": bool(skipped)}})

@@ -91,9 +91,14 @@ class CharacterState(SQLModel, table=True):
     description: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     appearance_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     # Overrides the built-in turnaround instructions in `prompt_service` when non-empty.
+    #
+    # Legacy: the UI no longer exposes this. The built-in template *is* the system prompt,
+    # and offering an editable copy of it next to `final_prompt` gave users two prompt
+    # fields where one was meant. Kept so existing rows are not silently reinterpreted;
+    # nothing reads it any more.
     system_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
-    # The drafted prompt after the user has reviewed and possibly edited it. This, not the
-    # template, is what draws the sheet — the whole point of the preview step.
+    # The prompt that actually draws the sheet, after the user has reviewed and possibly
+    # edited it. Surfaced in the UI simply as 提示词 — it is the only one they see.
     final_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     reference_image_path: str | None = None
     voice_model: str = Field(default="", sa_column_kwargs={"server_default": text("''")})

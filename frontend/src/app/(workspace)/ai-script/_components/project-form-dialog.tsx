@@ -9,11 +9,11 @@ import { useRef, useState } from "react";
 import {
   createProjectAction,
   generateCoverAction,
-  optimizeDescriptionAction,
   setProjectCoverAction,
   clearProjectCoverAction,
   updateProjectAction,
 } from "@/actions/projects-actions";
+import { PromptField } from "@/components/prompt-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -40,10 +40,10 @@ interface ProjectFormProps {
 function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
   const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const optimizeController = useRef<AbortController | null>(null);
   const coverController = useRef<AbortController | null>(null);
   const [title, setTitle] = useState(project?.title ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
+  const [coverPrompt, setCoverPrompt] = useState(project?.coverPrompt ?? "");
   /**
    * What the preview shows: a data URL when the user just picked or generated one, the
    * project's signed URL when it is what was already stored. `coverData` being set is what
@@ -53,17 +53,6 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
   const [coverData, setCoverData] = useState<string | null>(null);
   const [coverCleared, setCoverCleared] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  const stopOptimize = () => {
-    optimizeController.current?.abort();
-    optimizeController.current = null;
-    optimizeMutation.reset();
-  };
-
-  const startOptimize = () => {
-    optimizeController.current = new AbortController();
-    optimizeMutation.mutate();
-  };
 
   const stopCover = () => {
     coverController.current?.abort();
@@ -76,28 +65,11 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
     coverMutation.mutate();
   };
 
-  const optimizeMutation = useMutation({
-    mutationFn: () =>
-      optimizeDescriptionAction(
-        { title: title.trim(), description: description.trim() },
-        optimizeController.current?.signal
-      ),
-    onSuccess: (response) => setDescription(response.description),
-    onError: (error) => {
-      if (isCancel(error)) return;
-      setMessage(resolveRequestError(error, t("home.optimizeDescriptionFailed")));
-    },
-    onSettled: () => {
-      optimizeController.current = null;
-    },
-  });
-
   const coverMutation = useMutation({
     mutationFn: () =>
-      generateCoverAction(
-        { title: title.trim(), description: description.trim() },
-        coverController.current?.signal
-      ),
+      // The user's own description drives the picture. Title and house style ride along as
+      // context, but asking for a cover no longer means rewriting the synopsis.
+      generateCoverAction({ prompt: coverPrompt.trim(), title: title.trim() }, coverController.current?.signal),
     onSuccess: (response) => {
       setCoverPreview(response.imageData);
       setCoverData(response.imageData);
@@ -114,7 +86,11 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = { title: title.trim(), description: description.trim() };
+      const payload = {
+        title: title.trim(),
+        description: description.trim(),
+        coverPrompt: coverPrompt.trim(),
+      };
       let saved = project
         ? (await updateProjectAction(project.id, payload)).project
         : (await createProjectAction(payload)).project;
@@ -154,8 +130,8 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
     setMessage(null);
   };
 
-  const busy = saveMutation.isPending || optimizeMutation.isPending || coverMutation.isPending;
-  const canGenerateCover = Boolean(title.trim() || description.trim());
+  const busy = saveMutation.isPending || coverMutation.isPending;
+  const canGenerateCover = Boolean(coverPrompt.trim());
 
   return (
     <>
@@ -192,40 +168,9 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
           </Field>
 
           <Field className="space-y-1.5">
-            <div className="flex h-7 items-center justify-between">
-              <FieldLabel htmlFor="projectDescription" className="text-xs font-medium text-foreground">
-                {t("home.projectDescription")}
-              </FieldLabel>
-              <Button
-                type="button"
-                variant={optimizeMutation.isPending ? "destructive" : "outline"}
-                size="xs"
-                disabled={
-                  (!description.trim() && !optimizeMutation.isPending) ||
-                  saveMutation.isPending ||
-                  coverMutation.isPending
-                }
-                onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
-                className={cn(
-                  "h-7 gap-1 text-[11px] rounded-lg cursor-pointer transition-colors",
-                  optimizeMutation.isPending && "animate-pulse font-medium"
-                )}
-                title={
-                  optimizeMutation.isPending
-                    ? t("home.stopOptimizingDescription")
-                    : t("home.optimizeDescription")
-                }
-              >
-                {optimizeMutation.isPending ? (
-                  <Square data-icon="inline-start" className="size-2.5 fill-current" />
-                ) : (
-                  <Sparkles data-icon="inline-start" className="size-3 text-primary" />
-                )}
-                {optimizeMutation.isPending
-                  ? t("home.stopOptimizingDescription")
-                  : t("home.optimizeDescription")}
-              </Button>
-            </div>
+            <FieldLabel htmlFor="projectDescription" className="text-xs font-medium text-foreground">
+              {t("home.projectDescription")}
+            </FieldLabel>
             <Textarea
               id="projectDescription"
               value={description}
@@ -241,6 +186,20 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
             <FieldLabel className="text-xs font-medium text-foreground">
               {t("home.projectCover")}
             </FieldLabel>
+
+            {/* The prompt drives the picture, so it sits above the preview it produces. */}
+            <PromptField
+              id="projectCoverPrompt"
+              label={t("home.coverPrompt")}
+              kind="cover"
+              presetKind="cover"
+              value={coverPrompt}
+              onChange={setCoverPrompt}
+              placeholder={t("home.coverPromptPlaceholder")}
+              busy={busy}
+              onError={setMessage}
+            />
+
             <div className="flex items-start gap-3.5 rounded-2xl border border-border/60 bg-muted/20 p-3">
               <span className="relative flex aspect-[16/10] w-40 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/80 bg-muted/60 shadow-inner">
                 {coverPreview ? (
@@ -248,16 +207,16 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
                 ) : (
                   <div className="flex flex-col items-center gap-1 text-muted-foreground/60">
                     <ImagePlus className="size-6" />
-                    <span className="text-[10px]">16:10 封面</span>
+                    <span className="text-[10px]">{t("home.coverAspect")}</span>
                   </div>
                 )}
               </span>
 
               <div className="flex flex-1 flex-col justify-between self-stretch py-0.5">
                 <div>
-                  <p className="text-xs font-medium text-foreground">自定义或 AI 渲染封面</p>
+                  <p className="text-xs font-medium text-foreground">{t("home.coverFieldTitle")}</p>
                   <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    支持上传 10MB 内的图片，或根据标题与故事简介一键生成专属封面。
+                    {t("home.coverFieldHint")}
                   </p>
                 </div>
 
@@ -287,12 +246,9 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
                     type="button"
                     variant={coverMutation.isPending ? "destructive" : "outline"}
                     size="xs"
-                    disabled={
-                      (!canGenerateCover && !coverMutation.isPending) ||
-                      saveMutation.isPending ||
-                      optimizeMutation.isPending
-                    }
-                    title={canGenerateCover ? undefined : t("home.generateCoverNeedsContent")}
+                    // Stopping stays available while it runs; only starting needs a prompt.
+                    disabled={coverMutation.isPending ? false : !canGenerateCover || saveMutation.isPending}
+                    title={canGenerateCover ? undefined : t("home.coverPromptRequired")}
                     onClick={coverMutation.isPending ? stopCover : startCover}
                     className={cn(
                       "h-7 gap-1 rounded-lg text-xs cursor-pointer transition-colors",

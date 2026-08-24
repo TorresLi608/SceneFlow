@@ -246,6 +246,36 @@ def test_merging_with_nothing_drawn_yet_says_so() -> None:
             assert refused.status_code == 400, refused.text
 
 
+def test_a_prop_carries_its_owner_and_the_sheet_says_whose_it_is() -> None:
+    """An unattributed object is the first thing continuity loses, so the owner is drawn on."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            character = client.post(
+                f"/api/projects/{project_id}/characters",
+                json={"name": "林小满"},
+                headers=headers,
+            ).json()["character"]
+
+            owned = _prop(client, headers, project_id, ownerCharacterId=character["id"])
+            assert owned["ownerCharacterId"] == character["id"]
+            # Resolved server-side, so a card renders the owner without a second request.
+            assert owned["ownerName"] == "林小满"
+
+            listed = client.get(f"/api/projects/{project_id}/props", headers=headers).json()["props"]
+            assert listed[0]["ownerName"] == "林小满"
+
+            # "" unbinds; a JSON null would read as "leave it alone".
+            cleared = client.patch(
+                f"/api/projects/{project_id}/props/{owned['id']}",
+                json={"ownerCharacterId": ""},
+                headers=headers,
+            )
+            assert cleared.status_code == 200, cleared.text
+            assert cleared.json()["prop"]["ownerCharacterId"] is None
+            assert cleared.json()["prop"]["ownerName"] == ""
+
+
 if __name__ == "__main__":
     test_props_round_trip_through_create_list_patch_and_delete()
     test_a_prop_from_another_project_is_not_reachable()
@@ -255,4 +285,5 @@ if __name__ == "__main__":
     test_an_upload_that_is_not_an_image_data_url_is_refused()
     test_merging_props_tiles_them_into_one_sheet_the_project_carries()
     test_merging_with_nothing_drawn_yet_says_so()
+    test_a_prop_carries_its_owner_and_the_sheet_says_whose_it_is()
     print("test_props_api ok")

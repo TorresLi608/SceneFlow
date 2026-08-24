@@ -2,53 +2,90 @@
 
 Four flows carry almost all of the product: parse, render, chat, and metering. Each is traced end to end below with the files that own each hop.
 
-## 1. Script → shots (parse)
+## 0. Which model a call uses
 
 ```
-workbench ─▶ parseProjectAction ─▶ POST /api/projects/:id/parse
-   ─▶ episode_service.resolve_episode ─▶ models.parse_script (LLM)
-   ─▶ replace the episode's scenes ─▶ serialized project (one episode's shots)
+project.{text,image,video,audio}_config_id  ─▶  config_service.project_model_config
+   └─ unset / disabled / deleted ─▶ active_model_config
+        └─ user's official default ─▶ user's active config ─▶ system official
 ```
 
-- Body: `{ script, model, episodeId?, replaceAll? }`. Omitting `episodeId` targets the **current** episode, which is the highest-numbered live one.
-- **Re-splitting is destructive.** If the target episode already has shots carrying a generated image or voice track, the response comes back `applied: false` with `discardsGeneratedScenes: N` and the parsed shots under `pendingScenes`. The client confirms with the user, then repeats the call with `replaceAll: true`. Do not silently overwrite.
+**Project-first, never project-only.** A series created before the model panel existed has every pick unset, and a pinned config that was later deleted resolves to nothing — both fall through to the account default rather than failing the render. `GET /api/projects/:id/models` returns what each purpose actually resolves to, plus the limits the UI must enforce (`imageMaxReferenceImages`, the video config's declared `videoCapabilities`); it never returns an API key.
+
+The same row carries the generation defaults — image resolution and ratio, video quality/ratio/duration/fps/promptExtend — so a storyboard and the clips made from it agree, and the episode editor prefills instead of asking the same six questions per run. `PATCH /api/projects/:id` takes them under `modelSettings`; a config id of **`0` clears a pick**, because `null` already means "leave alone".
+
+## 1. Script → shots (breakdown)
+
+```
+episode editor ─▶ breakdownEpisodeAction ─▶ POST /api/projects/:id/episodes/:episodeId/breakdown
+   ─▶ breakdown_service assembles the bible context
+   ─▶ models.breakdown_script (LLM, JSON response format)
+   ─▶ replace the episode's shots, or annotate them in place
+```
+
+- Body: `{ target, script?, references, replaceAll?, model? }`.
+- **`target` picks which half is produced.** `shots` fills narration, dialogue, speaker, frame prompt, and shot size. `video` fills camera move, transition, duration, and motion prompt. `both` fills everything.
+- **`target: "video"` updates rows in place and never replaces them.** Re-deriving how the camera moves is no reason to throw away frames that have already been rendered and paid for. It requires existing shots and 400s without them.
+- **`references` decides what the model defers to**, and the three cases are deliberately distinct: a selected character *with* a drawn sheet is named so the prompt says "参照《…》三面图" rather than re-describing a face the renderer already pins; a character with only written setting is reasoned about from that text; anyone the bible has never heard of (walk-ons, 甲乙丙丁) is invented from the script. Selecting nothing is a fourth, valid case — decide everything from the script.
+- **Re-splitting is destructive.** If the target episode already has shots carrying a generated image or voice track, the response comes back `applied: false` with `discardsGeneratedScenes: N`. The client confirms with the user, then repeats with `replaceAll: true`.
 - Shot `order` restarts at 1 within each episode, so the response carries one episode's shots — never the series merged together.
+- `speaker` is matched back to a character by name and aliases, best-effort: an unmatched speaker is a walk-on working as intended, not an error.
 
-## 2. Shots → selected images (generate)
+`POST /api/projects/:id/parse` still exists and still produces the narration-plus-frame-prompt shape. It serves the legacy single-screen editor, which knows nothing about camera moves; the two schemas are not compatible, which is why `breakdown_script` sits beside `parse_script` rather than replacing it.
+
+## 2. Shots → images (render)
 
 ```
-POST /api/projects/:id/generate  { sceneIds? }
+POST /api/projects/:id/episodes/:episodeId/tone-sheet     ← anchor, on its own
+POST /api/projects/:id/episodes/:episodeId/storyboard     ← frames, against the anchor
+   { sceneIds? }
    ─▶ claim_project_status  (conditional UPDATE; second click loses)
-   ─▶ resolve episode + cast + production settings
-   ─▶ asyncio.create_task(run_generation(...))     ← returns 202 immediately
-        └─ per shot, ≤3 concurrent (MAX_CONCURRENT_SCENES):
-             character references + image provider
+   ─▶ runs.register(project_id)  ─▶ asyncio.create_task(...)   ← returns 202 immediately
+        └─ sequential, checking runs.is_cancelled between shots:
+             tone sheet + merged context sheet + previous shot's render
              store_artifact()       ─▶ private_generated/<relative path>
              broadcast SCENE_UPDATE ─▶ ws://…/ws/projects/:id
-   ─▶ terminal status: done | partial | failed, written to both project and episode
+   ─▶ terminal status: done | partial | failed | idle(stopped)
 ```
 
-- The workbench's one-click storyboard action stops after parsing and filling shots. Images and video are explicit single-shot or multi-select actions. Image requires an active image configuration. Locked shots are skipped, and all-locked is a `400` rather than a silent no-op.
-- A shot's cast contributes two things: **appearance prompts**, which work on every provider, and **reference portraits**, which are passed image-to-image and are what actually holds a face steady across episodes. At most `MAX_REFERENCE_IMAGES` (4) portraits per request, because providers cap reference images and a crowd scene would blow past it.
+- **The tone sheet is its own step.** It decides lighting, palette, and render style for every frame that follows, so approving it first is much cheaper than discovering after twenty full-resolution renders that the episode looks wrong. `/storyboard` still generates one when none exists, so a caller that skipped the step gets an anchored render rather than twenty unrelated frames.
+- `sceneIds` selects a subset — one shot for a regenerate, several for a batch. Omitted means every unlocked shot. Locked shots are skipped, and all-locked is a `400` rather than a silent no-op.
+- A shot's cast contributes **appearance prompts**, which work on every provider, and **reference sheets**, which are passed image-to-image and are what actually holds a face steady. At most `MAX_REFERENCE_IMAGES` (4) per request.
 - A portrait whose file is missing is skipped rather than failing the shot: losing consistency is a smaller harm than losing the render.
 - The terminal status reflects what actually landed. `partial` is a real outcome, not an error state to normalise away.
+
+## 2b. Stopping a run
+
+```
+POST /api/projects/:id/cancel ─▶ app/core/runs.cancel(project_id)
+   └─ sets the project's asyncio.Event; the run loop checks it between shots
+```
+
+Cooperative, not an interrupt. A frame the provider is already drawing has been paid for, so it finishes and is kept; what the user is actually stopping is the *next* one. A stopped run reports `partial` when something landed and `idle` when nothing did — never `failed`, which would claim the render broke when the user stopped it. The busy lock is released by the run as it unwinds, never by the cancel endpoint, so a second render cannot start while the first is still writing.
+
+`app/core/runs.py` is an in-process registry with the same limitation as `app/core/realtime.py`: a second backend process would not see the flag. Both need a shared broker before the app can run multi-process, and that is one change, not two.
 
 ## 3. Shots -> generated clips (drama / motion comic)
 
 ```
-POST /api/projects/:id/generate-video
-   -> active video config + its declared capabilities
-   -> current episode's unlocked shots, <=2 concurrent
+POST /api/projects/:id/generate-video   { sceneIds?, withAudio? }
+   -> project's video config + its declared capabilities
+   -> project's saved defaults under whatever the request sent
+   -> selected shots, <=2 concurrent, cancellable between shots
         storyboard image -> first-frame reference when supported/required
+        video_prompt (falling back to visual_prompt) + camera move + transition
+        per-shot duration_ms, clamped to the model's min/max
         merged project timbre track -> reference audio when supported
         video provider -> store_artifact(projects/<id>/<scene>.mp4)
         broadcast SCENE_UPDATE -> videoStatus / videoProgress / videoUrl
-   -> terminal project + episode status: done | partial | failed
+   -> terminal project + episode status
 ```
 
-- This produces one clip per shot; final timeline composition/export remains a separate stage.
+- **A clip needs its frame first.** The video model takes the storyboard image as its first-frame reference, so the editor keeps the clip button disabled until the frame exists; a model that *requires* a reference marks a shot without one as failed rather than inventing an opening from an unrelated portrait.
+- The motion prompt is tried before the frame prompt: `visual_prompt` describes a still, and a clip generated from it tends to hold still.
+- Duration comes from the shot, not the batch. A six-second beat and a two-second reaction rendered at one fixed length is the pacing problem the breakdown's estimate exists to fix; a shot with no estimate falls back to the project default.
 - The same capability validator serves the standalone video page and this batch path. Aspect ratio, FPS, quality, duration, prompt enhancement, and reference media are omitted when the selected model does not support them.
-- A model that requires a reference image marks a shot without a storyboard image as failed, so the batch can finish `partial` without inventing a first frame from an unrelated portrait.
+
 
 ## 4. Chat streaming
 
@@ -93,7 +130,9 @@ row stores the RELATIVE PATH
 serializers.py mints a signed URL per response (HS256 over the JWT secret, 30-day TTL)
 ```
 
-`_migrate_scene_assets` in `app/core/database.py` upgrades older rows in place and drops references whose token no longer decodes — those links were already dead.
+**The link is stable for a given file within a day.** `_sign` floors `iat` to the start of the UTC day rather than reading the clock, so the same artifact yields the same URL across responses. That is load-bearing, not cosmetic: the episode editor polls every three seconds while a render runs, and a per-response token meant re-downloading every storyboard frame on every tick — and any list row keyed on its asset URL was torn down and rebuilt along with it, discarding whatever the user was typing. **Key list rows on `updatedAt`, never on an asset URL.**
+
+`_migrate_scene_assets` in the baseline revision upgrades older rows in place and drops references whose token no longer decodes — those links were already dead.
 
 ## Realtime
 

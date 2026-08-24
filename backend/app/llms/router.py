@@ -45,6 +45,34 @@ class SceneDraft:
 
 
 @dataclass
+class ShotDraft:
+    """One shot as the breakdown produces it: a frame, a performance, and a duration.
+
+    Wider than `SceneDraft`, which only ever carried a line and a picture prompt — enough
+    for a comic panel, but silent on how the camera moves, how the cut is made, and how
+    long the shot runs, all of which a generated clip needs.
+    """
+
+    narration: str
+    visualPrompt: str
+    dialogue: str = ""
+    speaker: str = ""
+    shotType: str = ""
+    cameraMove: str = ""
+    transition: str = ""
+    durationSeconds: int = 0
+    videoPrompt: str = ""
+
+
+@dataclass
+class BreakdownResult:
+    shots: list[ShotDraft]
+    source: str = "llm"
+    warning: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class ParseResult:
     scenes: list[SceneDraft]
     source: str = "llm"
@@ -392,6 +420,76 @@ class ModelRouter:
         if not any(usage.values()):
             usage = aggregate_token_usage(response.usage_metadata)
         return ParseResult(scenes=scenes, usage=usage)
+
+    async def breakdown_script(
+        self,
+        provider: str,
+        api_key: str,
+        model: str,
+        system: str,
+        user: str,
+        base_url: str = "",
+        limit: int = 40,
+    ) -> BreakdownResult:
+        """Split a script into shots carrying both the frame and the motion.
+
+        Kept apart from `complete_text` because it binds a JSON response format, and apart
+        from `parse_script` because the two schemas are not compatible — `parse_script`
+        still serves the legacy single-screen editor, which knows nothing about camera
+        moves or transitions and would break on the wider shape.
+        """
+        user = user.strip()
+        if not user:
+            raise ValueError("script is empty")
+
+        llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3, max_tokens=8192)
+        if provider.strip().lower() != "anthropic":
+            llm = llm.bind(response_format={"type": "json_object"})
+        with get_usage_metadata_callback() as usage_callback:
+            response = await llm.ainvoke(
+                _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
+            )
+
+        payload = _json_object(_content_text(response.content))
+        raw = payload.get("shots")
+        if not isinstance(raw, list):
+            # Some models answer under the key the schema example used rather than the one
+            # it asked for; accepting both is cheaper than a retry.
+            raw = payload.get("scenes") if isinstance(payload.get("scenes"), list) else []
+
+        shots: list[ShotDraft] = []
+        for item in raw[:limit]:
+            if not isinstance(item, dict):
+                continue
+            narration = str(item.get("narration", "")).strip()
+            visual = str(item.get("visualPrompt", "")).strip()
+            if not narration and not visual:
+                continue
+            try:
+                duration = int(float(item.get("durationSeconds") or 0))
+            except (TypeError, ValueError):
+                duration = 0
+            shots.append(
+                ShotDraft(
+                    narration=narration or _trim_prompt(visual),
+                    visualPrompt=visual or f"anime storyboard frame, cinematic composition, {_trim_prompt(narration)}",
+                    dialogue=str(item.get("dialogue", "")).strip(),
+                    speaker=str(item.get("speaker", "")).strip(),
+                    shotType=str(item.get("shotType", "")).strip()[:80],
+                    cameraMove=str(item.get("cameraMove", "")).strip()[:80],
+                    transition=str(item.get("transition", "")).strip()[:80],
+                    # Clamped rather than rejected: an out-of-range estimate is a bad guess,
+                    # not a failed breakdown, and the user can edit it afterwards.
+                    durationSeconds=min(max(duration, 0), 60),
+                    videoPrompt=str(item.get("videoPrompt", "")).strip(),
+                )
+            )
+        if not shots:
+            raise ValueError("no shots in breakdown output")
+        usage = aggregate_token_usage(usage_callback.usage_metadata)
+        if not any(usage.values()):
+            usage = aggregate_token_usage(response.usage_metadata)
+        return BreakdownResult(shots=shots, usage=usage)
 
     async def optimize_script(self, provider: str, api_key: str, model: str, script: str, base_url: str = "") -> OptimizeResult:
         script = script.strip()

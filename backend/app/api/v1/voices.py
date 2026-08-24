@@ -8,28 +8,39 @@ model given it as a reference can keep speakers apart.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select
 
 from app.api.deps import current_user_id
 from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
 from app.core.realtime import broadcast
-from app.schemas.requests import CreateVoiceProfileRequest, UpdateVoiceProfileRequest
+from app.models import UserVoice
+from app.schemas.requests import (
+    CreateVoiceProfileRequest,
+    DesignVoiceProfileRequest,
+    ImportVoiceProfileRequest,
+    UpdateVoiceProfileRequest,
+)
 from app.schemas.serializers import project_json, voice_profile_json
 from app.services.artifact_service import artifact_absolute_path, artifact_relative_path, store_artifact
+from app.services.config_service import project_model_config
 from app.services.media_service import concat_audio
 from app.services.project_service import owned_project
 from app.services.prompt_service import NARRATOR_SAMPLE_TEXT
+from app.services.qwen_voice_service import create_voice
 from app.services.tts_service import synthesize
+from app.services.usage_service import record_usage, require_model_balance
 from app.services.voice_service import (
     create_voice_profile,
     delete_voice_profile,
     owned_voice_profile,
     voice_profiles_for,
 )
-from app.utils.common import now
+from app.utils.common import new_id, now
 
 
 logger = logging.getLogger(__name__)
@@ -66,6 +77,123 @@ async def add_voice(
             # series has, and the wording is editable either way.
             sample_text=body.sample_text or NARRATOR_SAMPLE_TEXT,
             order_num=body.order_num,
+        )
+        data = voice_profile_json(profile)
+    await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": data})
+    return {"voice": data}
+
+
+@router.post("/{project_id}/voices/design", status_code=201)
+async def design_project_voice(
+    project_id: str,
+    body: DesignVoiceProfileRequest,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    """Design a timbre from a description and bind it to this series in one step.
+
+    The provider and model come from the project's audio configuration rather than the
+    request. The old form asked the user to type them, which is how a series ended up with
+    profiles naming a model no synthesiser here could actually voice.
+
+    The designed voice is also saved to the account's library, because a timbre that took a
+    paid request to produce should be reusable in the next series without paying again.
+    """
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        config = project_model_config(session, user_id, project, "audio", "音色设计")
+        require_model_balance(session, user_id, config)
+
+    started_at = time.monotonic()
+    try:
+        voice_id, audio = await create_voice(config, body.voice_prompt, body.preview_text, body.name)
+    except Exception as exc:
+        logger.warning("voice design failed project=%s: %s", project_id, exc)
+        raise HTTPException(502, f"音色设计失败：{str(exc)[:220]}") from exc
+    record_usage(user_id, config, "voice_design", started_at, quantity=1)
+
+    stored = store_artifact("voices", project_id, f"{voice_id}.wav", audio)
+    stamp = now()
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        session.add(
+            UserVoice(
+                id=new_id("user-voice"),
+                created_at=stamp,
+                updated_at=stamp,
+                user_id=user_id,
+                voice_id=voice_id,
+                target_model=str(config["model"]),
+                name=body.name,
+                voice_prompt=body.voice_prompt,
+                preview_text=body.preview_text,
+                preview_audio_path=stored,
+                is_saved=True,
+            )
+        )
+        profile = create_voice_profile(
+            session,
+            project_id,
+            name=body.name,
+            note=body.note or body.voice_prompt[:200],
+            voice_provider=config["provider"],
+            # The designed voice id, not the base model: this is what synthesis has to ask
+            # for to get this timbre back rather than the model's default one.
+            voice_model=voice_id,
+            sample_text=body.sample_text or NARRATOR_SAMPLE_TEXT,
+            audio_path=stored,
+        )
+        data = voice_profile_json(profile)
+    await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": data})
+    return {"voice": data}
+
+
+@router.post("/{project_id}/voices/import", status_code=201)
+async def import_project_voice(
+    project_id: str,
+    body: ImportVoiceProfileRequest,
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    """Bind a timbre already in the account's library to this series.
+
+    Copies the audition rather than referencing the library row: a series' voice sheet must
+    keep working after the user tidies up their library, and the clip is small.
+    """
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        voice = session.exec(
+            select(UserVoice).where(
+                UserVoice.id == body.user_voice_id,
+                UserVoice.user_id == user_id,
+                UserVoice.deleted_at.is_(None),
+            )
+        ).first()
+        if not voice:
+            raise HTTPException(404, "voice not found")
+        source_path = voice.preview_audio_path
+        name = body.name or voice.name or voice.voice_id
+        note = body.note or voice.voice_prompt[:200]
+        target_model = voice.voice_id
+
+    stored = None
+    if source_path:
+        try:
+            stored = store_artifact("voices", project_id, f"{target_model}.wav", artifact_absolute_path(source_path).read_bytes())
+        except (ValueError, OSError):
+            # A library entry whose audition is gone still binds; it just has to be
+            # re-auditioned before it can join the merged sheet.
+            logger.info("imported voice has no readable audition project=%s voice=%s", project_id, body.user_voice_id)
+
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        profile = create_voice_profile(
+            session,
+            project_id,
+            name=name,
+            note=note,
+            voice_provider="qwen",
+            voice_model=target_model,
+            sample_text=body.sample_text or NARRATOR_SAMPLE_TEXT,
+            audio_path=stored,
         )
         data = voice_profile_json(profile)
     await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": data})

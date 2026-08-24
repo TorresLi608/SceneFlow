@@ -1,15 +1,17 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isCancel } from "axios";
 import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   createPropAction,
   deletePropAction,
   draftPropPromptAction,
   generatePropImageAction,
+  listCharactersAction,
   listPropsAction,
   listProjectsAction,
   mergePropSheetAction,
@@ -17,15 +19,18 @@ import {
   uploadPropImageAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { DraftPromptButton, PromptField } from "@/components/prompt-field";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
-import type { Prop } from "@/types/project";
+import type { Character, Prop } from "@/types/project";
 
 import { MergeButton, SheetPreview } from "../_components/project-cover-field";
 import { ReferenceImage } from "../_components/reference-image";
@@ -33,15 +38,18 @@ import { ReferenceImage } from "../_components/reference-image";
 interface PropFormValues {
   name: string;
   description: string;
+  ownerCharacterId: string;
 }
 
 function PropForm({
   prop,
+  characters,
   pending,
   onSubmit,
   onClose,
 }: {
   prop: Prop | null;
+  characters: Character[];
   pending: boolean;
   onSubmit: (values: PropFormValues) => void;
   onClose: () => void;
@@ -49,13 +57,19 @@ function PropForm({
   const { t } = useI18n();
   const [name, setName] = useState(prop?.name ?? "");
   const [description, setDescription] = useState(prop?.description ?? "");
+  const [ownerCharacterId, setOwnerCharacterId] = useState(prop?.ownerCharacterId ?? "");
+
+  const ownerItems = [
+    { value: "", label: t("prop.ownerNone") },
+    ...characters.map((character) => ({ value: character.id, label: character.name })),
+  ];
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit({ name: name.trim(), description: description.trim() });
+        onSubmit({ name: name.trim(), description: description.trim(), ownerCharacterId });
       }}
     >
       <FieldGroup>
@@ -69,6 +83,28 @@ function PropForm({
             placeholder={t("prop.namePlaceholder")}
             onChange={(event) => setName(event.target.value)}
           />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="propOwner">{t("prop.owner")}</FieldLabel>
+          {/* "" unbinds; the backend reads a JSON null as "leave alone". */}
+          <Select
+            items={ownerItems}
+            value={ownerCharacterId}
+            onValueChange={(value) => setOwnerCharacterId(value ?? "")}
+          >
+            <SelectTrigger id="propOwner" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {ownerItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </Field>
         <Field>
           <FieldLabel htmlFor="propDescription">{t("prop.description")}</FieldLabel>
@@ -111,27 +147,47 @@ function PropCard({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const [finalPrompt, setFinalPrompt] = useState(prop.finalPrompt);
+  const [prompt, setPrompt] = useState(prop.finalPrompt);
+  const draftController = useRef<AbortController | null>(null);
+  const drawController = useRef<AbortController | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.props(projectId) });
 
   // Drafting returns the prompt for review; it only reaches the row when the user saves.
   const draftMutation = useMutation({
     mutationFn: () =>
-      draftPropPromptAction(projectId, prop.id, { name: prop.name, description: prop.description }),
-    onSuccess: (response) => setFinalPrompt(response.prompt),
-    onError: (error) => onError(resolveRequestError(error, t("character.draftPromptFailed"))),
+      draftPropPromptAction(
+        projectId,
+        prop.id,
+        { name: prop.name, description: prop.description },
+        draftController.current?.signal
+      ),
+    onSuccess: (response) => setPrompt(response.prompt),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      onError(resolveRequestError(error, t("character.draftPromptFailed")));
+    },
+    onSettled: () => {
+      draftController.current = null;
+    },
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => updatePropAction(projectId, prop.id, { finalPrompt }),
+    mutationFn: () => updatePropAction(projectId, prop.id, { finalPrompt: prompt }),
     onSuccess: () => void refresh(),
     onError: (error) => onError(resolveRequestError(error, t("reference.saveFailed"))),
   });
 
   const drawMutation = useMutation({
-    mutationFn: () => generatePropImageAction(projectId, prop.id, { prompt: finalPrompt.trim() }),
+    mutationFn: () =>
+      generatePropImageAction(projectId, prop.id, { prompt: prompt.trim() }, drawController.current?.signal),
     onSuccess: () => void refresh(),
-    onError: (error) => onError(resolveRequestError(error, t("character.generateSheetFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      onError(resolveRequestError(error, t("character.generateSheetFailed")));
+    },
+    onSettled: () => {
+      drawController.current = null;
+    },
   });
 
   const uploadMutation = useMutation({
@@ -147,7 +203,14 @@ function PropCard({
       <div className="flex min-w-0 flex-col gap-3">
         <header className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold">{prop.name}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-sm font-semibold">{prop.name}</h2>
+              {prop.ownerName ? (
+                <Badge variant="outline" className="text-[10px]">
+                  {prop.ownerName}
+                </Badge>
+              ) : null}
+            </div>
             {prop.description ? (
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{prop.description}</p>
             ) : null}
@@ -164,22 +227,34 @@ function PropCard({
           </div>
         </header>
 
-        <Field>
-          <FieldLabel htmlFor={`propPrompt-${prop.id}`}>{t("character.finalPrompt")}</FieldLabel>
-          <Textarea
-            id={`propPrompt-${prop.id}`}
-            value={finalPrompt}
-            maxLength={4000}
-            rows={4}
-            onChange={(event) => setFinalPrompt(event.target.value)}
-          />
-        </Field>
+        <PromptField
+          id={`propPrompt-${prop.id}`}
+          label={t("prop.prompt")}
+          kind="prop"
+          presetKind="prop"
+          value={prompt}
+          onChange={setPrompt}
+          placeholder={t("prop.promptPlaceholder")}
+          busy={busy}
+          onError={onError}
+          actions={
+            <DraftPromptButton
+              drafting={draftMutation.isPending}
+              disabled={busy}
+              onStart={() => {
+                draftController.current = new AbortController();
+                draftMutation.mutate();
+              }}
+              onStop={() => {
+                draftController.current?.abort();
+                draftController.current = null;
+                draftMutation.reset();
+              }}
+            />
+          }
+        />
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => draftMutation.mutate()}>
-            {draftMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-            {draftMutation.isPending ? t("character.draftingPrompt") : t("character.draftPrompt")}
-          </Button>
           <Button type="button" size="sm" disabled={busy} onClick={() => saveMutation.mutate()}>
             {saveMutation.isPending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
             {t("common.save")}
@@ -194,7 +269,15 @@ function PropCard({
         uploadLabel={t("prop.uploadImage")}
         busy={busy}
         generating={drawMutation.isPending}
-        onGenerate={() => drawMutation.mutate()}
+        onGenerate={() => {
+          drawController.current = new AbortController();
+          drawMutation.mutate();
+        }}
+        onStop={() => {
+          drawController.current?.abort();
+          drawController.current = null;
+          drawMutation.reset();
+        }}
         onUpload={(dataUrl) => uploadMutation.mutate(dataUrl)}
         onError={onError}
       />
@@ -214,6 +297,11 @@ export default function PropsPage() {
   const propsQuery = useQuery({
     queryKey: queryKeys.props(projectId),
     queryFn: () => listPropsAction(projectId),
+  });
+  // The cast, so a prop can name its owner. Fetched per route, not hoisted into the layout.
+  const charactersQuery = useQuery({
+    queryKey: queryKeys.characters(projectId),
+    queryFn: () => listCharactersAction(projectId),
   });
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects,
@@ -325,6 +413,7 @@ export default function PropsPage() {
             <PropForm
               key={editing?.id ?? "new"}
               prop={editing}
+              characters={charactersQuery.data?.characters ?? []}
               pending={saveMutation.isPending}
               onSubmit={(values) => saveMutation.mutate(values)}
               onClose={() => setFormOpen(false)}

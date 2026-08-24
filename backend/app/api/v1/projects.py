@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from app.core.database import db
 from app.core.realtime import broadcast
+from app.core import runs
 from app.api.deps import current_user_id
 from app.llms.registry import models
 from app.models import Episode, Project, Scene
@@ -21,10 +22,10 @@ from app.schemas.requests import (
     GenerateCoverRequest,
     GenerateProjectRequest,
     GenerateVideoRequest,
-    OptimizeDescriptionRequest,
     OptimizeProjectRequest,
     ParseProjectRequest,
     ProductionSettingsRequest,
+    ProjectModelConfigRequest,
     ReorderScenesRequest,
     SetProjectCoverRequest,
     UpdateProjectRequest,
@@ -32,7 +33,11 @@ from app.schemas.requests import (
 )
 from app.schemas.serializers import episode_summary_json, project_json, scene_json
 from app.services.artifact_service import decode_image_data_url, store_artifact
-from app.services.config_service import active_model_config
+from app.services.config_service import (
+    PROJECT_CONFIG_COLUMNS,
+    active_model_config,
+    project_model_config,
+)
 from app.services.character_service import cast_for_episode, owned_character, scene_cast
 from app.services.episode_service import (
     ensure_episode,
@@ -45,7 +50,7 @@ from app.services.episode_service import (
 )
 from app.services.generation_service import run_generation, run_video_generation
 from app.services.job_service import list_project_jobs
-from app.services.prompt_service import SYNOPSIS_SYSTEM, cover_prompt, synopsis_prompt
+from app.services.prompt_service import cover_prompt
 from app.services.project_service import (
     IDLE_STATUSES,
     claim_project_status,
@@ -68,6 +73,22 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 def _settings_payload(request: ProductionSettingsRequest) -> dict[str, Any]:
     """Only the fields the caller actually sent, so a PATCH keeps the rest untouched."""
     return request.model_dump(by_alias=True, exclude_unset=True, exclude_none=True)
+
+
+def _model_settings_updates(request: ProjectModelConfigRequest) -> dict[str, Any]:
+    """Column updates for the model panel, translating "clear" back into NULL.
+
+    A config id of `0` is how a client returns a purpose to the account default: `null`
+    already means "leave alone" in a PATCH, so the clear needs a value of its own.
+    """
+    sent = request.model_dump(exclude_unset=True, exclude_none=True)
+    updates: dict[str, Any] = {}
+    for column, value in sent.items():
+        if column in PROJECT_CONFIG_COLUMNS.values():
+            updates[column] = value or None
+        else:
+            updates[column] = value
+    return updates
 
 
 def _serialized(session: Session, project: Project, *, episode: Episode | None = None) -> dict[str, Any]:
@@ -185,6 +206,7 @@ def create_project(body: CreateProjectRequest, user_id: int = Depends(current_us
             user_id=user_id,
             title=body.title or "新项目",
             description=body.description,
+            cover_prompt=body.cover_prompt,
             original_script=body.original_script,
             status="idle",
             video_status="idle",
@@ -209,12 +231,17 @@ async def update_project(project_id: str, body: UpdateProjectRequest, user_id: i
     if body.description is not None:
         updates["description"] = body.description
         broadcast_data["description"] = body.description
+    if body.cover_prompt is not None:
+        updates["cover_prompt"] = body.cover_prompt
+        broadcast_data["coverPrompt"] = body.cover_prompt
     if body.original_script is not None:
         updates["original_script"] = body.original_script
         broadcast_data["originalScript"] = body.original_script
     if body.series_bible is not None:
         updates["series_bible"] = body.series_bible
         broadcast_data["seriesBible"] = body.series_bible
+    if body.model_settings is not None:
+        updates.update(_model_settings_updates(body.model_settings))
     if not updates:
         raise HTTPException(400, "no fields to update")
 
@@ -227,6 +254,10 @@ async def update_project(project_id: str, body: UpdateProjectRequest, user_id: i
         session.add(project)
         session.flush()
         data = _serialized(session, project)
+    if body.model_settings is not None:
+        # The whole block rather than the changed keys: the panel re-reads it as one unit,
+        # and a partial payload would leave the other fields showing stale values.
+        broadcast_data["modelSettings"] = data["modelSettings"]
     # camelCase on the wire: every other realtime payload is camelCase, and the client reads it directly.
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {**broadcast_data, "updatedAt": stamp}})
     return {"project": data}
@@ -275,18 +306,21 @@ async def update_production_settings(
     return {"project": serialized}
 
 
-# These two literal paths must stay above the `/{project_id}/...` routes below. FastAPI
-# matches in declaration order, so moving them down would let `/{project_id}/generate` and
-# `/{project_id}/optimize` swallow them with project_id="cover"/"description".
+# This literal path must stay above the `/{project_id}/...` routes below. FastAPI matches
+# in declaration order, so moving it down would let `/{project_id}/generate` swallow it
+# with project_id="cover".
 @router.post("/cover/generate")
 async def generate_cover(body: GenerateCoverRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     """Draw a cover and hand the bytes back as a data URL, without touching any project.
 
     Synchronous like the character portrait it mirrors: it is one image, and the dialog the
     user is looking at is the only thing waiting on it.
+
+    Driven by the user's own description of the picture. It used to be drawn from the title
+    and synopsis, which meant the only way to change the cover was to rewrite the story.
     """
-    if not (body.title.strip() or body.description.strip()):
-        raise HTTPException(400, "name the project or write a synopsis before generating a cover")
+    if not body.prompt.strip():
+        raise HTTPException(400, "describe the cover before generating it")
     with db() as session:
         config = active_model_config(session, user_id, "image", "项目封面")
         require_model_balance(session, user_id, config)
@@ -298,7 +332,7 @@ async def generate_cover(body: GenerateCoverRequest, user_id: int = Depends(curr
         image = await models.generate_image(
             config["apiKey"],
             config["model"],
-            cover_prompt(body.title, body.description, body.style_prompt),
+            cover_prompt(body.prompt, body.title, body.style_prompt),
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
         )
@@ -310,32 +344,6 @@ async def generate_cover(body: GenerateCoverRequest, user_id: int = Depends(curr
     media_type = "image/jpeg" if extension in {"jpg", "jpeg"} else f"image/{extension}"
     encoded = base64.b64encode(image.data).decode("ascii")
     return {"imageData": f"data:{media_type};base64,{encoded}"}
-
-
-@router.post("/description/optimize")
-async def optimize_description(
-    body: OptimizeDescriptionRequest,
-    user_id: int = Depends(current_user_id),
-) -> dict[str, Any]:
-    """Polish a synopsis and return it. Never saved — the user confirms the rewrite first."""
-    with db() as session:
-        config = active_model_config(session, user_id, "script", "项目简介优化")
-        require_model_balance(session, user_id, config)
-    started_at = time.monotonic()
-    try:
-        result = await models.complete_text(
-            config["provider"],
-            config["apiKey"],
-            body.model or config["model"],
-            SYNOPSIS_SYSTEM,
-            synopsis_prompt(body.title, body.description),
-            config.get("baseUrl", ""),
-        )
-    except Exception as exc:
-        logger.warning("description optimize failed user=%s: %s", user_id, exc)
-        raise HTTPException(502, f"failed to optimize description: {str(exc)[:220]}") from exc
-    record_usage(user_id, config, "description_optimize", started_at, result.usage)
-    return {"description": result.text[:4000]}
 
 
 @router.put("/{project_id}/cover")
@@ -395,6 +403,82 @@ def list_jobs(project_id: str, user_id: int = Depends(current_user_id)) -> dict[
     with db() as session:
         jobs = list_project_jobs(session, user_id, project_id)
     return {"jobs": jobs}
+
+
+# What the UI needs to show a model picker and enforce its limits, per purpose. Resolution
+# is the same one generation uses, so what the panel displays is what a render will do.
+MODEL_PURPOSES = (("text", "script"), ("image", "image"), ("video", "video"), ("audio", "audio"))
+# The ratios and resolutions the image path accepts. Video carries its own declared
+# capabilities per config; images only vary by how many references the model takes.
+IMAGE_RESOLUTIONS = ("1K", "2K", "4K")
+IMAGE_RATIOS = ("auto", "1:1", "2:3", "3:2", "3:4", "4:3", "16:9", "9:16", "21:9", "9:21")
+
+
+def _model_summary(config: dict[str, Any] | None, purpose: str) -> dict[str, Any] | None:
+    """One resolved model, with its limits and without its credentials."""
+    if config is None:
+        return None
+    summary: dict[str, Any] = {
+        "provider": config["provider"],
+        "model": config["model"],
+        "source": config.get("source", ""),
+        "configId": config.get("configId") or config.get("officialConfigId"),
+        "isProjectPick": bool(config.get("isProjectPick")),
+    }
+    if purpose == "image":
+        summary["capabilities"] = {
+            "maxReferenceImages": config.get("imageMaxReferenceImages", 4),
+            "resolutions": list(IMAGE_RESOLUTIONS),
+            "ratios": list(IMAGE_RATIOS),
+        }
+    elif purpose == "video":
+        summary["capabilities"] = config.get("videoCapabilities")
+    return summary
+
+
+@router.get("/{project_id}/models")
+def project_models(project_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """The four models this series will actually use, and what each one accepts.
+
+    Resolved rather than merely echoed back: a project that has pinned nothing still needs
+    the panel to say which account default it is falling through to, and a pinned config
+    that was since deleted needs to show the fallback rather than a dangling id.
+
+    A purpose with nothing configured anywhere resolves to `null` instead of raising — the
+    panel exists partly to tell the user that, and a 400 would leave it blank instead.
+    """
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        resolved: dict[str, Any] = {}
+        for key, purpose in MODEL_PURPOSES:
+            try:
+                config = project_model_config(session, user_id, project, purpose, "项目模型配置")
+            except HTTPException:
+                config = None
+            resolved[key] = _model_summary(config, purpose)
+        settings = _serialized(session, project)["modelSettings"]
+    return {"models": resolved, "modelSettings": settings}
+
+
+@router.post("/{project_id}/cancel")
+async def cancel_project_run(project_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Ask whatever this project is rendering to stop after the shot in flight.
+
+    Cooperative rather than an interrupt: the run polls the flag between shots, so work the
+    provider has already been paid for is kept and the run still reports a terminal status.
+    See `app/core/runs.py`.
+
+    Releasing the busy lock is left to the run itself. Clearing it here would let a second
+    render start while the first is still unwinding, and both would write the same rows.
+    """
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        status = project.status or "idle"
+    requested = runs.cancel(project_id)
+    if not requested and status in IDLE_STATUSES:
+        # Nothing to stop. Not an error: the user clicked 停止 on a run that just finished.
+        return {"projectId": project_id, "canceled": False, "status": status}
+    return {"projectId": project_id, "canceled": requested, "status": status}
 
 
 @router.patch("/{project_id}/scenes/reorder")
@@ -758,7 +842,7 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         pending = _selected_scenes(scenes, body.scene_ids)
         if not pending:
             raise HTTPException(400, "every scene in this episode is locked, unlock one to regenerate")
-        config = active_model_config(session, user_id, "image", "分镜图片生成")
+        config = project_model_config(session, user_id, project, "image", "分镜图片生成")
         require_model_balance(session, user_id, config)
         # The lock stays on the project: one run owns the series, so a second episode
         # cannot start rendering into the same worker pool while this one is going.
@@ -770,7 +854,10 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         project_id,
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
     )
-    asyncio.create_task(run_generation(project_id, scene_payloads, config, user_id, episode_id=episode_id))
+    cancellation = runs.register(project_id)
+    asyncio.create_task(
+        run_generation(project_id, scene_payloads, config, user_id, episode_id=episode_id, cancellation=cancellation)
+    )
     return {
         "projectId": project_id,
         "episodeId": episode_id,
@@ -789,14 +876,25 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         scenes = episode_scenes(session, episode.id)
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
-        config = active_model_config(session, user_id, "video", "视频生成")
+        config = project_model_config(session, user_id, project, "video", "视频生成")
         require_model_balance(session, user_id, config)
         model = (body.model or config["model"]).strip()
         if model != config["model"]:
             raise HTTPException(400, "selected video model is not the active video configuration")
         try:
+            # The project's saved defaults sit under whatever the request sent, so a batch
+            # started from the episode editor renders at the settings the model panel shows
+            # without the client having to repeat them on every call.
             quality, aspect_ratio, fps, duration, prompt_extend = resolve_video_options(
-                body.model_dump(by_alias=True, exclude_none=True), config["videoCapabilities"]
+                {
+                    "quality": project.video_quality,
+                    "aspectRatio": project.video_aspect_ratio,
+                    "fps": project.video_fps,
+                    "duration": project.video_duration,
+                    "promptExtend": project.video_prompt_extend,
+                    **body.model_dump(by_alias=True, exclude_none=True),
+                },
+                config["videoCapabilities"],
             )
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, str(exc)[:220]) from exc
@@ -833,6 +931,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             "data": {"status": "video_generating", "videoStatus": "generating", "videoModel": model},
         },
     )
+    cancellation = runs.register(project_id)
     asyncio.create_task(
         run_video_generation(
             project_id,
@@ -848,6 +947,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
                 "promptExtend": prompt_extend,
                 "voiceSheetPath": voice_sheet_path,
             },
+            cancellation=cancellation,
         )
     )
     return {

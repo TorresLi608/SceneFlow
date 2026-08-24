@@ -193,7 +193,7 @@ def test_cover_generation_returns_bytes_without_touching_any_project() -> None:
 
             response = client.post(
                 "/api/projects/cover/generate",
-                json={"title": "雨伞", "description": "两个陌生人共用一把伞"},
+                json={"prompt": "雨夜街头，两个陌生人共用一把伞", "title": "雨伞"},
                 headers=headers,
             )
 
@@ -203,43 +203,46 @@ def test_cover_generation_returns_bytes_without_touching_any_project() -> None:
             assert client.get("/api/projects", headers=headers).json()["projects"] == before
 
 
-def test_cover_generation_needs_something_to_draw_from() -> None:
+def test_cover_generation_needs_a_prompt_not_just_a_title() -> None:
+    """The picture is described by the prompt, so a title alone is not something to draw.
+
+    Deliberately stricter than before: the cover used to be derived from the title and
+    synopsis, which meant the only way to change it was to rewrite the story.
+    """
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers):
-            response = client.post("/api/projects/cover/generate", json={}, headers=headers)
+            assert client.post("/api/projects/cover/generate", json={}, headers=headers).status_code == 400
 
-            assert response.status_code == 400, response.text
-
-
-def test_synopsis_polish_is_returned_for_review_and_never_written_behind_the_user() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        with _app(directory) as (client, headers):
-            project = _create_project(client, headers, description="原始简介")
-
-            response = client.post(
-                "/api/projects/description/optimize",
-                json={"title": "雨伞", "description": "原始简介"},
+            titled = client.post(
+                "/api/projects/cover/generate",
+                json={"title": "雨伞"},
                 headers=headers,
             )
+            assert titled.status_code == 400, titled.text
 
-            assert response.status_code == 200, response.text
-            assert response.json()["description"] != "原始简介"
-            # The stored project is untouched until the user applies the rewrite.
+
+def test_cover_prompt_round_trips_through_create_patch_and_list() -> None:
+    """The prompt is stored, so reopening a project shows what drew its cover."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            created = client.post(
+                "/api/projects",
+                json={"title": "雨伞", "coverPrompt": "雨夜街头"},
+                headers=headers,
+            )
+            assert created.status_code == 201, created.text
+            assert created.json()["project"]["coverPrompt"] == "雨夜街头"
+
+            patched = client.patch(
+                f"/api/projects/{created.json()['project']['id']}",
+                json={"coverPrompt": "天台黄昏"},
+                headers=headers,
+            )
+            assert patched.status_code == 200, patched.text
+            assert patched.json()["project"]["coverPrompt"] == "天台黄昏"
+
             listed = client.get("/api/projects", headers=headers).json()["projects"][0]
-            assert listed["id"] == project["id"]
-            assert listed["description"] == "原始简介"
-
-
-def test_synopsis_polish_refuses_an_empty_input() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        with _app(directory) as (client, headers):
-            response = client.post(
-                "/api/projects/description/optimize",
-                json={"description": ""},
-                headers=headers,
-            )
-
-            assert response.status_code == 422, response.text
+            assert listed["coverPrompt"] == "天台黄昏"
 
 
 if __name__ == "__main__":
@@ -249,7 +252,6 @@ if __name__ == "__main__":
     test_a_cover_that_is_not_an_image_data_url_is_refused()
     test_clearing_the_cover_returns_the_project_to_the_fallback()
     test_cover_generation_returns_bytes_without_touching_any_project()
-    test_cover_generation_needs_something_to_draw_from()
-    test_synopsis_polish_is_returned_for_review_and_never_written_behind_the_user()
-    test_synopsis_polish_refuses_an_empty_input()
+    test_cover_generation_needs_a_prompt_not_just_a_title()
+    test_cover_prompt_round_trips_through_create_patch_and_list()
     print("test_project_cover ok")

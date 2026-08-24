@@ -44,6 +44,7 @@ from app.services.reference_service import (
     draft_prompt,
     draw_reference,
     image_config,
+    image_options,
     script_config,
     store_sheet,
 )
@@ -168,7 +169,6 @@ def add_state(
             name=body.name,
             description=body.description,
             appearance_prompt=body.appearance_prompt,
-            system_prompt=body.system_prompt,
             final_prompt=body.final_prompt,
             voice_model=body.voice_model,
             order_num=body.order_num,
@@ -239,7 +239,7 @@ async def draft_state_prompt(
     anything, so writing it here would make the preview step decorative.
     """
     with db() as session:
-        owned_project(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         character = owned_character(session, project_id, character_id)
         state = owned_state(session, character_id, state_id)
         # The dialog's unsaved edits win over the stored row; falling back keeps a plain
@@ -250,11 +250,13 @@ async def draft_state_prompt(
             character.appearance_prompt,
             body.name or state.name,
             body.description or state.description,
+            body.preset,
         )
-        system = body.system_prompt or state.system_prompt or CHARACTER_SHEET_SYSTEM
-        config = script_config(session, user_id, "角色状态提示词")
+        config = script_config(session, user_id, "角色状态提示词", project)
 
-    prompt = await draft_prompt(config, user_id, system, user_text, body.model, "character_state_prompt")
+    prompt = await draft_prompt(
+        config, user_id, CHARACTER_SHEET_SYSTEM, user_text, body.model, "character_state_prompt"
+    )
     return {"stateId": state_id, "prompt": prompt}
 
 
@@ -268,7 +270,7 @@ async def generate_state_image(
 ) -> dict[str, Any]:
     """Draw the state's turnaround sheet from the approved prompt."""
     with db() as session:
-        owned_project(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         character = owned_character(session, project_id, character_id)
         if character.is_locked:
             raise HTTPException(409, "character is locked, unlock it before regenerating its images")
@@ -278,9 +280,10 @@ async def generate_state_image(
             state.name,
             state.appearance_prompt or state.description or character.appearance_prompt or character.description,
         )
-        config = image_config(session, user_id, "角色三面图")
+        config = image_config(session, user_id, "角色三面图", project)
+        size, quality = image_options(project)
 
-    data, extension = await draw_reference(config, user_id, prompt, "character_state_image")
+    data, extension = await draw_reference(config, user_id, prompt, "character_state_image", size, quality)
     stored = store_artifact("characters", project_id, f"{state_id}.{extension}", data)
 
     with db() as session:

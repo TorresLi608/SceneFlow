@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, Loader2, Sparkles, Upload } from "lucide-react";
+import { ImagePlus, Loader2, Sparkles, Square, Upload } from "lucide-react";
 import Image from "next/image";
 import { useRef } from "react";
 
@@ -17,8 +17,13 @@ export interface ReferenceImageProps {
   uploadLabel: string;
   busy?: boolean;
   generating?: boolean;
+  /** Blocks starting a draw without blocking the stop button that replaces it. */
+  generateDisabled?: boolean;
+  generateTitle?: string;
   className?: string;
   onGenerate: () => void;
+  /** Supplied turns the draw button into a stop button while a draw is in flight. */
+  onStop?: () => void;
   onUpload: (dataUrl: string) => void;
   onError: (message: string) => void;
 }
@@ -34,8 +39,11 @@ export function ReferenceImage({
   uploadLabel,
   busy = false,
   generating = false,
+  generateDisabled = false,
+  generateTitle,
   className,
   onGenerate,
+  onStop,
   onUpload,
   onError,
 }: ReferenceImageProps) {
@@ -57,6 +65,10 @@ export function ReferenceImage({
     }
     onUpload(result.dataUrl);
   };
+
+  // Only offer to stop when the caller can actually stop it; otherwise the button keeps
+  // its old spinner-and-disabled behaviour rather than pretending to be interruptible.
+  const stoppable = generating && Boolean(onStop);
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -81,9 +93,23 @@ export function ReferenceImage({
             event.target.value = "";
           }}
         />
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onGenerate}>
-          {generating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
-          {generating ? generatingLabel : generateLabel}
+        <Button
+          type="button"
+          variant={stoppable ? "destructive" : "outline"}
+          size="sm"
+          disabled={stoppable ? false : busy || generateDisabled}
+          title={generateTitle}
+          onClick={stoppable ? onStop : onGenerate}
+          className={cn(stoppable && "animate-pulse font-medium")}
+        >
+          {stoppable ? (
+            <Square data-icon="inline-start" className="size-3 fill-current" />
+          ) : generating ? (
+            <Loader2 data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <Sparkles data-icon="inline-start" />
+          )}
+          {stoppable ? t("common.stopGeneration") : generating ? generatingLabel : generateLabel}
         </Button>
         <Button
           type="button"

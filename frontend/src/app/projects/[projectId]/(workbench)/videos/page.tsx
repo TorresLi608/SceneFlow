@@ -46,9 +46,11 @@ export default function VideosPage() {
   const episodes = episodesQuery.data?.episodes ?? [];
 
   // One request per episode: the list endpoint carries summaries, and the clips live on the
-  // shots inside each episode.
+  // shots inside each episode. The episode ids are part of the key, not just the closure —
+  // without them adding or deleting an episode left this list showing the old clips.
+  const episodeIds = episodes.map((episode) => episode.id).join(",");
   const episodeDetails = useQuery({
-    queryKey: [...queryKeys.episodes(projectId), "clips"],
+    queryKey: [...queryKeys.episodes(projectId), "clips", episodeIds],
     enabled: episodes.length > 0,
     queryFn: async () => {
       const details = await Promise.all(

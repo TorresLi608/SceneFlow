@@ -1533,6 +1533,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/prompts/presets:
+    get:
+      tags:
+      - prompts
+      summary: List Prompt Presets
+      description: 'Starting points for a prompt field, so a blank box is never the only option.
+
+
+        Public within the app and free of model calls — these are static templates, and gating
+
+        them behind a balance check would make an empty form unusable for a user out of credit.'
+      operationId: list_prompt_presets_api_prompts_presets_get
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+          default: character
+          title: Kind
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Prompt Presets Api Prompts Presets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/prompts/optimize:
     post:
       tags:
@@ -1766,7 +1801,12 @@ paths:
 
         Synchronous like the character portrait it mirrors: it is one image, and the dialog the
 
-        user is looking at is the only thing waiting on it.'
+        user is looking at is the only thing waiting on it.
+
+
+        Driven by the user''s own description of the picture. It used to be drawn from the title
+
+        and synopsis, which meant the only way to change the cover was to rewrite the story.'
       operationId: generate_cover_api_projects_cover_generate_post
       parameters:
       - name: authorization
@@ -1792,43 +1832,6 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Generate Cover Api Projects Cover Generate Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/projects/description/optimize:
-    post:
-      tags:
-      - projects
-      summary: Optimize Description
-      description: Polish a synopsis and return it. Never saved — the user confirms the rewrite first.
-      operationId: optimize_description_api_projects_description_optimize_post
-      parameters:
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OptimizeDescriptionRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Optimize Description Api Projects Description Optimize Post
         '422':
           description: Validation Error
           content:
@@ -1944,6 +1947,104 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response List Jobs Api Projects  Project Id  Jobs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/models:
+    get:
+      tags:
+      - projects
+      summary: Project Models
+      description: 'The four models this series will actually use, and what each one accepts.
+
+
+        Resolved rather than merely echoed back: a project that has pinned nothing still needs
+
+        the panel to say which account default it is falling through to, and a pinned config
+
+        that was since deleted needs to show the fallback rather than a dangling id.
+
+
+        A purpose with nothing configured anywhere resolves to `null` instead of raising — the
+
+        panel exists partly to tell the user that, and a 400 would leave it blank instead.'
+      operationId: project_models_api_projects__project_id__models_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Project Models Api Projects  Project Id  Models Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/cancel:
+    post:
+      tags:
+      - projects
+      summary: Cancel Project Run
+      description: 'Ask whatever this project is rendering to stop after the shot in flight.
+
+
+        Cooperative rather than an interrupt: the run polls the flag between shots, so work the
+
+        provider has already been paid for is kept and the run still reports a terminal status.
+
+        See `app/core/runs.py`.
+
+
+        Releasing the busy lock is left to the run itself. Clearing it here would let a second
+
+        render start while the first is still unwinding, and both would write the same rows.'
+      operationId: cancel_project_run_api_projects__project_id__cancel_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Cancel Project Run Api Projects  Project Id  Cancel Post
         '422':
           description: Validation Error
           content:
@@ -2486,12 +2587,133 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}/breakdown:
+    post:
+      tags:
+      - episodes
+      summary: Breakdown Episode
+      description: 'Split this episode''s script into shots, motion directions, or both.
+
+
+        Re-splitting is destructive: the old flow silently deleted every generated image. When
+
+        there is something to lose, the first call reports what it would discard and the client
+
+        repeats with `replaceAll` once the user has agreed. `target: "video"` never triggers
+
+        this, because it updates the existing rows rather than replacing them.'
+      operationId: breakdown_episode_api_projects__project_id__episodes__episode_id__breakdown_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BreakdownEpisodeRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Breakdown Episode Api Projects  Project Id  Episodes  Episode Id  Breakdown
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}/tone-sheet:
+    post:
+      tags:
+      - episodes
+      summary: Generate Tone Sheet
+      description: 'Anchor this episode''s look, without rendering any shots against it yet.
+
+
+        Its own step because the anchor decides lighting, palette, and render style for every
+
+        frame that follows: approving it first is much cheaper than discovering after twenty
+
+        full-resolution renders that the episode looks wrong.'
+      operationId: generate_tone_sheet_api_projects__project_id__episodes__episode_id__tone_sheet_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateToneSheetRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Tone Sheet Api Projects  Project Id  Episodes  Episode Id  Tone
+                  Sheet Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/projects/{project_id}/episodes/{episode_id}/storyboard:
     post:
       tags:
       - episodes
       summary: Generate Storyboard
-      description: 'Render this episode: one tone sheet to anchor the look, then a frame per shot.'
+      description: 'Render this episode''s shots against the tone sheet that anchors them.
+
+
+        The anchor is generated here when it does not exist yet, so a caller that skipped the
+
+        explicit step still gets an anchored render rather than twenty unrelated frames.'
       operationId: generate_storyboard_api_projects__project_id__episodes__episode_id__storyboard_post
       parameters:
       - name: project_id
@@ -3565,6 +3787,109 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/voices/design:
+    post:
+      tags:
+      - voices
+      summary: Design Project Voice
+      description: 'Design a timbre from a description and bind it to this series in one step.
+
+
+        The provider and model come from the project''s audio configuration rather than the
+
+        request. The old form asked the user to type them, which is how a series ended up with
+
+        profiles naming a model no synthesiser here could actually voice.
+
+
+        The designed voice is also saved to the account''s library, because a timbre that took a
+
+        paid request to produce should be reusable in the next series without paying again.'
+      operationId: design_project_voice_api_projects__project_id__voices_design_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DesignVoiceProfileRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Design Project Voice Api Projects  Project Id  Voices Design Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/voices/import:
+    post:
+      tags:
+      - voices
+      summary: Import Project Voice
+      description: 'Bind a timbre already in the account''s library to this series.
+
+
+        Copies the audition rather than referencing the library row: a series'' voice sheet must
+
+        keep working after the user tidies up their library, and the clip is small.'
+      operationId: import_project_voice_api_projects__project_id__voices_import_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportVoiceProfileRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Project Voice Api Projects  Project Id  Voices Import Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/projects/{project_id}/voices/{voice_id}:
     patch:
       tags:
@@ -4070,6 +4395,88 @@ paths:
                 title: Response Healthz Healthz Get
 components:
   schemas:
+    BreakdownEpisodeRequest:
+      properties:
+        target:
+          type: string
+          enum:
+          - shots
+          - video
+          - both
+          title: Target
+          default: both
+        script:
+          anyOf:
+          - type: string
+            maxLength: 200000
+          - type: 'null'
+          title: Script
+        references:
+          $ref: '#/components/schemas/BreakdownReferencesRequest'
+        replaceAll:
+          type: boolean
+          title: Replaceall
+          default: false
+        model:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Model
+      additionalProperties: false
+      type: object
+      title: BreakdownEpisodeRequest
+      description: 'Split a script into shots, motion directions, or both.
+
+
+        `target` exists because the two halves have different lifetimes: re-deriving the motion
+
+        for shots whose frames are already rendered must not throw those frames away, so
+
+        `video` updates the existing rows in place instead of replacing them.'
+    BreakdownReferencesRequest:
+      properties:
+        characterIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          title: Characterids
+        propIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          title: Propids
+        voiceProfileIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          title: Voiceprofileids
+        useCastSheet:
+          type: boolean
+          title: Usecastsheet
+          default: false
+        usePropSheet:
+          type: boolean
+          title: Usepropsheet
+          default: false
+        useVoiceSheet:
+          type: boolean
+          title: Usevoicesheet
+          default: false
+      additionalProperties: false
+      type: object
+      title: BreakdownReferencesRequest
+      description: 'What the breakdown may look at when it splits the script.
+
+
+        Selecting nothing is a valid, meaningful choice: it tells the model to decide
+
+        everything from the script alone. Selecting a character with a turnaround sheet is what
+
+        turns "a woman in a red coat" into "参照《林小满》三面图" in the generated prompt.'
     CreateCharacterRequest:
       properties:
         name:
@@ -4129,11 +4536,6 @@ components:
           type: string
           maxLength: 4000
           title: Appearanceprompt
-          default: ''
-        systemPrompt:
-          type: string
-          maxLength: 4000
-          title: Systemprompt
           default: ''
         finalPrompt:
           type: string
@@ -4236,6 +4638,11 @@ components:
           maxLength: 4000
           title: Description
           default: ''
+        coverPrompt:
+          type: string
+          maxLength: 4000
+          title: Coverprompt
+          default: ''
         originalScript:
           type: string
           maxLength: 200000
@@ -4258,10 +4665,10 @@ components:
           maxLength: 4000
           title: Description
           default: ''
-        systemPrompt:
+        ownerCharacterId:
           type: string
-          maxLength: 4000
-          title: Systemprompt
+          maxLength: 64
+          title: Ownercharacterid
           default: ''
         finalPrompt:
           type: string
@@ -4317,6 +4724,18 @@ components:
             maxLength: 80
           - type: 'null'
           title: Cameramove
+        transition:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Transition
+        videoPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Videoprompt
         durationMs:
           anyOf:
           - type: integer
@@ -4383,6 +4802,48 @@ components:
       - name
       title: CreateVoiceProfileRequest
       description: One voice in the show. Provider and model only — credentials stay on the account.
+    DesignVoiceProfileRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        voicePrompt:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Voiceprompt
+        previewText:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Previewtext
+        note:
+          type: string
+          maxLength: 4000
+          title: Note
+          default: ''
+        sampleText:
+          type: string
+          maxLength: 1000
+          title: Sampletext
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - voicePrompt
+      - previewText
+      title: DesignVoiceProfileRequest
+      description: 'Design a new timbre and bind it to this series in one step.
+
+
+        The provider and model come from the project''s audio configuration rather than the
+
+        request: they are an account credential detail, and typing them by hand was how the
+
+        old form let a user create a profile no synthesiser could actually voice.'
     DraftPromptRequest:
       properties:
         name:
@@ -4395,10 +4856,10 @@ components:
           maxLength: 4000
           title: Description
           default: ''
-        systemPrompt:
+        preset:
           type: string
-          maxLength: 4000
-          title: Systemprompt
+          maxLength: 40
+          title: Preset
           default: ''
         model:
           anyOf:
@@ -4414,18 +4875,22 @@ components:
 
         The fields are taken from the request rather than the stored row so the dialog can draft
 
-        against edits the user has not saved yet. `systemPrompt` overrides the built-in template.'
+        against edits the user has not saved yet. The instruction template is the built-in one
+
+        in `prompt_service` and is not overridable — a second editable prompt field next to the
+
+        one that actually draws only ever confused people about which was which.'
     GenerateCoverRequest:
       properties:
+        prompt:
+          type: string
+          maxLength: 4000
+          title: Prompt
+          default: ''
         title:
           type: string
           maxLength: 80
           title: Title
-          default: ''
-        description:
-          type: string
-          maxLength: 4000
-          title: Description
           default: ''
         stylePrompt:
           type: string
@@ -4435,14 +4900,21 @@ components:
       additionalProperties: false
       type: object
       title: GenerateCoverRequest
-      description: 'Draw a cover from details the caller is holding, not from a stored project.
+      description: 'Draw a cover from a prompt the caller is holding, not from a stored project.
 
 
         Project-less on purpose: the create dialog needs this before a project row exists, and
 
         an edit dialog holds unsaved edits the stored row would not reflect. Nothing is written
 
-        — the caller previews the result and applies it with `PUT /{id}/cover`.'
+        — the caller previews the result and applies it with `PUT /{id}/cover`.
+
+
+        `prompt` is the subject; title and style are context the model may lean on. It used to
+
+        be the other way round, and a cover drawn from the synopsis illustrated the plot rather
+
+        than being a poster.'
     GenerateProjectRequest:
       properties:
         model:
@@ -4516,6 +4988,33 @@ components:
         the previous episode''s tone sheet arrive as one image; separate, they arrive as several
 
         and cost more. `previousEpisodeId` carries continuity across an episode boundary.'
+    GenerateToneSheetRequest:
+      properties:
+        previousEpisodeId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Previousepisodeid
+        mergeReferences:
+          type: boolean
+          title: Mergereferences
+          default: true
+        regenerate:
+          type: boolean
+          title: Regenerate
+          default: false
+      additionalProperties: false
+      type: object
+      title: GenerateToneSheetRequest
+      description: 'Anchor this episode''s look, as a step of its own.
+
+
+        Split out of the storyboard run so the user can approve the anchor before paying for a
+
+        full-resolution frame per shot — an episode rendered against a tone sheet nobody looked
+
+        at is an episode that has to be rendered twice.'
     GenerateVideoRequest:
       properties:
         model:
@@ -4581,30 +5080,34 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
-    OptimizeDescriptionRequest:
+    ImportVoiceProfileRequest:
       properties:
-        title:
+        userVoiceId:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Uservoiceid
+        name:
           type: string
           maxLength: 80
-          title: Title
+          title: Name
           default: ''
-        description:
+        note:
           type: string
           maxLength: 4000
-          minLength: 1
-          title: Description
-        model:
-          anyOf:
-          - type: string
-            maxLength: 160
-          - type: 'null'
-          title: Model
+          title: Note
+          default: ''
+        sampleText:
+          type: string
+          maxLength: 1000
+          title: Sampletext
+          default: ''
       additionalProperties: false
       type: object
       required:
-      - description
-      title: OptimizeDescriptionRequest
-      description: Polish a synopsis. Project-less and side-effect free, for the same reason as above.
+      - userVoiceId
+      title: ImportVoiceProfileRequest
+      description: Bind a timbre already saved on the account to this series.
     OptimizeProjectRequest:
       properties:
         script:
@@ -4629,6 +5132,11 @@ components:
           enum:
           - image
           - video
+          - voice
+          - audio
+          - character
+          - prop
+          - cover
           title: Kind
         prompt:
           type: string
@@ -4759,6 +5267,116 @@ components:
         Range checks live here for the OpenAPI schema; `project_service.production_settings`
 
         stays the single place that resolves defaults and cross-field consistency.'
+    ProjectModelConfigRequest:
+      properties:
+        textConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Textconfigid
+        imageConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Imageconfigid
+        videoConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Videoconfigid
+        audioConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Audioconfigid
+        imageResolution:
+          anyOf:
+          - type: string
+            enum:
+            - 1K
+            - 2K
+            - 4K
+          - type: 'null'
+          title: Imageresolution
+        imageRatio:
+          anyOf:
+          - type: string
+            enum:
+            - auto
+            - '21:9'
+            - '16:9'
+            - '4:3'
+            - '3:2'
+            - '1:1'
+            - '2:3'
+            - '3:4'
+            - '9:16'
+            - '9:21'
+            - adaptive
+          - type: 'null'
+          title: Imageratio
+        videoQuality:
+          anyOf:
+          - type: string
+            enum:
+            - 480p
+            - 720p
+            - 1080p
+            - 2K
+            - 4K
+          - type: 'null'
+          title: Videoquality
+        videoAspectRatio:
+          anyOf:
+          - type: string
+            enum:
+            - auto
+            - '21:9'
+            - '16:9'
+            - '4:3'
+            - '3:2'
+            - '1:1'
+            - '2:3'
+            - '3:4'
+            - '9:16'
+            - '9:21'
+            - adaptive
+          - type: 'null'
+          title: Videoaspectratio
+        videoDuration:
+          anyOf:
+          - type: integer
+            maximum: 600.0
+            minimum: 1.0
+          - type: 'null'
+          title: Videoduration
+        videoFps:
+          anyOf:
+          - type: integer
+            maximum: 240.0
+            minimum: 1.0
+          - type: 'null'
+          title: Videofps
+        videoPromptExtend:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Videopromptextend
+      additionalProperties: false
+      type: object
+      title: ProjectModelConfigRequest
+      description: 'Which model this series uses for each kind of work, and the defaults it renders with.
+
+
+        Every field is optional so a PATCH carries only what changed. A config id of `0` clears
+
+        the pick and returns that purpose to the account default — `null` cannot mean "clear",
+
+        because in a PATCH it already means "leave alone".'
     PromptOptimizationContext:
       properties:
         outputLanguage:
@@ -4924,12 +5542,6 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Appearanceprompt
-        systemPrompt:
-          anyOf:
-          - type: string
-            maxLength: 4000
-          - type: 'null'
-          title: Systemprompt
         finalPrompt:
           anyOf:
           - type: string
@@ -5013,6 +5625,12 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Description
+        coverPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Coverprompt
         originalScript:
           anyOf:
           - type: string
@@ -5025,6 +5643,10 @@ components:
             maxLength: 200000
           - type: 'null'
           title: Seriesbible
+        modelSettings:
+          anyOf:
+          - $ref: '#/components/schemas/ProjectModelConfigRequest'
+          - type: 'null'
       additionalProperties: false
       type: object
       title: UpdateProjectRequest
@@ -5043,12 +5665,12 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Description
-        systemPrompt:
+        ownerCharacterId:
           anyOf:
           - type: string
-            maxLength: 4000
+            maxLength: 64
           - type: 'null'
-          title: Systemprompt
+          title: Ownercharacterid
         finalPrompt:
           anyOf:
           - type: string
@@ -5103,6 +5725,18 @@ components:
             maxLength: 80
           - type: 'null'
           title: Cameramove
+        transition:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Transition
+        videoPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Videoprompt
         durationMs:
           anyOf:
           - type: integer

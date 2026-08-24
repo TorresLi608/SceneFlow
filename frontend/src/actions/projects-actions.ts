@@ -1,5 +1,8 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
 import type {
+  BreakdownEpisodeInput,
+  BreakdownEpisodeResponse,
+  CancelProjectRunResponse,
   CastSheetResponse,
   CharacterItemResponse,
   CharacterListResponse,
@@ -9,6 +12,7 @@ import type {
   CreateEpisodeInput,
   CreatePropInput,
   CreateSceneInput,
+  DesignVoiceProfileInput,
   DraftPromptInput,
   DraftPromptResponse,
   EpisodeItemResponse,
@@ -22,8 +26,11 @@ import type {
   GenerateReferenceImageInput,
   GenerateStoryboardInput,
   GenerateStoryboardResponse,
+  GenerateToneSheetInput,
+  GenerateToneSheetResponse,
   GenerateVideoInput,
   GenerateVideoResponse,
+  ImportVoiceProfileInput,
   OptimizeProjectInput,
   OptimizeProjectResponse,
   ParseProjectInput,
@@ -33,12 +40,12 @@ import type {
   CreateVoiceProfileInput,
   ProjectItemResponse,
   ProjectListResponse,
+  ProjectModelsResponse,
+  PromptPresetListResponse,
   PropItemResponse,
   PropListResponse,
   PropSheetResponse,
   GenerationJobListResponse,
-  OptimizeDescriptionInput,
-  OptimizeDescriptionResponse,
   ReorderScenesInput,
   Scene,
   SetProjectCoverInput,
@@ -164,13 +171,25 @@ export async function generateCoverAction(payload: GenerateCoverInput, signal?: 
   return response.data;
 }
 
-/** Returns the polished synopsis without saving it — the caller confirms before writing back. */
-export async function optimizeDescriptionAction(payload: OptimizeDescriptionInput, signal?: AbortSignal) {
-  const response = await httpClient.post<OptimizeDescriptionResponse>(
-    "/api/bff/projects/description/optimize",
-    payload,
-    { timeout: generationRequestTimeout, signal }
-  );
+/** The four models this series will actually use, plus the limits the UI must enforce. */
+export async function getProjectModelsAction(projectID: string) {
+  const response = await httpClient.get<ProjectModelsResponse>(`/api/bff/projects/${projectID}/models`);
+  return response.data;
+}
+
+/** Built-in starting points for a prompt field, so a blank box is never the only option. */
+export async function listPromptPresetsAction(kind: "character" | "prop" | "cover") {
+  const response = await httpClient.get<PromptPresetListResponse>(`/api/bff/prompts/presets?kind=${kind}`);
+  return response.data;
+}
+
+/**
+ * Asks whatever this project is rendering to stop after the shot already in flight.
+ * Cooperative, so work the provider has been paid for is kept and the run still reports a
+ * terminal status.
+ */
+export async function cancelProjectRunAction(projectID: string) {
+  const response = await httpClient.post<CancelProjectRunResponse>(`/api/bff/projects/${projectID}/cancel`);
   return response.data;
 }
 
@@ -218,6 +237,40 @@ export async function generateStoryboardAction(
   const response = await httpClient.post<GenerateStoryboardResponse>(
     `/api/bff/projects/${projectID}/episodes/${episodeID}/storyboard`,
     payload
+  );
+  return response.data;
+}
+
+/**
+ * Anchors the episode's look without rendering shots against it, so the user can approve
+ * the anchor before paying for a full-resolution frame per shot.
+ */
+export async function generateToneSheetAction(
+  projectID: string,
+  episodeID: string,
+  payload: GenerateToneSheetInput
+) {
+  const response = await httpClient.post<GenerateToneSheetResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}/tone-sheet`,
+    payload
+  );
+  return response.data;
+}
+
+/**
+ * Splits the script into shots, motion directions, or both, leaning on whichever bible
+ * entries the caller selected. Slow enough to need the generation timeout and an abort.
+ */
+export async function breakdownEpisodeAction(
+  projectID: string,
+  episodeID: string,
+  payload: BreakdownEpisodeInput,
+  signal?: AbortSignal
+) {
+  const response = await httpClient.post<BreakdownEpisodeResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}/breakdown`,
+    payload,
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -291,12 +344,13 @@ export async function draftCharacterStatePromptAction(
   projectID: string,
   characterID: string,
   stateID: string,
-  payload: DraftPromptInput
+  payload: DraftPromptInput,
+  signal?: AbortSignal
 ) {
   const response = await httpClient.post<DraftPromptResponse>(
     `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/prompt`,
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -305,12 +359,13 @@ export async function generateCharacterStateImageAction(
   projectID: string,
   characterID: string,
   stateID: string,
-  payload: GenerateReferenceImageInput
+  payload: GenerateReferenceImageInput,
+  signal?: AbortSignal
 ) {
   const response = await httpClient.post<CharacterItemResponse>(
     `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -369,11 +424,16 @@ export async function deletePropAction(projectID: string, propID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/props/${propID}`);
 }
 
-export async function draftPropPromptAction(projectID: string, propID: string, payload: DraftPromptInput) {
+export async function draftPropPromptAction(
+  projectID: string,
+  propID: string,
+  payload: DraftPromptInput,
+  signal?: AbortSignal
+) {
   const response = await httpClient.post<DraftPromptResponse>(
     `/api/bff/projects/${projectID}/props/${propID}/prompt`,
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -381,12 +441,13 @@ export async function draftPropPromptAction(projectID: string, propID: string, p
 export async function generatePropImageAction(
   projectID: string,
   propID: string,
-  payload: GenerateReferenceImageInput
+  payload: GenerateReferenceImageInput,
+  signal?: AbortSignal
 ) {
   const response = await httpClient.post<PropItemResponse>(
     `/api/bff/projects/${projectID}/props/${propID}/image`,
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -444,6 +505,32 @@ export async function updateVoiceAction(projectID: string, voiceID: string, payl
 
 export async function deleteVoiceAction(projectID: string, voiceID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/voices/${voiceID}`);
+}
+
+/**
+ * Designs a timbre from a description and binds it to this series. Slow — the provider can
+ * take minutes — so it carries the generation timeout and an abort signal.
+ */
+export async function designVoiceProfileAction(
+  projectID: string,
+  payload: DesignVoiceProfileInput,
+  signal?: AbortSignal
+) {
+  const response = await httpClient.post<VoiceProfileItemResponse>(
+    `/api/bff/projects/${projectID}/voices/design`,
+    payload,
+    { timeout: generationRequestTimeout, signal }
+  );
+  return response.data;
+}
+
+/** Binds a timbre already saved on the account to this series. */
+export async function importVoiceProfileAction(projectID: string, payload: ImportVoiceProfileInput) {
+  const response = await httpClient.post<VoiceProfileItemResponse>(
+    `/api/bff/projects/${projectID}/voices/import`,
+    payload
+  );
+  return response.data;
 }
 
 /** Synthesises the profile's sample line so the user can hear it before binding it. */

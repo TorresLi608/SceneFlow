@@ -6,11 +6,12 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from app.core.security import decrypt, encrypt
 from app.llms.router import pick_model
-from app.models import ModelConfig, UserOfficialConfigDefault
+from app.models import ModelConfig, Project, UserOfficialConfigDefault
 
 
 VIDEO_QUALITIES = ("480p", "720p", "1080p", "2K", "4K")
@@ -487,3 +488,61 @@ def active_model_config(session: Session, user_id: int, purpose: str, stage: str
         .limit(1)
     ).first()
     return _model_config(config, purpose, stage, "official")
+
+
+# Which column on `projects` holds the pick for each kind of work. The keys are the
+# `purpose` values the rest of the codebase already speaks, so callers never translate.
+PROJECT_CONFIG_COLUMNS = {
+    "script": "text_config_id",
+    "image": "image_config_id",
+    "video": "video_config_id",
+    "audio": "audio_config_id",
+}
+
+
+def project_config_id(project: Project | None, purpose: str) -> int | None:
+    """The config this project pinned for `purpose`, or None when it follows the account."""
+    column = PROJECT_CONFIG_COLUMNS.get(purpose)
+    if not column or project is None:
+        return None
+    # 0 is how a client clears the pick — `null` in a PATCH means "leave alone", so the
+    # clear has to be a real value. Treat it the same as never having been set.
+    return getattr(project, column, None) or None
+
+
+def project_model_config(
+    session: Session,
+    user_id: int,
+    project: Project | None,
+    purpose: str,
+    stage: str,
+) -> dict[str, Any]:
+    """The model this project uses for `purpose`, falling back to the account's default.
+
+    Project-first rather than project-only: a series created before the model panel
+    existed has every pick unset, and demanding one before it can render would strand it.
+    A pick that no longer resolves — the config was deleted, disabled, or belongs to
+    someone else — falls back the same way, so losing a config degrades to the account
+    default instead of failing the render.
+    """
+    config_id = project_config_id(project, purpose)
+    if config_id:
+        config = session.exec(
+            select(ModelConfig).where(
+                ModelConfig.id == config_id,
+                ModelConfig.purpose == purpose,
+                ModelConfig.is_enabled.is_(True),
+                ModelConfig.deleted_at.is_(None),
+                or_(
+                    ModelConfig.source == "official",
+                    and_(ModelConfig.source == "user", ModelConfig.user_id == user_id),
+                ),
+            )
+        ).first()
+        if config:
+            resolved = _model_config(config, purpose, stage, config.source or "user")
+            resolved["isProjectPick"] = True
+            return resolved
+    resolved = active_model_config(session, user_id, purpose, stage)
+    resolved["isProjectPick"] = False
+    return resolved

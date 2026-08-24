@@ -316,7 +316,21 @@ def _signed_url(path: Path, filename: str, media_type: str, inline: bool) -> str
 
 
 def _sign(relative: str, filename: str, media_type: str, inline: bool) -> str:
-    issued = datetime.now(timezone.utc)
+    """Mint a signed link for one artifact.
+
+    `iat` is floored to the start of the UTC day rather than taken from the clock, which
+    makes the token — and therefore the URL — **stable for everyone who asks for the same
+    file on the same day**. That is not a cosmetic detail:
+
+    - `<img src>` only caches when the URL stops changing. A per-response token meant the
+      episode editor re-downloaded every storyboard frame on every three-second poll.
+    - A row keyed on its asset URL remounts whenever that URL changes, so shot rows were
+      being torn down and rebuilt on each poll, discarding whatever the user was typing.
+
+    Together those two read to a user as "it keeps generating over and over". The TTL is
+    unchanged in length; it now runs from the start of the day the link was minted.
+    """
+    issued = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     token = jwt.encode(
         {
             "scope": "artifact",

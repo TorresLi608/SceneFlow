@@ -16,8 +16,9 @@ from fastapi import HTTPException
 from sqlmodel import Session
 
 from app.llms.registry import models
+from app.models import Project
 from app.services.artifact_service import artifact_absolute_path, store_artifact
-from app.services.config_service import active_model_config
+from app.services.config_service import project_model_config
 from app.services.media_service import SheetCell, merge_images
 from app.services.usage_service import record_usage, require_model_balance
 
@@ -27,17 +28,27 @@ logger = logging.getLogger(__name__)
 IMAGE_PROVIDERS = {"openai", "gemini", "qwen"}
 
 
-def image_config(session: Session, user_id: int, purpose_label: str) -> dict[str, Any]:
-    """The account's active image configuration, refused early if it cannot draw."""
-    config = active_model_config(session, user_id, "image", purpose_label)
+def image_config(
+    session: Session,
+    user_id: int,
+    purpose_label: str,
+    project: Project | None = None,
+) -> dict[str, Any]:
+    """The image model this project draws with, refused early if it cannot draw."""
+    config = project_model_config(session, user_id, project, "image", purpose_label)
     require_model_balance(session, user_id, config)
     if config["provider"] not in IMAGE_PROVIDERS:
         raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")
     return config
 
 
-def script_config(session: Session, user_id: int, purpose_label: str) -> dict[str, Any]:
-    config = active_model_config(session, user_id, "script", purpose_label)
+def script_config(
+    session: Session,
+    user_id: int,
+    purpose_label: str,
+    project: Project | None = None,
+) -> dict[str, Any]:
+    config = project_model_config(session, user_id, project, "script", purpose_label)
     require_model_balance(session, user_id, config)
     return config
 
@@ -68,9 +79,27 @@ async def draft_prompt(
     return result.text[:4000]
 
 
-async def draw_reference(config: dict[str, Any], user_id: int, prompt: str, usage_kind: str) -> tuple[bytes, str]:
-    """Draw one reference image and hand back its bytes and file extension."""
+async def draw_reference(
+    config: dict[str, Any],
+    user_id: int,
+    prompt: str,
+    usage_kind: str,
+    size: str = "",
+    quality: str = "",
+) -> tuple[bytes, str]:
+    """Draw one reference image and hand back its bytes and file extension.
+
+    Size and quality come from the project's image defaults when it has them, and are
+    passed through as the ratio/resolution vocabulary the user picked — `ModelRouter`
+    already translates those per provider. They used to be omitted entirely, so a series
+    configured for 4K portraits still got the provider's default resolution for every sheet.
+    """
     started_at = time.monotonic()
+    options: dict[str, Any] = {}
+    if size:
+        options["size"] = size
+    if quality:
+        options["quality"] = quality
     try:
         image = await models.generate_image(
             config["apiKey"],
@@ -78,6 +107,7 @@ async def draw_reference(config: dict[str, Any], user_id: int, prompt: str, usag
             prompt,
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
+            **options,
         )
     except Exception as exc:
         logger.warning("%s image generation failed user=%s: %s", usage_kind, user_id, exc)
@@ -86,6 +116,13 @@ async def draw_reference(config: dict[str, Any], user_id: int, prompt: str, usag
     extension = (image.format or "png").strip().lower()
     extension = "jpg" if extension in {"jpg", "jpeg"} else extension if extension in {"png", "webp"} else "png"
     return image.data, extension
+
+
+def image_options(project: Project | None) -> tuple[str, str]:
+    """The (size, quality) a project's reference images are drawn at."""
+    if project is None:
+        return "", ""
+    return (project.image_ratio or "").strip(), (project.image_resolution or "").strip()
 
 
 def read_cells(entries: list[tuple[str | None, str]]) -> list[SheetCell]:

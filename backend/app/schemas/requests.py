@@ -27,6 +27,11 @@ class CamelModel(BaseModel):
 ProjectMode = Literal["comic", "drama"]
 AspectRatio = Literal["9:16", "16:9", "1:1"]
 ProjectStage = Literal["script", "bible", "storyboard", "audio", "timeline", "export"]
+ImageResolution = Literal["1K", "2K", "4K"]
+# Superset of every ratio the image and video providers accept; the selected model's
+# declared capabilities narrow it further at write time.
+GenerationRatio = Literal["auto", "21:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:21", "adaptive"]
+VideoQuality = Literal["480p", "720p", "1080p", "2K", "4K"]
 
 
 class ProductionSettingsRequest(CamelModel):
@@ -48,9 +53,31 @@ class ProductionSettingsRequest(CamelModel):
     current_stage: ProjectStage | None = None
 
 
+class ProjectModelConfigRequest(CamelModel):
+    """Which model this series uses for each kind of work, and the defaults it renders with.
+
+    Every field is optional so a PATCH carries only what changed. A config id of `0` clears
+    the pick and returns that purpose to the account default — `null` cannot mean "clear",
+    because in a PATCH it already means "leave alone".
+    """
+
+    text_config_id: int | None = Field(default=None, ge=0)
+    image_config_id: int | None = Field(default=None, ge=0)
+    video_config_id: int | None = Field(default=None, ge=0)
+    audio_config_id: int | None = Field(default=None, ge=0)
+    image_resolution: ImageResolution | None = None
+    image_ratio: GenerationRatio | None = None
+    video_quality: VideoQuality | None = None
+    video_aspect_ratio: GenerationRatio | None = None
+    video_duration: int | None = Field(default=None, ge=1, le=600)
+    video_fps: int | None = Field(default=None, ge=1, le=240)
+    video_prompt_extend: bool | None = None
+
+
 class CreateProjectRequest(CamelModel):
     title: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+    cover_prompt: str = Field(default="", max_length=4000)
     original_script: str = Field(default="", max_length=200_000)
     production_settings: ProductionSettingsRequest = Field(default_factory=ProductionSettingsRequest)
 
@@ -58,8 +85,10 @@ class CreateProjectRequest(CamelModel):
 class UpdateProjectRequest(CamelModel):
     title: str | None = Field(default=None, max_length=80)
     description: str | None = Field(default=None, max_length=4000)
+    cover_prompt: str | None = Field(default=None, max_length=4000)
     original_script: str | None = Field(default=None, max_length=200_000)
     series_bible: str | None = Field(default=None, max_length=200_000)
+    model_settings: ProjectModelConfigRequest | None = None
 
 
 class SetProjectCoverRequest(CamelModel):
@@ -70,24 +99,20 @@ class SetProjectCoverRequest(CamelModel):
 
 
 class GenerateCoverRequest(CamelModel):
-    """Draw a cover from details the caller is holding, not from a stored project.
+    """Draw a cover from a prompt the caller is holding, not from a stored project.
 
     Project-less on purpose: the create dialog needs this before a project row exists, and
     an edit dialog holds unsaved edits the stored row would not reflect. Nothing is written
     — the caller previews the result and applies it with `PUT /{id}/cover`.
+
+    `prompt` is the subject; title and style are context the model may lean on. It used to
+    be the other way round, and a cover drawn from the synopsis illustrated the plot rather
+    than being a poster.
     """
 
+    prompt: str = Field(default="", max_length=4000)
     title: str = Field(default="", max_length=80)
-    description: str = Field(default="", max_length=4000)
     style_prompt: str = Field(default="", max_length=4000)
-
-
-class OptimizeDescriptionRequest(CamelModel):
-    """Polish a synopsis. Project-less and side-effect free, for the same reason as above."""
-
-    title: str = Field(default="", max_length=80)
-    description: str = Field(min_length=1, max_length=4000)
-    model: str | None = Field(default=None, max_length=160)
 
 
 class PromptOptimizationContext(CamelModel):
@@ -98,8 +123,11 @@ class PromptOptimizationContext(CamelModel):
     fps: int | None = Field(default=None, ge=1, le=240)
 
 
+PromptKind = Literal["image", "video", "voice", "audio", "character", "prop", "cover"]
+
+
 class OptimizePromptRequest(CamelModel):
-    kind: Literal["image", "video", "voice", "audio"]
+    kind: PromptKind
     prompt: str = Field(min_length=1, max_length=10_000)
     context: PromptOptimizationContext = Field(default_factory=PromptOptimizationContext)
 
@@ -113,6 +141,20 @@ class CreateEpisodeRequest(CamelModel):
     title: str = Field(min_length=1, max_length=80)
     synopsis: str = Field(default="", max_length=4000)
     source_text: str = Field(default="", max_length=200_000)
+
+
+class GenerateToneSheetRequest(CamelModel):
+    """Anchor this episode's look, as a step of its own.
+
+    Split out of the storyboard run so the user can approve the anchor before paying for a
+    full-resolution frame per shot — an episode rendered against a tone sheet nobody looked
+    at is an episode that has to be rendered twice.
+    """
+
+    previous_episode_id: str | None = Field(default=None, max_length=64)
+    merge_references: bool = True
+    # Without this an existing tone sheet is reused rather than resampled.
+    regenerate: bool = False
 
 
 class GenerateStoryboardRequest(CamelModel):
@@ -131,6 +173,44 @@ class GenerateStoryboardRequest(CamelModel):
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
 
 
+BreakdownTarget = Literal["shots", "video", "both"]
+
+
+class BreakdownReferencesRequest(CamelModel):
+    """What the breakdown may look at when it splits the script.
+
+    Selecting nothing is a valid, meaningful choice: it tells the model to decide
+    everything from the script alone. Selecting a character with a turnaround sheet is what
+    turns "a woman in a red coat" into "参照《林小满》三面图" in the generated prompt.
+    """
+
+    character_ids: list[str] = Field(default_factory=list, max_length=64)
+    prop_ids: list[str] = Field(default_factory=list, max_length=64)
+    voice_profile_ids: list[str] = Field(default_factory=list, max_length=64)
+    # The merged sheets, when the user would rather point at the whole cast than name it
+    # member by member. Characters the bible has never heard of are inferred from the script.
+    use_cast_sheet: bool = False
+    use_prop_sheet: bool = False
+    use_voice_sheet: bool = False
+
+
+class BreakdownEpisodeRequest(CamelModel):
+    """Split a script into shots, motion directions, or both.
+
+    `target` exists because the two halves have different lifetimes: re-deriving the motion
+    for shots whose frames are already rendered must not throw those frames away, so
+    `video` updates the existing rows in place instead of replacing them.
+    """
+
+    target: BreakdownTarget = "both"
+    script: str | None = Field(default=None, max_length=200_000)
+    references: BreakdownReferencesRequest = Field(default_factory=BreakdownReferencesRequest)
+    # Re-splitting discards rendered shots, so the first call reports what it would destroy
+    # and the client repeats with this set once the user has agreed.
+    replace_all: bool = False
+    model: str | None = Field(default=None, max_length=160)
+
+
 class UpdateEpisodeRequest(CamelModel):
     title: str | None = Field(default=None, max_length=80)
     synopsis: str | None = Field(default=None, max_length=4000)
@@ -147,7 +227,10 @@ class UpdateSceneRequest(CamelModel):
     # their own ("过肩", "handheld push-in"). Length is the only thing worth enforcing.
     shot_type: str | None = Field(default=None, max_length=80)
     camera_move: str | None = Field(default=None, max_length=80)
-    # 0 hands the shot's length back to its voice track.
+    transition: str | None = Field(default=None, max_length=80)
+    # The motion prompt; `visual_prompt` stays the still.
+    video_prompt: str | None = Field(default=None, max_length=4000)
+    # 0 means undecided — the renderer falls back to the project's default shot length.
     duration_ms: int | None = Field(default=None, ge=0, le=600_000)
     subtitle_text: str | None = Field(default=None, max_length=4000)
     is_locked: bool | None = None
@@ -200,7 +283,6 @@ class CreateCharacterStateRequest(CamelModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=4000)
     appearance_prompt: str = Field(default="", max_length=4000)
-    system_prompt: str = Field(default="", max_length=4000)
     final_prompt: str = Field(default="", max_length=4000)
     voice_model: str = Field(default="", max_length=160)
     order_num: int = Field(default=0, ge=0, le=9999)
@@ -213,7 +295,6 @@ class UpdateCharacterStateRequest(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=4000)
     appearance_prompt: str | None = Field(default=None, max_length=4000)
-    system_prompt: str | None = Field(default=None, max_length=4000)
     final_prompt: str | None = Field(default=None, max_length=4000)
     voice_model: str | None = Field(default=None, max_length=160)
     order_num: int | None = Field(default=None, ge=0, le=9999)
@@ -225,12 +306,15 @@ class DraftPromptRequest(CamelModel):
     """Draft an image prompt for review.
 
     The fields are taken from the request rather than the stored row so the dialog can draft
-    against edits the user has not saved yet. `systemPrompt` overrides the built-in template.
+    against edits the user has not saved yet. The instruction template is the built-in one
+    in `prompt_service` and is not overridable — a second editable prompt field next to the
+    one that actually draws only ever confused people about which was which.
     """
 
     name: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
-    system_prompt: str = Field(default="", max_length=4000)
+    # Which built-in template to draft against, e.g. "turnaround". Empty picks the default.
+    preset: str = Field(default="", max_length=40)
     model: str | None = Field(default=None, max_length=160)
 
 
@@ -250,7 +334,8 @@ class UploadReferenceImageRequest(CamelModel):
 class CreatePropRequest(CamelModel):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=4000)
-    system_prompt: str = Field(default="", max_length=4000)
+    # Whose prop it is. Empty leaves it unattributed.
+    owner_character_id: str = Field(default="", max_length=64)
     final_prompt: str = Field(default="", max_length=4000)
     order_num: int = Field(default=0, ge=0, le=9999)
 
@@ -258,7 +343,8 @@ class CreatePropRequest(CamelModel):
 class UpdatePropRequest(CamelModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=4000)
-    system_prompt: str | None = Field(default=None, max_length=4000)
+    # "" unbinds; a JSON null would read as an absent field and keep the old owner.
+    owner_character_id: str | None = Field(default=None, max_length=64)
     final_prompt: str | None = Field(default=None, max_length=4000)
     order_num: int | None = Field(default=None, ge=0, le=9999)
 
@@ -283,6 +369,32 @@ class UpdateVoiceProfileRequest(CamelModel):
     voice_model: str | None = Field(default=None, max_length=160)
     sample_text: str | None = Field(default=None, max_length=1000)
     order_num: int | None = Field(default=None, ge=0, le=9999)
+
+
+class DesignVoiceProfileRequest(CamelModel):
+    """Design a new timbre and bind it to this series in one step.
+
+    The provider and model come from the project's audio configuration rather than the
+    request: they are an account credential detail, and typing them by hand was how the
+    old form let a user create a profile no synthesiser could actually voice.
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    voice_prompt: str = Field(min_length=1, max_length=1000)
+    # What the audition says. Distinct from `sample_text`, which is the line this voice
+    # contributes to the merged reference track.
+    preview_text: str = Field(min_length=1, max_length=1000)
+    note: str = Field(default="", max_length=4000)
+    sample_text: str = Field(default="", max_length=1000)
+
+
+class ImportVoiceProfileRequest(CamelModel):
+    """Bind a timbre already saved on the account to this series."""
+
+    user_voice_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(default="", max_length=80)
+    note: str = Field(default="", max_length=4000)
+    sample_text: str = Field(default="", max_length=1000)
 
 
 class CreateExportRequest(CamelModel):

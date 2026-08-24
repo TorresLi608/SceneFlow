@@ -755,7 +755,7 @@ export function VideoGenerationPanel({
                 <div className="space-y-2.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground text-[11px]">
-                      限制：最多 {capabilities.maxReferenceImages} 张图片 (10MB 内)
+                      {t("video.limitImages", { count: capabilities.maxReferenceImages })}
                     </span>
                     <Button
                       type="button"
@@ -858,7 +858,7 @@ export function VideoGenerationPanel({
                 <div className="space-y-2.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground text-[11px]">
-                      限制：最多 {capabilities.maxReferenceVideos} 个视频 (50MB 内)
+                      {t("video.limitVideos", { count: capabilities.maxReferenceVideos })}
                     </span>
                     <Button
                       type="button"
@@ -955,7 +955,7 @@ export function VideoGenerationPanel({
                 <div className="space-y-2.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground text-[11px]">
-                      限制：最多 {capabilities.maxReferenceAudios} 个音频 (50MB 内)
+                      {t("video.limitAudios", { count: capabilities.maxReferenceAudios })}
                     </span>
                     <Button
                       type="button"

@@ -1,17 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
-import {
-  createEpisodeAction,
-  deleteEpisodeAction,
-  listEpisodesAction,
-  updateEpisodeAction,
-} from "@/actions/projects-actions";
+import { createEpisodeAction, deleteEpisodeAction, listEpisodesAction } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,20 +24,23 @@ interface EpisodeFormValues {
   synopsis: string;
 }
 
-function EpisodeForm({
-  episode,
+/**
+ * Creating an episode asks for exactly two things. Editing them lives in the episode editor
+ * alongside the script they describe — a dialog out here could only ever show the title and
+ * synopsis in isolation, which is where they make the least sense.
+ */
+function NewEpisodeForm({
   pending,
   onSubmit,
   onClose,
 }: {
-  episode: EpisodeSummary | null;
   pending: boolean;
   onSubmit: (values: EpisodeFormValues) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const [title, setTitle] = useState(episode?.title ?? "");
-  const [synopsis, setSynopsis] = useState(episode?.synopsis ?? "");
+  const [title, setTitle] = useState("");
+  const [synopsis, setSynopsis] = useState("");
 
   return (
     <form
@@ -95,7 +93,6 @@ export default function EpisodesPage() {
   const { t, formatDateTime } = useI18n();
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<EpisodeSummary | null>(null);
   const [pendingDelete, setPendingDelete] = useState<EpisodeSummary | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -106,9 +103,8 @@ export default function EpisodesPage() {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.episodes(projectId) });
 
-  const saveMutation = useMutation({
-    mutationFn: (values: EpisodeFormValues) =>
-      editing ? updateEpisodeAction(projectId, editing.id, values) : createEpisodeAction(projectId, values),
+  const createMutation = useMutation({
+    mutationFn: (values: EpisodeFormValues) => createEpisodeAction(projectId, values),
     onSuccess: () => {
       setFormOpen(false);
       setMessage(null);
@@ -143,12 +139,7 @@ export default function EpisodesPage() {
           <h1 className="text-xl font-semibold tracking-tight">{t("episode.title")}</h1>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">{t("episode.subtitle")}</p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
+        <Button onClick={() => setFormOpen(true)}>
           <Plus data-icon="inline-start" />
           {t("episode.newEpisode")}
         </Button>
@@ -183,23 +174,9 @@ export default function EpisodesPage() {
                 <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(episode.updatedAt)}</p>
               </div>
               <div className="flex flex-wrap gap-1">
-                <Button
-                  size="sm"
-                  render={<Link href={`/projects/${projectId}/episode/${episode.id}`} />}
-                >
-                  {t("episode.open")}
-                  <ArrowRight data-icon="inline-end" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setEditing(episode);
-                    setFormOpen(true);
-                  }}
-                >
+                <Button size="sm" render={<Link href={`/projects/${projectId}/episode/${episode.id}`} />}>
                   <Pencil data-icon="inline-start" />
-                  {t("common.edit")}
+                  {t("episode.edit")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setPendingDelete(episode)}>
                   <Trash2 data-icon="inline-start" />
@@ -214,15 +191,14 @@ export default function EpisodesPage() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? t("episode.editEpisode") : t("episode.newEpisode")}</DialogTitle>
+            <DialogTitle>{t("episode.newEpisode")}</DialogTitle>
             <DialogDescription>{t("episode.subtitle")}</DialogDescription>
           </DialogHeader>
+          {/* Mounted only while open, so a cancelled draft does not survive into the next one. */}
           {formOpen ? (
-            <EpisodeForm
-              key={editing?.id ?? "new"}
-              episode={editing}
-              pending={saveMutation.isPending}
-              onSubmit={(values) => saveMutation.mutate(values)}
+            <NewEpisodeForm
+              pending={createMutation.isPending}
+              onSubmit={(values) => createMutation.mutate(values)}
               onClose={() => setFormOpen(false)}
             />
           ) : null}

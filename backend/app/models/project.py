@@ -52,6 +52,35 @@ class Project(SQLModel, table=True):
     # Every voice in the show introducing itself in its own timbre, concatenated into one
     # track. Passed to the video model as a reference so it can keep speakers apart.
     voice_sheet_path: str | None = None
+    # What the user wants the cover to show, in their own words. The cover used to be drawn
+    # from title + synopsis, which describes the story rather than the picture — a series
+    # about a betrayal got a picture of a betrayal, never the poster the user had in mind.
+    cover_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # The model configuration this series uses for each kind of work. Resolution is
+    # project-first: an unset column falls back to the account's active config, so existing
+    # projects keep working and a user who never opens the model panel notices nothing.
+    #
+    # Deliberately not foreign keys, for the same reason as `characters.voice_profile_id`:
+    # SQLite cannot add a constrained column in place, and a batch recreate of this table
+    # reflects into the shared SQLModel metadata and reorders columns unpredictably. A
+    # deleted config simply stops resolving and the fallback takes over.
+    text_config_id: int | None = None
+    image_config_id: int | None = None
+    video_config_id: int | None = None
+    audio_config_id: int | None = None
+    # Generation defaults carried into every render this series starts. They live here
+    # rather than being re-picked per run so a storyboard and the clips made from it agree,
+    # and so the episode editor can prefill without asking the same six questions each time.
+    # Validated against the selected model's declared capabilities on write.
+    image_resolution: str = Field(default="2K", sa_column_kwargs={"server_default": text("'2K'")})
+    image_ratio: str = Field(default="auto", sa_column_kwargs={"server_default": text("'auto'")})
+    video_quality: str = Field(default="720p", sa_column_kwargs={"server_default": text("'720p'")})
+    # Separate from `aspect_ratio` above: that one is the finished canvas, this is the
+    # parameter handed to the video model, and the two provider vocabularies differ.
+    video_aspect_ratio: str = Field(default="9:16", sa_column_kwargs={"server_default": text("'9:16'")})
+    video_duration: int = Field(default=5, sa_column_kwargs={"server_default": text("5")})
+    video_fps: int = Field(default=24, sa_column_kwargs={"server_default": text("24")})
+    video_prompt_extend: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
 
 
 class Episode(SQLModel, table=True):
@@ -119,8 +148,19 @@ class Scene(SQLModel, table=True):
     speaker_character_id: str | None = None
     visual_prompt: str | None = None
     shot_type: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # 运镜手法 — how the camera moves through this shot. Written by the storyboard breakdown
+    # and editable afterwards; it reaches the video model, not the still renderer.
     camera_move: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
-    # Manual override for the shot's screen time; 0 means follow the voice track's length.
+    # 场景过渡 — how this shot enters from the one before it (hard cut, dissolve, fade).
+    # A property of the seam rather than the frame, which is why it never reaches the
+    # prompt that draws the still.
+    transition: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # The motion prompt, kept apart from `visual_prompt`. One describes a frame, the other
+    # describes what happens over several seconds; collapsing them produced clips that
+    # either stood still or ignored the composition the storyboard image had already fixed.
+    video_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # The shot's screen time. Written by the breakdown as an estimate and editable after;
+    # 0 means "undecided", and the renderer falls back to the project default.
     duration_ms: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})
     subtitle_text: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     # Asset columns hold a path relative to PRIVATE_GENERATED_DIR, never a signed URL:

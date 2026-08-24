@@ -1,3 +1,5 @@
+import type { VideoCapabilities } from "@/types/auth";
+
 export type SceneTaskStatus = "idle" | "generating" | "success" | "error";
 
 /** One shot inside an episode. Order numbers restart at 1 in every episode. */
@@ -11,14 +13,25 @@ export interface Scene {
   speakerCharacterId: string | null;
   visualPrompt: string;
   shotType: string;
+  /** 运镜手法 — how the camera moves through this shot. Reaches the video model. */
   cameraMove: string;
-  /** Manual screen-time override in ms. 0 means follow the voice track's length. */
+  /** 场景过渡 — how this shot enters from the one before it. */
+  transition: string;
+  /** The motion prompt. `visualPrompt` describes the frame; this describes the seconds. */
+  videoPrompt: string;
+  /** Estimated screen time in ms. 0 means undecided — the project default applies. */
   durationMs: number;
   subtitleText: string;
   /** Who appears in the shot; drives prompt assembly and reference portraits. */
   characterIds: string[];
   /** An approved shot that a batch rerun must leave alone. */
   isLocked: boolean;
+  /**
+   * Changes only when the server actually changed the row. Key list rows on this rather
+   * than on an asset URL: signed links are minted fresh on every response, so a URL-keyed
+   * row remounts on every poll and re-downloads its image.
+   */
+  updatedAt: string;
   image: {
     url: string | null;
     status: SceneTaskStatus;
@@ -94,11 +107,46 @@ export interface ProductionSettings {
   negativePrompt: string;
 }
 
+export type ImageResolution = "1K" | "2K" | "4K";
+export type GenerationRatio =
+  | "auto"
+  | "21:9"
+  | "16:9"
+  | "4:3"
+  | "3:2"
+  | "1:1"
+  | "2:3"
+  | "3:4"
+  | "9:16"
+  | "9:21"
+  | "adaptive";
+export type VideoQuality = "480p" | "720p" | "1080p" | "2K" | "4K";
+
+/**
+ * Which model this series uses for each kind of work, and the parameters every render in
+ * it starts from. A null config id means the purpose follows the account default.
+ */
+export interface ProjectModelSettings {
+  textConfigId: number | null;
+  imageConfigId: number | null;
+  videoConfigId: number | null;
+  audioConfigId: number | null;
+  imageResolution: ImageResolution;
+  imageRatio: GenerationRatio;
+  videoQuality: VideoQuality;
+  videoAspectRatio: GenerationRatio;
+  videoDuration: number;
+  videoFps: number;
+  videoPromptExtend: boolean;
+}
+
 export interface Project {
   id: string;
   title: string;
   /** Shown on the series card. Optional — an empty synopsis renders a placeholder. */
   description: string;
+  /** What the user wants the cover to show, in their own words. Drives AI cover generation. */
+  coverPrompt: string;
   /** Signed and short-lived, minted per response. Null means "use the fallback cover". */
   coverImageUrl: string | null;
   originalScript: string;
@@ -114,6 +162,7 @@ export interface Project {
   videoProgress: number;
   videoUrl: string | null;
   productionSettings: ProductionSettings;
+  modelSettings: ProjectModelSettings;
   currentStage: ProjectStage;
   /** The episode `scenes` belongs to. Null only for a series with no episode yet. */
   currentEpisodeId: string | null;
@@ -134,6 +183,7 @@ export interface ProjectListResponse {
 export interface CreateProjectInput {
   title?: string;
   description?: string;
+  coverPrompt?: string;
   originalScript?: string;
   productionSettings?: Partial<ProductionSettings>;
 }
@@ -141,8 +191,15 @@ export interface CreateProjectInput {
 export interface UpdateProjectInput {
   title?: string;
   description?: string;
+  coverPrompt?: string;
   originalScript?: string;
   seriesBible?: string;
+  /**
+   * Send only what changed. A config id of `0` clears the pick and returns that purpose to
+   * the account default — `null` cannot mean "clear", because in a PATCH it already means
+   * "leave alone".
+   */
+  modelSettings?: Partial<ProjectModelSettings>;
 }
 
 export interface SetProjectCoverInput {
@@ -151,13 +208,14 @@ export interface SetProjectCoverInput {
 }
 
 /**
- * Cover generation and synopsis polish are project-less on purpose: the create dialog runs
- * them before a project exists, and the edit dialog runs them on unsaved edits. Neither
- * writes — the caller previews the result and applies it.
+ * Cover generation is project-less on purpose: the create dialog runs it before a project
+ * exists, and the edit dialog runs it on unsaved edits. It never writes — the caller
+ * previews the result and applies it with `setProjectCoverAction`.
  */
 export interface GenerateCoverInput {
+  /** What the cover should show. Required — this is the subject of the picture. */
+  prompt: string;
   title?: string;
-  description?: string;
   stylePrompt?: string;
 }
 
@@ -165,14 +223,40 @@ export interface GenerateCoverResponse {
   imageData: string;
 }
 
-export interface OptimizeDescriptionInput {
-  title?: string;
-  description: string;
-  model?: string;
+/** One resolved model, with the limits the UI must not let the user exceed. */
+export interface ProjectModelSummary {
+  provider: string;
+  model: string;
+  source: string;
+  configId: number | null;
+  /** False when this purpose is falling through to the account default. */
+  isProjectPick: boolean;
+  capabilities?: {
+    maxReferenceImages?: number;
+    resolutions?: ImageResolution[];
+    ratios?: GenerationRatio[];
+  } | null;
 }
 
-export interface OptimizeDescriptionResponse {
-  description: string;
+export interface ProjectModelsResponse {
+  models: {
+    text: ProjectModelSummary | null;
+    image: ProjectModelSummary | null;
+    video: (ProjectModelSummary & { capabilities: VideoCapabilities | null }) | null;
+    audio: ProjectModelSummary | null;
+  };
+  modelSettings: ProjectModelSettings;
+}
+
+export interface PromptPreset {
+  key: string;
+  label: string;
+  template: string;
+}
+
+export interface PromptPresetListResponse {
+  kind: string;
+  presets: PromptPreset[];
 }
 
 export interface CreateEpisodeInput {
@@ -180,6 +264,62 @@ export interface CreateEpisodeInput {
   title: string;
   synopsis?: string;
   sourceText?: string;
+}
+
+/** Which half of the storyboard a breakdown produces. */
+export type BreakdownTarget = "shots" | "video" | "both";
+
+/**
+ * What the breakdown may look at. Selecting nothing is meaningful: it tells the model to
+ * decide everything from the script alone. Characters the bible has never heard of are
+ * inferred from the script either way.
+ */
+export interface BreakdownReferences {
+  characterIds?: string[];
+  propIds?: string[];
+  voiceProfileIds?: string[];
+  useCastSheet?: boolean;
+  usePropSheet?: boolean;
+  useVoiceSheet?: boolean;
+}
+
+export interface BreakdownEpisodeInput {
+  target: BreakdownTarget;
+  script?: string;
+  references?: BreakdownReferences;
+  /** Re-splitting discards rendered shots; the first call reports, this confirms. */
+  replaceAll?: boolean;
+  model?: string;
+}
+
+export interface BreakdownEpisodeResponse {
+  projectId: string;
+  episodeId: string;
+  target: BreakdownTarget;
+  applied: boolean;
+  discardsGeneratedScenes: number;
+  shotCount?: number;
+  scenes: Scene[];
+}
+
+/** Anchor an episode's look without rendering any shots against it yet. */
+export interface GenerateToneSheetInput {
+  previousEpisodeId?: string;
+  mergeReferences?: boolean;
+  regenerate?: boolean;
+}
+
+export interface GenerateToneSheetResponse {
+  projectId: string;
+  episodeId: string;
+  status: ProjectStatus;
+  regeneratesToneSheet: boolean;
+}
+
+export interface CancelProjectRunResponse {
+  projectId: string;
+  canceled: boolean;
+  status: ProjectStatus;
 }
 
 /**
@@ -234,9 +374,7 @@ export interface CharacterState {
   description: string;
   /** Empty means "the look did not change"; the card's own prompt still applies. */
   appearancePrompt: string;
-  /** Overrides the built-in turnaround instructions when non-empty. */
-  systemPrompt: string;
-  /** The reviewed prompt that actually draws the sheet. */
+  /** The reviewed prompt that actually draws the sheet. Shown in the UI simply as 提示词. */
   finalPrompt: string;
   /** The turnaround sheet: front, three-quarter, and profile in one image. */
   referenceImageUrl: string | null;
@@ -302,7 +440,6 @@ export interface CreateCharacterStateInput {
   name: string;
   description?: string;
   appearancePrompt?: string;
-  systemPrompt?: string;
   finalPrompt?: string;
   voiceModel?: string;
   orderNum?: number;
@@ -314,12 +451,13 @@ export type UpdateCharacterStateInput = Partial<CreateCharacterStateInput>;
 
 /**
  * Draft an image prompt for review. The fields come from the dialog rather than the stored
- * row so drafting works against edits the user has not saved yet.
+ * row so drafting works against edits the user has not saved yet. The instruction template
+ * is the built-in one and is not overridable; `preset` picks which built-in to draft from.
  */
 export interface DraftPromptInput {
   name?: string;
   description?: string;
-  systemPrompt?: string;
+  preset?: string;
   model?: string;
 }
 
@@ -381,6 +519,27 @@ export interface CreateVoiceProfileInput {
 
 export type UpdateVoiceProfileInput = Partial<CreateVoiceProfileInput>;
 
+/**
+ * Design a timbre from a description and bind it to this series in one step. Provider and
+ * model come from the project's audio configuration, never from the client.
+ */
+export interface DesignVoiceProfileInput {
+  name: string;
+  voicePrompt: string;
+  /** What the audition says. Distinct from `sampleText`, the line in the merged track. */
+  previewText: string;
+  note?: string;
+  sampleText?: string;
+}
+
+/** Bind a timbre already saved on the account to this series. */
+export interface ImportVoiceProfileInput {
+  userVoiceId: string;
+  name?: string;
+  note?: string;
+  sampleText?: string;
+}
+
 export interface VoiceProfileListResponse {
   voices: VoiceProfile[];
 }
@@ -399,7 +558,11 @@ export interface Prop {
   projectId: string;
   name: string;
   description: string;
-  systemPrompt: string;
+  /** Whose prop it is; printed on the reference image. Null leaves it unattributed. */
+  ownerCharacterId: string | null;
+  /** Resolved by the server so a card can render the owner without a second request. */
+  ownerName: string;
+  /** The reviewed prompt that actually draws the image. Shown in the UI simply as 提示词. */
   finalPrompt: string;
   imageUrl: string | null;
   orderNum: number;
@@ -409,7 +572,8 @@ export interface Prop {
 export interface CreatePropInput {
   name: string;
   description?: string;
-  systemPrompt?: string;
+  /** "" leaves it unattributed. Not null: an absent field means "leave alone" in a PATCH. */
+  ownerCharacterId?: string;
   finalPrompt?: string;
   orderNum?: number;
 }
@@ -471,6 +635,8 @@ export interface UpdateSceneInput {
   visualPrompt?: string;
   shotType?: string;
   cameraMove?: string;
+  transition?: string;
+  videoPrompt?: string;
   durationMs?: number;
   subtitleText?: string;
   isLocked?: boolean;

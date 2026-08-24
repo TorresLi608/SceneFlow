@@ -42,6 +42,28 @@ def test_stored_path_survives_resigning() -> None:
         artifact_service.PRIVATE_GENERATED_DIR = original
 
 
+def test_signing_the_same_artifact_twice_yields_the_same_url() -> None:
+    """A stable URL is what lets the browser cache a frame and a list row stay mounted.
+
+    `iat` used to come straight off the clock, so every response minted a different token
+    for the same file. The episode editor polls every three seconds while a render runs, so
+    that meant re-downloading every storyboard frame each tick — and any row keyed on its
+    asset URL was torn down and rebuilt along with it, discarding in-progress edits.
+    """
+    original = artifact_service.PRIVATE_GENERATED_DIR
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            _isolated(directory)
+            relative = store_artifact("projects", "proj_1", "scene_1.png", b"frame-bytes")
+
+            assert signed_url_for_stored(relative, "scene-1") == signed_url_for_stored(relative, "scene-1")
+            # Still scoped per artifact: a different file must not share a link.
+            other = store_artifact("projects", "proj_1", "scene_2.png", b"other-bytes")
+            assert signed_url_for_stored(other, "scene-2") != signed_url_for_stored(relative, "scene-1")
+    finally:
+        artifact_service.PRIVATE_GENERATED_DIR = original
+
+
 def test_legacy_signed_url_yields_its_stored_path() -> None:
     """The migration off stored URLs has to recover the path from an existing link."""
     original = artifact_service.PRIVATE_GENERATED_DIR
@@ -73,5 +95,6 @@ def test_stored_path_rejects_traversal() -> None:
 
 if __name__ == "__main__":
     test_stored_path_survives_resigning()
+    test_signing_the_same_artifact_twice_yields_the_same_url()
     test_legacy_signed_url_yields_its_stored_path()
     test_stored_path_rejects_traversal()

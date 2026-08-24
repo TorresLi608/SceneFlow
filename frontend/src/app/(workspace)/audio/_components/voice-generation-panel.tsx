@@ -342,7 +342,7 @@ export function VoiceGenerationPanel({
                 <label htmlFor="voice-preview-text" className="text-xs font-semibold text-foreground/90">
                   {t("voice.previewText")}
                 </label>
-                <span className="text-[11px] text-muted-foreground">试听文案</span>
+                <span className="text-[11px] text-muted-foreground">{t("voice.previewTextHint")}</span>
               </div>
               <Textarea
                 id="voice-preview-text"

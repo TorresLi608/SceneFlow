@@ -23,6 +23,7 @@ from app.schemas.requests import (
 )
 from app.schemas.serializers import project_json, prop_json
 from app.services.artifact_service import decode_image_data_url, store_artifact
+from app.services.character_service import characters_for
 from app.services.project_service import owned_project
 from app.services.prompt_service import PROP_SYSTEM, fallback_prop_prompt, prop_prompt
 from app.services.prop_service import create_prop, delete_prop, owned_prop, props_for
@@ -30,6 +31,7 @@ from app.services.reference_service import (
     draft_prompt,
     draw_reference,
     image_config,
+    image_options,
     script_config,
     store_sheet,
 )
@@ -41,11 +43,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects", tags=["props"])
 
 
+def _owner_names(session, project_id: str) -> dict[str, str]:
+    """Character id to name, so a prop card can show whose it is without a second request."""
+    return {character.id: character.name for character in characters_for(session, project_id)}
+
+
+def _prop_payload(session, project_id: str, prop) -> dict[str, Any]:
+    return prop_json(prop, _owner_names(session, project_id).get(prop.owner_character_id or "", ""))
+
+
 @router.get("/{project_id}/props")
 def list_props(project_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     with db() as session:
         owned_project(session, project_id, user_id)
-        data = [prop_json(prop) for prop in props_for(session, project_id)]
+        owners = _owner_names(session, project_id)
+        data = [
+            prop_json(prop, owners.get(prop.owner_character_id or "", ""))
+            for prop in props_for(session, project_id)
+        ]
     return {"props": data}
 
 
@@ -62,11 +77,11 @@ async def add_prop(
             project_id,
             name=body.name,
             description=body.description,
-            system_prompt=body.system_prompt,
+            owner_character_id=body.owner_character_id or None,
             final_prompt=body.final_prompt,
             order_num=body.order_num,
         )
-        data = prop_json(prop)
+        data = _prop_payload(session, project_id, prop)
     await broadcast(project_id, {"type": "PROP_UPDATE", "projectId": project_id, "data": data})
     return {"prop": data}
 
@@ -88,11 +103,13 @@ async def update_prop(
         owned_project(session, project_id, user_id)
         prop = owned_prop(session, project_id, prop_id)
         for key, value in updates.items():
-            setattr(prop, key, value)
+            # "" is how a client unbinds the owner; storing it verbatim would leave a
+            # falsy-but-present id that never resolves to a name.
+            setattr(prop, key, None if key == "owner_character_id" and not value else value)
         prop.updated_at = now()
         session.add(prop)
         session.flush()
-        data = prop_json(prop)
+        data = _prop_payload(session, project_id, prop)
     await broadcast(project_id, {"type": "PROP_UPDATE", "projectId": project_id, "data": data})
     return {"prop": data}
 
@@ -115,13 +132,17 @@ async def draft_prop_prompt(
 ) -> dict[str, Any]:
     """Draft the image prompt for review. Returned, not saved."""
     with db() as session:
-        owned_project(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         prop = owned_prop(session, project_id, prop_id)
-        user_text = prop_prompt(body.name or prop.name, body.description or prop.description)
-        system = body.system_prompt or prop.system_prompt or PROP_SYSTEM
-        config = script_config(session, user_id, "道具提示词")
+        user_text = prop_prompt(
+            body.name or prop.name,
+            body.description or prop.description,
+            _owner_names(session, project_id).get(prop.owner_character_id or "", ""),
+            body.preset,
+        )
+        config = script_config(session, user_id, "道具提示词", project)
 
-    prompt = await draft_prompt(config, user_id, system, user_text, body.model, "prop_prompt")
+    prompt = await draft_prompt(config, user_id, PROP_SYSTEM, user_text, body.model, "prop_prompt")
     return {"propId": prop_id, "prompt": prompt}
 
 
@@ -133,12 +154,17 @@ async def generate_prop_image(
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
     with db() as session:
-        owned_project(session, project_id, user_id)
+        project = owned_project(session, project_id, user_id)
         prop = owned_prop(session, project_id, prop_id)
-        prompt = (body.prompt or prop.final_prompt).strip() or fallback_prop_prompt(prop.name, prop.description)
-        config = image_config(session, user_id, "道具参考图")
+        prompt = (body.prompt or prop.final_prompt).strip() or fallback_prop_prompt(
+            prop.name,
+            prop.description,
+            _owner_names(session, project_id).get(prop.owner_character_id or "", ""),
+        )
+        config = image_config(session, user_id, "道具参考图", project)
+        size, quality = image_options(project)
 
-    data, extension = await draw_reference(config, user_id, prompt, "prop_image")
+    data, extension = await draw_reference(config, user_id, prompt, "prop_image", size, quality)
     stored = store_artifact("props", project_id, f"{prop_id}.{extension}", data)
 
     with db() as session:
@@ -150,7 +176,7 @@ async def generate_prop_image(
         prop.updated_at = now()
         session.add(prop)
         session.flush()
-        data_json = prop_json(prop)
+        data_json = _prop_payload(session, project_id, prop)
     await broadcast(project_id, {"type": "PROP_UPDATE", "projectId": project_id, "data": data_json})
     return {"prop": data_json}
 
@@ -179,7 +205,7 @@ async def upload_prop_image(
         prop.updated_at = now()
         session.add(prop)
         session.flush()
-        data_json = prop_json(prop)
+        data_json = _prop_payload(session, project_id, prop)
     await broadcast(project_id, {"type": "PROP_UPDATE", "projectId": project_id, "data": data_json})
     return {"prop": data_json}
 
@@ -189,7 +215,18 @@ async def merge_prop_sheet(project_id: str, user_id: int = Depends(current_user_
     """Tile every prop into one labelled sheet the storyboard render carries."""
     with db() as session:
         owned_project(session, project_id, user_id)
-        entries = [(prop.image_path, prop.name) for prop in props_for(session, project_id)]
+        owners = _owner_names(session, project_id)
+        # Labelled with the owner where there is one: an unattributed object in a shared
+        # sheet is exactly the ambiguity the owner column exists to remove.
+        entries = [
+            (
+                prop.image_path,
+                f"{prop.name} · {owners[prop.owner_character_id]}"
+                if prop.owner_character_id in owners
+                else prop.name,
+            )
+            for prop in props_for(session, project_id)
+        ]
 
     stored = store_sheet("props", project_id, f"{project_id}-props.jpg", entries)
 
