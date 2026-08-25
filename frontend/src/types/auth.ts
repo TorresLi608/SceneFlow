@@ -33,6 +33,7 @@ export interface AuthUser {
   id: number;
   username: string;
   nickname: string;
+  email?: string;
   role: "user" | "superAdmin";
   isDisabled: boolean;
   balanceMicros: string;
@@ -49,9 +50,21 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+export interface SendVerificationCodeInput {
+  email: string;
+}
+
+export interface SendVerificationCodeResponse {
+  success: boolean;
+  cooldownSeconds: number;
+  expiresInSeconds: number;
+}
+
 export interface RegisterInput {
   username: string;
   nickname?: string;
+  email: string;
+  verificationCode: string;
   password: string;
   invitationCode: string;
 }

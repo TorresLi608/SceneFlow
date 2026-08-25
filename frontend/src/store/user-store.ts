@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { clearAppQueryCache } from "@/providers/query-provider";
+import { useProjectStore } from "@/store/project-store";
 import type { AuthUser } from "@/types/auth";
 
 const STORE_KEY = "sceneflow-user-store";
@@ -21,10 +23,18 @@ export const useUserStore = create<UserStoreState>()(
       token: null,
       user: null,
       hydrated: false,
-      setAuth: (token, user) => set({ token, user }),
+      setAuth: (token, user) => {
+        clearAppQueryCache();
+        useProjectStore.getState().reset();
+        set({ token, user });
+      },
       setUser: (user) => set({ user }),
       setHydrated: (hydrated) => set({ hydrated }),
-      logout: () => set({ token: null, user: null }),
+      logout: () => {
+        clearAppQueryCache();
+        useProjectStore.getState().reset();
+        set({ token: null, user: null });
+      },
     }),
     {
       name: STORE_KEY,

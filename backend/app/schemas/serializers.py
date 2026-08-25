@@ -28,6 +28,7 @@ def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int
         "id": user.id,
         "username": user.username,
         "nickname": user.nickname or "",
+        "email": user.email or "",
         "role": user.role or "user",
         "isDisabled": bool(user.is_disabled),
         "balanceMicros": str(user.balance_micros),

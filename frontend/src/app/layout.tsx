@@ -23,16 +23,48 @@ export const metadata: Metadata = {
   description: "AI manga storyboard workspace",
 };
 
+/** Inline script to prevent theme flashing during SSR and initial page load */
+const THEME_INITIALIZER_SCRIPT = `
+(function() {
+  try {
+    var stored = localStorage.getItem("sceneflow-preferences-store");
+    var theme = "dark";
+    if (stored) {
+      var parsed = JSON.parse(stored);
+      if (parsed && parsed.state && parsed.state.theme) {
+        theme = parsed.state.theme;
+      }
+    }
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  } catch (e) {
+    document.documentElement.classList.add("dark");
+  }
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={cn(geistSans.variable, geistMono.variable, "h-full antialiased")}>
-      <body className="min-h-full flex flex-col">
+    <html
+      lang="zh-CN"
+      suppressHydrationWarning
+      className={cn(geistSans.variable, geistMono.variable, "h-full antialiased dark")}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INITIALIZER_SCRIPT }} />
+      </head>
+      <body className="min-h-full flex flex-col bg-background text-foreground">
         <AppPreferencesProvider>
-          <QueryProvider><Toaster>{children}</Toaster></QueryProvider>
+          <QueryProvider>
+            <Toaster>{children}</Toaster>
+          </QueryProvider>
         </AppPreferencesProvider>
       </body>
     </html>

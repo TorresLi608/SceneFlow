@@ -867,11 +867,25 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   };
 
   if (!hydrated) {
-    return <main className="flex min-h-screen items-center justify-center">{t("common.initializing")}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-muted-foreground">{t("common.initializing")}</span>
+        </div>
+      </main>
+    );
   }
 
   if (!token) {
-    return <main className="flex min-h-screen items-center justify-center">{t("common.redirectingToLogin")}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-muted-foreground">{t("common.redirectingToLogin")}</span>
+        </div>
+      </main>
+    );
   }
 
   if (!currentProject && !projectsQuery.isLoading) {

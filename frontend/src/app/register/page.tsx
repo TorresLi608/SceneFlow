@@ -10,7 +10,9 @@ import {
   ImageIcon,
   KeyRound,
   Lock,
+  Mail,
   MessageSquare,
+  ShieldCheck,
   Sparkles,
   User,
   UserCheck,
@@ -19,9 +21,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
-import { registerAction } from "@/actions/auth-actions";
+import { registerAction, sendVerificationCodeAction } from "@/actions/auth-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +31,8 @@ import { Label } from "@/components/ui/label";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
+
+const EMAIL_REGEX = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
 
 function RegisterForm() {
   const router = useRouter();
@@ -39,11 +43,53 @@ function RegisterForm() {
   const initialCode = searchParams.get("code") || searchParams.get("invitationCode") || "";
   const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
+  const [email, setEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [invitationCode, setInvitationCode] = useState(initialCode.toUpperCase());
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
+
+  const sendCodeMutation = useMutation({
+    mutationFn: sendVerificationCodeAction,
+    onSuccess: (data) => {
+      setCountdown(data.cooldownSeconds || 60);
+      setInfoMessage(t("auth.codeSentSuccess"));
+      setError(null);
+    },
+    onError: (requestError) => {
+      setInfoMessage(null);
+      setError(resolveRequestError(requestError, t("common.networkError")));
+    },
+  });
+
+  const onSendCode = () => {
+    const cleanedEmail = email.trim().toLowerCase();
+    if (!cleanedEmail || !EMAIL_REGEX.test(cleanedEmail)) {
+      setError(t("auth.emailRequired"));
+      return;
+    }
+    setError(null);
+    setInfoMessage(null);
+    sendCodeMutation.mutate({ email: cleanedEmail });
+  };
 
   const registerMutation = useMutation({
     mutationFn: registerAction,
@@ -59,6 +105,18 @@ function RegisterForm() {
   const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    const cleanedEmail = email.trim().toLowerCase();
+    if (!cleanedEmail || !EMAIL_REGEX.test(cleanedEmail)) {
+      setError(t("auth.emailRequired"));
+      return;
+    }
+
+    const cleanedCode = verificationCode.trim();
+    if (!cleanedCode || cleanedCode.length < 4) {
+      setError(t("auth.verificationCodeRequired"));
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError(t("auth.passwordMismatch"));
       return;
@@ -69,6 +127,8 @@ function RegisterForm() {
     registerMutation.mutate({
       username,
       nickname: nickname.trim(),
+      email: cleanedEmail,
+      verificationCode: cleanedCode,
       password,
       invitationCode,
     });
@@ -113,53 +173,114 @@ function RegisterForm() {
         </div>
       </div>
 
+      {/* 电子邮箱 */}
       <div className="space-y-1.5">
-        <Label htmlFor="password" className="text-xs font-medium">
-          {t("auth.password")}
+        <Label htmlFor="email" className="text-xs font-medium">
+          {t("auth.email")}
         </Label>
         <div className="relative">
-          <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            id="password"
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="••••••••"
-            className="h-9 pl-9 pr-10 text-xs sm:text-sm"
+            id="email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder={t("auth.emailPlaceholder")}
+            className="h-9 pl-9 pr-3 text-xs sm:text-sm"
             required
-            autoComplete="new-password"
+            autoComplete="email"
           />
-          <button
-            type="button"
-            tabIndex={-1}
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-          >
-            {showPassword ? (
-              <EyeOff className="size-4" />
-            ) : (
-              <Eye className="size-4" />
-            )}
-          </button>
         </div>
       </div>
 
+      {/* 邮箱验证码 */}
       <div className="space-y-1.5">
-        <Label htmlFor="confirmPassword" className="text-xs font-medium">
-          {t("auth.confirmPassword")}
+        <Label htmlFor="verificationCode" className="text-xs font-medium">
+          {t("auth.verificationCode")}
         </Label>
-        <div className="relative">
-          <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="confirmPassword"
-            type={showPassword ? "text" : "password"}
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            placeholder="••••••••"
-            className="h-9 pl-9 pr-3 text-xs sm:text-sm"
-            required
-            autoComplete="new-password"
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <ShieldCheck className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="verificationCode"
+              value={verificationCode}
+              onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder={t("auth.verificationCodePlaceholder")}
+              className="h-9 pl-9 pr-3 font-mono tracking-wider text-xs sm:text-sm"
+              required
+              maxLength={6}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onSendCode}
+            disabled={countdown > 0 || sendCodeMutation.isPending || !email.trim()}
+            className="h-9 shrink-0 cursor-pointer px-3 text-xs font-medium transition-all"
+          >
+            {sendCodeMutation.isPending ? (
+              <span className="flex items-center gap-1.5">
+                <span className="size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                {t("auth.sendingCode")}
+              </span>
+            ) : countdown > 0 ? (
+              t("auth.resendCodeAfter", { seconds: countdown })
+            ) : (
+              t("auth.sendCode")
+            )}
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-xs font-medium">
+            {t("auth.password")}
+          </Label>
+          <div className="relative">
+            <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="••••••••"
+              className="h-9 pl-9 pr-10 text-xs sm:text-sm"
+              required
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+            >
+              {showPassword ? (
+                <EyeOff className="size-4" />
+              ) : (
+                <Eye className="size-4" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="confirmPassword" className="text-xs font-medium">
+            {t("auth.confirmPassword")}
+          </Label>
+          <div className="relative">
+            <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="confirmPassword"
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="••••••••"
+              className="h-9 pl-9 pr-3 text-xs sm:text-sm"
+              required
+              autoComplete="new-password"
+            />
+          </div>
         </div>
       </div>
 
@@ -179,6 +300,12 @@ function RegisterForm() {
           />
         </div>
       </div>
+
+      {infoMessage ? (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs text-emerald-600 dark:text-emerald-400">
+          {infoMessage}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3.5 py-2 text-xs text-destructive">

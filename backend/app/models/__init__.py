@@ -10,7 +10,7 @@ from app.models.export import MAX_EXPORT_CLIPS, ExportJob
 from app.models.project import Episode, GenerationJob, Project, Scene
 from app.models.prop import Prop
 from app.models.usage import UsageLog
-from app.models.user import InvitationCode, RedemptionCode, User
+from app.models.user import EmailVerification, InvitationCode, RedemptionCode, User
 from app.models.voice import VoiceProfile
 from app.models.user_voice import UserVoice
 
@@ -22,6 +22,7 @@ __all__ = [
     "CharacterState",
     "ChatMessage",
     "ChatSession",
+    "EmailVerification",
     "Episode",
     "ExportJob",
     "GenerationJob",
