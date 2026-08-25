@@ -17,14 +17,7 @@ import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
@@ -165,35 +158,42 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
                 <PopoverContent
                   align="end"
-                  className="w-56 rounded-2xl border-border/80 bg-card/90 p-2 shadow-2xl backdrop-blur-xl dark:border-white/10"
+                  className="w-56 gap-1 rounded-xl border-border/80 bg-card/95 p-1.5 shadow-2xl backdrop-blur-xl dark:border-white/10"
                   onMouseEnter={keepAccountOpen}
                   onMouseLeave={scheduleAccountClose}
                 >
-                  <PopoverHeader className="p-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <PopoverTitle className="truncate text-sm font-semibold">
-                        {user?.nickname || user?.username || t("common.unknownUser")}
-                      </PopoverTitle>
-                      {isSuperAdmin ? (
-                        <Badge variant="default" className="text-[10px] uppercase font-bold">
-                          Admin
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px]">
-                          Lv.{user?.level ?? 1}
-                        </Badge>
-                      )}
+                  {/* 用户信息头部卡片 */}
+                  <div className="flex items-center gap-2.5 rounded-lg border border-border/40 bg-muted/40 p-2">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary font-bold text-xs shadow-2xs">
+                      {isSuperAdmin ? <Crown className="size-4" /> : <UserRound className="size-4" />}
                     </div>
-                    <PopoverDescription className="text-xs text-muted-foreground">
-                      @{user?.username}
-                    </PopoverDescription>
-                  </PopoverHeader>
-                  <Separator className="my-1" />
-                  <div className="flex flex-col gap-0.5">
+                    <div className="flex min-w-0 flex-1 flex-col justify-center">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="truncate text-xs font-semibold text-foreground">
+                          {user?.nickname || user?.username || t("common.unknownUser")}
+                        </span>
+                        {isSuperAdmin ? (
+                          <Badge variant="default" className="h-4 px-1.5 text-[9px] font-bold uppercase shrink-0">
+                            Admin
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="h-4 px-1.5 text-[10px] shrink-0">
+                            Lv.{user?.level ?? 1}
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        @{user?.username}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 快捷菜单项列表 */}
+                  <div className="flex flex-col gap-0.5 pt-0.5">
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="justify-start gap-2 rounded-lg text-xs hover:bg-muted/80 cursor-pointer"
+                      className="h-8 justify-start gap-2.5 rounded-md px-2.5 text-xs font-normal text-foreground/90 hover:bg-accent/80 hover:text-foreground focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-0 cursor-pointer transition-colors"
                       onClick={() => {
                         setAccountOpen(false);
                         router.push("/profile");
@@ -205,7 +205,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="justify-start gap-2 rounded-lg text-xs hover:bg-muted/80 cursor-pointer"
+                      className="h-8 justify-start gap-2.5 rounded-md px-2.5 text-xs font-normal text-foreground/90 hover:bg-accent/80 hover:text-foreground focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-0 cursor-pointer transition-colors"
                       onClick={() => {
                         setAccountOpen(false);
                         router.push("/usage");
@@ -214,21 +214,24 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                       <Activity className="size-3.5 text-muted-foreground" />
                       {t("home.usageLogs")}
                     </Button>
-                    <Separator className="my-1" />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="justify-start gap-2 rounded-lg text-xs text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
-                      onClick={() => {
-                        setAccountOpen(false);
-                        logout();
-                        router.replace("/login");
-                      }}
-                    >
-                      <LogOut className="size-3.5" />
-                      {t("common.logout")}
-                    </Button>
                   </div>
+
+                  <Separator className="my-0.5 bg-border/50" />
+
+                  {/* 退出登录 */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 justify-start gap-2.5 rounded-md px-2.5 text-xs font-normal text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 focus-visible:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-0 cursor-pointer transition-colors dark:text-rose-400 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
+                    onClick={() => {
+                      setAccountOpen(false);
+                      logout();
+                      router.replace("/login");
+                    }}
+                  >
+                    <LogOut className="size-3.5" />
+                    {t("common.logout")}
+                  </Button>
                 </PopoverContent>
               </Popover>
             </div>
