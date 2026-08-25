@@ -177,13 +177,50 @@ def _qwen_image_url(output: dict[str, Any]) -> str:
 
 
 def _json_object(text: str) -> dict[str, Any]:
-    text = text.strip()
-    if not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("response did not contain a JSON object")
-        text = text[start : end + 1]
-    return json.loads(text)
+    """Extract the first complete JSON object from permissive model output.
+
+    Models occasionally wrap JSON in Markdown or append an explanation/second JSON
+    object. ``json.loads`` rejects that with ``Extra data``; ``raw_decode`` stops at
+    the first complete value while still respecting braces inside JSON strings.
+    """
+    decoder = json.JSONDecoder()
+    value = text.strip()
+    for index, character in enumerate(value):
+        if character != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(value[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("response did not contain a JSON object")
+
+
+def _json_breakdown_payload(text: str) -> dict[str, Any]:
+    """Accept either the documented object or a bare shot array."""
+    decoder = json.JSONDecoder()
+    value = text.strip()
+    for index, character in enumerate(value):
+        if character not in "[{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(value[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"shots": parsed}
+    raise ValueError("response did not contain a JSON object")
+
+
+def _json_model(llm: Any, provider: str) -> Any:
+    # JSON mode is not portable: several OpenAI-compatible deployments accept the
+    # parameter but return a response shape LangChain's parser cannot handle (notably
+    # ``None.tool_calls``/``None.get``).  The prompt plus the tolerant parser below is
+    # enough, and keeps every provider on the same code path.
+    return llm
 
 
 def _trim_prompt(value: str) -> str:
@@ -267,6 +304,23 @@ def _content_text(content: Any) -> str:
     return str(content or "")
 
 
+def _completion_text(response: Any) -> str:
+    """Read compatible chat responses without LangChain's message conversion."""
+    payload = response.model_dump() if hasattr(response, "model_dump") else response
+    if not isinstance(payload, dict):
+        return ""
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        message = choice.get("message") or {}
+        if isinstance(message, dict):
+            text = _content_text(message.get("content"))
+            if text:
+                return text
+        return str(choice.get("text") or "").strip()
+    return str(payload.get("output_text") or "").strip()
+
+
 def _reasoning_text(content: Any, additional_kwargs: dict[str, Any] | None = None) -> str:
     parts = [str((additional_kwargs or {}).get("reasoning_content") or (additional_kwargs or {}).get("reasoning") or "")]
     if isinstance(content, list):
@@ -340,12 +394,13 @@ class ModelRouter:
                 **kwargs,
             )
         compatible_base_url = gemini_openai_base_url(base_url) if provider == "gemini" else base_url_for(provider, base_url)
+        stream_usage = kwargs.pop("stream_usage", True)
         return ChatOpenAI(
             model=pick_model(provider, model),
             api_key=api_key.strip(),
             base_url=compatible_base_url,
             # Explicit base URLs disable langchain-openai's automatic stream usage.
-            stream_usage=True,
+            stream_usage=stream_usage,
             timeout=GENERATION_TIMEOUT_SECONDS,
             max_retries=1,
             **kwargs,
@@ -382,8 +437,7 @@ class ModelRouter:
             raise ValueError("script is empty")
 
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.2)
-        if provider.strip().lower() != "anthropic":
-            llm = llm.bind(response_format={"type": "json_object"})
+        llm = _json_model(llm, provider)
         with get_usage_metadata_callback() as usage_callback:
             response = await llm.ainvoke(
                 _lc_messages(
@@ -442,15 +496,44 @@ class ModelRouter:
         if not user:
             raise ValueError("script is empty")
 
-        llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3, max_tokens=8192)
-        if provider.strip().lower() != "anthropic":
-            llm = llm.bind(response_format={"type": "json_object"})
-        with get_usage_metadata_callback() as usage_callback:
-            response = await llm.ainvoke(
-                _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
+        provider_name = provider.strip().lower()
+        usage: dict[str, int] = {}
+        if provider_name == "anthropic":
+            llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3, max_tokens=8192)
+            with get_usage_metadata_callback() as usage_callback:
+                response = await llm.ainvoke(
+                    _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
+                )
+                usage = aggregate_token_usage(usage_callback.usage_metadata)
+            text = _content_text(response.content)
+            if not any(usage.values()):
+                usage = aggregate_token_usage(getattr(response, "usage_metadata", None))
+        else:
+            # Use the same LangChain path as chat. JSON mode is deliberately not bound:
+            # Gemini's OpenAI compatibility layer streams normal text correctly, while its
+            # structured-response adapter may manufacture a null tool/message object.
+            llm = self.chat_model(
+                provider, api_key, model, base_url, temperature=0.3, max_tokens=8192, stream_usage=False
             )
+            with get_usage_metadata_callback() as usage_callback:
+                response = await llm.ainvoke(
+                    _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}], provider)
+                )
+                usage = aggregate_token_usage(usage_callback.usage_metadata)
+            text = _content_text(getattr(response, "content", response))
+            if not text.strip():
+                extras = getattr(response, "additional_kwargs", {}) or {}
+                text = str(extras.get("reasoning_content") or extras.get("reasoning") or "")
+            if not any(usage.values()):
+                usage = aggregate_token_usage(getattr(response, "usage_metadata", None))
 
-        payload = _json_object(_content_text(response.content))
+        try:
+            payload = _json_breakdown_payload(text)
+        except ValueError as exc:
+            preview = " ".join(text.split())[:240]
+            raise ValueError(f"response did not contain a JSON object; model output: {preview}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("breakdown response must be a JSON object")
         raw = payload.get("shots")
         if not isinstance(raw, list):
             # Some models answer under the key the schema example used rather than the one
@@ -486,9 +569,6 @@ class ModelRouter:
             )
         if not shots:
             raise ValueError("no shots in breakdown output")
-        usage = aggregate_token_usage(usage_callback.usage_metadata)
-        if not any(usage.values()):
-            usage = aggregate_token_usage(response.usage_metadata)
         return BreakdownResult(shots=shots, usage=usage)
 
     async def optimize_script(self, provider: str, api_key: str, model: str, script: str, base_url: str = "") -> OptimizeResult:
@@ -497,8 +577,7 @@ class ModelRouter:
             raise ValueError("script is empty")
 
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3)
-        if provider.strip().lower() != "anthropic":
-            llm = llm.bind(response_format={"type": "json_object"})
+        llm = _json_model(llm, provider)
         with get_usage_metadata_callback() as usage_callback:
             response = await llm.ainvoke(
                 _lc_messages(

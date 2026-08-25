@@ -6,16 +6,18 @@ import { ArrowLeft, Film, Loader2, Plus, Save, Sparkles, Square, X } from "lucid
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   breakdownEpisodeAction,
   cancelProjectRunAction,
   createProjectSceneAction,
+  deleteGenerationReferenceAction,
   generateStoryboardAction,
   generateToneSheetAction,
   generateVideoAction,
   getEpisodeAction,
+  getProjectModelsAction,
   listCharactersAction,
   listEpisodesAction,
   listProjectsAction,
@@ -27,19 +29,20 @@ import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
+import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { BreakdownTarget, Episode } from "@/types/project";
+import type { BreakdownTarget, Episode, GenerationReferenceInput } from "@/types/project";
 
 import { BreakdownPanel, EMPTY_SELECTION, type BreakdownSelection } from "./_components/breakdown-panel";
+import { ReferencePicker, type ReferenceAssetOption } from "./_components/reference-picker";
 import { ShotRow } from "./_components/shot-row";
+import { MediaPreviewDialog } from "./_components/media-preview-dialog";
 
 /** While a render is in flight the page polls; the run is a background task with no reply. */
 const RENDER_POLL_MS = 3_000;
@@ -51,15 +54,15 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const [title, setTitle] = useState(episode.title);
   const [synopsis, setSynopsis] = useState(episode.synopsis);
   const [script, setScript] = useState(episode.sourceText);
-  const [previousEpisodeId, setPreviousEpisodeId] = useState("");
-  const [mergeReferences, setMergeReferences] = useState(true);
-  const [regenerate, setRegenerate] = useState(false);
-  const [withAudio, setWithAudio] = useState(false);
+  const [toneReferences, setToneReferences] = useState<GenerationReferenceInput[]>([]);
+  const [tonePreview, setTonePreview] = useState<{ kind: "image"; url: string; title: string } | null>(null);
   const [target, setTarget] = useState<BreakdownTarget>("both");
   const [selection, setSelection] = useState<BreakdownSelection>(EMPTY_SELECTION);
   const [selectedShots, setSelectedShots] = useState<string[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeBatch, setActiveBatch] = useState<"image" | "video" | null>(null);
+  const activeBatchWasBusy = useRef(false);
   const breakdownController = useRef<AbortController | null>(null);
 
   const projectsQuery = useQuery({
@@ -69,6 +72,23 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   });
   const project = projectsQuery.data?.projects.find((item) => item.id === projectId);
   const busy = project ? BUSY_STATUSES.includes(project.status) : false;
+
+  useEffect(() => {
+    if (activeBatch && busy) {
+      activeBatchWasBusy.current = true;
+      return;
+    }
+    if (!activeBatchWasBusy.current || busy) return;
+    activeBatchWasBusy.current = false;
+    const clear = window.setTimeout(() => setActiveBatch(null), 0);
+    return () => window.clearTimeout(clear);
+  }, [activeBatch, busy]);
+
+  const modelsQuery = useQuery({
+    queryKey: queryKeys.projectModels(projectId),
+    queryFn: () => getProjectModelsAction(projectId),
+    staleTime: 300_000,
+  });
 
   const episodesQuery = useQuery({
     queryKey: queryKeys.episodes(projectId),
@@ -139,9 +159,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const toneMutation = useMutation({
     mutationFn: () =>
       generateToneSheetAction(projectId, episode.id, {
-        previousEpisodeId: previousEpisodeId || undefined,
-        mergeReferences,
-        regenerate,
+        regenerate: true,
+        references: toneReferences,
       }),
     onSuccess: () => {
       setMessage(null);
@@ -153,26 +172,29 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const renderMutation = useMutation({
     mutationFn: (sceneIds: string[] | undefined) =>
       generateStoryboardAction(projectId, episode.id, {
-        previousEpisodeId: previousEpisodeId || undefined,
-        mergeReferences,
-        regenerate,
         sceneIds,
       }),
     onSuccess: () => {
       setMessage(null);
       void refreshProject();
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("episode.generateFailed"))),
+    onError: (error) => {
+      setActiveBatch(null);
+      setMessage(resolveRequestError(error, t("episode.generateFailed")));
+    },
   });
 
   const videoMutation = useMutation({
     mutationFn: (sceneIds: string[] | undefined) =>
-      generateVideoAction(projectId, { episodeId: episode.id, withAudio, sceneIds }),
+      generateVideoAction(projectId, { episodeId: episode.id, sceneIds }),
     onSuccess: () => {
       setMessage(null);
       void refreshProject();
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("video.generateFailed"))),
+    onError: (error) => {
+      setActiveBatch(null);
+      setMessage(resolveRequestError(error, t("video.generateFailed")));
+    },
   });
 
   const cancelMutation = useMutation({
@@ -191,22 +213,98 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     onError: (error) => setMessage(resolveRequestError(error, t("episode.saveFailed"))),
   });
 
+  const deleteReferenceMutation = useMutation({
+    mutationFn: (asset: ReferenceAssetOption) =>
+      deleteGenerationReferenceAction(projectId, asset.kind, asset.id),
+    onSuccess: (_response, asset) => {
+      const deleted = (item: GenerationReferenceInput) => item.kind === asset.kind && item.id === asset.id;
+      setToneReferences((current) => current.filter((item) => !deleted(item)));
+      setMessage(null);
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.characters(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.props(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.episodes(projectId) }),
+        refreshEpisode(),
+        refreshProject(),
+      ]);
+    },
+    onError: (error) => setMessage(resolveRequestError(error, t("episode.referenceDeleteFailed"))),
+  });
+
+  const deleteReference = (asset: ReferenceAssetOption) => deleteReferenceMutation.mutateAsync(asset);
+
   const shots = episode.scenes;
   const toneReady = episode.toneImageStatus === "success" && Boolean(episode.toneImageUrl);
+  const toneGenerating = toneMutation.isPending || episode.toneImageStatus === "generating";
   const targetShots = () => (selectedShots.length > 0 ? selectedShots : undefined);
   const allSelected = shots.length > 0 && selectedShots.length === shots.length;
+  const imageBatchGenerating = (activeBatch === "image" && busy) || renderMutation.isPending;
+  const videoBatchGenerating = (activeBatch === "video" && busy) || videoMutation.isPending;
+  const batchIncludes = (sceneId: string, locked: boolean, variables: string[] | undefined) =>
+    variables?.length ? variables.includes(sceneId) : !locked;
 
   const toggleShot = (sceneId: string) =>
     setSelectedShots((current) =>
       current.includes(sceneId) ? current.filter((item) => item !== sceneId) : [...current, sceneId]
     );
 
-  const previousItems = [
-    { value: "", label: t("episode.previousEpisodeNone") },
-    ...(episodesQuery.data?.episodes ?? [])
-      .filter((item) => item.id !== episode.id)
-      .map((item) => ({ value: item.id, label: item.title })),
-  ];
+  const characterAssets: ReferenceAssetOption[] = (charactersQuery.data?.characters ?? []).flatMap((character) => [
+    ...(character.sheetImageUrl || character.referenceImageUrl
+      ? [{
+          kind: "character" as const,
+          id: character.id,
+          label: t("episode.referenceCharacter", { name: character.name }),
+          media: "image" as const,
+          url: artifactBffUrl((character.sheetImageUrl || character.referenceImageUrl)!),
+        }]
+      : []),
+    ...character.states
+      .filter((state) => state.referenceImageUrl)
+      .map((state) => ({
+        kind: "characterState" as const,
+        id: state.id,
+        label: `${character.name} · ${state.name}`,
+        media: "image" as const,
+        url: artifactBffUrl(state.referenceImageUrl!),
+      })),
+  ]);
+  const propAssets: ReferenceAssetOption[] = (propsQuery.data?.props ?? [])
+    .filter((prop) => prop.imageUrl)
+    .map((prop) => ({ kind: "prop", id: prop.id, label: prop.name, media: "image", url: artifactBffUrl(prop.imageUrl!) }));
+  const toneAssets: ReferenceAssetOption[] = [episode, ...(episodesQuery.data?.episodes ?? []).filter((item) => item.id !== episode.id)]
+    .filter((item) => item.toneImageUrl)
+    .map((item) => ({
+      kind: "tone",
+      id: item.id,
+      label: t("episode.referenceTone", { title: item.title }),
+      media: "image",
+      url: artifactBffUrl(item.toneImageUrl!),
+    }));
+  const sceneImageAssets: ReferenceAssetOption[] = shots
+    .filter((scene) => scene.image.url)
+    .map((scene) => ({
+      kind: "sceneImage",
+      id: scene.id,
+      label: t("episode.referenceShot", { number: scene.order }),
+      media: "image",
+      url: artifactBffUrl(scene.image.url!),
+    }));
+  const sceneVideoAssets: ReferenceAssetOption[] = shots
+    .filter((scene) => scene.video.url)
+    .map((scene) => ({
+      kind: "sceneVideo",
+      id: scene.id,
+      label: t("episode.referenceShot", { number: scene.order }),
+      media: "video",
+      url: artifactBffUrl(scene.video.url!),
+    }));
+  const voiceAssets: ReferenceAssetOption[] = (voicesQuery.data?.voices ?? [])
+    .filter((voice) => voice.audioUrl)
+    .map((voice) => ({ kind: "voice", id: voice.id, label: voice.name, media: "audio", url: artifactBffUrl(voice.audioUrl!) }));
+  const imageModelLimit = modelsQuery.data?.models.image?.capabilities?.maxReferenceImages ?? 0;
+  const imageReferenceLimit = Math.max(0, imageModelLimit - 1);
+  const videoCapabilities = modelsQuery.data?.models.video?.capabilities;
 
   const startBreakdown = () => {
     breakdownController.current = new AbortController();
@@ -345,7 +443,14 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
             </p>
             <span className="relative flex aspect-[3/2] w-full items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted">
               {episode.toneImageUrl ? (
-                <Image src={episode.toneImageUrl} alt="" fill unoptimized sizes="320px" className="object-contain" />
+                <button
+                  type="button"
+                  className="absolute inset-0 cursor-zoom-in"
+                  aria-label={t("episode.openPreview")}
+                  onClick={() => setTonePreview({ kind: "image", url: artifactBffUrl(episode.toneImageUrl!), title: t("episode.toneSheet") })}
+                >
+                  <Image src={artifactBffUrl(episode.toneImageUrl)} alt="" fill unoptimized sizes="320px" className="object-contain" />
+                </button>
               ) : (
                 <span className="px-4 text-center text-xs text-muted-foreground">{t("episode.noToneSheet")}</span>
               )}
@@ -354,41 +459,25 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
 
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">{t("episode.toneSheetHint")}</p>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="outline">
+                {t("episode.referenceLimit", {
+                  type: t("episode.referenceType.image"),
+                  count: toneReferences.length,
+                  limit: imageModelLimit,
+                })}
+              </Badge>
+            </div>
 
-            <Field>
-              <FieldLabel htmlFor="previousEpisode">{t("episode.previousEpisode")}</FieldLabel>
-              <Select
-                items={previousItems}
-                value={previousEpisodeId}
-                onValueChange={(value) => setPreviousEpisodeId(value ?? "")}
-              >
-                <SelectTrigger id="previousEpisode" className="w-full max-w-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {previousItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription>{t("episode.previousEpisodeHint")}</FieldDescription>
-            </Field>
-
-            <Field orientation="horizontal">
-              <Switch id="mergeReferences" checked={mergeReferences} onCheckedChange={setMergeReferences} />
-              <FieldLabel htmlFor="mergeReferences">{t("episode.mergeReferences")}</FieldLabel>
-            </Field>
-            <FieldDescription>{t("episode.mergeReferencesHint")}</FieldDescription>
-
-            <Field orientation="horizontal">
-              <Switch id="regenerateTone" checked={regenerate} onCheckedChange={setRegenerate} />
-              <FieldLabel htmlFor="regenerateTone">{t("episode.regenerate")}</FieldLabel>
-            </Field>
-            <FieldDescription>{t("episode.regenerateHint")}</FieldDescription>
+            <ReferencePicker
+              title={t("episode.toneReferences")}
+              hint={t("episode.toneReferencesHint")}
+              assets={[...characterAssets, ...propAssets, ...toneAssets]}
+              selected={toneReferences}
+              limits={{ image: imageModelLimit }}
+              onChange={setToneReferences}
+              onDelete={busy ? undefined : deleteReference}
+            />
 
             <div>
               <Button
@@ -396,7 +485,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 title={shots.length === 0 ? t("episode.toneSheetNeedsShots") : undefined}
                 onClick={() => toneMutation.mutate()}
               >
-                {busy ? (
+                {toneGenerating ? (
                   <Loader2 data-icon="inline-start" className="animate-spin" />
                 ) : (
                   <Sparkles data-icon="inline-start" />
@@ -406,6 +495,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
             </div>
           </div>
         </section>
+
+        <MediaPreviewDialog item={tonePreview} onOpenChange={(open) => !open && setTonePreview(null)} />
 
         <section className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/60 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -427,18 +518,24 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 size="sm"
                 disabled={busy || shots.length === 0 || !toneReady}
                 title={toneReady ? undefined : t("episode.needsToneSheetFirst")}
-                onClick={() => renderMutation.mutate(targetShots())}
+                onClick={() => {
+                  setActiveBatch("image");
+                  renderMutation.mutate(targetShots());
+                }}
               >
-                <Sparkles data-icon="inline-start" />
+                {imageBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
                 {t("episode.batchImages")}
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
                 disabled={busy || shots.length === 0}
-                onClick={() => videoMutation.mutate(targetShots())}
+                onClick={() => {
+                  setActiveBatch("video");
+                  videoMutation.mutate(targetShots());
+                }}
               >
-                <Film data-icon="inline-start" />
+                {videoBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Film data-icon="inline-start" />}
                 {t("episode.batchVideos")}
               </Button>
               <Button size="sm" variant="outline" disabled={busy} onClick={() => addShotMutation.mutate()}>
@@ -447,12 +544,6 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               </Button>
             </div>
           </div>
-
-          <Field orientation="horizontal">
-            <Switch id="withAudio" checked={withAudio} onCheckedChange={setWithAudio} />
-            <FieldLabel htmlFor="withAudio">{t("video.withAudio")}</FieldLabel>
-          </Field>
-          <FieldDescription>{t("video.withAudioHint")}</FieldDescription>
 
           {shots.length === 0 ? (
             <p className="rounded-md border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
@@ -472,8 +563,46 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 selected={selectedShots.includes(scene.id)}
                 onToggle={() => toggleShot(scene.id)}
                 busy={busy}
-                onGenerateImage={() => renderMutation.mutate([scene.id])}
-                onGenerateVideo={() => videoMutation.mutate([scene.id])}
+                onGenerateImage={() => {
+                  setActiveBatch(null);
+                  renderMutation.mutate([scene.id]);
+                }}
+                onGenerateVideo={() => {
+                  setActiveBatch(null);
+                  videoMutation.mutate([scene.id]);
+                }}
+                imageGenerating={
+                  scene.image.status === "generating" ||
+                  (imageBatchGenerating && batchIncludes(scene.id, scene.isLocked, renderMutation.variables)) ||
+                  (!toneGenerating && activeBatch === null && project?.status === "generating" &&
+                    batchIncludes(scene.id, scene.isLocked, renderMutation.variables))
+                }
+                videoGenerating={
+                  scene.video.status === "generating" ||
+                  (videoBatchGenerating && batchIncludes(scene.id, scene.isLocked, videoMutation.variables)) ||
+                  (activeBatch === null && project?.status === "video_generating" &&
+                    batchIncludes(scene.id, scene.isLocked, videoMutation.variables))
+                }
+                imageReferenceAssets={[...characterAssets, ...propAssets, ...toneAssets, ...sceneImageAssets]}
+                videoReferenceAssets={[
+                  ...characterAssets,
+                  ...propAssets,
+                  ...toneAssets,
+                  ...sceneImageAssets.filter((asset) => asset.id !== scene.id),
+                  ...sceneVideoAssets.filter((asset) => asset.id !== scene.id),
+                  ...voiceAssets,
+                ]}
+                imageReferenceLimit={imageReferenceLimit}
+                videoReferenceLimits={{
+                  image: videoCapabilities?.referenceImages
+                    ? Math.max(0, videoCapabilities.maxReferenceImages - Number(Boolean(scene.image.url)))
+                    : 0,
+                  video: videoCapabilities?.referenceVideo ? videoCapabilities.maxReferenceVideos : 0,
+                  audio: videoCapabilities?.referenceAudio ? videoCapabilities.maxReferenceAudios : 0,
+                }}
+                videoDisabled={Boolean(
+                  videoCapabilities?.referenceImagesRequired && !scene.image.url
+                )}
                 onError={setMessage}
               />
             ))
@@ -525,6 +654,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
 export default function EpisodeEditorPage() {
   const { projectId, episodeId } = useParams<{ projectId: string; episodeId: string }>();
   const { t } = useI18n();
+  const queryClient = useQueryClient();
 
   /**
    * The busy flag and the poll must read the *same* cache entry.
@@ -546,6 +676,17 @@ export default function EpisodeEditorPage() {
   });
   const project = projectsQuery.data?.projects.find((item) => item.id === projectId);
   const rendering = project ? BUSY_STATUSES.includes(project.status) : false;
+  const wasRendering = useRef(false);
+
+  useEffect(() => {
+    if (rendering) {
+      wasRendering.current = true;
+      return;
+    }
+    if (!wasRendering.current) return;
+    wasRendering.current = false;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.episode(projectId, episodeId) });
+  }, [episodeId, projectId, queryClient, rendering]);
 
   const episodeQuery = useQuery({
     queryKey: queryKeys.episode(projectId, episodeId),

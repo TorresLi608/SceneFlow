@@ -455,22 +455,24 @@ export default function VoicesPage() {
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={previewMutation.isPending}
-                  onClick={() => {
-                    setPreviewingId(voice.id);
-                    previewMutation.mutate(voice.id);
-                  }}
-                >
-                  {previewingId === voice.id ? (
-                    <Loader2 data-icon="inline-start" className="animate-spin" />
-                  ) : (
-                    <Play data-icon="inline-start" />
-                  )}
-                  {previewingId === voice.id ? t("voice.previewing") : t("voice.preview")}
-                </Button>
+                {!voice.audioUrl ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={previewMutation.isPending}
+                    onClick={() => {
+                      setPreviewingId(voice.id);
+                      previewMutation.mutate(voice.id);
+                    }}
+                  >
+                    {previewingId === voice.id ? (
+                      <Loader2 data-icon="inline-start" className="animate-spin" />
+                    ) : (
+                      <Play data-icon="inline-start" />
+                    )}
+                    {previewingId === voice.id ? t("voice.previewing") : t("voice.preview")}
+                  </Button>
+                ) : null}
                 <Button variant="ghost" size="sm" onClick={() => setEditing(voice)}>
                   <Pencil data-icon="inline-start" />
                   {t("common.edit")}

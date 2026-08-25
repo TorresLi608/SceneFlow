@@ -46,6 +46,10 @@ from app.services.usage_service import record_usage, require_model_balance
 
 logger = logging.getLogger(__name__)
 
+# ponytail: tone generation is one provider call; cap a stuck async image task so the
+# episode reaches a terminal state instead of keeping the UI in an endless poll.
+TONE_SHEET_TIMEOUT_SECONDS = 5 * 60
+
 # (filename, bytes, mime type) — the shape `ModelRouter.edit_image` takes.
 Reference = tuple[str, bytes, str]
 
@@ -64,12 +68,14 @@ class StoryboardPlan:
     # (stored path, label) for the cast sheet, the prop sheet, and the previous episode's
     # tone sheet — whichever of them exist.
     reference_sources: list[tuple[str, str]] = field(default_factory=list)
+    scene_reference_sources: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     merge_references: bool = True
     regenerate: bool = False
     existing_tone_path: str | None = None
     # The image size and quality this series renders at, from its model settings.
     size: str = ""
     quality: str = ""
+    max_reference_images: int = MAX_REFERENCE_IMAGES
 
 
 def _load(stored: str | None, label: str) -> Reference | None:
@@ -178,18 +184,20 @@ async def _generate_shot(
         text = str(scene.get("narration") or scene.get("visual_prompt") or "").strip()
         if not text:
             raise ValueError("该分镜没有内容，先填写分镜描述")
-        image = await models.edit_image(
+        prompt = shot_prompt(
+            text,
+            index + 1,
+            len(plan.scenes),
+            plan.episode_title,
+            plan.style_prompt,
+            plan.negative_prompt,
+        )
+        method = models.edit_image if references else models.generate_image
+        image = await method(
             config["apiKey"],
             config["model"],
-            shot_prompt(
-                text,
-                index + 1,
-                len(plan.scenes),
-                plan.episode_title,
-                plan.style_prompt,
-                plan.negative_prompt,
-            ),
-            references,
+            prompt,
+            *([references] if references else []),
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
             **({"size": plan.size} if plan.size else {}),
@@ -261,7 +269,7 @@ async def _anchor(plan: StoryboardPlan, config: dict[str, Any], user_id: int, co
         )
         return None
 
-    update_episode_row(plan.episode_id, tone_image_path=tone_path, tone_image_status="success")
+    update_episode_row(plan.episode_id, tone_image_path=tone_path, tone_image_status="success", error_message=None)
     await broadcast(
         plan.project_id,
         {
@@ -313,8 +321,35 @@ async def run_tone_sheet(
                 },
             )
             return
-        context = build_context_references(plan.reference_sources, merge=plan.merge_references)
-        tone_path = await _anchor(plan, config, user_id, context)
+        context = build_context_references(plan.reference_sources, merge=plan.merge_references)[: plan.max_reference_images]
+        try:
+            tone_path = await asyncio.wait_for(
+                _anchor(plan, config, user_id, context), timeout=TONE_SHEET_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            detail = f"基调图生成超过 {TONE_SHEET_TIMEOUT_SECONDS // 60} 分钟，已停止等待"
+            logger.warning("tone sheet timed out project=%s episode=%s", plan.project_id, plan.episode_id)
+            update_episode_row(
+                plan.episode_id,
+                tone_image_status="error",
+                status="failed",
+                error_message=detail,
+            )
+            update_project_row(plan.project_id, status="failed")
+            tone_path = None
+    except asyncio.CancelledError:
+        logger.info("tone sheet canceled project=%s episode=%s", plan.project_id, plan.episode_id)
+        update_episode_row(plan.episode_id, tone_image_status="idle", status="storyboard")
+        update_project_row(plan.project_id, status="idle")
+        await broadcast(
+            plan.project_id,
+            {
+                "type": "PROJECT_UPDATE",
+                "projectId": plan.project_id,
+                "data": {"status": "idle", "episodeId": plan.episode_id, "canceled": True},
+            },
+        )
+        return
     finally:
         runs.release(plan.project_id, cancellation)
     status = "storyboard" if tone_path else "failed"
@@ -343,7 +378,7 @@ async def run_storyboard(
         if tone_path is None:
             return
 
-        tone = _load(tone_path, "tone")
+        tone = _load(tone_path, "tone") if plan.max_reference_images else None
         results: list[bool] = []
         skipped = 0
         # Sequential, not fanned out: each shot references the previous shot's render, so the
@@ -363,11 +398,27 @@ async def run_storyboard(
                     skipped,
                 )
                 break
-            references = [item for item in (tone, *context, previous) if item][:MAX_REFERENCE_IMAGES]
+            scene_context = build_context_references(
+                plan.scene_reference_sources.get(scene["id"], []), merge=False
+            ) or context
+            references = [item for item in (tone, *scene_context, previous) if item][: plan.max_reference_images]
             succeeded = await _generate_shot(plan, scene, index, config, user_id, references)
             results.append(succeeded)
             if succeeded:
                 previous = _load(_stored_image_path(scene["id"]), "previous") or previous
+    except asyncio.CancelledError:
+        logger.info("storyboard canceled project=%s episode=%s", plan.project_id, plan.episode_id)
+        update_project_row(plan.project_id, status="idle")
+        update_episode_row(plan.episode_id, status="storyboard")
+        await broadcast(
+            plan.project_id,
+            {
+                "type": "PROJECT_UPDATE",
+                "projectId": plan.project_id,
+                "data": {"status": "idle", "episodeId": plan.episode_id, "canceled": True},
+            },
+        )
+        return
     finally:
         runs.release(plan.project_id, cancellation)
 

@@ -159,6 +159,10 @@ class Scene(SQLModel, table=True):
     # describes what happens over several seconds; collapsing them produced clips that
     # either stood still or ignored the composition the storyboard image had already fixed.
     video_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # Stable `{kind,id}` mentions selected beside each prompt. JSON text keeps SQLite and
+    # Alembic boring while the API exposes typed arrays.
+    image_references_json: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
+    video_references_json: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
     # The shot's screen time. Written by the breakdown as an estimate and editable after;
     # 0 means "undecided", and the renderer falls back to the project default.
     duration_ms: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isCancel } from "axios";
 import { Check, Film, ImageIcon, Loader2, Save, Trash2 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { deleteProjectSceneAction, updateProjectSceneAction } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
@@ -15,9 +15,14 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
+import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { Character, Scene } from "@/types/project";
+import type { GenerationReferenceInput } from "@/types/project";
+import type { ReferenceAssetOption } from "./reference-picker";
+import { MentionTextarea } from "./mention-textarea";
+import { MediaPreviewDialog } from "./media-preview-dialog";
 
 export interface ShotRowProps {
   projectId: string;
@@ -30,6 +35,13 @@ export interface ShotRowProps {
   busy: boolean;
   onGenerateImage: () => void;
   onGenerateVideo: () => void;
+  imageGenerating: boolean;
+  videoGenerating: boolean;
+  videoDisabled: boolean;
+  imageReferenceAssets: ReferenceAssetOption[];
+  videoReferenceAssets: ReferenceAssetOption[];
+  imageReferenceLimit: number;
+  videoReferenceLimits: { image: number; video: number; audio: number };
   onError: (message: string) => void;
 }
 
@@ -37,9 +49,8 @@ export interface ShotRowProps {
  * One shot: everything the breakdown produced for it, editable, plus the two things that
  * can be generated from it.
  *
- * The clip button stays disabled until the frame exists. That ordering is not a UI
- * preference — the video model takes the storyboard frame as its first-frame reference, so
- * a clip generated before the frame either fails outright or invents an unrelated opening.
+ * The parent disables clip generation only when the selected model's declared reference
+ * requirements are not met; text-to-video models do not need a storyboard frame first.
  */
 export function ShotRow({
   projectId,
@@ -51,6 +62,13 @@ export function ShotRow({
   busy,
   onGenerateImage,
   onGenerateVideo,
+  imageGenerating,
+  videoGenerating,
+  videoDisabled,
+  imageReferenceAssets,
+  videoReferenceAssets,
+  imageReferenceLimit,
+  videoReferenceLimits,
   onError,
 }: ShotRowProps) {
   const { t } = useI18n();
@@ -63,8 +81,31 @@ export function ShotRow({
   const [cameraMove, setCameraMove] = useState(scene.cameraMove);
   const [transition, setTransition] = useState(scene.transition);
   const [videoPrompt, setVideoPrompt] = useState(scene.videoPrompt);
+  const [imageReferences, setImageReferences] = useState<GenerationReferenceInput[]>(scene.imageReferences ?? []);
+  const [videoReferences, setVideoReferences] = useState<GenerationReferenceInput[]>(scene.videoReferences ?? []);
   const [seconds, setSeconds] = useState(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
   const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<{ kind: "image" | "video"; url: string; title: string } | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const generationStartedAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    const generating = imageGenerating || videoGenerating;
+    if (!generating) {
+      generationStartedAt.current = null;
+      return;
+    }
+    generationStartedAt.current ??= Date.now();
+    const update = () => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - (generationStartedAt.current ?? Date.now())) / 1000)));
+    };
+    const initial = window.setTimeout(update, 0);
+    const timer = window.setInterval(update, 1000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [imageGenerating, videoGenerating]);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.episode(projectId, scene.episodeId ?? "") });
@@ -78,6 +119,8 @@ export function ShotRow({
     cameraMove !== scene.cameraMove ||
     transition !== scene.transition ||
     videoPrompt !== scene.videoPrompt ||
+    JSON.stringify(imageReferences) !== JSON.stringify(scene.imageReferences ?? []) ||
+    JSON.stringify(videoReferences) !== JSON.stringify(scene.videoReferences ?? []) ||
     (seconds.trim() ? Number(seconds) * 1000 : 0) !== scene.durationMs;
 
   const saveMutation = useMutation({
@@ -92,6 +135,8 @@ export function ShotRow({
         cameraMove,
         transition,
         videoPrompt,
+        imageReferences,
+        videoReferences,
         durationMs: seconds.trim() ? Math.round(Number(seconds) * 1000) : 0,
       }),
     onSuccess: () => void refresh(),
@@ -116,13 +161,24 @@ export function ShotRow({
   ];
 
   const hasImage = scene.image.status === "success" && Boolean(scene.image.url);
+  const generating = imageGenerating || videoGenerating;
+
+  const saveBeforeGenerate = (action: () => void) => {
+    if (!dirty) {
+      action();
+      return;
+    }
+    saveMutation.mutate(undefined, { onSuccess: action });
+  };
 
   return (
     <div
       className={cn(
         "grid gap-3 rounded-lg border p-3 transition-colors md:grid-cols-[auto_minmax(0,1fr)_220px]",
-        selected ? "border-primary bg-primary/5" : "border-border/60"
+        selected ? "border-primary bg-primary/5" : "border-border/60",
+        generating && "border-primary/70 bg-primary/5 ring-1 ring-primary/30"
       )}
+      aria-busy={generating}
     >
       <button
         type="button"
@@ -151,6 +207,12 @@ export function ShotRow({
             <Badge variant="secondary">{Math.round(scene.durationMs / 1000)}s</Badge>
           ) : null}
           {scene.errorMessage ? <span className="text-xs text-destructive">{scene.errorMessage}</span> : null}
+          {generating ? (
+            <Badge variant="secondary" className="text-primary">
+              <Loader2 className="mr-1 size-3 animate-spin" />
+              {t("episode.generatingSeconds", { seconds: elapsedSeconds })}
+            </Badge>
+          ) : null}
         </div>
 
         <Textarea
@@ -161,6 +223,13 @@ export function ShotRow({
           onChange={(event) => setNarration(event.target.value)}
           className="field-sizing-fixed min-h-16 resize-y"
         />
+
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          {imageReferenceLimit > 0 ? <span>{t("episode.shotImageReferences", { count: imageReferences.length, limit: imageReferenceLimit })}</span> : null}
+          {videoReferenceLimits.image > 0 ? <span>{t("episode.shotVideoReferences", { count: videoReferences.filter((item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "image").length, limit: videoReferenceLimits.image })}</span> : null}
+          {videoReferenceLimits.video > 0 ? <span>{t("episode.shotVideoReferencesVideo", { count: videoReferences.filter((item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "video").length, limit: videoReferenceLimits.video })}</span> : null}
+          {videoReferenceLimits.audio > 0 ? <span>{t("episode.shotVideoReferencesAudio", { count: videoReferences.filter((item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "audio").length, limit: videoReferenceLimits.audio })}</span> : null}
+        </div>
 
         <button
           type="button"
@@ -207,12 +276,16 @@ export function ShotRow({
 
             <Field>
               <FieldLabel htmlFor={`visual-${scene.id}`}>{t("episode.visualPrompt")}</FieldLabel>
-              <Textarea
+              <MentionTextarea
                 id={`visual-${scene.id}`}
                 value={visualPrompt}
                 maxLength={4000}
                 rows={2}
                 onChange={(event) => setVisualPrompt(event.target.value)}
+                references={imageReferences}
+                onReferencesChange={setImageReferences}
+                assets={imageReferenceAssets}
+                limits={{ image: imageReferenceLimit }}
                 className="field-sizing-fixed min-h-16 resize-y"
               />
             </Field>
@@ -263,13 +336,17 @@ export function ShotRow({
 
             <Field>
               <FieldLabel htmlFor={`videoPrompt-${scene.id}`}>{t("episode.videoPrompt")}</FieldLabel>
-              <Textarea
+              <MentionTextarea
                 id={`videoPrompt-${scene.id}`}
                 value={videoPrompt}
                 maxLength={4000}
                 rows={2}
                 placeholder={t("episode.videoPromptPlaceholder")}
                 onChange={(event) => setVideoPrompt(event.target.value)}
+                references={videoReferences}
+                onReferencesChange={setVideoReferences}
+                assets={videoReferenceAssets}
+                limits={videoReferenceLimits}
                 className="field-sizing-fixed min-h-16 resize-y"
               />
             </Field>
@@ -301,30 +378,45 @@ export function ShotRow({
       <div className="flex flex-col gap-2">
         <span className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted">
           {scene.image.url ? (
-            <Image src={scene.image.url} alt="" fill unoptimized sizes="220px" className="object-cover" />
+            <button
+              type="button"
+              className="absolute inset-0 cursor-zoom-in"
+              aria-label={t("episode.openPreview")}
+              onClick={() => setPreview({ kind: "image", url: artifactBffUrl(scene.image.url!), title: t("episode.shotImageTitle", { number: index + 1 }) })}
+            >
+              <Image src={artifactBffUrl(scene.image.url)} alt="" fill unoptimized sizes="220px" className="object-cover" />
+            </button>
           ) : (
             <ImageIcon className="size-5 text-muted-foreground" />
           )}
         </span>
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onGenerateImage}>
+        <Button type="button" size="sm" variant="outline" disabled={busy || saveMutation.isPending} onClick={() => saveBeforeGenerate(onGenerateImage)}>
+          {imageGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
           {hasImage ? t("episode.regenerateImage") : t("episode.generateImage")}
         </Button>
 
         {scene.video.url ? (
-          <video src={scene.video.url} controls className="w-full rounded-lg border border-border/60" />
+          <video
+            src={artifactBffUrl(scene.video.url)}
+            preload="metadata"
+            title={t("episode.openPreview")}
+            onClick={() => setPreview({ kind: "video", url: artifactBffUrl(scene.video.url!), title: t("episode.shotVideoTitle", { number: index + 1 }) })}
+            className="w-full cursor-zoom-in rounded-lg border border-border/60"
+          />
         ) : null}
         <Button
           type="button"
           size="sm"
           variant="secondary"
-          disabled={busy || !hasImage}
-          title={hasImage ? undefined : t("episode.needsImageFirst")}
-          onClick={onGenerateVideo}
+          disabled={busy || videoDisabled || saveMutation.isPending}
+          title={videoDisabled ? t("episode.requiredReferencesMissing") : undefined}
+          onClick={() => saveBeforeGenerate(onGenerateVideo)}
         >
-          <Film data-icon="inline-start" />
+          {videoGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Film data-icon="inline-start" />}
           {scene.video.url ? t("episode.regenerateVideo") : t("episode.generateVideo")}
         </Button>
       </div>
+      <MediaPreviewDialog item={preview} onOpenChange={(open) => !open && setPreview(null)} />
     </div>
   );
 }

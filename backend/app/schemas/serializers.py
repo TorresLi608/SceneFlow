@@ -5,6 +5,7 @@ from typing import Any
 
 from app.models import (
     Character,
+    Asset,
     CharacterState,
     ChatMessage,
     ChatSession,
@@ -19,6 +20,7 @@ from app.models import (
 )
 from app.services.artifact_service import signed_url_for_stored
 from app.services.config_service import video_capabilities
+from app.services.reference_service import stored_generation_references
 
 
 def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int = 0) -> dict[str, Any]:
@@ -116,6 +118,14 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
         "cameraMove": scene.camera_move or "",
         "transition": scene.transition or "",
         "videoPrompt": scene.video_prompt or "",
+        "imageReferences": [
+            {"kind": kind, "id": asset_id}
+            for kind, asset_id in stored_generation_references(scene.image_references_json)
+        ],
+        "videoReferences": [
+            {"kind": kind, "id": asset_id}
+            for kind, asset_id in stored_generation_references(scene.video_references_json)
+        ],
         # 0 means undecided; the renderer falls back to the project's default shot length.
         "durationMs": scene.duration_ms or 0,
         "subtitleText": scene.subtitle_text or "",
@@ -144,6 +154,20 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
     }
 
 
+def asset_json(asset: Asset) -> dict[str, Any]:
+    return {
+        "id": asset.id,
+        "projectId": asset.project_id,
+        "name": asset.name,
+        "description": asset.description or "",
+        "kind": asset.kind,
+        "mediaType": asset.media_type,
+        "url": scene_asset_url(asset.path, f"asset-{asset.id}"),
+        "createdAt": asset.created_at,
+        "updatedAt": asset.updated_at,
+    }
+
+
 def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, Any]:
     """An episode without its script or shots, for switchers and series lists.
 
@@ -163,6 +187,7 @@ def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, An
         "sceneCount": scene_count,
         # Enough for a list row to show whether this episode has been anchored yet.
         "toneImageStatus": episode.tone_image_status or "idle",
+        "toneImageUrl": scene_asset_url(episode.tone_image_path, f"episode-{episode.episode_number}-tone"),
         "errorMessage": episode.error_message or "",
         "updatedAt": episode.updated_at,
     }

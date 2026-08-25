@@ -165,6 +165,32 @@ def test_breakdown_writes_camera_transition_duration_and_motion_prompt() -> None
             assert shots[0]["dialogue"] == "师父，我们到了。"
 
 
+def test_breakdown_releases_project_lock_when_usage_recording_fails() -> None:
+    """A post-provider failure must not leave the series permanently busy."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers, _):
+            from app.api.v1 import episodes
+
+            project = _project(client, headers)
+            episode_id = project["episodes"][0]["id"]
+            original_record_usage = episodes.record_usage
+
+            def _fail_record_usage(*_args: Any, **_kwargs: Any) -> None:
+                raise RuntimeError("usage store unavailable")
+
+            episodes.record_usage = _fail_record_usage
+            try:
+                response = _breakdown(client, headers, project["id"], episode_id)
+            finally:
+                episodes.record_usage = original_record_usage
+
+            assert response.status_code == 502
+            with database.db() as session:
+                from app.models import Project
+
+                assert session.get(Project, project["id"]).status == "idle"
+
+
 def test_shots_only_breakdown_leaves_the_motion_fields_empty() -> None:
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers, _):

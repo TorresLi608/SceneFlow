@@ -160,6 +160,7 @@ function toSummary(episode: EpisodeSummary | Episode): EpisodeSummary {
     durationMs: episode.durationMs,
     sceneCount: episode.sceneCount,
     toneImageStatus: episode.toneImageStatus,
+    toneImageUrl: episode.toneImageUrl,
     errorMessage: episode.errorMessage,
     updatedAt: episode.updatedAt,
   };

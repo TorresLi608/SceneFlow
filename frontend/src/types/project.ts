@@ -19,6 +19,8 @@ export interface Scene {
   transition: string;
   /** The motion prompt. `visualPrompt` describes the frame; this describes the seconds. */
   videoPrompt: string;
+  imageReferences: GenerationReferenceInput[];
+  videoReferences: GenerationReferenceInput[];
   /** Estimated screen time in ms. 0 means undecided — the project default applies. */
   durationMs: number;
   subtitleText: string;
@@ -68,6 +70,7 @@ export interface EpisodeSummary {
   sceneCount: number;
   /** Whether this episode has been anchored yet; the shots are rendered against it. */
   toneImageStatus: SceneTaskStatus | "idle";
+  toneImageUrl: string | null;
   errorMessage: string;
   updatedAt: string;
 }
@@ -307,6 +310,7 @@ export interface GenerateToneSheetInput {
   previousEpisodeId?: string;
   mergeReferences?: boolean;
   regenerate?: boolean;
+  references?: GenerationReferenceInput[];
 }
 
 export interface GenerateToneSheetResponse {
@@ -334,6 +338,14 @@ export interface GenerateStoryboardInput {
   mergeReferences?: boolean;
   regenerate?: boolean;
   sceneIds?: string[];
+  references?: GenerationReferenceInput[];
+}
+
+export type GenerationReferenceKind = "character" | "characterState" | "prop" | "tone" | "sceneImage" | "sceneVideo" | "voice";
+
+export interface GenerationReferenceInput {
+  kind: GenerationReferenceKind;
+  id: string;
 }
 
 export interface GenerateStoryboardResponse {
@@ -637,6 +649,8 @@ export interface UpdateSceneInput {
   cameraMove?: string;
   transition?: string;
   videoPrompt?: string;
+  imageReferences?: GenerationReferenceInput[];
+  videoReferences?: GenerationReferenceInput[];
   durationMs?: number;
   subtitleText?: string;
   isLocked?: boolean;
@@ -725,6 +739,7 @@ export interface GenerateVideoInput {
    */
   withAudio?: boolean;
   sceneIds?: string[];
+  references?: GenerationReferenceInput[];
 }
 
 export interface GenerateVideoResponse {

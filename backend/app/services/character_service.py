@@ -197,7 +197,7 @@ def resolve_character(
 def cast_for_episode(session: Session, project_id: str, episode_number: int) -> dict[str, ResolvedCharacter]:
     """Every character in the series as it stands in one episode, keyed by id."""
     characters = characters_for(session, project_id)
-    states = states_for(session, [character.id for character in characters])
+    states = states_for(session, [character.id for character in characters]) or {}
     return {
         character.id: resolve_character(character, states.get(character.id, []), episode_number)
         for character in characters

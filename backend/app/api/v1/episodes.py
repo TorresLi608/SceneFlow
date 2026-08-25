@@ -43,6 +43,7 @@ from app.services.project_service import (
     release_project_status,
     scenes_with_assets,
 )
+from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
 from app.services.usage_service import record_usage, require_model_balance
 from app.utils.common import new_id, now
@@ -345,19 +346,21 @@ async def breakdown_episode(
             user_prompt,
             config.get("baseUrl", ""),
         )
-    except Exception as exc:
-        logger.warning("breakdown failed project=%s episode=%s: %s", project_id, episode_id, exc)
-        release_project_status(project_id)
-        raise HTTPException(502, f"failed to break down script: {str(exc)[:220]}") from exc
-    record_usage(user_id, config, f"script_breakdown_{body.target}", started_at, result.usage)
+        record_usage(user_id, config, f"script_breakdown_{body.target}", started_at, result.usage)
 
-    if body.target == "video":
-        # Zipped positionally, so a model that returned a different number of shots annotates
-        # the ones it did line up with rather than corrupting the whole episode.
-        _apply_video_shots(project_id, existing, result.shots)
+        if body.target == "video":
+            # Zipped positionally, so a model that returned a different number of shots annotates
+            # the ones it did line up with rather than corrupting the whole episode.
+            _apply_video_shots(project_id, existing, result.shots)
+        else:
+            _replace_shots(project_id, episode_id, result.shots, script, body.target)
+    except Exception as exc:
+        logger.exception("breakdown failed project=%s episode=%s", project_id, episode_id)
+        raise HTTPException(502, f"failed to break down script: {str(exc)[:220]}") from exc
+    finally:
+        # Every claimed run must release the project, including usage-recording and DB-write
+        # failures after the provider call has already succeeded.
         release_project_status(project_id)
-    else:
-        _replace_shots(project_id, episode_id, result.shots, script, body.target)
 
     with db() as session:
         owned_project(session, project_id, user_id)
@@ -390,6 +393,8 @@ def _plan(
     *,
     merge_references: bool,
     regenerate: bool,
+    max_reference_images: int,
+    scene_reference_sources: dict[str, list[tuple[str, str]]] | None = None,
 ) -> StoryboardPlan:
     """Everything a background render needs, resolved before the session closes."""
     return StoryboardPlan(
@@ -407,7 +412,18 @@ def _plan(
         existing_tone_path=episode.tone_image_path,
         size=(project.image_ratio or "").strip(),
         quality=(project.image_resolution or "").strip(),
+        max_reference_images=max_reference_images,
+        scene_reference_sources=scene_reference_sources or {},
     )
+
+
+def _requested_reference_sources(session, project: Project, previous: Episode | None, references) -> list[tuple[str, str]]:
+    if references is None:
+        return _reference_sources(session, project, previous)
+    resolved = resolve_generation_references(session, project.id, [(item.kind, item.id) for item in references])
+    if resolved["videos"] or resolved["audios"]:
+        raise HTTPException(400, "tone and storyboard generation only accept image references")
+    return resolved["images"]
 
 
 @router.post("/{project_id}/episodes/{episode_id}/tone-sheet", status_code=202)
@@ -431,15 +447,20 @@ async def generate_tone_sheet(
             raise HTTPException(400, "no shots in this episode, split the script first")
         previous = _previous_episode(session, project_id, episode, body.previous_episode_id)
         config = _image_config(session, user_id, project)
+        maximum = max(0, int(config.get("imageMaxReferenceImages", 4)))
+        sources = _requested_reference_sources(session, project, previous, body.references)
+        if body.references is not None and sources and maximum == 0:
+            raise HTTPException(400, "selected image model does not accept reference images")
         claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="generating")
         touch_episode(session, episode, status="generating")
         plan = _plan(
             project,
             episode,
             scenes,
-            _reference_sources(session, project, previous),
-            merge_references=body.merge_references,
+            sources,
+            merge_references=True if body.references is not None else body.merge_references,
             regenerate=body.regenerate,
+            max_reference_images=maximum,
         )
 
     await broadcast(
@@ -447,7 +468,8 @@ async def generate_tone_sheet(
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
     )
     cancellation = runs.register(project_id)
-    asyncio.create_task(run_tone_sheet(plan, config, user_id, cancellation=cancellation))
+    task = asyncio.create_task(run_tone_sheet(plan, config, user_id, cancellation=cancellation))
+    runs.attach_task(project_id, cancellation, task)
     return {
         "projectId": project_id,
         "episodeId": plan.episode_id,
@@ -480,6 +502,23 @@ async def generate_storyboard(
 
         previous = _previous_episode(session, project_id, episode, body.previous_episode_id)
         config = _image_config(session, user_id, project)
+        maximum = max(0, int(config.get("imageMaxReferenceImages", 4)))
+        sources = _requested_reference_sources(session, project, previous, body.references)
+        selected_limit = max(0, maximum - 1)
+        if body.references is not None and len(sources) > selected_limit:
+            raise HTTPException(400, f"selected image model accepts at most {selected_limit} additional references")
+        scene_sources: dict[str, list[tuple[str, str]]] = {}
+        if body.references is None:
+            for scene in pending:
+                pairs = stored_generation_references(scene.image_references_json)
+                if not pairs:
+                    continue
+                resolved = resolve_generation_references(session, project_id, pairs)
+                if resolved["videos"] or resolved["audios"]:
+                    raise HTTPException(400, "image prompts only accept image references")
+                if len(resolved["images"]) > selected_limit:
+                    raise HTTPException(400, f"selected image model accepts at most {selected_limit} additional references")
+                scene_sources[scene.id] = resolved["images"]
 
         # The lock stays on the project: one run owns the series, so a second episode cannot
         # start rendering into the same worker pool while this one is going.
@@ -489,9 +528,11 @@ async def generate_storyboard(
             project,
             episode,
             pending,
-            _reference_sources(session, project, previous),
-            merge_references=body.merge_references,
+            sources,
+            merge_references=False if body.references is not None else body.merge_references,
             regenerate=body.regenerate,
+            max_reference_images=maximum,
+            scene_reference_sources=scene_sources,
         )
 
     await broadcast(
@@ -499,7 +540,8 @@ async def generate_storyboard(
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
     )
     cancellation = runs.register(project_id)
-    asyncio.create_task(run_storyboard(plan, config, user_id, cancellation=cancellation))
+    task = asyncio.create_task(run_storyboard(plan, config, user_id, cancellation=cancellation))
+    runs.attach_task(project_id, cancellation, task)
     return {
         "projectId": project_id,
         "episodeId": plan.episode_id,

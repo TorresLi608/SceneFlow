@@ -143,6 +143,30 @@ class CreateEpisodeRequest(CamelModel):
     source_text: str = Field(default="", max_length=200_000)
 
 
+GenerationReferenceKind = Literal["character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice"]
+
+AssetKind = Literal["image", "video", "audio"]
+
+
+class CreateAssetRequest(CamelModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=4000)
+    kind: AssetKind
+    data: str = Field(min_length=20, max_length=80_000_000)
+
+
+class MergeAssetsRequest(CamelModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=4000)
+    kind: AssetKind
+    asset_ids: list[str] = Field(min_length=1, max_length=64)
+
+
+class GenerationReferenceRequest(CamelModel):
+    kind: GenerationReferenceKind
+    id: str = Field(min_length=1, max_length=64)
+
+
 class GenerateToneSheetRequest(CamelModel):
     """Anchor this episode's look, as a step of its own.
 
@@ -153,6 +177,7 @@ class GenerateToneSheetRequest(CamelModel):
 
     previous_episode_id: str | None = Field(default=None, max_length=64)
     merge_references: bool = True
+    references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
     # Without this an existing tone sheet is reused rather than resampled.
     regenerate: bool = False
 
@@ -171,6 +196,7 @@ class GenerateStoryboardRequest(CamelModel):
     # that are still missing rather than resampling the episode's whole look.
     regenerate: bool = False
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
+    references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
 
 
 BreakdownTarget = Literal["shots", "video", "both"]
@@ -230,6 +256,8 @@ class UpdateSceneRequest(CamelModel):
     transition: str | None = Field(default=None, max_length=80)
     # The motion prompt; `visual_prompt` stays the still.
     video_prompt: str | None = Field(default=None, max_length=4000)
+    image_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
+    video_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
     # 0 means undecided — the renderer falls back to the project's default shot length.
     duration_ms: int | None = Field(default=None, ge=0, le=600_000)
     subtitle_text: str | None = Field(default=None, max_length=4000)
@@ -450,3 +478,4 @@ class GenerateVideoRequest(CamelModel):
     # not is a 400 rather than a silent downgrade the user would pay for and not notice.
     with_audio: bool = False
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
+    references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)

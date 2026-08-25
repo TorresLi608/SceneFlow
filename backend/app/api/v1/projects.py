@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import time
 from typing import Any
@@ -22,6 +23,7 @@ from app.schemas.requests import (
     GenerateCoverRequest,
     GenerateProjectRequest,
     GenerateVideoRequest,
+    GenerationReferenceKind,
     OptimizeProjectRequest,
     ParseProjectRequest,
     ProductionSettingsRequest,
@@ -32,7 +34,7 @@ from app.schemas.requests import (
     UpdateSceneRequest,
 )
 from app.schemas.serializers import episode_summary_json, project_json, scene_json
-from app.services.artifact_service import decode_image_data_url, store_artifact
+from app.services.artifact_service import decode_image_data_url, remove_stored_artifacts, store_artifact
 from app.services.config_service import (
     PROJECT_CONFIG_COLUMNS,
     active_model_config,
@@ -60,8 +62,9 @@ from app.services.project_service import (
     release_project_status,
     scenes_with_assets,
 )
+from app.services.reference_service import clear_generation_reference, resolve_generation_references, stored_generation_references
 from app.services.usage_service import record_usage, require_model_balance
-from app.services.video_service import resolve_video_options
+from app.services.video_service import resolve_video_options, supported_video_defaults, validate_video_reference_counts
 from app.utils.common import new_id, now
 
 
@@ -121,7 +124,7 @@ def _scene_payloads(
     cast = cast_for_episode(session, project.id, episode_number)
     links = scene_cast(session, [scene.id for scene in scenes])
     payloads = []
-    for scene in scenes:
+    for index, scene in enumerate(scenes):
         payload = scene.model_dump()
         payload["style_prompt"] = project.style_prompt
         payload["negative_prompt"] = project.negative_prompt
@@ -131,6 +134,11 @@ def _scene_payloads(
         # The speaker need not be on screen, so it is resolved independently of the cast.
         speaker = cast.get(scene.speaker_character_id or "")
         payload["speaker"] = speaker.as_payload() if speaker else None
+        if index:
+            previous = scenes[index - 1]
+            payload["previous_video_prompt"] = str(
+                previous.video_prompt or previous.visual_prompt or previous.narration or ""
+            ).strip()
         payloads.append(payload)
     return payloads
 
@@ -517,6 +525,8 @@ _SCENE_COLUMNS = (
     ("visual_prompt", "visual_prompt"),
     ("shot_type", "shot_type"),
     ("camera_move", "camera_move"),
+    ("transition", "transition"),
+    ("video_prompt", "video_prompt"),
     ("duration_ms", "duration_ms"),
     ("subtitle_text", "subtitle_text"),
     ("is_locked", "is_locked"),
@@ -529,6 +539,11 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
     # real edits, and only an absent key means "leave it alone".
     sent = body.model_dump(exclude_unset=True)
     updates = {column: sent[field] for field, column in _SCENE_COLUMNS if field in sent and sent[field] is not None}
+    for field, column in (("image_references", "image_references_json"), ("video_references", "video_references_json")):
+        if field in sent and sent[field] is not None:
+            updates[column] = json.dumps(
+                [{"kind": item.kind, "id": item.id} for item in sent[field]], separators=(",", ":")
+            )
     if not updates:
         raise HTTPException(400, "no fields to update")
     # "Nobody in particular" arrives as an empty string, because a JSON null would be
@@ -544,6 +559,14 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
         ).first()
         if not scene:
             raise HTTPException(404, "scene not found")
+        for field in ("image_references", "video_references"):
+            if field not in sent or sent[field] is None:
+                continue
+            resolved = resolve_generation_references(
+                session, project_id, [(item.kind, item.id) for item in sent[field]]
+            )
+            if field == "image_references" and (resolved["videos"] or resolved["audios"]):
+                raise HTTPException(400, "image prompts only accept image references")
         speaker_id = updates.get("speaker_character_id")
         if speaker_id:
             # A speaker from another show would silently resolve to no voice at render time.
@@ -596,10 +619,26 @@ async def create_project_scene(
             visual_prompt=body.visual_prompt or "",
             shot_type=body.shot_type or "",
             camera_move=body.camera_move or "",
+            transition=body.transition or "",
+            video_prompt=body.video_prompt or "",
+            image_references_json=json.dumps(
+                [{"kind": item.kind, "id": item.id} for item in body.image_references or []], separators=(",", ":")
+            ),
+            video_references_json=json.dumps(
+                [{"kind": item.kind, "id": item.id} for item in body.video_references or []], separators=(",", ":")
+            ),
             duration_ms=body.duration_ms or 0,
             subtitle_text=body.subtitle_text or "",
             is_locked=bool(body.is_locked),
         )
+        for references, image_only in ((body.image_references, True), (body.video_references, False)):
+            if references is None:
+                continue
+            resolved = resolve_generation_references(
+                session, project_id, [(item.kind, item.id) for item in references]
+            )
+            if image_only and (resolved["videos"] or resolved["audios"]):
+                raise HTTPException(400, "image prompts only accept image references")
         session.add(scene)
         touch_episode(session, episode, status="storyboard")
         project.updated_at = stamp
@@ -633,6 +672,25 @@ async def delete_project_scene(project_id: str, scene_id: str, user_id: int = De
         project.updated_at = stamp
         session.add(project)
     await broadcast(project_id, {"type": "SCENE_DELETED", "projectId": project_id, "sceneId": scene_id})
+
+
+@router.delete("/{project_id}/references/{kind}/{asset_id}", status_code=204)
+async def delete_generation_reference(
+    project_id: str,
+    kind: GenerationReferenceKind,
+    asset_id: str,
+    user_id: int = Depends(current_user_id),
+) -> None:
+    with db() as session:
+        project = owned_project(session, project_id, user_id)
+        if (project.status or "idle") not in IDLE_STATUSES:
+            raise HTTPException(409, "project is busy, cannot delete reference media right now")
+        paths = clear_generation_reference(session, project_id, kind, asset_id)
+    remove_stored_artifacts(paths)
+    await broadcast(
+        project_id,
+        {"type": "REFERENCE_DELETED", "projectId": project_id, "kind": kind, "assetId": asset_id},
+    )
 
 
 def _replace_scenes(project_id: str, episode_id: str, drafts: list[Any], source_text: str) -> list[Scene]:
@@ -850,14 +908,27 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         episode_id = episode.id
         touch_episode(session, episode, status="generating")
         scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
+        maximum = max(0, int(config.get("imageMaxReferenceImages", 4)))
+        for payload in scene_payloads:
+            pairs = stored_generation_references(payload.get("image_references_json"))
+            if not pairs:
+                continue
+            resolved = resolve_generation_references(session, project_id, pairs)
+            if resolved["videos"] or resolved["audios"]:
+                raise HTTPException(400, "image prompts only accept image references")
+            if len(resolved["images"]) > maximum:
+                raise HTTPException(400, f"selected image model accepts at most {maximum} reference images")
+            payload["referenceImagePaths"] = [stored for stored, _ in resolved["images"]]
+            payload["explicitReferences"] = True
     await broadcast(
         project_id,
         {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "generating", "episodeId": episode_id}},
     )
     cancellation = runs.register(project_id)
-    asyncio.create_task(
+    task = asyncio.create_task(
         run_generation(project_id, scene_payloads, config, user_id, episode_id=episode_id, cancellation=cancellation)
     )
+    runs.attach_task(project_id, cancellation, task)
     return {
         "projectId": project_id,
         "episodeId": episode_id,
@@ -882,27 +953,37 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         if model != config["model"]:
             raise HTTPException(400, "selected video model is not the active video configuration")
         try:
-            # The project's saved defaults sit under whatever the request sent, so a batch
-            # started from the episode editor renders at the settings the model panel shows
-            # without the client having to repeat them on every call.
+            # A project can outlive its selected model. Keep only saved defaults the current
+            # model supports; explicit request values still go through strict validation.
+            capabilities = config["videoCapabilities"]
             quality, aspect_ratio, fps, duration, prompt_extend = resolve_video_options(
                 {
-                    "quality": project.video_quality,
-                    "aspectRatio": project.video_aspect_ratio,
-                    "fps": project.video_fps,
-                    "duration": project.video_duration,
-                    "promptExtend": project.video_prompt_extend,
-                    **body.model_dump(by_alias=True, exclude_none=True),
+                    **supported_video_defaults(
+                        {
+                            "quality": project.video_quality,
+                            "aspectRatio": project.video_aspect_ratio,
+                            "fps": project.video_fps,
+                            "duration": project.video_duration,
+                            "promptExtend": project.video_prompt_extend,
+                        },
+                        capabilities,
+                    ),
+                    **body.model_dump(by_alias=True, exclude_none=True, exclude_unset=True),
                 },
-                config["videoCapabilities"],
+                capabilities,
             )
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, str(exc)[:220]) from exc
         pending = _selected_scenes(scenes, body.scene_ids)
         if not pending:
             raise HTTPException(400, "every scene video in this episode is locked")
-        if config["videoCapabilities"]["referenceImagesRequired"] and not any(scene.image_path for scene in pending):
-            raise HTTPException(400, "selected video model requires storyboard images, generate them first")
+        resolved_references = (
+            resolve_generation_references(
+                session, project_id, [(reference.kind, reference.id) for reference in body.references]
+            )
+            if body.references is not None
+            else {"images": [], "videos": [], "audios": []}
+        )
         voice_sheet_path = None
         if body.with_audio:
             # Refused rather than downgraded: the user opted into a costlier render for a
@@ -912,6 +993,39 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             if not project.voice_sheet_path:
                 raise HTTPException(400, "merge the project's voices before rendering with audio")
             voice_sheet_path = project.voice_sheet_path
+        if body.references is not None:
+            try:
+                for scene in pending:
+                    automatic_image = int(bool(capabilities["referenceImages"] and scene.image_path))
+                    validate_video_reference_counts(
+                        capabilities,
+                        automatic_image + len(resolved_references["images"]),
+                        len(resolved_references["videos"]),
+                        len(resolved_references["audios"]) + int(bool(voice_sheet_path)),
+                    )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)[:220]) from exc
+        scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
+        if body.references is None:
+            for payload in scene_payloads:
+                pairs = stored_generation_references(payload.get("video_references_json"))
+                if not pairs:
+                    continue
+                resolved = resolve_generation_references(session, project_id, pairs)
+                automatic_image = int(bool(capabilities["referenceImages"] and payload.get("image_path")))
+                try:
+                    validate_video_reference_counts(
+                        capabilities,
+                        automatic_image + len(resolved["images"]),
+                        len(resolved["videos"]),
+                        len(resolved["audios"]) + int(bool(voice_sheet_path)),
+                    )
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)[:220]) from exc
+                payload["referenceImagePaths"] = [stored for stored, _ in resolved["images"]]
+                payload["referenceVideoPaths"] = resolved["videos"]
+                payload["referenceAudioPaths"] = resolved["audios"]
+                payload["explicitReferences"] = True
         claim_project_status(
             session,
             project_id,
@@ -922,7 +1036,6 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         )
         touch_episode(session, episode, status="generating", video_status="generating", video_progress=0)
         episode_id = episode.id
-        scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
     await broadcast(
         project_id,
         {
@@ -932,7 +1045,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         },
     )
     cancellation = runs.register(project_id)
-    asyncio.create_task(
+    task = asyncio.create_task(
         run_video_generation(
             project_id,
             scene_payloads,
@@ -946,17 +1059,22 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
                 "duration": duration,
                 "promptExtend": prompt_extend,
                 "voiceSheetPath": voice_sheet_path,
+                "referenceImagePaths": [stored for stored, _ in resolved_references["images"]],
+                "referenceVideoPaths": resolved_references["videos"],
+                "referenceAudioPaths": resolved_references["audios"],
+                "explicitReferences": body.references is not None,
             },
             cancellation=cancellation,
         )
     )
+    runs.attach_task(project_id, cancellation, task)
     return {
         "projectId": project_id,
         "episodeId": episode_id,
         "status": "video_generating",
         "model": model,
         "sceneCount": len(scene_payloads),
-        "withAudio": bool(voice_sheet_path),
+        "withAudio": bool(voice_sheet_path or resolved_references["audios"]),
     }
 
 

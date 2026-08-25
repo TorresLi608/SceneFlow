@@ -4977,6 +4977,14 @@ components:
             minItems: 1
           - type: 'null'
           title: Sceneids
+        references:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: References
       additionalProperties: false
       type: object
       title: GenerateStoryboardRequest
@@ -5000,6 +5008,14 @@ components:
           type: boolean
           title: Mergereferences
           default: true
+        references:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: References
         regenerate:
           type: boolean
           title: Regenerate
@@ -5068,9 +5084,41 @@ components:
             minItems: 1
           - type: 'null'
           title: Sceneids
+        references:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: References
       additionalProperties: false
       type: object
       title: GenerateVideoRequest
+    GenerationReferenceRequest:
+      properties:
+        kind:
+          type: string
+          enum:
+          - character
+          - characterState
+          - prop
+          - tone
+          - sceneImage
+          - sceneVideo
+          - voice
+          title: Kind
+        id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Id
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - id
+      title: GenerationReferenceRequest
     HTTPValidationError:
       properties:
         detail:

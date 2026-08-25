@@ -30,6 +30,7 @@ import type {
   GenerateToneSheetResponse,
   GenerateVideoInput,
   GenerateVideoResponse,
+  GenerationReferenceKind,
   ImportVoiceProfileInput,
   OptimizeProjectInput,
   OptimizeProjectResponse,
@@ -105,6 +106,14 @@ export async function createProjectSceneAction(projectID: string, payload: Creat
 
 export async function deleteProjectSceneAction(projectID: string, sceneID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/scenes/${sceneID}`);
+}
+
+export async function deleteGenerationReferenceAction(
+  projectID: string,
+  kind: GenerationReferenceKind,
+  assetID: string
+) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/references/${kind}/${assetID}`);
 }
 
 export async function reorderProjectScenesAction(projectID: string, payload: ReorderScenesInput) {

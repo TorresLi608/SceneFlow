@@ -8,6 +8,7 @@ import binascii
 import hashlib
 from pathlib import Path, PurePosixPath
 import json
+import logging
 import re
 from typing import Literal
 
@@ -27,6 +28,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from app.core.config import CJK_FONT_NAME, CJK_FONT_PATH, JWT_SECRET, PRIVATE_GENERATED_DIR, PUBLIC_BASE_URL
 from app.utils.common import new_id
+
+
+logger = logging.getLogger(__name__)
 
 
 MAX_DOCUMENT_CHARS = 100_000
@@ -395,6 +399,15 @@ def store_artifact(category: str, scope: str, filename: str, data: bytes) -> str
     path.write_bytes(data)
     path.chmod(0o600)
     return artifact_relative_path(path)
+
+
+def remove_stored_artifacts(values: list[str]) -> None:
+    """Remove database-detached generated files without allowing paths outside the private root."""
+    for value in set(values):
+        try:
+            artifact_absolute_path(value).unlink(missing_ok=True)
+        except (OSError, ValueError) as exc:
+            logger.warning("failed to remove stored artifact path=%s: %s", value, exc)
 
 
 def artifact_from_token(token: str) -> tuple[Path, str, str, bool]:

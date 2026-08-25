@@ -101,29 +101,38 @@ def validate_video_inputs(
     references = references or []
     reference_videos = reference_videos or []
     reference_audios = reference_audios or []
-    maximum = capabilities["maxReferenceImages"] if capabilities.get("referenceImages", capabilities["maxReferenceImages"] > 0) else 0
-    if capabilities["referenceImagesRequired"] and not references:
-        raise ValueError("selected model requires a reference image")
-    if len(references) > maximum:
-        raise ValueError(f"selected model accepts at most {maximum} reference images")
-    if reference_videos and not capabilities["referenceVideo"]:
-        raise ValueError("selected model does not support a reference video")
-    if capabilities["referenceVideosRequired"] and not reference_videos:
-        raise ValueError("selected model requires a reference video")
-    if len(reference_videos) > capabilities["maxReferenceVideos"]:
-        raise ValueError(f"selected model accepts at most {capabilities['maxReferenceVideos']} reference videos")
-    if reference_audios and not capabilities["referenceAudio"]:
-        raise ValueError("selected model does not support reference audio")
-    if capabilities["referenceAudiosRequired"] and not reference_audios:
-        raise ValueError("selected model requires reference audio")
-    if len(reference_audios) > capabilities["maxReferenceAudios"]:
-        raise ValueError(f"selected model accepts at most {capabilities['maxReferenceAudios']} reference audios")
+    validate_video_reference_counts(capabilities, len(references), len(reference_videos), len(reference_audios))
     for reference in references:
         media_data_url(reference, "image")
     for reference_video in reference_videos:
         media_data_url(reference_video, "video")
     for reference_audio in reference_audios:
         media_data_url(reference_audio, "audio")
+
+
+def validate_video_reference_counts(
+    capabilities: dict[str, Any],
+    image_count: int,
+    video_count: int,
+    audio_count: int,
+) -> None:
+    maximum = capabilities["maxReferenceImages"] if capabilities.get("referenceImages", capabilities["maxReferenceImages"] > 0) else 0
+    if capabilities["referenceImagesRequired"] and not image_count:
+        raise ValueError("selected model requires a reference image")
+    if image_count > maximum:
+        raise ValueError(f"selected model accepts at most {maximum} reference images")
+    if video_count and not capabilities["referenceVideo"]:
+        raise ValueError("selected model does not support a reference video")
+    if capabilities["referenceVideosRequired"] and not video_count:
+        raise ValueError("selected model requires a reference video")
+    if video_count > capabilities["maxReferenceVideos"]:
+        raise ValueError(f"selected model accepts at most {capabilities['maxReferenceVideos']} reference videos")
+    if audio_count and not capabilities["referenceAudio"]:
+        raise ValueError("selected model does not support reference audio")
+    if capabilities["referenceAudiosRequired"] and not audio_count:
+        raise ValueError("selected model requires reference audio")
+    if audio_count > capabilities["maxReferenceAudios"]:
+        raise ValueError(f"selected model accepts at most {capabilities['maxReferenceAudios']} reference audios")
 
 
 def resolve_video_settings(provider: str, aspect_ratio: str, quality: str | None = None) -> VideoSettings:
@@ -191,6 +200,21 @@ def resolve_video_options(payload: dict[str, Any], capabilities: dict[str, Any])
     if prompt_extend and not capabilities["promptExtend"]:
         raise ValueError("selected model does not support promptExtend")
     return quality, aspect_ratio, fps, duration, prompt_extend
+
+
+def supported_video_defaults(payload: dict[str, Any], capabilities: dict[str, Any]) -> dict[str, Any]:
+    """Drop saved project defaults that the currently selected model cannot accept."""
+    defaults = {
+        name: payload[name]
+        for name, capability in (("quality", "qualities"), ("aspectRatio", "aspectRatios"), ("fps", "fps"))
+        if payload.get(name) in capabilities[capability]
+    }
+    duration = payload.get("duration")
+    if isinstance(duration, int) and not isinstance(duration, bool) and capabilities["minDuration"] <= duration <= capabilities["maxDuration"]:
+        defaults["duration"] = duration
+    if payload.get("promptExtend") and capabilities["promptExtend"]:
+        defaults["promptExtend"] = True
+    return defaults
 
 
 def build_doubao_payload(
@@ -552,10 +576,13 @@ async def _generate_qwen_video_sdk(
         if getattr(result, "status_code", 200) != 200:
             raise ValueError(f"Qwen video task failed: {getattr(result, 'message', '') or getattr(result, 'code', '')}")
         output = getattr(result, "output", None) or {}
-        status = str(output.get("task_status") or "").upper()
+        status = str(_sdk_value(output, "task_status", "status") or "").upper()
         if status and status != "SUCCEEDED":
-            raise ValueError(f"Qwen video task {status.lower()}: {output.get('message') or output.get('code') or ''}")
-        video_url = str((output.get("video_url") if hasattr(output, "get") else getattr(output, "video_url", "")) or "")
+            raise ValueError(
+                f"Qwen video task {status.lower()}: "
+                f"{_sdk_value(output, 'message', 'code') or ''}"
+            )
+        video_url = str(_sdk_value(output, "video_url", "videoUrl", "url") or "")
         if not video_url:
             raise ValueError("Qwen video task succeeded without a video URL")
         async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:

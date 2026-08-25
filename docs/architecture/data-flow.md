@@ -38,19 +38,20 @@ episode editor ─▶ breakdownEpisodeAction ─▶ POST /api/projects/:id/episo
 ```
 POST /api/projects/:id/episodes/:episodeId/tone-sheet     ← anchor, on its own
 POST /api/projects/:id/episodes/:episodeId/storyboard     ← frames, against the anchor
-   { sceneIds? }
+   { sceneIds?, references? }
    ─▶ claim_project_status  (conditional UPDATE; second click loses)
    ─▶ runs.register(project_id)  ─▶ asyncio.create_task(...)   ← returns 202 immediately
         └─ sequential, checking runs.is_cancelled between shots:
-             tone sheet + merged context sheet + previous shot's render
+             tone sheet + selected reference images + previous shot's render
              store_artifact()       ─▶ private_generated/<relative path>
              broadcast SCENE_UPDATE ─▶ ws://…/ws/projects/:id
    ─▶ terminal status: done | partial | failed | idle(stopped)
 ```
 
 - **The tone sheet is its own step.** It decides lighting, palette, and render style for every frame that follows, so approving it first is much cheaper than discovering after twenty full-resolution renders that the episode looks wrong. `/storyboard` still generates one when none exists, so a caller that skipped the step gets an anchored render rather than twenty unrelated frames.
+- `references` contains project-owned asset ids, never signed URLs. Tone-sheet generation accepts character, character-state, prop, and existing tone images and merges the selection into one provider slot. Storyboard generation passes selected image assets separately after reserving one slot for the tone sheet.
 - `sceneIds` selects a subset — one shot for a regenerate, several for a batch. Omitted means every unlocked shot. Locked shots are skipped, and all-locked is a `400` rather than a silent no-op.
-- A shot's cast contributes **appearance prompts**, which work on every provider, and **reference sheets**, which are passed image-to-image and are what actually holds a face steady. At most `MAX_REFERENCE_IMAGES` (4) per request.
+- The model config's `imageMaxReferenceImages` is enforced by both the editor and endpoint. A zero-reference model uses text-to-image; the renderer no longer assumes every image model supports edits.
 - A portrait whose file is missing is skipped rather than failing the shot: losing consistency is a smaller harm than losing the render.
 - The terminal status reflects what actually landed. `partial` is a real outcome, not an error state to normalise away.
 
@@ -68,20 +69,20 @@ Cooperative, not an interrupt. A frame the provider is already drawing has been 
 ## 3. Shots -> generated clips (drama / motion comic)
 
 ```
-POST /api/projects/:id/generate-video   { sceneIds?, withAudio? }
+POST /api/projects/:id/generate-video   { sceneIds?, references? }
    -> project's video config + its declared capabilities
    -> project's saved defaults under whatever the request sent
    -> selected shots, <=2 concurrent, cancellable between shots
         storyboard image -> first-frame reference when supported/required
         video_prompt (falling back to visual_prompt) + camera move + transition
         per-shot duration_ms, clamped to the model's min/max
-        merged project timbre track -> reference audio when supported
+        selected project images / prior clips / voice samples -> references when supported
         video provider -> store_artifact(projects/<id>/<scene>.mp4)
         broadcast SCENE_UPDATE -> videoStatus / videoProgress / videoUrl
    -> terminal project + episode status
 ```
 
-- **A clip needs its frame first.** The video model takes the storyboard image as its first-frame reference, so the editor keeps the clip button disabled until the frame exists; a model that *requires* a reference marks a shot without one as failed rather than inventing an opening from an unrelated portrait.
+- The storyboard image is the automatic first-frame reference only when the selected model accepts images. Additional image, existing clip, and voice references are user-selected, resolved back to stored paths under the same project, and capped by `videoCapabilities`. Required reference kinds disable generation until satisfied; text-to-video models do not require a frame first.
 - The motion prompt is tried before the frame prompt: `visual_prompt` describes a still, and a clip generated from it tends to hold still.
 - Duration comes from the shot, not the batch. A six-second beat and a two-second reaction rendered at one fixed length is the pacing problem the breakdown's estimate exists to fix; a shot with no estimate falls back to the project default.
 - The same capability validator serves the standalone video page and this batch path. Aspect ratio, FPS, quality, duration, prompt enhancement, and reference media are omitted when the selected model does not support them.

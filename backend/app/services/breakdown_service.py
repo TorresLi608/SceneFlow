@@ -147,6 +147,10 @@ def build_user_prompt(
     existing_shots: list[dict[str, Any]] | None = None,
 ) -> str:
     """The user turn: what to produce, what to lean on, and the script itself."""
+    characters = [item for item in (characters or []) if isinstance(item, dict)]
+    props = [item for item in (props or []) if isinstance(item, dict)]
+    voices = [str(item).strip() for item in (voices or []) if item is not None and str(item).strip()]
+    existing_shots = [item for item in (existing_shots or []) if isinstance(item, dict)]
     parts = [TARGET_INSTRUCTIONS.get(target, TARGET_INSTRUCTIONS["both"])]
     parts.append(f"剧集标题：{(episode.title or '').strip()}")
     if (episode.synopsis or "").strip():
@@ -165,6 +169,7 @@ def build_user_prompt(
         numbered = "\n".join(
             f"{index}. {shot.get('narration') or shot.get('visual_prompt') or ''}"
             for index, shot in enumerate(existing_shots, start=1)
+            if isinstance(shot, dict)
         )
         parts.append(f"已有分镜（共 {len(existing_shots)} 个，请逐一对应补充视频分镜）：\n{numbered}")
     else:

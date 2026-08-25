@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # project id -> the flag its running render polls. Present only while a run is registered.
 _cancellations: dict[str, asyncio.Event] = {}
+_tasks: dict[str, asyncio.Task[object]] = {}
 
 
 def register(project_id: str) -> asyncio.Event:
@@ -50,6 +51,13 @@ def release(project_id: str, event: asyncio.Event | None = None) -> None:
     if current is None or (event is not None and current is not event):
         return
     _cancellations.pop(project_id, None)
+    _tasks.pop(project_id, None)
+
+
+def attach_task(project_id: str, event: asyncio.Event, task: asyncio.Task[object]) -> None:
+    """Associate the background task so stop can interrupt an in-flight provider call."""
+    if _cancellations.get(project_id) is event:
+        _tasks[project_id] = task
 
 
 def cancel(project_id: str) -> bool:
@@ -58,6 +66,9 @@ def cancel(project_id: str) -> bool:
     if event is None:
         return False
     event.set()
+    task = _tasks.get(project_id)
+    if task and not task.done():
+        task.cancel()
     logger.info("cancellation requested project=%s", project_id)
     return True
 

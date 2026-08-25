@@ -101,7 +101,17 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         if config["provider"] not in {"openai", "gemini", "qwen"}:
             raise ValueError("image generation currently only supports provider openai/gemini/qwen")
         await scene_event(project_id, scene_id, imageStatus="generating", imageProgress=20, errorMsg="")
-        references = character_references(scene)
+        references: list[tuple[str, bytes, str]] = []
+        if scene.get("explicitReferences"):
+            for stored in scene.get("referenceImagePaths") or []:
+                try:
+                    path = artifact_absolute_path(stored)
+                    references.append((path.name, path.read_bytes(), media_type_for(path.name)))
+                except (ValueError, OSError):
+                    logger.info("skipping unreadable selected image reference scene=%s", scene_id)
+        else:
+            references = character_references(scene)
+        references = references[: max(0, int(config.get("imageMaxReferenceImages", MAX_REFERENCE_IMAGES)))]
         if references:
             # Image-to-image with the cast's portraits: the appearance prompt alone drifts
             # over a long series, the reference is what actually holds a face steady.
@@ -195,6 +205,17 @@ async def run_generation(
 
     try:
         outcomes = await asyncio.gather(*(one(scene) for scene in scenes))
+    except asyncio.CancelledError:
+        for scene in scenes:
+            update_scene_row(scene["id"], image_status="idle")
+        update_project_row(project_id, status="idle")
+        if episode_id:
+            update_episode_row(episode_id, status="storyboard")
+        await broadcast(
+            project_id,
+            {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "episodeId": episode_id, "canceled": True}},
+        )
+        return
     finally:
         runs.release(project_id, cancellation)
     # None marks a shot that never ran. It is neither a success nor a failure, and counting
@@ -306,19 +327,27 @@ async def _generate_scene_video(
         references = []
         if capabilities["referenceImages"] and scene.get("image_path"):
             references.append(_stored_media(scene["image_path"]))
+        if scene.get("explicitReferences") or options.get("explicitReferences"):
+            references.extend(_stored_media(stored) for stored in (
+                scene.get("referenceImagePaths") or options.get("referenceImagePaths") or []
+            ))
+        else:
+            for _, data, mime_type in character_references(scene):
+                if len(references) >= capabilities["maxReferenceImages"]:
+                    break
+                references.append({"name": "character.png", "data": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"})
+        references = references[: capabilities["maxReferenceImages"]]
         if capabilities["referenceImagesRequired"] and not references:
             raise ValueError("该分镜缺少模型必需的参考图")
-        for _, data, mime_type in character_references(scene):
-            if len(references) >= capabilities["maxReferenceImages"]:
-                break
-            references.append({"name": "character.png", "data": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"})
-        driving_audio = (
-            # The project's timbre reference, not a per-shot track: shots no longer carry
-            # their own audio, and this is what tells the model who sounds like what.
-            _stored_media(options["voiceSheetPath"])
-            if capabilities["referenceAudio"] and options.get("voiceSheetPath")
-            else None
-        )
+        reference_videos = [_stored_media(stored) for stored in (
+            scene.get("referenceVideoPaths") or options.get("referenceVideoPaths") or []
+        )]
+        reference_audios = [_stored_media(stored) for stored in (
+            scene.get("referenceAudioPaths") or options.get("referenceAudioPaths") or []
+        )]
+        if capabilities["referenceAudio"] and options.get("voiceSheetPath"):
+            # Backward compatibility for callers that still opt into the merged timbre track.
+            reference_audios.append(_stored_media(options["voiceSheetPath"]))
         # The motion prompt first: `visual_prompt` describes a frame, and a clip generated
         # from it tends to hold still. Narration is the last resort.
         prompt = str(
@@ -338,6 +367,12 @@ async def _generate_scene_video(
         )
         if direction:
             prompt = f"{prompt}\n{direction}"
+        previous_prompt = str(scene.get("previous_video_prompt") or "").strip()
+        if previous_prompt:
+            prompt = (
+                f"{prompt}\n连续性约束：本镜开场必须直接承接上一镜结束时的人物姿态、位置、朝向、服装、手持物和环境状态，"
+                f"不得无过渡改变。上一镜提示词：{previous_prompt}"
+            )
         duration = _scene_duration(scene, options, capabilities)
         started_at = time.monotonic()
         with db() as session:
@@ -354,7 +389,8 @@ async def _generate_scene_video(
             duration=duration,
             prompt_extend=options["promptExtend"],
             references=references,
-            driving_audio=driving_audio,
+            reference_videos=reference_videos,
+            reference_audios=reference_audios,
             base_url=config.get("baseUrl", ""),
         )
         record_usage(user_id, config, "scene_video", started_at, quantity=duration)
@@ -407,6 +443,16 @@ async def run_video_generation(
 
     try:
         outcomes = await asyncio.gather(*(run(scene) for scene in scenes))
+    except asyncio.CancelledError:
+        for scene in scenes:
+            update_scene_row(scene["id"], video_status="idle")
+        update_project_row(project_id, status="idle", video_status="idle", video_progress=0)
+        update_episode_row(episode_id, status="storyboard", video_status="idle", video_progress=0)
+        await broadcast(
+            project_id,
+            {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "videoStatus": "idle", "episodeId": episode_id, "canceled": True}},
+        )
+        return
     finally:
         runs.release(project_id, cancellation)
     results = [outcome for outcome in outcomes if outcome is not None]

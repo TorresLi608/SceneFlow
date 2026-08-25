@@ -278,6 +278,9 @@ def breakdown_reference_block(
 
     Selecting nothing at all is meaningful: it means decide everything from the script.
     """
+    def clean(value: Any) -> str:
+        return str(value or "").strip()
+
     if not any((characters, props, voices, use_cast_sheet, use_prop_sheet, use_voice_sheet)):
         return (
             "本次没有提供任何角色、道具或音色参考资料。"
@@ -291,9 +294,11 @@ def breakdown_reference_block(
     if characters:
         lines.append("【角色】")
         for character in characters:
-            name = character.get("name", "").strip()
+            if not isinstance(character, dict):
+                continue
+            name = clean(character.get("name"))
             detail = "；".join(
-                part for part in (character.get("description", "").strip(), character.get("appearance", "").strip()) if part
+                part for part in (clean(character.get("description")), clean(character.get("appearance"))) if part
             )
             if character.get("hasImage"):
                 lines.append(f"- {name}：已有角色设定三面图。涉及该角色时请写明「参照《{name}》三面图」。{detail}")
@@ -305,13 +310,15 @@ def breakdown_reference_block(
     if props:
         lines.append("【道具】")
         for prop in props:
-            name = prop.get("name", "").strip()
-            owner = prop.get("owner", "").strip()
+            if not isinstance(prop, dict):
+                continue
+            name = clean(prop.get("name"))
+            owner = clean(prop.get("owner"))
             owned = f"（{owner}的道具）" if owner else ""
             if prop.get("hasImage"):
-                lines.append(f"- {name}{owned}：已有道具设定图，请写明「参照《{name}》道具图」。{prop.get('description', '').strip()}")
+                lines.append(f"- {name}{owned}：已有道具设定图，请写明「参照《{name}》道具图」。{clean(prop.get('description'))}")
             else:
-                lines.append(f"- {name}{owned}：没有设定图，请依据文字设定推理。{prop.get('description', '').strip()}")
+                lines.append(f"- {name}{owned}：没有设定图，请依据文字设定推理。{clean(prop.get('description'))}")
 
     if use_voice_sheet:
         lines.append("【音色】已提供整体音色参考轨。")

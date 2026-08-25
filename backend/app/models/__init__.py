@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.models.character import Character, CharacterState, SceneCharacter
+from app.models.asset import Asset
 from app.models.chat import ChatMessage, ChatSession
 from app.models.config import ModelConfig, UserOfficialConfigDefault
 from app.models.export import MAX_EXPORT_CLIPS, ExportJob
@@ -17,6 +18,7 @@ from app.models.user_voice import UserVoice
 __all__ = [
     "MAX_EXPORT_CLIPS",
     "Character",
+    "Asset",
     "CharacterState",
     "ChatMessage",
     "ChatSession",

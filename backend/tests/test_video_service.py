@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.generation_service import _generate_scene_video
-from app.services.video_service import GENERATION_TIMEOUT_SECONDS, VideoResult, VideoSettings, _generate_doubao_video_sdk, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, is_native_qwen_video_url, qwen_media_policy_model, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, validate_video_inputs
+from app.services.video_service import GENERATION_TIMEOUT_SECONDS, VideoResult, VideoSettings, _generate_doubao_video_sdk, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, is_native_qwen_video_url, qwen_media_policy_model, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, supported_video_defaults, validate_video_inputs
 
 
 REFERENCE = {"name": "first.png", "data": "data:image/png;base64," + base64.b64encode(b"image").decode("ascii")}
@@ -180,6 +180,27 @@ def test_video_options_follow_model_capabilities() -> None:
     assert_raises("does not support fps", lambda: resolve_video_options({"fps": 24}, capabilities))
 
 
+def test_saved_video_defaults_drop_options_unsupported_by_a_new_model() -> None:
+    capabilities = {
+        "qualities": ["720p"],
+        "fps": [],
+        "aspectRatios": [],
+        "promptExtend": False,
+        "minDuration": 3,
+        "maxDuration": 5,
+    }
+    saved = {
+        "quality": "1080p",
+        "aspectRatio": "9:16",
+        "fps": 30,
+        "duration": 10,
+        "promptExtend": True,
+    }
+
+    assert supported_video_defaults(saved, capabilities) == {}
+    assert resolve_video_options(supported_video_defaults(saved, capabilities), capabilities) == ("720p", None, None, 3, False)
+
+
 def test_video_media_capabilities_are_enforced() -> None:
     capabilities = {
         "referenceImages": True,
@@ -202,13 +223,13 @@ def test_qwen_native_url_detection_keeps_relays_configurable() -> None:
     assert not is_native_qwen_video_url("https://relay.example.com/api/v1")
 
 
-def _render_scene_video(options: dict, media: list[dict]):
+def _render_scene_video(options: dict, media: list[dict], max_images: int = 1):
     """Drive one scene render with the providers stubbed, and hand back the request made."""
     config = {
         "provider": "qwen", "apiKey": "secret", "model": "wan2.7-i2v", "baseUrl": "https://relay.example.com/api/v1",
         "videoCapabilities": {
             "referenceImages": True,
-            "maxReferenceImages": 1,
+            "maxReferenceImages": max_images,
             "referenceImagesRequired": True,
             "referenceAudio": True,
         },
@@ -242,9 +263,7 @@ def test_storyboard_video_passes_scene_media_and_capabilities() -> None:
 
     assert succeeded
     assert request["references"] == [image]
-    # The project's timbre reference, not a per-shot track: shots no longer carry their own
-    # audio, and this is what tells the model who sounds like what.
-    assert request["driving_audio"] == voices
+    assert request["reference_audios"] == [voices]
     assert request["quality"] == "720p"
     assert request["prompt_extend"] is True
 
@@ -259,7 +278,30 @@ def test_a_render_without_audio_sends_none() -> None:
     )
 
     assert succeeded
-    assert request["driving_audio"] is None
+    assert request["reference_audios"] == []
+
+
+def test_selected_video_references_replace_automatic_character_media() -> None:
+    frame = {"name": "frame.png", "data": "data:image/png;base64,ZnJhbWU="}
+    image = {"name": "prop.png", "data": "data:image/png;base64,cHJvcA=="}
+    video = {"name": "clip.mp4", "data": "data:video/mp4;base64,dmlkZW8="}
+    audio = {"name": "voice.mp3", "data": "data:audio/mpeg;base64,YXVkaW8="}
+
+    succeeded, request = _render_scene_video(
+        {
+            "quality": "720p", "aspectRatio": None, "fps": None, "duration": 5, "promptExtend": False,
+            "voiceSheetPath": None, "explicitReferences": True,
+            "referenceImagePaths": ["props/p.png"], "referenceVideoPaths": ["videos/v.mp4"],
+            "referenceAudioPaths": ["voices/a.mp3"],
+        },
+        [frame, image, video, audio],
+        max_images=2,
+    )
+
+    assert succeeded
+    assert request["references"] == [frame, image]
+    assert request["reference_videos"] == [video]
+    assert request["reference_audios"] == [audio]
 
 
 if __name__ == "__main__":
@@ -271,7 +313,9 @@ if __name__ == "__main__":
     test_qwen_native_video_uploads_media_to_temporary_oss()
     test_qwen_media_policy_uses_supported_upload_model()
     test_video_options_follow_model_capabilities()
+    test_saved_video_defaults_drop_options_unsupported_by_a_new_model()
     test_video_media_capabilities_are_enforced()
     test_qwen_native_url_detection_keeps_relays_configurable()
     test_storyboard_video_passes_scene_media_and_capabilities()
     test_a_render_without_audio_sends_none()
+    test_selected_video_references_replace_automatic_character_media()

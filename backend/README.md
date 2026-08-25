@@ -219,23 +219,23 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
     style agree across the episode
   - its own step because every frame that follows is matched against it: approving it first is
     much cheaper than discovering after twenty full-resolution renders that the episode is wrong
+  - `references` selects existing character, character-state, prop, or episode-tone images by `{kind, id}`;
+    selected images are tiled into one reference before the provider call
 - `POST /api/projects/:id/episodes/:episodeId/storyboard` — renders frames against that anchor
   - `sceneIds` selects a subset — one shot to regenerate, several for a batch. Omitted means
     every unlocked shot; all-locked is a 400 rather than a silent no-op
   - generates the tone sheet first when none exists, so a caller that skipped the step above
     still gets an anchored render rather than twenty unrelated frames
-  - each frame carries the tone sheet, the merged context sheet, and the previous shot's
-    render — style, cast, and scene continuity each get their own anchor; the list is
-    truncated to `MAX_REFERENCE_IMAGES`
+  - each frame carries the tone sheet, user-selected image references, and the previous
+    shot's render, capped by the active image model's `imageMaxReferenceImages`
   - shots render **sequentially**, because each references its predecessor's output, and the
     loop checks the cancel flag between them
   - a failed tone sheet aborts the run rather than rendering unanchored shots the user
     would still be billed for
-  - `mergeReferences` (default true) tiles the cast sheet, prop sheet, and previous anchor
-    into one reference; false sends them separately, which costs more tokens
-  - `regenerate` resamples the tone sheet instead of reusing it, which also restyles shots
-    that were already approved. `previousEpisodeId` carries the look across an episode
-    boundary; it must name a different episode
+  - `references` explicitly selects project-owned images. Requests that omit it retain the
+    legacy cast-sheet / prop-sheet / `previousEpisodeId` behaviour
+  - `regenerate` resamples the tone sheet instead of reusing it; the editor sends it only
+    from the explicit tone-sheet action, not from frame generation
 
 ### Characters (JWT required)
 - `GET /api/projects/:id/characters` — the series bible, each card with its states
@@ -331,9 +331,10 @@ it as a reference can keep speakers apart.
     for a six-second beat and a two-second reaction is the pacing problem the estimate fixes
   - the project's saved video defaults sit under whatever the request sent, so a batch started
     from the episode editor renders at the settings the model panel shows
-  - `withAudio` passes the project's merged timbre reference as reference audio. A model that
-    does not accept audio is a 400, and so is a project whose voices have not been merged —
-    silently dropping it would bill the user for a render they did not ask for
+  - `references` selects project-owned images, rendered scene videos, and voice samples by
+    `{kind, id}`. The storyboard frame still occupies the first image slot when supported;
+    every media kind and count is validated against the model's declared capabilities
+  - `withAudio` remains for older callers that pass the merged timbre track
   - options are validated against the model's declared capabilities; unsupported parameters
     are rejected rather than ignored
 
