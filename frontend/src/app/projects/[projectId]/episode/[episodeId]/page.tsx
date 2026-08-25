@@ -459,15 +459,6 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
 
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">{t("episode.toneSheetHint")}</p>
-            <div className="flex flex-wrap gap-1.5">
-              <Badge variant="outline">
-                {t("episode.referenceLimit", {
-                  type: t("episode.referenceType.image"),
-                  count: toneReferences.length,
-                  limit: imageModelLimit,
-                })}
-              </Badge>
-            </div>
 
             <ReferencePicker
               title={t("episode.toneReferences")}

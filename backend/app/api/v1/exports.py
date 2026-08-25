@@ -12,6 +12,7 @@ from app.core.database import db
 from app.schemas.requests import CreateExportRequest
 from app.services.export_service import (
     create_export,
+    delete_export,
     export_job_json,
     exports_for,
     owned_export,
@@ -57,3 +58,11 @@ def get_export(project_id: str, export_id: str, user_id: int = Depends(current_u
         owned_project(session, project_id, user_id)
         data = export_job_json(owned_export(session, project_id, export_id))
     return {"export": data}
+
+
+@router.delete("/{project_id}/exports/{export_id}")
+def remove_export(project_id: str, export_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        delete_export(session, project_id, export_id)
+    return {"success": True}

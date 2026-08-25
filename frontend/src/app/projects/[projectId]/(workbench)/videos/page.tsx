@@ -1,19 +1,22 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Film, Loader2, Sparkles, X } from "lucide-react";
+import { Download, Film, Loader2, Play, Sparkles, Trash2, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import {
   createExportAction,
+  deleteExportAction,
   getEpisodeAction,
   listEpisodesAction,
   listExportsAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { MediaPreviewDialog } from "@/app/projects/[projectId]/episode/[episodeId]/_components/media-preview-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,6 +41,8 @@ export default function VideosPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [rangeLabel, setRangeLabel] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<{ kind: "image" | "video"; url: string; title: string } | null>(null);
+  const [pendingDeleteJob, setPendingDeleteJob] = useState<ExportJob | null>(null);
 
   const episodesQuery = useQuery({
     queryKey: queryKeys.episodes(projectId),
@@ -89,6 +94,15 @@ export default function VideosPage() {
     onError: (error) => setMessage(resolveRequestError(error, t("video.mergeFailed"))),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (exportId: string) => deleteExportAction(projectId, exportId),
+    onSuccess: () => {
+      setPendingDeleteJob(null);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.exports(projectId) });
+    },
+    onError: (error) => setMessage(resolveRequestError(error, t("video.deleteFailed"))),
+  });
+
   const toggle = (sceneId: string) =>
     setSelected((current) =>
       current.includes(sceneId) ? current.filter((item) => item !== sceneId) : [...current, sceneId]
@@ -105,9 +119,9 @@ export default function VideosPage() {
   const historyRow = (job: ExportJob) => (
     <section
       key={job.id}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 bg-card/60 p-3"
+      className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/70 bg-card/60 p-4 transition-colors hover:border-border"
     >
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">{job.rangeLabel || formatDateTime(job.createdAt)}</span>
           <Badge variant={job.status === "succeeded" ? "default" : job.status === "failed" ? "destructive" : "outline"}>
@@ -117,15 +131,54 @@ export default function VideosPage() {
         </div>
         {job.errorMessage ? <p className="mt-1 text-xs text-destructive">{job.errorMessage}</p> : null}
       </div>
-      {job.videoUrl ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <video controls src={job.videoUrl} className="h-24 rounded-md border border-border/60" />
-          <Button size="sm" variant="outline" render={<a href={job.videoUrl} download />}>
-            <Download data-icon="inline-start" />
-            {t("video.download")}
+
+      <div className="flex flex-wrap items-center gap-3">
+        {job.videoUrl ? (
+          <button
+            type="button"
+            title={t("video.preview")}
+            aria-label={t("video.preview")}
+            onClick={() =>
+              setPreviewItem({
+                kind: "video",
+                url: job.videoUrl!,
+                title: job.rangeLabel || formatDateTime(job.createdAt),
+              })
+            }
+            className="group relative flex h-18 w-28 shrink-0 cursor-zoom-in items-center justify-center overflow-hidden rounded-md border border-border/70 bg-black/80 transition hover:border-primary/60 hover:shadow-md"
+          >
+            <video
+              src={job.videoUrl}
+              preload="metadata"
+              className="size-full object-cover opacity-90 transition-transform duration-200 group-hover:scale-105"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/25 transition-colors group-hover:bg-black/10">
+              <div className="flex size-7 items-center justify-center rounded-full bg-background/90 text-foreground shadow backdrop-blur-sm transition-transform group-hover:scale-110">
+                <Play className="ml-0.5 size-3.5 fill-current" />
+              </div>
+            </div>
+          </button>
+        ) : null}
+
+        <div className="flex items-center gap-1.5">
+          {job.videoUrl ? (
+            <Button size="sm" variant="outline" render={<a href={job.videoUrl} download />}>
+              <Download data-icon="inline-start" />
+              {t("video.download")}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title={t("video.deleteExport")}
+            onClick={() => setPendingDeleteJob(job)}
+          >
+            <Trash2 data-icon="inline-start" />
+            {t("video.deleteExport")}
           </Button>
         </div>
-      ) : null}
+      </div>
     </section>
   );
 
@@ -223,6 +276,35 @@ export default function VideosPage() {
           (exportsQuery.data?.exports ?? []).map(historyRow)
         )}
       </section>
+
+      <MediaPreviewDialog item={previewItem} onOpenChange={(open) => !open && setPreviewItem(null)} />
+
+      <Dialog open={Boolean(pendingDeleteJob)} onOpenChange={(open) => (open ? null : setPendingDeleteJob(null))}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("video.deleteExport")}</DialogTitle>
+            <DialogDescription>{t("video.deleteExportConfirm")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={deleteMutation.isPending} onClick={() => setPendingDeleteJob(null)}>
+              <X data-icon="inline-start" />
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => pendingDeleteJob && deleteMutation.mutate(pendingDeleteJob.id)}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Trash2 data-icon="inline-start" />
+              )}
+              {t("common.delete")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

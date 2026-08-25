@@ -16,7 +16,12 @@ from sqlmodel import Session, select
 
 from app.core.database import db
 from app.models import ExportJob, Project, Scene
-from app.services.artifact_service import artifact_absolute_path, signed_url_for_stored, store_artifact
+from app.services.artifact_service import (
+    artifact_absolute_path,
+    remove_stored_artifacts,
+    signed_url_for_stored,
+    store_artifact,
+)
 from app.services.media_service import concat_videos
 from app.utils.common import new_id, now
 
@@ -75,6 +80,14 @@ def owned_export(session: Session, project_id: str, job_id: str) -> ExportJob:
     if not job:
         raise HTTPException(404, "export not found")
     return job
+
+
+def delete_export(session: Session, project_id: str, job_id: str) -> None:
+    job = owned_export(session, project_id, job_id)
+    if job.output_path:
+        remove_stored_artifacts([job.output_path])
+    session.delete(job)
+    session.flush()
 
 
 def resolve_clips(session: Session, project_id: str, scene_ids: list[str]) -> list[str]:

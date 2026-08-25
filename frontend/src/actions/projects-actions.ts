@@ -494,6 +494,11 @@ export async function getExportAction(projectID: string, exportID: string) {
   return response.data;
 }
 
+export async function deleteExportAction(projectID: string, exportID: string) {
+  const response = await httpClient.delete<{ success: boolean }>(`/api/bff/projects/${projectID}/exports/${exportID}`);
+  return response.data;
+}
+
 export async function listVoicesAction(projectID: string) {
   const response = await httpClient.get<VoiceProfileListResponse>(`/api/bff/projects/${projectID}/voices`);
   return response.data;
