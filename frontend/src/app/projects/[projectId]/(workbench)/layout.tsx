@@ -42,7 +42,7 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* 顶部工作台导航条 */}
       <header className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card/50 px-4 py-3 backdrop-blur-xl md:px-6">
         <div className="flex items-center gap-3">
@@ -67,10 +67,10 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
       </header>
 
       {/* 主体工作台结构 */}
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row overflow-hidden">
         <nav
           aria-label={t("workbench.menu")}
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 bg-card/30 p-3 backdrop-blur-md md:w-[230px] md:flex-col md:overflow-visible md:border-b-0 md:border-r md:p-4 chat-message-list-scrollbar"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/70 bg-card/30 p-3 backdrop-blur-md md:w-[230px] md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:p-4 chat-message-list-scrollbar"
         >
           <p className="hidden px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:block">
             {t("workbench.menuHeading")}
@@ -106,7 +106,9 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
           })}
         </nav>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6 chat-message-list-scrollbar">
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -323,7 +323,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     : t("episode.breakdownNeedsShots");
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border/70 px-4 py-3">
         <Link
           href={`/projects/${projectId}/episodes`}
@@ -358,7 +358,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         ) : null}
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
+      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6 chat-message-list-scrollbar">
         {/* Episode info moved in from the list: the title and synopsis describe the script
             below them, and editing all three in one place is the only arrangement where
             that relationship is visible. */}

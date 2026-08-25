@@ -899,10 +899,10 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   }
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="flex min-h-screen flex-col md:flex-row">
+    <main className="h-screen overflow-hidden bg-background">
+      <div className="flex h-full flex-col md:flex-row overflow-hidden">
         {/* 左侧工作台导航侧栏 */}
-        <aside className="flex w-full shrink-0 flex-col border-b border-border/70 bg-card/60 md:w-[280px] md:border-b-0 md:border-r backdrop-blur-md">
+        <aside className="flex w-full shrink-0 flex-col border-b border-border/70 bg-card/60 md:w-[280px] md:border-b-0 md:border-r backdrop-blur-md overflow-hidden">
           <div className="space-y-3 p-4">
             <div className="flex items-center gap-2.5">
               <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-inner">
@@ -1006,7 +1006,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
         </aside>
 
         {/* 主编辑区 */}
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="flex min-w-0 flex-1 flex-col overflow-y-auto chat-message-list-scrollbar">
           {/* 工作台顶部工具栏 */}
           <header className="sticky top-0 z-20 border-b border-border/70 bg-card/80 backdrop-blur-md">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 md:px-6">
