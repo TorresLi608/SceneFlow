@@ -43,6 +43,25 @@ def update_scene_row(scene_id: str, **values: Any) -> None:
         )
 
 
+def clear_generating_scenes(scene_ids: list[str], column: str) -> None:
+    """Drop the `generating` marker a stopped run left behind, and only that.
+
+    Guarded on the current value rather than written blind: a cancelled batch used to reset
+    *every* shot it had been given, so a frame that had already landed came back as
+    "not generated yet" and the next run re-rendered — and re-paid for — work the provider
+    had already been billed for. Only a shot that never finished is reset.
+    """
+    if not scene_ids:
+        return
+    with db() as session:
+        session.execute(
+            update(Scene)
+            .where(Scene.id.in_(scene_ids), getattr(Scene, column) == "generating")
+            .values(updated_at=now(), **{column: "idle"}),
+            execution_options={"synchronize_session": False},
+        )
+
+
 def update_project_row(project_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
