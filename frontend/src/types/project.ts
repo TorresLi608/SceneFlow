@@ -339,6 +339,11 @@ export interface GenerateStoryboardInput {
   regenerate?: boolean;
   sceneIds?: string[];
   references?: GenerationReferenceInput[];
+  /**
+   * Render only the shots that are not already rendered. What "retry the failed ones" means:
+   * without it a rerun re-renders, and re-pays for, every unlocked shot in the episode.
+   */
+  pendingOnly?: boolean;
 }
 
 export type GenerationReferenceKind = "character" | "characterState" | "prop" | "tone" | "sceneImage" | "sceneVideo" | "voice";
@@ -699,6 +704,8 @@ export interface GenerateProjectInput {
   model?: string;
   episodeId?: string;
   sceneIds?: string[];
+  /** See `GenerateStoryboardInput.pendingOnly`. */
+  pendingOnly?: boolean;
 }
 
 export interface GenerateProjectResponse {
@@ -740,6 +747,8 @@ export interface GenerateVideoInput {
   withAudio?: boolean;
   sceneIds?: string[];
   references?: GenerationReferenceInput[];
+  /** See `GenerateStoryboardInput.pendingOnly`. A clip is the costliest thing to redo. */
+  pendingOnly?: boolean;
 }
 
 export interface GenerateVideoResponse {

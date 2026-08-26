@@ -32,6 +32,8 @@ from app.services.artifact_service import artifact_absolute_path, media_type_for
 from app.services.generation_service import (
     ERROR_DETAIL_CHARS,
     MAX_REFERENCE_IMAGES,
+    clear_generating_episode,
+    clear_generating_scenes,
     episode_media_status,
     persist_scene_image,
     scene_event,
@@ -408,6 +410,11 @@ async def run_storyboard(
                 previous = _load(_stored_image_path(scene["id"]), "previous") or previous
     except asyncio.CancelledError:
         logger.info("storyboard canceled project=%s episode=%s", plan.project_id, plan.episode_id)
+        # A stopped run must not leave a permanent "generating" marker on the rows it was
+        # holding — the shot the provider was drawing, and the tone sheet when the stop
+        # landed during the anchor. Both guards skip whatever already succeeded.
+        clear_generating_scenes([scene["id"] for scene in plan.scenes], "image_status")
+        clear_generating_episode(plan.episode_id, "tone_image_status")
         update_project_row(plan.project_id, status="idle")
         update_episode_row(plan.episode_id, status="storyboard")
         await broadcast(

@@ -42,6 +42,7 @@ from app.services.project_service import (
     owned_project,
     release_project_status,
     scenes_with_assets,
+    selected_scenes,
 )
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
@@ -52,19 +53,6 @@ from app.utils.common import new_id, now
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["episodes"])
-
-
-def _selected_scenes(scenes: list[Scene], scene_ids: list[str] | None) -> list[Scene]:
-    """The shots a render targets. An approved (locked) shot is left alone by a batch rerun."""
-    if scene_ids is None:
-        return [scene for scene in scenes if not scene.is_locked]
-    requested = {scene_id.strip() for scene_id in scene_ids if scene_id.strip()}
-    selected = [scene for scene in scenes if scene.id in requested]
-    if len(selected) != len(requested):
-        raise HTTPException(400, "sceneIds must belong to the selected episode")
-    if any(scene.is_locked for scene in selected):
-        raise HTTPException(400, "unlock selected shots before rendering them")
-    return selected
 
 
 def _detail(session, episode) -> dict[str, Any]:
@@ -496,9 +484,9 @@ async def generate_storyboard(
         scenes = episode_scenes(session, episode.id)
         if not scenes:
             raise HTTPException(400, "no shots in this episode, split the script first")
-        pending = _selected_scenes(scenes, body.scene_ids)
-        if not pending:
-            raise HTTPException(400, "every shot in this episode is locked, unlock one to regenerate")
+        pending = selected_scenes(
+            scenes, body.scene_ids, status_column="image_status", pending_only=body.pending_only
+        )
 
         previous = _previous_episode(session, project_id, episode, body.previous_episode_id)
         config = _image_config(session, user_id, project)

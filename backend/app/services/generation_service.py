@@ -62,6 +62,21 @@ def clear_generating_scenes(scene_ids: list[str], column: str) -> None:
         )
 
 
+def clear_generating_episode(episode_id: str, column: str) -> None:
+    """The same guard as `clear_generating_scenes`, for an episode's own status columns.
+
+    Blind here would be worse than useless: a run cancelled *after* its tone sheet landed
+    would throw the anchor away and resample the episode's whole look on the next attempt.
+    """
+    with db() as session:
+        session.execute(
+            update(Episode)
+            .where(Episode.id == episode_id, getattr(Episode, column) == "generating")
+            .values(updated_at=now(), **{column: "idle"}),
+            execution_options={"synchronize_session": False},
+        )
+
+
 def update_project_row(project_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
@@ -225,8 +240,7 @@ async def run_generation(
     try:
         outcomes = await asyncio.gather(*(one(scene) for scene in scenes))
     except asyncio.CancelledError:
-        for scene in scenes:
-            update_scene_row(scene["id"], image_status="idle")
+        clear_generating_scenes([scene["id"] for scene in scenes], "image_status")
         update_project_row(project_id, status="idle")
         if episode_id:
             update_episode_row(episode_id, status="storyboard")
@@ -463,8 +477,7 @@ async def run_video_generation(
     try:
         outcomes = await asyncio.gather(*(run(scene) for scene in scenes))
     except asyncio.CancelledError:
-        for scene in scenes:
-            update_scene_row(scene["id"], video_status="idle")
+        clear_generating_scenes([scene["id"] for scene in scenes], "video_status")
         update_project_row(project_id, status="idle", video_status="idle", video_progress=0)
         update_episode_row(episode_id, status="storyboard", video_status="idle", video_progress=0)
         await broadcast(

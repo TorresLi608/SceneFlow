@@ -61,6 +61,7 @@ from app.services.project_service import (
     production_settings,
     release_project_status,
     scenes_with_assets,
+    selected_scenes,
 )
 from app.services.reference_service import clear_generation_reference, resolve_generation_references, stored_generation_references
 from app.services.usage_service import record_usage, require_model_balance
@@ -141,18 +142,6 @@ def _scene_payloads(
             ).strip()
         payloads.append(payload)
     return payloads
-
-
-def _selected_scenes(scenes: list[Scene], scene_ids: list[str] | None) -> list[Scene]:
-    if scene_ids is None:
-        return [scene for scene in scenes if not scene.is_locked]
-    requested = {scene_id.strip() for scene_id in scene_ids if scene_id.strip()}
-    selected = [scene for scene in scenes if scene.id in requested]
-    if len(selected) != len(requested):
-        raise HTTPException(400, "sceneIds must belong to the selected episode")
-    if any(scene.is_locked for scene in selected):
-        raise HTTPException(400, "unlock selected scenes before generating them")
-    return selected
 
 
 @router.get("")
@@ -897,9 +886,9 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         if not scenes:
             raise HTTPException(400, "no scenes available, parse script first")
         # A locked shot is one the user approved; a batch rerun leaves it alone.
-        pending = _selected_scenes(scenes, body.scene_ids)
-        if not pending:
-            raise HTTPException(400, "every scene in this episode is locked, unlock one to regenerate")
+        pending = selected_scenes(
+            scenes, body.scene_ids, status_column="image_status", pending_only=body.pending_only
+        )
         config = project_model_config(session, user_id, project, "image", "分镜图片生成")
         require_model_balance(session, user_id, config)
         # The lock stays on the project: one run owns the series, so a second episode
@@ -974,9 +963,9 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             )
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, str(exc)[:220]) from exc
-        pending = _selected_scenes(scenes, body.scene_ids)
-        if not pending:
-            raise HTTPException(400, "every scene video in this episode is locked")
+        pending = selected_scenes(
+            scenes, body.scene_ids, status_column="video_status", pending_only=body.pending_only
+        )
         resolved_references = (
             resolve_generation_references(
                 session, project_id, [(reference.kind, reference.id) for reference in body.references]

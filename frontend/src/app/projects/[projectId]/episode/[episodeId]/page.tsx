@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isCancel } from "axios";
-import { ArrowLeft, Film, Loader2, Plus, Save, Sparkles, Square, X } from "lucide-react";
+import { ArrowLeft, Film, Loader2, Plus, RefreshCw, Save, Sparkles, Square, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -37,7 +37,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { BreakdownTarget, Episode, GenerationReferenceInput } from "@/types/project";
+import type { BreakdownTarget, Episode, GenerationReferenceInput, Scene } from "@/types/project";
 
 import { BreakdownPanel, EMPTY_SELECTION, type BreakdownSelection } from "./_components/breakdown-panel";
 import { ReferencePicker, type ReferenceAssetOption } from "./_components/reference-picker";
@@ -47,6 +47,16 @@ import { MediaPreviewDialog } from "./_components/media-preview-dialog";
 /** While a render is in flight the page polls; the run is a background task with no reply. */
 const RENDER_POLL_MS = 3_000;
 const BUSY_STATUSES = ["parsing", "generating", "video_generating"];
+
+/**
+ * What a batch button asks for. `pendingOnly` is the difference between "render this
+ * episode" and "retry the ones that failed": without it the backend re-renders every
+ * unlocked shot, so retrying two failures out of twenty pays for twenty.
+ */
+interface BatchTarget {
+  sceneIds?: string[];
+  pendingOnly?: boolean;
+}
 
 function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Episode }) {
   const { t } = useI18n();
@@ -170,9 +180,10 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   });
 
   const renderMutation = useMutation({
-    mutationFn: (sceneIds: string[] | undefined) =>
+    mutationFn: ({ sceneIds, pendingOnly }: BatchTarget) =>
       generateStoryboardAction(projectId, episode.id, {
         sceneIds,
+        pendingOnly,
       }),
     onSuccess: () => {
       setMessage(null);
@@ -185,8 +196,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   });
 
   const videoMutation = useMutation({
-    mutationFn: (sceneIds: string[] | undefined) =>
-      generateVideoAction(projectId, { episodeId: episode.id, sceneIds }),
+    mutationFn: ({ sceneIds, pendingOnly }: BatchTarget) =>
+      generateVideoAction(projectId, { episodeId: episode.id, sceneIds, pendingOnly }),
     onSuccess: () => {
       setMessage(null);
       void refreshProject();
@@ -237,12 +248,21 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const shots = episode.scenes;
   const toneReady = episode.toneImageStatus === "success" && Boolean(episode.toneImageUrl);
   const toneGenerating = toneMutation.isPending || episode.toneImageStatus === "generating";
-  const targetShots = () => (selectedShots.length > 0 ? selectedShots : undefined);
+  const targetShots = (): BatchTarget => ({
+    sceneIds: selectedShots.length > 0 ? selectedShots : undefined,
+  });
   const allSelected = shots.length > 0 && selectedShots.length === shots.length;
   const imageBatchGenerating = (activeBatch === "image" && busy) || renderMutation.isPending;
   const videoBatchGenerating = (activeBatch === "video" && busy) || videoMutation.isPending;
-  const batchIncludes = (sceneId: string, locked: boolean, variables: string[] | undefined) =>
-    variables?.length ? variables.includes(sceneId) : !locked;
+  // Mirrors the backend's rule for what a rerun touches, so the retry button can say how
+  // many shots it will redo and the spinner lands on the rows actually being redone.
+  const pendingShots = (kind: "image" | "video") =>
+    shots.filter((shot) => !shot.isLocked && shot[kind].status !== "success");
+  const batchIncludes = (scene: Scene, kind: "image" | "video", target: BatchTarget | undefined) => {
+    if (target?.sceneIds?.length) return target.sceneIds.includes(scene.id);
+    if (scene.isLocked) return false;
+    return target?.pendingOnly ? scene[kind].status !== "success" : true;
+  };
 
   const toggleShot = (sceneId: string) =>
     setSelectedShots((current) =>
@@ -517,6 +537,21 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 {imageBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
                 {t("episode.batchImages")}
               </Button>
+              {/* Its own button rather than a smarter 批量生成: a plain rerun is also how a
+                  user resamples an episode they did not like, so narrowing that silently
+                  would take away the only way to redo a shot that came out wrong. */}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !toneReady || pendingShots("image").length === 0}
+                onClick={() => {
+                  setActiveBatch("image");
+                  renderMutation.mutate({ pendingOnly: true });
+                }}
+              >
+                <RefreshCw data-icon="inline-start" />
+                {t("episode.retryPendingImages", { count: pendingShots("image").length })}
+              </Button>
               <Button
                 size="sm"
                 variant="secondary"
@@ -528,6 +563,18 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               >
                 {videoBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Film data-icon="inline-start" />}
                 {t("episode.batchVideos")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || pendingShots("video").length === 0}
+                onClick={() => {
+                  setActiveBatch("video");
+                  videoMutation.mutate({ pendingOnly: true });
+                }}
+              >
+                <RefreshCw data-icon="inline-start" />
+                {t("episode.retryPendingVideos", { count: pendingShots("video").length })}
               </Button>
               <Button size="sm" variant="outline" disabled={busy} onClick={() => addShotMutation.mutate()}>
                 <Plus data-icon="inline-start" />
@@ -556,23 +603,23 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 busy={busy}
                 onGenerateImage={() => {
                   setActiveBatch(null);
-                  renderMutation.mutate([scene.id]);
+                  renderMutation.mutate({ sceneIds: [scene.id] });
                 }}
                 onGenerateVideo={() => {
                   setActiveBatch(null);
-                  videoMutation.mutate([scene.id]);
+                  videoMutation.mutate({ sceneIds: [scene.id] });
                 }}
                 imageGenerating={
                   scene.image.status === "generating" ||
-                  (imageBatchGenerating && batchIncludes(scene.id, scene.isLocked, renderMutation.variables)) ||
+                  (imageBatchGenerating && batchIncludes(scene, "image", renderMutation.variables)) ||
                   (!toneGenerating && activeBatch === null && project?.status === "generating" &&
-                    batchIncludes(scene.id, scene.isLocked, renderMutation.variables))
+                    batchIncludes(scene, "image", renderMutation.variables))
                 }
                 videoGenerating={
                   scene.video.status === "generating" ||
-                  (videoBatchGenerating && batchIncludes(scene.id, scene.isLocked, videoMutation.variables)) ||
+                  (videoBatchGenerating && batchIncludes(scene, "video", videoMutation.variables)) ||
                   (activeBatch === null && project?.status === "video_generating" &&
-                    batchIncludes(scene.id, scene.isLocked, videoMutation.variables))
+                    batchIncludes(scene, "video", videoMutation.variables))
                 }
                 imageReferenceAssets={[...characterAssets, ...propAssets, ...toneAssets, ...sceneImageAssets]}
                 videoReferenceAssets={[

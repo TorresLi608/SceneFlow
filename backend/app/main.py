@@ -31,12 +31,17 @@ from app.api.v1 import (
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
 from app.core.database import init_db
 from app.core.logging import configure_logging
+from app.services.project_service import release_orphaned_runs
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
     init_db()
+    # A render is an in-process task, so a restart kills it holding the project's busy lock
+    # and nothing else can ever release it. Startup is the one point where "no run is in
+    # flight" is a fact rather than a guess.
+    release_orphaned_runs()
     yield
 
 

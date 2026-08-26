@@ -192,11 +192,15 @@ class GenerateStoryboardRequest(CamelModel):
 
     previous_episode_id: str | None = Field(default=None, max_length=64)
     merge_references: bool = True
-    # Without this an existing tone sheet is reused, so re-running only fills in the shots
-    # that are still missing rather than resampling the episode's whole look.
+    # Without this an existing tone sheet is reused rather than resampled.
     regenerate: bool = False
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
     references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
+    # Narrows a batch to the shots that are not already rendered. Off by default because a
+    # plain rerun is also how a user resamples an episode they did not like; on, it is what
+    # "retry the ones that failed" means — without it, retrying a batch where eighteen of
+    # twenty shots landed re-renders, and re-pays for, all twenty.
+    pending_only: bool = False
 
 
 BreakdownTarget = Literal["shots", "video", "both"]
@@ -463,6 +467,8 @@ class GenerateProjectRequest(CamelModel):
     model: str | None = Field(default=None, max_length=160)
     episode_id: str | None = Field(default=None, max_length=64)
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
+    # See `GenerateStoryboardRequest.pending_only`.
+    pending_only: bool = False
 
 
 class GenerateVideoRequest(CamelModel):
@@ -479,3 +485,6 @@ class GenerateVideoRequest(CamelModel):
     with_audio: bool = False
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
     references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
+    # See `GenerateStoryboardRequest.pending_only`. Worth more here than anywhere else: a
+    # clip is the most expensive thing this app renders.
+    pending_only: bool = False
