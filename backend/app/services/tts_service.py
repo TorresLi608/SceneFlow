@@ -9,6 +9,11 @@ from pathlib import Path
 import edge_tts
 
 
+# The local voice an audition falls back to. Lives here rather than in the endpoint because
+# the generation-job handler synthesises previews too, and a service may not import `api/v1`.
+BUILTIN_TTS = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
+
+
 async def synthesize(text: str, config: dict[str, str], output: Path) -> tuple[Path, float]:
     """Create a local audition clip; configured audio models are reserved for voice design."""
     text = text.strip()

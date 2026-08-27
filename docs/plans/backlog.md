@@ -5,8 +5,8 @@
 ## Correctness and reliability
 
 - **`tests/run_all.py` is not isolated.** One process, `runpy` per file, state leaks between files, and the first failure aborts the rest. Currently fails in `test_characters_api.py` though every file passes alone. Until fixed, the full suite is not a usable gate. *(Also in the sprint file — highest value.)*
-- **Generation is not restart-safe.** `asyncio.create_task(run_generation(...))` runs in the API process. A deploy or crash mid-run leaves the project holding its busy lock with no worker to resume; `generation_jobs` exists to solve exactly this but has no consumer.
-- **Realtime is single-process.** `app/core/realtime.py` keeps an in-memory `dict[project_id, set[WebSocket]]`. A second uvicorn worker would silently deliver `SCENE_UPDATE` to only the clients on the same process. Needs a shared broker before horizontal scaling.
+- **Renders are not restart-safe.** `asyncio.create_task(run_generation(...))` still runs storyboard, tone sheet, project generation, and export in the API process. A deploy or crash mid-run leaves the project holding its busy lock with no worker to resume. `generation_jobs` now *has* a consumer (`app/services/job_worker.py`) and the smaller paid calls have moved onto it; these have not.
+- **Realtime is single-process.** `app/core/realtime.py` keeps an in-memory `dict[project_id, set[WebSocket]]`. A second uvicorn worker would silently deliver `SCENE_UPDATE` to only the clients on the same process. Needs a shared broker before horizontal scaling — and it is the reason the generation-jobs worker runs in-process rather than as its own service: a handler that broadcasts from another process would reach nobody.
 - **No token revocation.** JWTs live 24h; disabling an account is the only revocation, and it works only because `current_user` re-reads the user on every request. Do not move role or state into token claims.
 
 ## Product gaps

@@ -1,11 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isCancel } from "axios";
 import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { isCanceled } from "@/actions/job-actions";
 import {
   createPropAction,
   deletePropAction,
@@ -163,7 +163,7 @@ function PropCard({
       ),
     onSuccess: (response) => setPrompt(response.prompt),
     onError: (error) => {
-      if (isCancel(error)) return;
+      if (isCanceled(error)) return;
       onError(resolveRequestError(error, t("character.draftPromptFailed")));
     },
     onSettled: () => {
@@ -182,7 +182,7 @@ function PropCard({
       generatePropImageAction(projectId, prop.id, { prompt: prompt.trim() }, drawController.current?.signal),
     onSuccess: () => void refresh(),
     onError: (error) => {
-      if (isCancel(error)) return;
+      if (isCanceled(error)) return;
       onError(resolveRequestError(error, t("character.generateSheetFailed")));
     },
     onSettled: () => {

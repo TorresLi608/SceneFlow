@@ -44,7 +44,7 @@ Consequences worth knowing before building on it: shot order restarts per episod
 Verified gaps, ordered by how much they cost to leave alone. Owner and sizing to be assigned.
 
 - [ ] **Fix `tests/run_all.py` isolation.** All 32 test files pass individually (and through `scripts/run_tests.sh`); the runner still `runpy`s everything in one process and aborts on the first failure. Either make it shell out per file the way that script does, or make it restore module state and continue.
-- [ ] **Generation-jobs worker.** `generation_jobs` provides persistence, idempotency, leases, cancel, and retry, but there is no worker process — generation still starts in the API process via `asyncio.create_task`, so a restart mid-run orphans it, and `app/core/runs.py` cancellation is in-process for the same reason. See `../architecture/boundaries.md`.
+- [ ] **Move the remaining generation onto the jobs worker.** The worker exists now (`app/services/job_worker.py`) and drains reference images, prompt drafts, voice design, and auditions. Storyboard, tone sheet, project generation, and export still start in the API process via `asyncio.create_task`, so a restart mid-run still orphans them and `app/core/runs.py` cancellation is still in-process. These are the harder half: a run spans many shots, holds the project busy lock, and broadcasts per shot. See `../architecture/boundaries.md`.
 - [ ] **The legacy single-screen editor is still reachable** at `/projects/:id/workbench`, and nothing links to it. It is the only remaining caller of `POST /api/projects/:id/parse` and of the WebSocket client code; deleting it would let both go.
 - [ ] **Project job UI.** The endpoints exist (`GET /api/projects/:id/jobs`, cancel, retry); the workbench does not surface them.
 

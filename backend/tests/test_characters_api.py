@@ -27,6 +27,7 @@ from app.services.generation_service import (
 )
 from app.services.media_service import DEFAULT_CELL_WIDTH
 from app.utils.common import now
+from tests.job_queue import drain_one, succeeded
 
 
 # A one-pixel PNG, small enough to keep the fixtures readable.
@@ -428,16 +429,19 @@ def test_drawing_a_state_freezes_the_configuration_that_made_it() -> None:
             original = reference_service.models.generate_image
             reference_service.models.generate_image = _fake_image
             try:
-                drawn = client.post(
+                queued = client.post(
                     f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/image",
                     json={},
                     headers=headers,
                 )
+                # The draw happens while the job drains, not during the POST, so the stub has
+                # to still be in place here.
+                drawn = succeeded(drain_one())
             finally:
                 reference_service.models.generate_image = original
 
-            assert drawn.status_code == 200, drawn.text
-            card = drawn.json()["character"]
+            assert queued.status_code == 202, queued.text
+            card = drawn["character"]
             # Frozen, so changing the account default later cannot restyle an established
             # character the rest of the series was already matched against.
             assert (card["imageProvider"], card["imageModel"]) == ("openai", "gpt-image-1")
@@ -465,16 +469,17 @@ def test_a_drafted_prompt_is_returned_for_review_and_not_saved() -> None:
             original = reference_service.models.complete_text
             reference_service.models.complete_text = _fake_text
             try:
-                drafted = client.post(
+                queued = client.post(
                     f"/api/projects/{project_id}/characters/{character['id']}/states/{state['id']}/prompt",
                     json={},
                     headers=headers,
                 )
+                drafted = succeeded(drain_one())
             finally:
                 reference_service.models.complete_text = original
 
-            assert drafted.status_code == 200, drafted.text
-            assert drafted.json()["prompt"] == "正面、四分之三侧面、正侧面并排"
+            assert queued.status_code == 202, queued.text
+            assert drafted["prompt"] == "正面、四分之三侧面、正侧面并排"
             listed = client.get(f"/api/projects/{project_id}/characters", headers=headers).json()["characters"]
             assert listed[0]["states"][0]["finalPrompt"] == ""
 

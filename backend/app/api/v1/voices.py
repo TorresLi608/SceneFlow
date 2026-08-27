@@ -8,14 +8,12 @@ model given it as a reference can keep speakers apart.
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
 from app.api.deps import current_user_id
-from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
 from app.core.realtime import broadcast
 from app.models import UserVoice
@@ -26,28 +24,25 @@ from app.schemas.requests import (
     UpdateVoiceProfileRequest,
 )
 from app.schemas.serializers import project_json, voice_profile_json
-from app.services.artifact_service import artifact_absolute_path, artifact_relative_path, store_artifact
+from app.services.artifact_service import artifact_absolute_path, store_artifact
 from app.services.config_service import project_model_config
+from app.services.job_service import enqueue_job, job_json
 from app.services.media_service import concat_audio
 from app.services.project_service import owned_project
 from app.services.prompt_service import NARRATOR_SAMPLE_TEXT
-from app.services.qwen_voice_service import create_voice
-from app.services.tts_service import synthesize
-from app.services.usage_service import record_usage, require_model_balance
+from app.services.usage_service import require_model_balance
 from app.services.voice_service import (
     create_voice_profile,
     delete_voice_profile,
     owned_voice_profile,
     voice_profiles_for,
 )
-from app.utils.common import new_id, now
+from app.utils.common import now
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["voices"])
-
-BUILTIN_TTS = {"provider": "edge", "model": "zh-CN-XiaoxiaoNeural", "apiKey": "", "baseUrl": "", "source": "builtin"}
 
 
 @router.get("/{project_id}/voices")
@@ -83,13 +78,13 @@ async def add_voice(
     return {"voice": data}
 
 
-@router.post("/{project_id}/voices/design", status_code=201)
+@router.post("/{project_id}/voices/design", status_code=202)
 async def design_project_voice(
     project_id: str,
     body: DesignVoiceProfileRequest,
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    """Design a timbre from a description and bind it to this series in one step.
+    """Queue a timbre design and bind it to this series when it lands.
 
     The provider and model come from the project's audio configuration rather than the
     request. The old form asked the user to type them, which is how a series ended up with
@@ -97,54 +92,38 @@ async def design_project_voice(
 
     The designed voice is also saved to the account's library, because a timbre that took a
     paid request to produce should be reusable in the next series without paying again.
+
+    Queued rather than awaited: Starlette does not cancel a handler on client disconnect, so
+    the stop button could only hang up the browser while this ran on and billed. See
+    `app/services/job_worker.py`.
     """
     with db() as session:
         project = owned_project(session, project_id, user_id)
         config = project_model_config(session, user_id, project, "audio", "音色设计")
+        # Checked in the request so an unaffordable job is a 402 now rather than a failure the
+        # user has to go and read in the job list. The handler checks again when it runs.
         require_model_balance(session, user_id, config)
-
-    started_at = time.monotonic()
-    try:
-        voice_id, audio = await create_voice(config, body.voice_prompt, body.preview_text, body.name)
-    except Exception as exc:
-        logger.warning("voice design failed project=%s: %s", project_id, exc)
-        raise HTTPException(502, f"音色设计失败：{str(exc)[:220]}") from exc
-    record_usage(user_id, config, "voice_design", started_at, quantity=1)
-
-    stored = store_artifact("voices", project_id, f"{voice_id}.wav", audio)
-    stamp = now()
-    with db() as session:
-        owned_project(session, project_id, user_id)
-        session.add(
-            UserVoice(
-                id=new_id("user-voice"),
-                created_at=stamp,
-                updated_at=stamp,
-                user_id=user_id,
-                voice_id=voice_id,
-                target_model=str(config["model"]),
-                name=body.name,
-                voice_prompt=body.voice_prompt,
-                preview_text=body.preview_text,
-                preview_audio_path=stored,
-                is_saved=True,
-            )
-        )
-        profile = create_voice_profile(
+        job = enqueue_job(
             session,
+            user_id,
             project_id,
-            name=body.name,
-            note=body.note or body.voice_prompt[:200],
-            voice_provider=config["provider"],
-            # The designed voice id, not the base model: this is what synthesis has to ask
-            # for to get this timbre back rather than the model's default one.
-            voice_model=voice_id,
-            sample_text=body.sample_text or NARRATOR_SAMPLE_TEXT,
-            audio_path=stored,
+            "voice_design",
+            {
+                "name": body.name,
+                "voicePrompt": body.voice_prompt,
+                "previewText": body.preview_text,
+                "note": body.note or "",
+                "sampleText": body.sample_text or "",
+            },
+            # Keyed on the name: designing "旁白" twice at once is the duplicate to absorb,
+            # while a genuinely different timbre carries a different name.
+            idempotency_key=f"voice-design:{body.name.strip()[:80]}",
+            # Never retried automatically: a second attempt is a second charge.
+            max_attempts=1,
         )
-        data = voice_profile_json(profile)
-    await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": data})
-    return {"voice": data}
+        data = job_json(job)
+    await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
+    return {"job": data}
 
 
 @router.post("/{project_id}/voices/import", status_code=201)
@@ -235,39 +214,31 @@ async def remove_voice(project_id: str, voice_id: str, user_id: int = Depends(cu
     await broadcast(project_id, {"type": "VOICE_DELETED", "projectId": project_id, "voiceId": voice_id})
 
 
-@router.post("/{project_id}/voices/{voice_id}/preview")
+@router.post("/{project_id}/voices/{voice_id}/preview", status_code=202)
 async def preview_voice(project_id: str, voice_id: str, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    """Synthesise the profile's sample line so the user can hear it before binding it."""
+    """Queue synthesis of the profile's sample line so the user can hear it before binding it.
+
+    Local TTS rather than a paid model, so this costs nothing — it goes through the queue for
+    the other half of the reason: a stop button that actually stops, and one audition per
+    profile at a time instead of one per impatient click.
+    """
     with db() as session:
         owned_project(session, project_id, user_id)
         profile = owned_voice_profile(session, project_id, voice_id)
-        line = (profile.sample_text or NARRATOR_SAMPLE_TEXT).strip()
-        if not line:
+        if not (profile.sample_text or NARRATOR_SAMPLE_TEXT).strip():
             raise HTTPException(400, "sampleText is required")
-        config = dict(BUILTIN_TTS)
-        if profile.voice_provider in {"edge", "system"}:
-            config.update(provider=profile.voice_provider, model=profile.voice_model or "")
-
-    extension = "mp3"
-    target = PRIVATE_GENERATED_DIR / "voices" / project_id / f"{voice_id}.{extension}"
-    try:
-        target, _ = await synthesize(line, config, target)
-    except Exception as exc:
-        logger.warning("voice preview failed project=%s voice=%s: %s", project_id, voice_id, exc)
-        raise HTTPException(502, f"failed to synthesize voice: {str(exc)[:220]}") from exc
-    target.chmod(0o600)
-    stored = artifact_relative_path(target)
-
-    with db() as session:
-        owned_project(session, project_id, user_id)
-        profile = owned_voice_profile(session, project_id, voice_id)
-        profile.audio_path = stored
-        profile.updated_at = now()
-        session.add(profile)
-        session.flush()
-        data = voice_profile_json(profile)
-    await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": data})
-    return {"voice": data}
+        job = enqueue_job(
+            session,
+            user_id,
+            project_id,
+            "preview",
+            {"voiceId": voice_id},
+            idempotency_key=f"voice-preview:{voice_id}",
+            max_attempts=1,
+        )
+        data = job_json(job)
+    await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
+    return {"job": data, "voiceId": voice_id}
 
 
 @router.post("/{project_id}/voices/merge")

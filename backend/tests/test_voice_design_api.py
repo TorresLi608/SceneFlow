@@ -19,6 +19,7 @@ from app.core.security import encrypt, token_for
 from app.models import ModelConfig, User, UserVoice
 from app.services import artifact_service
 from app.utils.common import new_id, now
+from tests.job_queue import drain_one, succeeded
 
 
 DESIGNED_AUDIO = b"RIFF----WAVEfmt "
@@ -32,14 +33,16 @@ async def _fake_create_voice(config: dict[str, Any], prompt: str, preview: str, 
 
 @contextmanager
 def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str], int]]:
-    from app.api.v1 import voices
     from app.main import app
+    from app.services import job_handlers
 
-    original = (database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR, voices.create_voice)
+    # Design moved to the worker when it became a queued job, so the stub goes on the handler
+    # module rather than on the endpoint.
+    original = (database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR, job_handlers.create_voice)
     database.DB_PATH = str(Path(directory) / "voice_design.db")
     database._engines.pop(database.DB_PATH, None)
     artifact_service.PRIVATE_GENERATED_DIR = Path(directory) / "private_generated"
-    voices.create_voice = _fake_create_voice
+    job_handlers.create_voice = _fake_create_voice
     try:
         with TestClient(app) as client:
             with database.db() as session:
@@ -70,7 +73,7 @@ def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str], int]]:
                 )
             yield client, {"Authorization": f"Bearer {token_for(user_id)}"}, user_id
     finally:
-        database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR, voices.create_voice = original
+        database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR, job_handlers.create_voice = original
         database._engines.pop(str(database.DB_PATH), None)
 
 
@@ -96,8 +99,9 @@ def test_designing_a_voice_binds_it_to_the_series_and_keeps_it_on_the_account() 
                 headers=headers,
             )
 
-            assert response.status_code == 201, response.text
-            voice = response.json()["voice"]
+            assert response.status_code == 202, response.text
+            # The design call happens while the job drains, not during the POST.
+            voice = succeeded(drain_one())["voice"]
             assert voice["name"] == "narrator"
             # The designed voice id, not the base model: that is what synthesis must ask for
             # to get this timbre back rather than the model's default one.

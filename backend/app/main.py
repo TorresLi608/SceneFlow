@@ -31,6 +31,8 @@ from app.api.v1 import (
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
 from app.core.database import init_db
 from app.core.logging import configure_logging
+from app.services import job_handlers  # noqa: F401 -- registers the generation job handlers
+from app.services.job_worker import worker
 from app.services.project_service import release_orphaned_runs
 
 
@@ -42,7 +44,13 @@ async def lifespan(_: FastAPI):
     # and nothing else can ever release it. Startup is the one point where "no run is in
     # flight" is a fact rather than a guess.
     release_orphaned_runs()
-    yield
+    # Paid generation runs here rather than inside the request, so that stopping is a
+    # database operation instead of a hung-up socket. See `app/services/job_worker.py`.
+    worker.start()
+    try:
+        yield
+    finally:
+        await worker.stop()
 
 
 app = FastAPI(title="SceneFlow Backend", lifespan=lifespan)

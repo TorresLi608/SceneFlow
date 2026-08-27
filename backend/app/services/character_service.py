@@ -245,3 +245,15 @@ def set_scene_cast(session: Session, scene: Scene, character_ids: list[str]) -> 
     session.add(scene)
     session.flush()
     return wanted
+
+
+def character_payload(session: Session, project_id: str, character_id: str) -> dict[str, object]:
+    """One character with its states, as the wire sees it.
+
+    Lives here rather than in the endpoint so the generation-job handler can emit the same
+    shape when a turnaround sheet lands — a service may not import `api/v1`.
+    """
+    from app.schemas.serializers import character_json
+
+    character = owned_character(session, project_id, character_id)
+    return character_json(character, states_for(session, [character_id]).get(character_id, []))

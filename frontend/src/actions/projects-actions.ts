@@ -1,3 +1,4 @@
+import { type GenerationJob, runJob } from "@/actions/job-actions";
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
 import type {
   BreakdownEpisodeInput,
@@ -348,7 +349,12 @@ export async function deleteCharacterStateAction(projectID: string, characterID:
   await httpClient.delete(`/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}`);
 }
 
-/** Returns the drafted prompt for review; it is not saved until the user applies it. */
+/**
+ * Returns the drafted prompt for review; it is not saved until the user applies it.
+ *
+ * Queued server-side, awaited here, so callers are unchanged — but `signal` now cancels the
+ * job rather than just the request. See `job-actions.ts`.
+ */
 export async function draftCharacterStatePromptAction(
   projectID: string,
   characterID: string,
@@ -356,12 +362,15 @@ export async function draftCharacterStatePromptAction(
   payload: DraftPromptInput,
   signal?: AbortSignal
 ) {
-  const response = await httpClient.post<DraftPromptResponse>(
-    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/prompt`,
-    payload,
-    { timeout: generationRequestTimeout, signal }
+  return runJob<DraftPromptResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(
+        `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/prompt`,
+        payload
+      )
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function generateCharacterStateImageAction(
@@ -371,12 +380,15 @@ export async function generateCharacterStateImageAction(
   payload: GenerateReferenceImageInput,
   signal?: AbortSignal
 ) {
-  const response = await httpClient.post<CharacterItemResponse>(
-    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
-    payload,
-    { timeout: generationRequestTimeout, signal }
+  return runJob<CharacterItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(
+        `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
+        payload
+      )
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function uploadCharacterStateImageAction(
@@ -439,12 +451,12 @@ export async function draftPropPromptAction(
   payload: DraftPromptInput,
   signal?: AbortSignal
 ) {
-  const response = await httpClient.post<DraftPromptResponse>(
-    `/api/bff/projects/${projectID}/props/${propID}/prompt`,
-    payload,
-    { timeout: generationRequestTimeout, signal }
+  return runJob<DraftPromptResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/props/${propID}/prompt`, payload)
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function generatePropImageAction(
@@ -453,12 +465,12 @@ export async function generatePropImageAction(
   payload: GenerateReferenceImageInput,
   signal?: AbortSignal
 ) {
-  const response = await httpClient.post<PropItemResponse>(
-    `/api/bff/projects/${projectID}/props/${propID}/image`,
-    payload,
-    { timeout: generationRequestTimeout, signal }
+  return runJob<PropItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/props/${propID}/image`, payload)
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function uploadPropImageAction(projectID: string, propID: string, payload: UploadReferenceImageInput) {
@@ -530,12 +542,12 @@ export async function designVoiceProfileAction(
   payload: DesignVoiceProfileInput,
   signal?: AbortSignal
 ) {
-  const response = await httpClient.post<VoiceProfileItemResponse>(
-    `/api/bff/projects/${projectID}/voices/design`,
-    payload,
-    { timeout: generationRequestTimeout, signal }
+  return runJob<VoiceProfileItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/voices/design`, payload)
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 /** Binds a timbre already saved on the account to this series. */
@@ -548,13 +560,13 @@ export async function importVoiceProfileAction(projectID: string, payload: Impor
 }
 
 /** Synthesises the profile's sample line so the user can hear it before binding it. */
-export async function previewVoiceAction(projectID: string, voiceID: string) {
-  const response = await httpClient.post<VoiceProfileItemResponse>(
-    `/api/bff/projects/${projectID}/voices/${voiceID}/preview`,
-    undefined,
-    { timeout: generationRequestTimeout }
+export async function previewVoiceAction(projectID: string, voiceID: string, signal?: AbortSignal) {
+  return runJob<VoiceProfileItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/voices/${voiceID}/preview`)
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 /** Concatenates every auditioned voice into the timbre reference the video model hears. */

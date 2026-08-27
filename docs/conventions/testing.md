@@ -39,6 +39,27 @@ Follow `tests/test_episodes_api.py`:
 - Assert on the response body with the text in the message: `assert response.status_code == 200, response.text`.
 - Never let a test reach a real provider or the developer database. Point `SCENEFLOW_DB_PATH` at a temp path; never touch `backend/sceneflow.db`.
 
+### Testing a queued endpoint
+
+Reference images, prompt drafts, voice design, and voice auditions return `202 {job}` and do the work in the job worker (see `../architecture/data-flow.md` §2c). A test that wants to assert on the *result* has to run the job itself:
+
+```python
+from tests.job_queue import drain_one, succeeded
+
+queued = client.post(f"/api/projects/{project_id}/props/{prop_id}/image", json={...}, headers=headers)
+assert queued.status_code == 202, queued.text
+prop = succeeded(drain_one())["prop"]
+```
+
+`drain_jobs`/`drain_one` run the real path — `claim_next_job` → `dispatch` → `finish_job` — just without lease renewal and the poll interval, so the real handler and the real terminal write are still exercised.
+
+Two rules that follow from this:
+
+- **Patch the provider on `app.services.job_handlers`, not on the endpoint module.** The call moved when the endpoint became an enqueue; patching `app.api.v1.voices.synthesize` now patches a name nothing reads.
+- **Keep the stub installed until after the drain.** The provider call happens while the job drains, not during the POST, so a `finally: restore` around only the POST restores it too early.
+
+Importing `tests.job_queue` sets `SCENEFLOW_WORKER_ENABLED=0`, which keeps the in-process worker the app lifespan would otherwise start from racing the test for the same rows. Two claimants make which one runs a job a coin flip.
+
 ### What is covered today
 
 Auth and admin (users, usage logs, invitation/redemption codes), model config resolution and the legacy table merge, project guards and production settings, the episode layer and its migration, characters and casting, artifacts and signed paths, jobs (lease/cancel/retry), local voice audition, video, usage/billing, websocket, and the database migrations themselves.

@@ -19,6 +19,7 @@ from app.models import ModelConfig, Prop, User
 from app.services import artifact_service
 from app.services.media_service import DEFAULT_CELL_WIDTH
 from app.utils.common import now
+from tests.job_queue import drain_one, succeeded
 
 
 PNG_BYTES = base64.b64decode(
@@ -133,14 +134,18 @@ def test_a_drafted_prompt_is_returned_for_review_and_not_saved() -> None:
             original = reference_service.models.complete_text
             reference_service.models.complete_text = _fake_text
             try:
-                drafted = client.post(
+                queued = client.post(
                     f"/api/projects/{project_id}/props/{prop['id']}/prompt", json={}, headers=headers
                 )
+                # The provider call happens while the job drains, not during the POST, so the
+                # stub has to still be in place here.
+                drafted = succeeded(drain_one())
             finally:
                 reference_service.models.complete_text = original
 
-            assert drafted.status_code == 200, drafted.text
-            assert drafted.json()["prompt"] == "单一物体居中，纯色背景"
+            assert queued.status_code == 202, queued.text
+            assert queued.json()["job"]["status"] == "queued"
+            assert drafted["prompt"] == "单一物体居中，纯色背景"
             listed = client.get(f"/api/projects/{project_id}/props", headers=headers).json()["props"]
             assert listed[0]["finalPrompt"] == ""
 
@@ -159,16 +164,17 @@ def test_the_drawn_image_and_the_prompt_behind_it_are_both_kept() -> None:
             original = reference_service.models.generate_image
             reference_service.models.generate_image = _fake_image
             try:
-                drawn = client.post(
+                queued = client.post(
                     f"/api/projects/{project_id}/props/{prop['id']}/image",
                     json={"prompt": "青铜锁参考图"},
                     headers=headers,
                 )
+                drawn = succeeded(drain_one())
             finally:
                 reference_service.models.generate_image = original
 
-            assert drawn.status_code == 200, drawn.text
-            data = drawn.json()["prop"]
+            assert queued.status_code == 202, queued.text
+            data = drawn["prop"]
             assert data["finalPrompt"] == "青铜锁参考图"
             # The row keeps a path; the response mints a link that resolves.
             fetched = client.get("/api/chat/artifacts/" + data["imageUrl"].rsplit("/", 1)[-1])

@@ -1,11 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isCancel } from "axios";
 import { AudioLines, Download, Loader2, Pencil, Play, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { isCanceled } from "@/actions/job-actions";
 import {
   designVoiceProfileAction,
   deleteVoiceAction,
@@ -71,7 +71,7 @@ function DesignVoiceCard({ projectId, onError }: { projectId: string; onError: (
       void queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) });
     },
     onError: (error) => {
-      if (isCancel(error)) return;
+      if (isCanceled(error)) return;
       onError(resolveRequestError(error, t("voice.designFailed")));
     },
     onSettled: () => {

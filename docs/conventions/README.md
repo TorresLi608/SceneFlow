@@ -30,6 +30,16 @@ Violating any of these produces a bug that does not show up until production dat
 - **Comments explain *why*.** This codebase's comments encode constraints that are expensive to rediscover (see `project-store.ts`, `generation_service.py`, `main.py`). Match that register, and do not strip them while refactoring.
 - **Prefer fewer, sharper abstractions.** Reuse existing module boundaries rather than introducing one-off indirection. `AppSidebar` is concrete because there is one sidebar; do not build a framework for a single caller.
 
+## Writing a migration
+
+Three rules, each of which was learned from a bug that only a database with real data could show:
+
+- **A migration must not read a model that is still moving.** `SQLModel.metadata` is *today's* schema; a revision is a fixed point in history. The baseline (`345000649eb5`) built its legacy rebuild from live metadata, so an unversioned database was upgraded straight to the current schema — and then every table added afterwards (`assets`, `email_verifications`) collided with the migration that creates it. Import nothing that can drift: write the columns out, or reflect what is actually there. Metadata is fine for *ordering* (foreign-key dependency), never for shape.
+- **Guard for a table that is not there yet.** A database stamped at an earlier revision need not carry every table, and `inspect(...).get_columns("scenes")` raises rather than skipping. `6655a5517a16`, `d7b25e91c840`, and `e5c94a1f6d38` show the pattern; `c93e7a1b4d20` was fixed to match.
+- **Foreign keys are off during migrations, on at runtime** (`migrations/env.py`). `render_as_batch` alters a SQLite table by recreating it — copy, drop, rename — and with enforcement on, that drop *cascades into the referrers*: altering `model_configs` nulled `chat_sessions.config_id` and deleted every `user_official_config_defaults` row. Set the pragma through the raw DBAPI cursor, never `exec_driver_sql`, which autobegins a transaction Alembic then does not own — every migration appears to run and nothing persists.
+
+Name an index `idx_*`, matching the rest of the schema, and declare it in `__table_args__`. `Field(index=True)` lets SQLAlchemy generate an `ix_*` name that no migration uses, and `alembic check` then reports the same drop-and-add forever.
+
 ## Keeping generated docs current
 
 `docs/reference/api-spec.yaml` is generated from the running app. Regenerate it after changing any endpoint or request/response model:

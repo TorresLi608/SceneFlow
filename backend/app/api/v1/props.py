@@ -24,14 +24,12 @@ from app.schemas.requests import (
 from app.schemas.serializers import project_json, prop_json
 from app.services.artifact_service import decode_image_data_url, store_artifact
 from app.services.character_service import characters_for
+from app.services.job_service import enqueue_job, job_json
 from app.services.project_service import owned_project
-from app.services.prompt_service import PROP_SYSTEM, fallback_prop_prompt, prop_prompt
-from app.services.prop_service import create_prop, delete_prop, owned_prop, props_for
+from app.services.prompt_service import fallback_prop_prompt, prop_prompt
+from app.services.prop_service import create_prop, delete_prop, owned_prop, prop_payload, props_for
 from app.services.reference_service import (
-    draft_prompt,
-    draw_reference,
     image_config,
-    image_options,
     script_config,
     store_sheet,
 )
@@ -49,7 +47,7 @@ def _owner_names(session, project_id: str) -> dict[str, str]:
 
 
 def _prop_payload(session, project_id: str, prop) -> dict[str, Any]:
-    return prop_json(prop, _owner_names(session, project_id).get(prop.owner_character_id or "", ""))
+    return prop_payload(session, project_id, prop)
 
 
 @router.get("/{project_id}/props")
@@ -123,14 +121,19 @@ async def remove_prop(project_id: str, prop_id: str, user_id: int = Depends(curr
     await broadcast(project_id, {"type": "PROP_DELETED", "projectId": project_id, "propId": prop_id})
 
 
-@router.post("/{project_id}/props/{prop_id}/prompt")
+@router.post("/{project_id}/props/{prop_id}/prompt", status_code=202)
 async def draft_prop_prompt(
     project_id: str,
     prop_id: str,
     body: DraftPromptRequest,
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    """Draft the image prompt for review. Returned, not saved."""
+    """Queue the image prompt draft. Read it off the job result; it is never saved.
+
+    Queued rather than awaited here because Starlette does not cancel a handler when the
+    client disconnects, so a stop button could only ever hang up the browser while this kept
+    running and billing. See `app/services/job_worker.py`.
+    """
     with db() as session:
         project = owned_project(session, project_id, user_id)
         prop = owned_prop(session, project_id, prop_id)
@@ -140,45 +143,55 @@ async def draft_prop_prompt(
             _owner_names(session, project_id).get(prop.owner_character_id or "", ""),
             body.preset,
         )
-        config = script_config(session, user_id, "道具提示词", project)
+        # Resolved in the request so an unaffordable job is a 402 now rather than a failure
+        # the user has to go and read in the job list.
+        script_config(session, user_id, "道具提示词", project)
+        job = enqueue_job(
+            session,
+            user_id,
+            project_id,
+            "prompt_draft",
+            {"target": "prop", "targetId": prop_id, "userText": user_text, "model": body.model},
+            idempotency_key=f"prop-prompt:{prop_id}",
+            # Never retried automatically: a second attempt is a second charge.
+            max_attempts=1,
+        )
+        data = job_json(job)
+    await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
+    return {"job": data, "propId": prop_id}
 
-    prompt = await draft_prompt(config, user_id, PROP_SYSTEM, user_text, body.model, "prop_prompt")
-    return {"propId": prop_id, "prompt": prompt}
 
-
-@router.post("/{project_id}/props/{prop_id}/image")
+@router.post("/{project_id}/props/{prop_id}/image", status_code=202)
 async def generate_prop_image(
     project_id: str,
     prop_id: str,
     body: GenerateReferenceImageRequest,
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
+    """Queue the prop's reference draw. The worker stores it and broadcasts `PROP_UPDATE`."""
     with db() as session:
         project = owned_project(session, project_id, user_id)
         prop = owned_prop(session, project_id, prop_id)
+        # Resolved now, not in the worker: this is the prompt the user reviewed in the dialog,
+        # and re-deriving it later would quietly discard their edit.
         prompt = (body.prompt or prop.final_prompt).strip() or fallback_prop_prompt(
             prop.name,
             prop.description,
             _owner_names(session, project_id).get(prop.owner_character_id or "", ""),
         )
-        config = image_config(session, user_id, "道具参考图", project)
-        size, quality = image_options(project)
-
-    data, extension = await draw_reference(config, user_id, prompt, "prop_image", size, quality)
-    stored = store_artifact("props", project_id, f"{prop_id}.{extension}", data)
-
-    with db() as session:
-        owned_project(session, project_id, user_id)
-        prop = owned_prop(session, project_id, prop_id)
-        prop.image_path = stored
-        # Remember what was actually drawn, so a reload shows the prompt behind the image.
-        prop.final_prompt = prompt[:4000]
-        prop.updated_at = now()
-        session.add(prop)
-        session.flush()
-        data_json = _prop_payload(session, project_id, prop)
-    await broadcast(project_id, {"type": "PROP_UPDATE", "projectId": project_id, "data": data_json})
-    return {"prop": data_json}
+        image_config(session, user_id, "道具参考图", project)
+        job = enqueue_job(
+            session,
+            user_id,
+            project_id,
+            "reference_image",
+            {"target": "prop", "propId": prop_id, "prompt": prompt},
+            idempotency_key=f"prop-image:{prop_id}",
+            max_attempts=1,
+        )
+        data = job_json(job)
+    await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
+    return {"job": data, "propId": prop_id}
 
 
 @router.put("/{project_id}/props/{prop_id}/image")

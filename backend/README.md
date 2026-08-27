@@ -316,6 +316,9 @@ it as a reference can keep speakers apart.
     the project (which holds the busy lock) and the episode that was rendered
 - `PATCH /api/projects/:id/production-settings`
 - `GET /api/projects/:id/jobs`
+- `GET /api/jobs/:id` — one job, for a client waiting on the work it queued. Its own endpoint
+  rather than filtering the project list: a panel waiting on one image should not pull every
+  job in the series on a three-second interval.
 - `POST /api/jobs/:id/cancel`
 - `POST /api/jobs/:id/retry`
 
@@ -349,7 +352,9 @@ it as a reference can keep speakers apart.
     which looks like a truncated export rather than an error
 - `GET /api/projects/:id/exports/:exportId` — status, progress, and a signed download link
 
-`generation_jobs` currently provides persistence, idempotency, leases, cancel, and retry services. The worker processor and project job UI are still pending; image and video generation still starts in the API process.
+`generation_jobs` provides persistence, idempotency, leases, cancel, and retry, and `app/services/job_worker.py` drains it in-process (three lanes, started and stopped by the app lifespan; set `SCENEFLOW_WORKER_ENABLED=0` to keep it down, which is what the tests do so they can drive the queue by hand).
+
+Queued today, via handlers in `app/services/job_handlers.py`: character-state and prop reference images, prompt drafts, project voice design, and voice auditions. Those endpoints return **202 with a `job`** rather than the finished row — poll `GET /api/jobs/:id`, or wait for the `PROP_UPDATE`/`CHARACTER_UPDATE`/`VOICE_UPDATE` broadcast the handler emits. Storyboard, tone sheet, project generation, and export still start in the API process via `asyncio.create_task`; the project job UI is still pending.
 
 ## Data model
 
@@ -413,7 +418,7 @@ Edge/system TTS and do not consume the standalone Voice Design configuration.
 
 ## Short-drama orchestration
 - LangGraph is reserved for checkpointed LLM decisions and human approval, such as script structure and continuity review.
-- `generation_jobs` plus a worker owns deterministic image, video, and FFmpeg tasks; project voice auditions remain local.
+- `generation_jobs` plus `app/services/job_worker.py` owns deterministic image, video, TTS, and FFmpeg tasks. Reference images, prompt drafts, voice design, and auditions run there now; storyboard, tone sheet, project generation, and export have not moved yet. Project voice auditions remain local Edge/system TTS.
 - Rollback means selecting an earlier asset version and marking downstream results stale, not deleting generated assets.
 - LangGraph is already installed through LangChain; no extra dependency is needed.
 

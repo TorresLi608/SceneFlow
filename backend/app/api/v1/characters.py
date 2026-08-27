@@ -25,6 +25,7 @@ from app.schemas.requests import (
 from app.schemas.serializers import character_json, character_state_json, project_json
 from app.services.artifact_service import decode_image_data_url, store_artifact
 from app.services.character_service import (
+    character_payload,
     characters_for,
     create_character,
     create_state,
@@ -34,17 +35,14 @@ from app.services.character_service import (
     set_scene_cast,
     states_for,
 )
+from app.services.job_service import enqueue_job, job_json
 from app.services.prompt_service import (
-    CHARACTER_SHEET_SYSTEM,
     character_sheet_prompt,
     fallback_character_sheet_prompt,
 )
 from app.services.project_service import owned_project
 from app.services.reference_service import (
-    draft_prompt,
-    draw_reference,
     image_config,
-    image_options,
     script_config,
     store_sheet,
 )
@@ -64,8 +62,7 @@ def _episode_range(from_episode: int | None, to_episode: int | None) -> None:
 
 
 def _character_payload(session, project_id: str, character_id: str) -> dict[str, Any]:
-    character = owned_character(session, project_id, character_id)
-    return character_json(character, states_for(session, [character_id]).get(character_id, []))
+    return character_payload(session, project_id, character_id)
 
 
 @router.get("/{project_id}/characters")
@@ -225,7 +222,7 @@ def remove_state(
         session.add(state)
 
 
-@router.post("/{project_id}/characters/{character_id}/states/{state_id}/prompt")
+@router.post("/{project_id}/characters/{character_id}/states/{state_id}/prompt", status_code=202)
 async def draft_state_prompt(
     project_id: str,
     character_id: str,
@@ -233,10 +230,12 @@ async def draft_state_prompt(
     body: DraftPromptRequest,
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    """Draft the turnaround prompt from the character and the state, for review.
+    """Queue the turnaround prompt draft, for review.
 
-    Returned rather than saved: the user is meant to read and edit this before it draws
-    anything, so writing it here would make the preview step decorative.
+    Read off the job result rather than saved: the user is meant to edit this before it draws
+    anything, so writing it here would make the preview step decorative. Queued because
+    Starlette does not cancel a handler on client disconnect, so a stop button could only
+    hang up the browser while this ran on and billed (`app/services/job_worker.py`).
     """
     with db() as session:
         project = owned_project(session, project_id, user_id)
@@ -252,15 +251,31 @@ async def draft_state_prompt(
             body.description or state.description,
             body.preset,
         )
-        config = script_config(session, user_id, "角色状态提示词", project)
+        # Resolved in the request so an unaffordable job is a 402 now rather than a failure
+        # the user has to go and read in the job list.
+        script_config(session, user_id, "角色状态提示词", project)
+        job = enqueue_job(
+            session,
+            user_id,
+            project_id,
+            "prompt_draft",
+            {
+                "target": "characterState",
+                "targetId": state_id,
+                "characterId": character_id,
+                "userText": user_text,
+                "model": body.model,
+            },
+            idempotency_key=f"state-prompt:{state_id}",
+            # Never retried automatically: a second attempt is a second charge.
+            max_attempts=1,
+        )
+        data = job_json(job)
+    await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
+    return {"job": data, "stateId": state_id}
 
-    prompt = await draft_prompt(
-        config, user_id, CHARACTER_SHEET_SYSTEM, user_text, body.model, "character_state_prompt"
-    )
-    return {"stateId": state_id, "prompt": prompt}
 
-
-@router.post("/{project_id}/characters/{character_id}/states/{state_id}/image")
+@router.post("/{project_id}/characters/{character_id}/states/{state_id}/image", status_code=202)
 async def generate_state_image(
     project_id: str,
     character_id: str,
@@ -268,44 +283,38 @@ async def generate_state_image(
     body: GenerateReferenceImageRequest,
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    """Draw the state's turnaround sheet from the approved prompt."""
+    """Queue the state's turnaround draw. The worker stores it and broadcasts `CHARACTER_UPDATE`."""
     with db() as session:
         project = owned_project(session, project_id, user_id)
         character = owned_character(session, project_id, character_id)
         if character.is_locked:
             raise HTTPException(409, "character is locked, unlock it before regenerating its images")
         state = owned_state(session, character_id, state_id)
+        # Resolved now, not in the worker: this is the prompt the user approved, and
+        # re-deriving it later would quietly discard their edit.
         prompt = (body.prompt or state.final_prompt).strip() or fallback_character_sheet_prompt(
             character.name,
             state.name,
             state.appearance_prompt or state.description or character.appearance_prompt or character.description,
         )
-        config = image_config(session, user_id, "角色三面图", project)
-        size, quality = image_options(project)
-
-    data, extension = await draw_reference(config, user_id, prompt, "character_state_image", size, quality)
-    stored = store_artifact("characters", project_id, f"{state_id}.{extension}", data)
-
-    with db() as session:
-        owned_project(session, project_id, user_id)
-        state = owned_state(session, character_id, state_id)
-        state.reference_image_path = stored
-        # Remember what was actually drawn, so a reload shows the prompt behind the image.
-        state.final_prompt = prompt[:4000]
-        state.updated_at = now()
-        session.add(state)
-        character = owned_character(session, project_id, character_id)
-        # Freeze what produced it: changing the account default later must not restyle a
-        # character the rest of the series has already been matched against.
-        character.image_provider = config["provider"]
-        character.image_model = config["model"]
-        character.image_base_url = config.get("baseUrl", "")
-        character.updated_at = now()
-        session.add(character)
-        session.flush()
-        data_json = _character_payload(session, project_id, character_id)
-    await broadcast(project_id, {"type": "CHARACTER_UPDATE", "projectId": project_id, "data": data_json})
-    return {"character": data_json}
+        image_config(session, user_id, "角色三面图", project)
+        job = enqueue_job(
+            session,
+            user_id,
+            project_id,
+            "reference_image",
+            {
+                "target": "characterState",
+                "characterId": character_id,
+                "stateId": state_id,
+                "prompt": prompt,
+            },
+            idempotency_key=f"state-image:{state_id}",
+            max_attempts=1,
+        )
+        data = job_json(job)
+    await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
+    return {"job": data, "stateId": state_id}
 
 
 @router.put("/{project_id}/characters/{character_id}/states/{state_id}/image")

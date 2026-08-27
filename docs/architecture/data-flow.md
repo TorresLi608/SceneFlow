@@ -66,6 +66,37 @@ Cooperative, not an interrupt. A frame the provider is already drawing has been 
 
 `app/core/runs.py` is an in-process registry with the same limitation as `app/core/realtime.py`: a second backend process would not see the flag. Both need a shared broker before the app can run multi-process, and that is one change, not two.
 
+## 2c. Queued generation (references, prompt drafts, voices)
+
+Everything above runs inside the request that started it. The smaller paid calls no longer do:
+
+```
+POST .../props/:propId/image            ← resolves the prompt and the config, then
+POST .../characters/:id/states/:sid/image  enqueue_job(...)  ─▶ 202 { job }
+POST .../props/:propId/prompt
+POST .../voices/design
+POST .../voices/:voiceId/preview
+        │
+        ├─ app/services/job_worker.py   claim_next_job (conditional UPDATE, 3 lanes)
+        │     └─ dispatch ─▶ app/services/job_handlers.py
+        │          short session (resolve target + config)
+        │          await provider                  ← no session held
+        │          short session (write) ─▶ broadcast PROP_UPDATE / CHARACTER_UPDATE / VOICE_UPDATE
+        │     └─ finish_job  ─▶ succeeded | failed
+        │
+        └─ client: src/actions/job-actions.ts polls GET /api/jobs/:id to a terminal row
+```
+
+**Why the queue exists: Starlette does not cancel a handler when the client disconnects.** With the work inside the request, a "stop" button could only hang up the browser while the provider call ran on and billed — and the result was still written back over whatever the user did next. Stopping is now `POST /api/jobs/:id/cancel`, a database write:
+
+- cancelled while `queued` costs nothing at all;
+- cancelled while `running` is abandoned within a heartbeat, because `renew_lease` doubles as the cancel signal — the row has left `running`, so the next renewal matches nothing and the worker drops the call it is waiting on;
+- a resent POST lands on the same row: `enqueue_job` dedupes on a stable key naming the *target* (`prop-image:{id}`), not a per-click token, so the rule it encodes is one unfinished job per target.
+
+Paid work is enqueued with `max_attempts=1` and is never retried automatically. When a worker dies mid-call there is no way to know whether the provider completed and billed, so `fail_expired_jobs` settles the row `WORKER_LOST` rather than buying the image twice; `/api/jobs/:id/retry` is one click if the user decides it is worth paying again.
+
+The balance is checked twice on purpose — in the request, so an unaffordable job is a `402` now rather than a failure the user has to go and read in a job list; and again in the handler, because a queue means time passes and what covered the job when it was queued may since be spent.
+
 ## 3. Shots -> generated clips (drama / motion comic)
 
 ```

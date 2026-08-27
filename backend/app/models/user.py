@@ -8,6 +8,11 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
     __table_args__ = (
         Index("idx_users_deleted_at", "deleted_at"),
+        # Named explicitly rather than via `Field(index=True)`, which SQLAlchemy would name
+        # `ix_users_email` — the one `ix_` in a codebase that is otherwise all `idx_`, and a
+        # name the migration does not use, so `alembic check` reported a drop-and-add of the
+        # same index on every run.
+        Index("idx_users_email", "email", unique=True),
         {"sqlite_autoincrement": True},
     )
 
@@ -17,7 +22,7 @@ class User(SQLModel, table=True):
     deleted_at: str | None = None
     username: str = Field(unique=True)
     nickname: str | None = None
-    email: str | None = Field(default=None, unique=True, index=True)
+    email: str | None = Field(default=None)
     password: str
     role: str | None = Field(default="user", sa_column_kwargs={"server_default": text("'user'")})
     is_disabled: bool | None = Field(default=False, sa_column_kwargs={"server_default": text("false")})

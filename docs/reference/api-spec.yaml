@@ -5,6 +5,35 @@ info:
   title: SceneFlow Backend
   version: 0.1.0
 paths:
+  /api/auth/send-verification-code:
+    post:
+      tags:
+      - auth
+      summary: Send Verification Code
+      operationId: send_verification_code_api_auth_send_verification_code_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Payload
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Send Verification Code Api Auth Send Verification Code Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/auth/register:
     post:
       tags:
@@ -2218,6 +2247,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/references/{kind}/{asset_id}:
+    delete:
+      tags:
+      - projects
+      summary: Delete Generation Reference
+      operationId: delete_generation_reference_api_projects__project_id__references__kind___asset_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: kind
+        in: path
+        required: true
+        schema:
+          enum:
+          - character
+          - characterState
+          - prop
+          - tone
+          - sceneImage
+          - sceneVideo
+          - voice
+          type: string
+          title: Kind
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/projects/{project_id}/parse:
     post:
       tags:
@@ -3067,12 +3146,16 @@ paths:
       tags:
       - characters
       summary: Draft State Prompt
-      description: 'Draft the turnaround prompt from the character and the state, for review.
+      description: 'Queue the turnaround prompt draft, for review.
 
 
-        Returned rather than saved: the user is meant to read and edit this before it draws
+        Read off the job result rather than saved: the user is meant to edit this before it draws
 
-        anything, so writing it here would make the preview step decorative.'
+        anything, so writing it here would make the preview step decorative. Queued because
+
+        Starlette does not cancel a handler on client disconnect, so a stop button could only
+
+        hang up the browser while this ran on and billed (`app/services/job_worker.py`).'
       operationId: draft_state_prompt_api_projects__project_id__characters__character_id__states__state_id__prompt_post
       parameters:
       - name: project_id
@@ -3108,7 +3191,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DraftPromptRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3128,7 +3211,7 @@ paths:
       tags:
       - characters
       summary: Generate State Image
-      description: Draw the state's turnaround sheet from the approved prompt.
+      description: Queue the state's turnaround draw. The worker stores it and broadcasts `CHARACTER_UPDATE`.
       operationId: generate_state_image_api_projects__project_id__characters__character_id__states__state_id__image_post
       parameters:
       - name: project_id
@@ -3164,7 +3247,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GenerateReferenceImageRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3534,7 +3617,14 @@ paths:
       tags:
       - props
       summary: Draft Prop Prompt
-      description: Draft the image prompt for review. Returned, not saved.
+      description: 'Queue the image prompt draft. Read it off the job result; it is never saved.
+
+
+        Queued rather than awaited here because Starlette does not cancel a handler when the
+
+        client disconnects, so a stop button could only ever hang up the browser while this kept
+
+        running and billing. See `app/services/job_worker.py`.'
       operationId: draft_prop_prompt_api_projects__project_id__props__prop_id__prompt_post
       parameters:
       - name: project_id
@@ -3564,7 +3654,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DraftPromptRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3583,6 +3673,7 @@ paths:
       tags:
       - props
       summary: Generate Prop Image
+      description: Queue the prop's reference draw. The worker stores it and broadcasts `PROP_UPDATE`.
       operationId: generate_prop_image_api_projects__project_id__props__prop_id__image_post
       parameters:
       - name: project_id
@@ -3612,7 +3703,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GenerateReferenceImageRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3792,7 +3883,7 @@ paths:
       tags:
       - voices
       summary: Design Project Voice
-      description: 'Design a timbre from a description and bind it to this series in one step.
+      description: 'Queue a timbre design and bind it to this series when it lands.
 
 
         The provider and model come from the project''s audio configuration rather than the
@@ -3804,7 +3895,14 @@ paths:
 
         The designed voice is also saved to the account''s library, because a timbre that took a
 
-        paid request to produce should be reusable in the next series without paying again.'
+        paid request to produce should be reusable in the next series without paying again.
+
+
+        Queued rather than awaited: Starlette does not cancel a handler on client disconnect, so
+
+        the stop button could only hang up the browser while this ran on and billed. See
+
+        `app/services/job_worker.py`.'
       operationId: design_project_voice_api_projects__project_id__voices_design_post
       parameters:
       - name: project_id
@@ -3828,7 +3926,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DesignVoiceProfileRequest'
       responses:
-        '201':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3978,7 +4076,15 @@ paths:
       tags:
       - voices
       summary: Preview Voice
-      description: Synthesise the profile's sample line so the user can hear it before binding it.
+      description: 'Queue synthesis of the profile''s sample line so the user can hear it before binding
+        it.
+
+
+        Local TTS rather than a paid model, so this costs nothing — it goes through the queue for
+
+        the other half of the reason: a stop button that actually stops, and one audition per
+
+        profile at a time instead of one per impatient click.'
       operationId: preview_voice_api_projects__project_id__voices__voice_id__preview_post
       parameters:
       - name: project_id
@@ -4002,7 +4108,7 @@ paths:
           - type: 'null'
           title: Authorization
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -4301,6 +4407,89 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Get Export Api Projects  Project Id  Exports  Export Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - exports
+      summary: Remove Export
+      operationId: remove_export_api_projects__project_id__exports__export_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: export_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Export Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove Export Api Projects  Project Id  Exports  Export Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/jobs/{job_id}:
+    get:
+      tags:
+      - jobs
+      summary: Get Generation Job
+      description: 'One job, for a client waiting on the work it queued.
+
+
+        Its own endpoint rather than filtering the project list: a panel waiting on one image
+
+        should not pull every job in the series on a three-second interval.'
+      operationId: get_generation_job_api_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Generation Job Api Jobs  Job Id  Get
         '422':
           description: Validation Error
           content:
@@ -4736,6 +4925,22 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Videoprompt
+        imageReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Imagereferences
+        videoReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Videoreferences
         durationMs:
           anyOf:
           - type: integer
@@ -4938,6 +5143,10 @@ components:
             minItems: 1
           - type: 'null'
           title: Sceneids
+        pendingOnly:
+          type: boolean
+          title: Pendingonly
+          default: false
       additionalProperties: false
       type: object
       title: GenerateProjectRequest
@@ -4985,6 +5194,10 @@ components:
             maxItems: 64
           - type: 'null'
           title: References
+        pendingOnly:
+          type: boolean
+          title: Pendingonly
+          default: false
       additionalProperties: false
       type: object
       title: GenerateStoryboardRequest
@@ -5092,6 +5305,10 @@ components:
             maxItems: 64
           - type: 'null'
           title: References
+        pendingOnly:
+          type: boolean
+          title: Pendingonly
+          default: false
       additionalProperties: false
       type: object
       title: GenerateVideoRequest
@@ -5785,6 +6002,22 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Videoprompt
+        imageReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Imagereferences
+        videoReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Videoreferences
         durationMs:
           anyOf:
           - type: integer

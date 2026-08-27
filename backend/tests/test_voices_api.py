@@ -15,6 +15,7 @@ from app.core.security import encrypt, token_for
 from app.models import Character, ModelConfig, User
 from app.services import artifact_service
 from app.utils.common import now
+from tests.job_queue import drain_jobs, drain_one, succeeded
 
 
 CONFIGS = (
@@ -35,16 +36,23 @@ async def _fake_synthesize(text: str, config: dict[str, str], output: Path) -> t
 
 @contextmanager
 def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str]]]:
-    from app.api.v1 import voices
     from app.main import app
+    from app.services import job_handlers
 
-    original = (database.DB_PATH, artifact_service.PRIVATE_GENERATED_DIR, voices.synthesize, voices.PRIVATE_GENERATED_DIR)
+    # Synthesis moved to the worker when previewing became a queued job, so the stub goes on
+    # the handler module rather than on the endpoint.
+    original = (
+        database.DB_PATH,
+        artifact_service.PRIVATE_GENERATED_DIR,
+        job_handlers.synthesize,
+        job_handlers.PRIVATE_GENERATED_DIR,
+    )
     database.DB_PATH = str(Path(directory) / "voices.db")
     database._engines.pop(database.DB_PATH, None)
     generated = Path(directory) / "private_generated"
     artifact_service.PRIVATE_GENERATED_DIR = generated
-    voices.PRIVATE_GENERATED_DIR = generated
-    voices.synthesize = _fake_synthesize
+    job_handlers.PRIVATE_GENERATED_DIR = generated
+    job_handlers.synthesize = _fake_synthesize
     try:
         with TestClient(app) as client:
             with database.db() as session:
@@ -72,8 +80,8 @@ def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str]]]:
         (
             database.DB_PATH,
             artifact_service.PRIVATE_GENERATED_DIR,
-            voices.synthesize,
-            voices.PRIVATE_GENERATED_DIR,
+            job_handlers.synthesize,
+            job_handlers.PRIVATE_GENERATED_DIR,
         ) = original
         database._engines.pop(str(database.DB_PATH), None)
 
@@ -118,8 +126,9 @@ def test_previewing_stores_the_clip_by_path_and_serves_a_signed_link() -> None:
                 f"/api/projects/{project_id}/voices/{profile['id']}/preview", headers=headers
             )
 
-            assert response.status_code == 200, response.text
-            audio_url = response.json()["voice"]["audioUrl"]
+            # Synthesis is queued, not awaited: see `app/services/job_worker.py`.
+            assert response.status_code == 202, response.text
+            audio_url = succeeded(drain_one())["voice"]["audioUrl"]
             assert "/api/chat/artifacts/" in audio_url
             downloaded = client.get("/api/chat/artifacts/" + audio_url.rsplit("/", 1)[-1])
             assert downloaded.status_code == 200, downloaded.text
@@ -135,6 +144,7 @@ def test_a_voice_from_an_unconfigured_provider_falls_back_to_the_default() -> No
             profile = _voice(client, headers, project_id, voiceProvider="openai", voiceModel="alloy")
 
             client.post(f"/api/projects/{project_id}/voices/{profile['id']}/preview", headers=headers)
+            succeeded(drain_one())
 
             listed = client.get(f"/api/projects/{project_id}/voices", headers=headers).json()["voices"]
             audio_url = listed[0]["audioUrl"]
@@ -238,6 +248,7 @@ def test_merging_concatenates_every_auditioned_voice() -> None:
             for name in ("旁白", "林小满"):
                 profile = _voice(client, headers, project_id, name=name)
                 client.post(f"/api/projects/{project_id}/voices/{profile['id']}/preview", headers=headers)
+            assert len(drain_jobs()) == 2
 
             # The fake synthesizer writes text, not audio, so the concat itself is stubbed;
             # what this asserts is the wiring around it.

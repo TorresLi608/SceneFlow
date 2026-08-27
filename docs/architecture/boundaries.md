@@ -59,8 +59,11 @@ Generated media is referenced by a **path relative to `SCENEFLOW_PRIVATE_GENERAT
 ## Orchestration boundary
 
 - **LangGraph** is reserved for checkpointed LLM decisions and human approval (script structure, continuity review).
-- **`generation_jobs`** is the intended home for deterministic image/video/FFmpeg work, and today provides persistence, idempotency, leases, cancel, and retry.
-- **Not yet true:** there is no worker process. Generation still starts in the API process via `asyncio.create_task`. Treat the jobs table as the destination, not the current path.
+- **`generation_jobs`** is the home for deterministic image/video/TTS/FFmpeg work. It provides persistence, idempotency, leases, cancel, and retry, and `app/services/job_worker.py` is the consumer that drains it.
+- **The migration is half done.** Reference images, prompt drafts, voice design, and voice auditions are queued (`app/services/job_handlers.py`). Storyboard, tone sheet, project generation, and export still start in the API process via `asyncio.create_task`, and `app/core/runs.py` cancellation is in-process for that reason. For those, the jobs table is still the destination rather than the current path.
+- **The worker runs in-process, not as a second process.** `app/core/realtime.py` keeps its WebSocket registry in one process's memory and `docker-compose.yml` runs a single backend container, so a worker started elsewhere could not deliver a single `SCENE_UPDATE`. A shared broker is the prerequisite for splitting it out (see `../plans/backlog.md`); that is a separate change. What the queue buys even in-process is a stop that is a database write rather than a hung-up socket, plus a row that outlives a restart.
+
+A handler receives the job as `job_json` — a plain dict, never an ORM row — because it runs long after the claiming session closed. Holding a session across a provider call is forbidden outright (see the session boundary above). The resolved model configuration is looked up inside the handler rather than carried in `input_json`: a resolved config holds a decrypted provider API key, and jobs are long-lived rows the user can list over the API.
 
 ## Concurrency boundary
 
