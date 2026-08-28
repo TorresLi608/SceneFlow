@@ -233,7 +233,6 @@ function ModelSettingsPanel({ project }: { project: Project }) {
   // cannot offer a setting a render would then refuse.
   const videoQualities = videoCapabilities?.qualities?.length ? videoCapabilities.qualities : VIDEO_QUALITIES;
   const videoRatios = videoCapabilities?.aspectRatios?.length ? videoCapabilities.aspectRatios : VIDEO_RATIOS;
-  const videoFpsOptions = videoCapabilities?.fps?.length ? videoCapabilities.fps : [24, 30, 60];
   const durations = videoCapabilities
     ? Array.from(
         { length: Math.max(1, videoCapabilities.maxDuration - videoCapabilities.minDuration + 1) },
@@ -328,13 +327,6 @@ function ModelSettingsPanel({ project }: { project: Project }) {
             options={durations.map((item) => ({ value: String(item), label: `${item}s` }))}
             onChange={(value) => patch({ videoDuration: Number(value) })}
           />
-          <ChoiceSelect
-            id="videoFps"
-            label={t("workbench.videoFps")}
-            value={String(settings.videoFps)}
-            options={videoFpsOptions.map((item) => ({ value: String(item), label: String(item) }))}
-            onChange={(value) => patch({ videoFps: Number(value) })}
-          />
         </div>
         {videoCapabilities?.promptExtend ? (
           <Field orientation="horizontal">
@@ -344,6 +336,18 @@ function ModelSettingsPanel({ project }: { project: Project }) {
               onCheckedChange={(checked) => patch({ videoPromptExtend: checked })}
             />
             <FieldLabel htmlFor="videoPromptExtend">{t("workbench.promptExtend")}</FieldLabel>
+          </Field>
+        ) : null}
+        {videoCapabilities?.audioParam ? (
+          <Field orientation="horizontal">
+            <Switch
+              id="videoAudioEnabled"
+              checked={settings.videoAudioEnabled}
+              onCheckedChange={(checked) => patch({ videoAudioEnabled: checked })}
+            />
+            <FieldLabel htmlFor="videoAudioEnabled">
+              {videoCapabilities.audioParam === "with_audio" ? t("workbench.outputAudio") : t("workbench.audioGeneration")}
+            </FieldLabel>
           </Field>
         ) : null}
       </ModelCard>

@@ -17,6 +17,8 @@ export interface VideoCapabilities {
   referenceAudio: boolean;
   maxReferenceAudios: number;
   referenceAudiosRequired: boolean;
+  audioParam?: "with_audio" | "audio" | "reference_voice" | null;
+  audioDefault?: boolean;
 }
 
 export interface ModelPricing {

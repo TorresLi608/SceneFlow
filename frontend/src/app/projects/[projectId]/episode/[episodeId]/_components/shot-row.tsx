@@ -7,9 +7,11 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
 import { deleteProjectSceneAction, updateProjectSceneAction } from "@/actions/projects-actions";
+import { compilePromptAction } from "@/actions/prompt-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -74,7 +76,6 @@ export function ShotRow({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [narration, setNarration] = useState(scene.narration);
-  const [dialogue, setDialogue] = useState(scene.dialogue);
   const [speaker, setSpeaker] = useState(scene.speakerCharacterId ?? "");
   const [visualPrompt, setVisualPrompt] = useState(scene.visualPrompt);
   const [shotType, setShotType] = useState(scene.shotType);
@@ -86,6 +87,7 @@ export function ShotRow({
   const [seconds, setSeconds] = useState(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<{ kind: "image" | "video"; url: string; title: string } | null>(null);
+  const [compiledPrompt, setCompiledPrompt] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const generationStartedAt = useRef<number | null>(null);
 
@@ -112,7 +114,6 @@ export function ShotRow({
 
   const dirty =
     narration !== scene.narration ||
-    dialogue !== scene.dialogue ||
     (speaker || null) !== scene.speakerCharacterId ||
     visualPrompt !== scene.visualPrompt ||
     shotType !== scene.shotType ||
@@ -127,7 +128,6 @@ export function ShotRow({
     mutationFn: () =>
       updateProjectSceneAction(projectId, scene.id, {
         narration,
-        dialogue,
         // "" unbinds the speaker; a JSON null would read as "leave it alone".
         speakerCharacterId: speaker,
         visualPrompt,
@@ -150,6 +150,25 @@ export function ShotRow({
     mutationFn: () => deleteProjectSceneAction(projectId, scene.id),
     onSuccess: () => void refresh(),
     onError: (error) => onError(resolveRequestError(error, t("reference.deleteFailed"))),
+  });
+
+  // `sceneId` lets the backend count the storyboard frame the video render prepends, so
+  // the numbers shown here are the numbers the model will be given.
+  const compileMutation = useMutation({
+    mutationFn: (kind: "image" | "video") =>
+      compilePromptAction({
+        projectId,
+        sceneId: scene.id,
+        kind,
+        prompt: kind === "image" ? visualPrompt : videoPrompt,
+        dialogue: kind === "video" ? scene.dialogue : "",
+        references: kind === "image" ? imageReferences : videoReferences,
+      }),
+    onSuccess: (result) => setCompiledPrompt(result.prompt),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      onError(resolveRequestError(error, t("episode.finalPromptPreviewFailed")));
+    },
   });
 
   const statusTone = (status: string) =>
@@ -244,18 +263,6 @@ export function ShotRow({
           <div className="flex flex-col gap-3 rounded-md border border-border/50 bg-muted/20 p-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor={`dialogue-${scene.id}`}>{t("episode.dialogue")}</FieldLabel>
-                <Textarea
-                  id={`dialogue-${scene.id}`}
-                  value={dialogue}
-                  maxLength={4000}
-                  rows={2}
-                  placeholder={t("episode.dialoguePlaceholder")}
-                  onChange={(event) => setDialogue(event.target.value)}
-                  className="field-sizing-fixed min-h-14 resize-y"
-                />
-              </Field>
-              <Field>
                 <FieldLabel htmlFor={`speaker-${scene.id}`}>{t("episode.speaker")}</FieldLabel>
                 <Select items={speakerItems} value={speaker} onValueChange={(value) => setSpeaker(value ?? "")}>
                   <SelectTrigger id={`speaker-${scene.id}`} className="w-full">
@@ -288,6 +295,16 @@ export function ShotRow({
                 limits={{ image: imageReferenceLimit }}
                 className="field-sizing-fixed min-h-16 resize-y"
               />
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="self-start"
+                disabled={compileMutation.isPending}
+                onClick={() => compileMutation.mutate("image")}
+              >
+                {t("episode.finalPromptPreview")}
+              </Button>
             </Field>
 
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -349,6 +366,16 @@ export function ShotRow({
                 limits={videoReferenceLimits}
                 className="field-sizing-fixed min-h-16 resize-y"
               />
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="self-start"
+                disabled={compileMutation.isPending}
+                onClick={() => compileMutation.mutate("video")}
+              >
+                {t("episode.finalPromptPreview")}
+              </Button>
             </Field>
           </div>
         ) : null}
@@ -417,6 +444,19 @@ export function ShotRow({
         </Button>
       </div>
       <MediaPreviewDialog item={preview} onOpenChange={(open) => !open && setPreview(null)} />
+      <Dialog open={compiledPrompt !== null} onOpenChange={(open) => !open && setCompiledPrompt(null)}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{t("episode.finalPromptPreview")}</DialogTitle>
+          </DialogHeader>
+          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm">
+            {compiledPrompt}
+          </pre>
+          <Button className="self-end" onClick={() => setCompiledPrompt(null)}>
+            {t("common.close")}
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

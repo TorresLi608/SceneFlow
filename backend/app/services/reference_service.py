@@ -51,7 +51,7 @@ def resolve_generation_references(
     references: list[tuple[str, str]],
 ) -> dict[str, list[Any]]:
     """Resolve user-selected project assets to stored paths without trusting client URLs."""
-    resolved: dict[str, list[Any]] = {"images": [], "videos": [], "audios": [], "labels": []}
+    resolved: dict[str, list[Any]] = {"images": [], "videos": [], "audios": [], "labels": [], "items": []}
     seen: set[tuple[str, str]] = set()
     # ponytail: requests cap this at 64; batch by kind if reference-heavy projects make it hot.
     for kind, asset_id in references:
@@ -121,6 +121,7 @@ def resolve_generation_references(
             raise HTTPException(400, "selected reference is unavailable")
         resolved[bucket].append((stored, label) if bucket == "images" else stored)
         resolved["labels"].append(label)
+        resolved["items"].append({"kind": kind, "id": asset_id, "label": label, "media": bucket[:-1]})
     return resolved
 
 

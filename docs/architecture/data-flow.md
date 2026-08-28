@@ -12,7 +12,7 @@ project.{text,image,video,audio}_config_id  ─▶  config_service.project_model
 
 **Project-first, never project-only.** A series created before the model panel existed has every pick unset, and a pinned config that was later deleted resolves to nothing — both fall through to the account default rather than failing the render. `GET /api/projects/:id/models` returns what each purpose actually resolves to, plus the limits the UI must enforce (`imageMaxReferenceImages`, the video config's declared `videoCapabilities`); it never returns an API key.
 
-The same row carries the generation defaults — image resolution and ratio, video quality/ratio/duration/fps/promptExtend — so a storyboard and the clips made from it agree, and the episode editor prefills instead of asking the same six questions per run. `PATCH /api/projects/:id` takes them under `modelSettings`; a config id of **`0` clears a pick**, because `null` already means "leave alone".
+The same row carries the generation defaults — image resolution and ratio, video quality/ratio/duration/promptExtend/audio — so a storyboard and the clips made from it agree, and the episode editor prefills instead of asking the same questions per run. `PATCH /api/projects/:id` takes them under `modelSettings`; a config id of **`0` clears a pick**, because `null` already means "leave alone". The legacy `video_fps` column remains for old databases and callers but is no longer exposed by the model configuration UI.
 
 ## 1. Script → shots (breakdown)
 
@@ -116,7 +116,7 @@ POST /api/projects/:id/generate-video   { sceneIds?, references? }
 - The storyboard image is the automatic first-frame reference only when the selected model accepts images. Additional image, existing clip, and voice references are user-selected, resolved back to stored paths under the same project, and capped by `videoCapabilities`. Required reference kinds disable generation until satisfied; text-to-video models do not require a frame first.
 - The motion prompt is tried before the frame prompt: `visual_prompt` describes a still, and a clip generated from it tends to hold still.
 - Duration comes from the shot, not the batch. A six-second beat and a two-second reaction rendered at one fixed length is the pacing problem the breakdown's estimate exists to fix; a shot with no estimate falls back to the project default.
-- The same capability validator serves the standalone video page and this batch path. Aspect ratio, FPS, quality, duration, prompt enhancement, and reference media are omitted when the selected model does not support them.
+- The same capability validator serves the standalone video page and this batch path. Aspect ratio, quality, duration, prompt enhancement, output audio, and reference media are omitted when the selected model does not support them. The editor's `@素材` labels are compiled immediately before the call into provider positional references (`图1` / `视频1` / `音频1`) — numbered over the list the request actually carries, so a shot whose storyboard frame is prepended as the automatic first frame starts its own selections at `图2`. `withAudio` left unset means "whatever the project is configured for" and can only be dropped, never fail the render; an explicit `true` a model cannot honour is still a 400. Models that generate their own track (`with_audio`, `audio`) are switched on by default; those that only imitate a supplied timbre (`reference_voice`) need the merged voice sheet and stay off until asked.
 
 
 ## 4. Chat streaming

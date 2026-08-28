@@ -72,6 +72,7 @@ class ProjectModelConfigRequest(CamelModel):
     video_duration: int | None = Field(default=None, ge=1, le=600)
     video_fps: int | None = Field(default=None, ge=1, le=240)
     video_prompt_extend: bool | None = None
+    video_audio_enabled: bool | None = None
 
 
 class CreateProjectRequest(CamelModel):
@@ -165,6 +166,17 @@ class MergeAssetsRequest(CamelModel):
 class GenerationReferenceRequest(CamelModel):
     kind: GenerationReferenceKind
     id: str = Field(min_length=1, max_length=64)
+
+
+class CompilePromptRequest(CamelModel):
+    project_id: str = Field(min_length=1, max_length=64)
+    kind: Literal["image", "video"]
+    # Optional: without it a video preview cannot know whether the shot has a storyboard
+    # frame the render would prepend, and would number the references one too low.
+    scene_id: str | None = Field(default=None, min_length=1, max_length=64)
+    prompt: str = Field(default="", max_length=10_000)
+    dialogue: str = Field(default="", max_length=4000)
+    references: list[GenerationReferenceRequest] = Field(default_factory=list, max_length=64)
 
 
 class GenerateToneSheetRequest(CamelModel):
@@ -482,7 +494,7 @@ class GenerateVideoRequest(CamelModel):
     # Pass the project's merged timbre reference so the model can keep speakers apart. Costs
     # more, and not every video model accepts reference audio — asking for it on one that does
     # not is a 400 rather than a silent downgrade the user would pay for and not notice.
-    with_audio: bool = False
+    with_audio: bool | None = None
     scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
     references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
     # See `GenerateStoryboardRequest.pending_only`. Worth more here than anywhere else: a

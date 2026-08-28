@@ -908,6 +908,7 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
             if len(resolved["images"]) > maximum:
                 raise HTTPException(400, f"selected image model accepts at most {maximum} reference images")
             payload["referenceImagePaths"] = [stored for stored, _ in resolved["images"]]
+            payload["compiledReferenceItems"] = resolved["items"]
             payload["explicitReferences"] = True
     await broadcast(
         project_id,
@@ -974,14 +975,29 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
             else {"images": [], "videos": [], "audios": []}
         )
         voice_sheet_path = None
-        if body.with_audio:
-            # Refused rather than downgraded: the user opted into a costlier render for a
-            # reason, and silently dropping the audio would bill them for something else.
-            if not config["videoCapabilities"]["referenceAudio"]:
+        # An unset `withAudio` means "whatever the project is configured for", and that
+        # default must not be able to fail a render: a series that predates the audio
+        # panel has the column on but no merged voice sheet. An explicit `true` is still
+        # refused rather than downgraded — the user opted into a costlier render for a
+        # reason, and silently dropping the audio would bill them for something else.
+        explicit_audio = body.with_audio is not None
+        with_audio = body.with_audio if explicit_audio else project.video_audio_enabled
+        audio_param = capabilities.get("audioParam")
+        if with_audio and audio_param is None:
+            if explicit_audio:
                 raise HTTPException(400, "selected video model does not accept audio, turn withAudio off")
-            if not project.voice_sheet_path:
-                raise HTTPException(400, "merge the project's voices before rendering with audio")
-            voice_sheet_path = project.voice_sheet_path
+            with_audio = False
+        if with_audio and audio_param == "reference_voice":
+            if not capabilities["referenceAudio"]:
+                if explicit_audio:
+                    raise HTTPException(400, "selected video model does not accept audio, turn withAudio off")
+                with_audio = False
+            elif not project.voice_sheet_path:
+                if explicit_audio:
+                    raise HTTPException(400, "merge the project's voices before rendering with audio")
+                with_audio = False
+            else:
+                voice_sheet_path = project.voice_sheet_path
         if body.references is not None:
             try:
                 for scene in pending:
@@ -1014,6 +1030,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
                 payload["referenceImagePaths"] = [stored for stored, _ in resolved["images"]]
                 payload["referenceVideoPaths"] = resolved["videos"]
                 payload["referenceAudioPaths"] = resolved["audios"]
+                payload["compiledReferenceItems"] = resolved["items"]
                 payload["explicitReferences"] = True
         claim_project_status(
             session,
@@ -1047,10 +1064,14 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
                 "fps": fps,
                 "duration": duration,
                 "promptExtend": prompt_extend,
+                "outputAudio": bool(with_audio),
                 "voiceSheetPath": voice_sheet_path,
                 "referenceImagePaths": [stored for stored, _ in resolved_references["images"]],
                 "referenceVideoPaths": resolved_references["videos"],
                 "referenceAudioPaths": resolved_references["audios"],
+                # Batch references replace the per-shot ones, so the labels compiled into
+                # the prompt have to come from the same list.
+                "compiledReferenceItems": resolved_references.get("items", []),
                 "explicitReferences": body.references is not None,
             },
             cancellation=cancellation,
@@ -1063,7 +1084,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         "status": "video_generating",
         "model": model,
         "sceneCount": len(scene_payloads),
-        "withAudio": bool(voice_sheet_path or resolved_references["audios"]),
+        "withAudio": bool(with_audio),
     }
 
 

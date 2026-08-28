@@ -11,7 +11,7 @@ from app.core.database import db
 from app.api.deps import current_user_id
 from app.models import ModelConfig, UserOfficialConfigDefault
 from app.schemas.serializers import config_json, official_config_json
-from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_provider, validate_api_key
+from app.services.config_service import VIDEO_MODEL_CAPABILITIES, config_api_key, config_create_fields, config_update_fields, default_video_capabilities, normalize_base_url, normalize_config_payload, normalize_provider, validate_api_key
 from app.llms.registry import models
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates
 from app.utils.common import now
@@ -42,6 +42,23 @@ KNOWN_MODELS = {
     "system": ["Tingting", "zh"],
 }
 QWEN_NATIVE_MEDIA_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
+
+
+@router.get("/video-models")
+def video_model_catalog(_: int = Depends(current_user_id)) -> dict[str, Any]:
+    """The video models the admin picker offers, with the capabilities each one implies.
+
+    Only `catalog` entries are listed: superseded revisions stay in
+    `VIDEO_MODEL_CAPABILITIES` so a config already pinned to one keeps resolving, but
+    offering them for new configs would just be a longer list of the same model.
+    """
+    return {
+        "models": [
+            {"model": model, "provider": known["provider"], "capabilities": default_video_capabilities(known["provider"], model)}
+            for model, known in VIDEO_MODEL_CAPABILITIES.items()
+            if known.get("catalog")
+        ]
+    }
 
 
 @router.get("/keys")

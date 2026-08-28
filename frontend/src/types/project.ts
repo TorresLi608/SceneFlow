@@ -141,6 +141,7 @@ export interface ProjectModelSettings {
   videoDuration: number;
   videoFps: number;
   videoPromptExtend: boolean;
+  videoAudioEnabled: boolean;
 }
 
 export interface Project {

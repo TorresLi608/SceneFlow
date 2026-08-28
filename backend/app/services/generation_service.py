@@ -22,6 +22,7 @@ from app.services.artifact_service import (
 )
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video
+from app.services.prompt_compiler import compile_prompt
 from app.utils.common import now
 
 
@@ -146,6 +147,18 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         else:
             references = character_references(scene)
         references = references[: max(0, int(config.get("imageMaxReferenceImages", MAX_REFERENCE_IMAGES)))]
+        # Substituted into the shot's own text before the frame template wraps it, so the
+        # `图N` the user previewed is the `图N` the model is asked for. Nothing is
+        # prepended to an image request, so the numbering starts at the first selection.
+        scene = {
+            **scene,
+            "visual_prompt": compile_prompt(
+                str(scene.get("visual_prompt") or ""),
+                provider=config["provider"],
+                model=config["model"],
+                references=scene.get("compiledReferenceItems") or [],
+            )["prompt"],
+        }
         if references:
             # Image-to-image with the cast's portraits: the appearance prompt alone drifts
             # over a long series, the reference is what actually holds a face steady.
@@ -360,6 +373,10 @@ async def _generate_scene_video(
         references = []
         if capabilities["referenceImages"] and scene.get("image_path"):
             references.append(_stored_media(scene["image_path"]))
+        # How many images the render prepends before the user's own. `图1` in a compiled
+        # prompt has to name the slot in the request, and the storyboard frame takes the
+        # first one whenever the model accepts images.
+        image_offset = len(references)
         if scene.get("explicitReferences") or options.get("explicitReferences"):
             references.extend(_stored_media(stored) for stored in (
                 scene.get("referenceImagePaths") or options.get("referenceImagePaths") or []
@@ -400,6 +417,14 @@ async def _generate_scene_video(
         )
         if direction:
             prompt = f"{prompt}\n{direction}"
+        prompt = compile_prompt(
+            prompt,
+            provider=config["provider"],
+            model=config["model"],
+            references=scene.get("compiledReferenceItems") or options.get("compiledReferenceItems") or [],
+            dialogue=str(scene.get("dialogue") or ""),
+            image_offset=image_offset,
+        )["prompt"]
         previous_prompt = str(scene.get("previous_video_prompt") or "").strip()
         if previous_prompt:
             prompt = (
@@ -421,6 +446,7 @@ async def _generate_scene_video(
             fps=options["fps"],
             duration=duration,
             prompt_extend=options["promptExtend"],
+            output_audio=options.get("outputAudio"),
             references=references,
             reference_videos=reference_videos,
             reference_audios=reference_audios,

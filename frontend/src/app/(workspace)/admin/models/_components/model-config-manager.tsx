@@ -37,6 +37,7 @@ import {
   deleteUserConfigAction,
   discoverModelsAction,
   getUserConfigSecretAction,
+  getVideoModelCatalogAction,
   listUserConfigsAction,
   updateUserConfigAction,
 } from "@/actions/settings-actions";
@@ -87,7 +88,6 @@ const videoQualityOptions: VideoCapabilities["qualities"] = [
   "2K",
   "4K",
 ];
-const videoFpsOptions: VideoCapabilities["fps"] = [24, 30, 60];
 const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = [
   "21:9",
   "16:9",
@@ -278,6 +278,12 @@ export function ModelConfigManager() {
     queryKey: queryKeys.userConfigs,
     queryFn: listUserConfigsAction,
   });
+  const videoModelsQuery = useQuery({ queryKey: queryKeys.videoModelCatalog, queryFn: getVideoModelCatalogAction });
+  const videoCatalog = videoModelsQuery.data?.models ?? [];
+  // Suggestions, not a whitelist. Doubao's base URL is passed through unchanged so relays
+  // serve their own model ids, and locking the field to the catalog would make those
+  // unconfigurable — as would rendering it before the catalog has loaded.
+  const videoCatalogModels = videoCatalog.filter((item) => item.provider === provider).map((item) => item.model);
 
   const userConfigs = userQuery.data?.configs ?? emptyConfigs;
   const officialConfigs = isSuperAdmin
@@ -1270,11 +1276,14 @@ export function ModelConfigManager() {
                 <ModelSeriesCombobox
                   id="adminConfigModel"
                   value={modelSeries}
-                  options={modelOptions}
+                  options={purpose === "video" ? Array.from(new Set([...videoCatalogModels, ...modelOptions])) : modelOptions}
                   onChange={(value) => {
                     setModelSeries(value);
                     if (purpose === "video")
-                      setVideoCapabilities(defaultVideoCapabilities(provider, value));
+                      setVideoCapabilities(
+                        videoCatalog.find((item) => item.model === value)?.capabilities
+                          ?? defaultVideoCapabilities(provider, value),
+                      );
                   }}
                   placeholder={selectedProviderOption?.modelPlaceholder}
                   selectLabel={t("admin.selectModelSeries")}
@@ -1346,15 +1355,6 @@ export function ModelConfigManager() {
                       options={videoQualityOptions}
                       onChange={(qualities) =>
                         setVideoCapabilities((current) => ({ ...current, qualities }))
-                      }
-                    />
-                    <CapabilitySelect
-                      label={t("admin.supportsVideoFps")}
-                      values={videoCapabilities.fps}
-                      options={videoFpsOptions}
-                      format={(value) => `${value} FPS`}
-                      onChange={(fps) =>
-                        setVideoCapabilities((current) => ({ ...current, fps }))
                       }
                     />
                     <CapabilitySelect

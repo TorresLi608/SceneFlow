@@ -17,7 +17,7 @@ from app.core.database import db, init_db
 from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, base_url_for, gemini_openai_base_url, image_base_url_for
 from app.models import ChatMessage, ChatSession, ModelConfig, User, UserOfficialConfigDefault
-from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
+from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, default_video_capabilities, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
 
 
 def _stored_config() -> ModelConfig:
@@ -214,6 +214,8 @@ def test_video_capabilities_are_normalized_and_stored() -> None:
         "referenceAudio": False,
         "maxReferenceAudios": 0,
         "referenceAudiosRequired": False,
+        "audioParam": None,
+        "audioDefault": False,
     }
     unlimited_images = normalize_video_capabilities({"referenceImages": True, "maxReferenceImages": 100}, "qwen")
     assert unlimited_images["maxReferenceImages"] == 100
@@ -546,6 +548,50 @@ def test_official_default_overrides_personal_config_and_is_reversible() -> None:
             database.DB_PATH = original_path
 
 
+def test_every_video_provider_resolves_capabilities() -> None:
+    """A missing `return` here used to hand `None` to the render path as a 500."""
+    for provider, model in (
+        ("gemini", "veo-3.1-generate-preview"),
+        ("custom", "some-relay-video-model"),
+        ("doubao", "doubao-seedance-1.0"),
+        ("doubao", "doubao-seedance-2.5"),
+        ("qwen", "wan2.7-i2v"),
+        ("qwen", "wan3.0-video"),
+        ("openai", ""),
+    ):
+        capabilities = default_video_capabilities(provider, model)
+        assert isinstance(capabilities, dict), f"{provider}/{model} resolved to {capabilities!r}"
+        # The render path subscripts these directly; a missing key is a 500, not a default.
+        for key in ("referenceImages", "maxReferenceImages", "referenceAudio", "audioParam", "audioDefault"):
+            assert key in capabilities, f"{provider}/{model} is missing {key}"
+
+
+def test_audio_switch_survives_the_capability_round_trip() -> None:
+    """Configs saved before the audio switch existed must still pick up the contract.
+
+    Their stored JSON has no `audioParam`, so the catalog has to supply it — otherwise
+    the switch is invisible for every config the admin panel has ever written.
+    """
+    stored = {
+        "qualities": ["720p"], "fps": [], "aspectRatios": ["16:9"],
+        "minDuration": 2, "maxDuration": 12, "referenceImages": True, "maxReferenceImages": 4,
+    }
+    seedance = normalize_video_capabilities(stored, "doubao", "doubao-seedance-2.5")
+    assert seedance["audioParam"] == "with_audio" and seedance["audioDefault"] is True
+
+    wan3 = normalize_video_capabilities(stored, "qwen", "wan3.0-video")
+    assert wan3["audioParam"] == "audio" and wan3["audioDefault"] is True
+
+    # `reference_voice` models are fed a timbre rather than generating one, so they must
+    # not default on — that would demand a voice sheet from every existing series.
+    wan27 = normalize_video_capabilities(stored, "qwen", "wan2.7-r2v")
+    assert wan27["audioParam"] == "reference_voice" and wan27["audioDefault"] is False
+
+    # An admin overriding a relay revision still wins over the catalog.
+    overridden = normalize_video_capabilities({**stored, "audioParam": None}, "doubao", "doubao-seedance-2.5")
+    assert overridden["audioParam"] is None and overridden["audioDefault"] is False
+
+
 if __name__ == "__main__":
     test_config_create_fields_rejects_disabled_default()
     test_discover_models_uses_submitted_connection()
@@ -563,3 +609,5 @@ if __name__ == "__main__":
     test_model_config_source_switch_preserves_id_and_key()
     test_official_default_overrides_personal_config_and_is_reversible()
     test_legacy_model_config_tables_merge_without_losing_references()
+    test_every_video_provider_resolves_capabilities()
+    test_audio_switch_survives_the_capability_round_trip()

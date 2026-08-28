@@ -81,6 +81,7 @@ class Project(SQLModel, table=True):
     video_duration: int = Field(default=5, sa_column_kwargs={"server_default": text("5")})
     video_fps: int = Field(default=24, sa_column_kwargs={"server_default": text("24")})
     video_prompt_extend: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
+    video_audio_enabled: bool = Field(default=True, sa_column_kwargs={"server_default": text("1")})
 
 
 class Episode(SQLModel, table=True):

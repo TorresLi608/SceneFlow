@@ -156,14 +156,44 @@ def resolve_qwen_video_quality(quality: str) -> str:
     return normalized
 
 
+def qwen_video_family(model: str) -> str:
+    """Which DashScope media contract a Qwen video model speaks.
+
+    Kept as a family rather than a per-model table because the wire contract changed
+    between generations, not between revisions: Wan 3.0 renamed the driving track to
+    `reference_audio` and added the `audio` output switch, Wan 2.7 takes a timbre to
+    imitate under `reference_voice`, and anything older still speaks `driving_audio`.
+    """
+    normalized = model.strip().lower()
+    if normalized.startswith("wan3.0"):
+        return "wan3"
+    if normalized.startswith("wan2.7"):
+        return "wan27"
+    return "legacy"
+
+
+def qwen_media_types(model: str) -> tuple[str, str]:
+    """The `(video, audio)` media type names this model's generation expects."""
+    family = qwen_video_family(model)
+    if family == "wan3":
+        return "reference_video", "reference_audio"
+    if family == "wan27":
+        return "reference_video", "reference_voice"
+    return "video", "driving_audio"
+
+
 def validate_qwen_video_input(model: str, references: list[dict[str, Any]], reference_videos: list[dict[str, Any]]) -> None:
     normalized = model.strip().lower()
-    is_i2v = "-i2v" in normalized
-    if is_i2v and not references:
+    family = qwen_video_family(model)
+    # Wan 2.7-r2v and the whole Wan 3.0 line take references by name rather than by an
+    # `-i2v`-style suffix, so the suffix sniffing below only decides for older models.
+    accepts_images = family == "wan3" or any(part in normalized for part in ("-i2v", "-r2v", "videoedit"))
+    accepts_videos = family in {"wan3", "wan27"} or "videoedit" in normalized
+    if "-i2v" in normalized and not references:
         raise ValueError(f"Qwen image-to-video model {model} requires a reference image")
-    if references and not any(part in normalized for part in ("-i2v", "-r2v", "videoedit")):
+    if references and not accepts_images:
         raise ValueError(f"Qwen text-to-video model {model} does not accept a reference image; use wan2.7-i2v")
-    if reference_videos and "videoedit" not in normalized:
+    if reference_videos and not accepts_videos:
         raise ValueError(f"Qwen model {model} does not accept a reference video")
 
 
@@ -225,6 +255,7 @@ def build_doubao_payload(
     fps: int | None,
     duration: int,
     reference: dict[str, Any] | None = None,
+    output_audio: bool | None = None,
 ) -> dict[str, Any]:
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
     if reference:
@@ -248,6 +279,11 @@ def build_doubao_payload(
         "duration": duration,
         "watermark": False,
     }
+    # Omitted rather than defaulted: a caller with no audio switch (the standalone video
+    # page) must keep getting the provider's own default, not a silent opt-in to a
+    # costlier render.
+    if output_audio is not None:
+        payload["generate_audio"] = output_audio
     if settings:
         payload["ratio"] = settings.ratio
     if quality or settings:
@@ -311,13 +347,14 @@ async def _generate_doubao_video_sdk(
     duration: int,
     reference: dict[str, Any] | None,
     base_url: str,
+    output_audio: bool | None = None,
 ) -> VideoResult:
     try:
         from volcenginesdkarkruntime import Ark
     except ImportError as exc:
         raise RuntimeError("volcengine-python-sdk[ark] is required for Doubao video generation") from exc
 
-    payload = build_doubao_payload(model, prompt, settings, quality, fps, duration, reference)
+    payload = build_doubao_payload(model, prompt, settings, quality, fps, duration, reference, output_audio)
     # Ark's official task schema has no fps field; the model uses its service default.
     payload.pop("fps", None)
     client = Ark(api_key=api_key.strip(), base_url=(base_url or DOUBAO_VIDEO_BASE_URL).rstrip("/"))
@@ -357,9 +394,10 @@ async def _generate_doubao_video(
     duration: int,
     reference: dict[str, Any] | None,
     base_url: str,
+    output_audio: bool | None = None,
 ) -> VideoResult:
     return await _generate_doubao_video_sdk(
-        api_key, model, prompt, settings, quality, fps, duration, reference, base_url
+        api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio
     )
 
 
@@ -440,6 +478,7 @@ async def _generate_qwen_video(
     reference_audios: list[dict[str, Any]],
     base_url: str,
     aspect_ratio: str | None = None,
+    output_audio: bool | None = None,
 ) -> VideoResult:
     references = references or []
     reference_videos = reference_videos or []
@@ -464,11 +503,12 @@ async def _generate_qwen_video(
     if is_native_qwen_video_url(base):
         return await _generate_qwen_video_sdk(
             api_key, model, prompt, quality, duration, prompt_extend,
-            references, reference_videos, reference_audios, base, aspect_ratio,
+            references, reference_videos, reference_audios, base, aspect_ratio, output_audio,
         )
     async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
         media: list[dict[str, str]] = []
         normalized_model = model.lower()
+        video_type, audio_type = qwen_media_types(model)
         if "-r2v" in normalized_model:
             payload["input"]["reference_image_urls"] = [media_data_url(item, "image") for item in references]
         else:
@@ -477,11 +517,15 @@ async def _generate_qwen_video(
                 for item in references[1:]:
                     media.append({"type": "reference_image", "url": media_data_url(item, "image")})
             for reference_video in reference_videos:
-                media.append({"type": "video", "url": media_data_url(reference_video, "video")})
+                media.append({"type": video_type, "url": media_data_url(reference_video, "video")})
             for reference_audio in reference_audios:
-                media.append({"type": "driving_audio", "url": media_data_url(reference_audio, "audio")})
+                media.append({"type": audio_type, "url": media_data_url(reference_audio, "audio")})
             if media:
                 payload["input"]["media"] = media
+        # Only Wan 3.0 generates its own track; the older families are fed one instead, so
+        # there is no switch to send them.
+        if output_audio is not None and qwen_video_family(model) == "wan3":
+            payload["parameters"]["audio"] = output_audio
         response = await client.post(f"{base}/services/aigc/video-generation/video-synthesis", headers=headers, json=payload)
         response.raise_for_status()
         task_id = str(response.json().get("output", {}).get("task_id") or "")
@@ -518,6 +562,7 @@ async def _generate_qwen_video_sdk(
     reference_audios: list[dict[str, Any]],
     base: str,
     aspect_ratio: str | None = None,
+    output_audio: bool | None = None,
 ) -> VideoResult:
     references = references or []
     reference_videos = reference_videos or []
@@ -551,21 +596,24 @@ async def _generate_qwen_video_sdk(
         return result[0]
 
     try:
+        video_type, audio_type = qwen_media_types(model)
         if "-r2v" in model.lower():
             input_data: dict[str, Any] = {"reference_image_urls": [await upload(item, "image") for item in references]}
         else:
             for index, item in enumerate(references):
                 media.append({"type": "first_frame" if index == 0 else "reference_image", "url": await upload(item, "image")})
             for reference_video in reference_videos:
-                media.append({"type": "video", "url": await upload(reference_video, "video")})
+                media.append({"type": video_type, "url": await upload(reference_video, "video")})
             for reference_audio in reference_audios:
-                media.append({"type": "driving_audio", "url": await upload(reference_audio, "audio")})
+                media.append({"type": audio_type, "url": await upload(reference_audio, "audio")})
             input_data = {"media": media} if media else {}
+        # See the HTTP branch: only Wan 3.0 has an output-audio switch to pass through.
+        extra = {"audio": output_audio} if output_audio is not None and qwen_video_family(model) == "wan3" else {}
         task = await asyncio.to_thread(
             VideoSynthesis.async_call,
             model=model, prompt=prompt, extra_input=input_data, api_key=api_key.strip(), duration=duration,
             prompt_extend=prompt_extend, watermark=False, resolution=quality.upper() if quality else None,
-            ratio=aspect_ratio,
+            ratio=aspect_ratio, **extra,
             headers={"X-DashScope-OssResourceResolve": "enable"} if media or "reference_image_urls" in input_data else {}, base_address=base,
         )
         if getattr(task, "status_code", 200) != 200:
@@ -610,6 +658,7 @@ async def generate_video(
     reference_videos: list[dict[str, Any]] | None = None,
     reference_audios: list[dict[str, Any]] | None = None,
     base_url: str = "",
+    output_audio: bool | None = None,
 ) -> VideoResult:
     references = references or []
     reference_videos = reference_videos or ([reference_video] if reference_video else [])
@@ -617,10 +666,10 @@ async def generate_video(
     if provider == "qwen":
         return await _generate_qwen_video(
             api_key, model, prompt, quality or "", duration, prompt_extend, references, reference_videos, reference_audios, base_url,
-            aspect_ratio,
+            aspect_ratio, output_audio,
         )
     reference = references[0] if references else None
     settings = resolve_video_settings(provider, aspect_ratio, quality) if aspect_ratio else None
     if provider == "doubao":
-        return await _generate_doubao_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)
+        return await _generate_doubao_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio)
     return await _generate_gemini_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)

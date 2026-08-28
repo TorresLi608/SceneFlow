@@ -6,13 +6,18 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select
 
 from app.api.deps import current_user_id
 from app.core.database import db
 from app.llms.registry import models
-from app.schemas.requests import OptimizePromptRequest
-from app.services.config_service import active_model_config
+from app.models import Scene
+from app.schemas.requests import CompilePromptRequest, OptimizePromptRequest
+from app.services.config_service import active_model_config, project_model_config
+from app.services.project_service import owned_project
+from app.services.prompt_compiler import compile_prompt
 from app.services.prompt_service import PRESETS
+from app.services.reference_service import resolve_generation_references
 from app.services.usage_service import record_usage, require_model_balance
 
 
@@ -67,6 +72,37 @@ OUTPUT_LANGUAGES = {
     "zh": "中文",
     "en": "英文",
 }
+
+
+@router.post("/compile")
+def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """What the editor's `@素材` labels turn into for the project's current model.
+
+    `sceneId` matters for video: the render prepends the shot's storyboard frame when the
+    model takes images, so `图1` there is the frame and the first selection is `图2`. The
+    preview has to count the same way or it teaches the user the wrong number.
+    """
+    with db() as session:
+        project = owned_project(session, body.project_id, user_id)
+        config = project_model_config(session, user_id, project, body.kind, "最终提示词预览")
+        resolved = resolve_generation_references(
+            session, body.project_id, [(item.kind, item.id) for item in body.references]
+        )
+        image_offset = 0
+        if body.kind == "video" and body.scene_id:
+            scene = session.exec(
+                select(Scene).where(Scene.id == body.scene_id, Scene.project_id == body.project_id)
+            ).first()
+            capabilities = config.get("videoCapabilities") or {}
+            image_offset = int(bool(scene and scene.image_path and capabilities.get("referenceImages")))
+    return compile_prompt(
+        body.prompt,
+        provider=config["provider"],
+        model=config["model"],
+        references=resolved["items"],
+        dialogue=body.dialogue,
+        image_offset=image_offset,
+    )
 
 
 @router.get("/presets")

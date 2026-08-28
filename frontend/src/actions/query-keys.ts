@@ -1,6 +1,7 @@
 export const queryKeys = {
   me: ["me"] as const,
   userConfigs: ["user-configs"] as const,
+  videoModelCatalog: ["video-model-catalog"] as const,
   projects: ["projects"] as const,
   projectModels: (projectId: string) => ["project-models", projectId] as const,
   promptPresets: (kind: string) => ["prompt-presets", kind] as const,

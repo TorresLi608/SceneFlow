@@ -353,6 +353,7 @@ def project_json(
             "videoDuration": project.video_duration or 5,
             "videoFps": project.video_fps or 24,
             "videoPromptExtend": bool(project.video_prompt_extend),
+            "videoAudioEnabled": bool(project.video_audio_enabled),
         },
         "currentEpisodeId": current_episode_id,
         "episodes": episodes or [],
