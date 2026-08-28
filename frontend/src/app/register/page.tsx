@@ -106,13 +106,13 @@ function RegisterForm() {
     event.preventDefault();
 
     const cleanedEmail = email.trim().toLowerCase();
-    if (!cleanedEmail || !EMAIL_REGEX.test(cleanedEmail)) {
+    if (cleanedEmail && !EMAIL_REGEX.test(cleanedEmail)) {
       setError(t("auth.emailRequired"));
       return;
     }
 
     const cleanedCode = verificationCode.trim();
-    if (!cleanedCode || cleanedCode.length < 4) {
+    if (cleanedEmail && (!cleanedCode || cleanedCode.length < 4)) {
       setError(t("auth.verificationCodeRequired"));
       return;
     }
@@ -127,8 +127,7 @@ function RegisterForm() {
     registerMutation.mutate({
       username,
       nickname: nickname.trim(),
-      email: cleanedEmail,
-      verificationCode: cleanedCode,
+      ...(cleanedEmail ? { email: cleanedEmail, verificationCode: cleanedCode } : {}),
       password,
       invitationCode,
     });
@@ -187,7 +186,6 @@ function RegisterForm() {
             onChange={(event) => setEmail(event.target.value)}
             placeholder={t("auth.emailPlaceholder")}
             className="h-9 pl-9 pr-3 text-xs sm:text-sm"
-            required
             autoComplete="email"
           />
         </div>
@@ -207,7 +205,6 @@ function RegisterForm() {
               onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder={t("auth.verificationCodePlaceholder")}
               className="h-9 pl-9 pr-3 font-mono tracking-wider text-xs sm:text-sm"
-              required
               maxLength={6}
             />
           </div>

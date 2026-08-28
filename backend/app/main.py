@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
     admin,
+    assets,
     auth,
     characters,
     chat,
@@ -69,6 +70,7 @@ PRIVATE_GENERATED_DIR.chmod(0o700)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
+app.include_router(assets.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(images.router)

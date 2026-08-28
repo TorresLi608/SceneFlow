@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from app.llms.registry import models
-from app.models import Character, CharacterState, Episode, Project, Prop, Scene, VoiceProfile
+from app.models import Asset, Character, CharacterState, Episode, Project, Prop, Scene, VoiceProfile
 from app.services.artifact_service import artifact_absolute_path, store_artifact
 from app.services.config_service import project_model_config
 from app.services.media_service import SheetCell, merge_images
@@ -28,7 +28,7 @@ from app.utils.common import now
 logger = logging.getLogger(__name__)
 
 IMAGE_PROVIDERS = {"openai", "gemini", "qwen"}
-REFERENCE_KINDS = {"character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice"}
+REFERENCE_KINDS = {"character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice", "asset"}
 
 
 def stored_generation_references(value: str | None) -> list[tuple[str, str]]:
@@ -83,8 +83,9 @@ def resolve_generation_references(
                     Character.deleted_at.is_(None),
                 )
             ).first()
+            character = session.get(Character, state.character_id) if state else None
             stored = state.reference_image_path if state else None
-            label = state.name if state else ""
+            label = f"{character.name} · {state.name}" if state and character else ""
         elif kind == "prop":
             prop = session.exec(
                 select(Prop).where(Prop.id == asset_id, Prop.project_id == project_id, Prop.deleted_at.is_(None))
@@ -117,6 +118,19 @@ def resolve_generation_references(
             stored = voice.audio_path if voice else None
             label = voice.name if voice else ""
             bucket = "audios"
+        elif kind == "asset":
+            asset = session.exec(
+                select(Asset).where(
+                    Asset.id == asset_id,
+                    Asset.project_id == project_id,
+                    Asset.deleted_at.is_(None),
+                )
+            ).first()
+            stored = asset.path if asset else None
+            label = asset.name if asset else ""
+            bucket = {"image": "images", "video": "videos", "audio": "audios"}.get(asset.kind, "") if asset else ""
+            if not bucket:
+                stored = None
         if not stored:
             raise HTTPException(400, "selected reference is unavailable")
         resolved[bucket].append((stored, label) if bucket == "images" else stored)

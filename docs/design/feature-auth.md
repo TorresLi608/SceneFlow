@@ -27,7 +27,7 @@ Covers registration, login, session tokens, roles, account state, and how creden
 
 ## Registration
 
-- Username 3–64 chars, password length validated (`400 invalid username or password length`). Nickname is optional and limited to 64 characters.
+- Username 3–64 chars, password length validated (`400 invalid username or password length`). Nickname and email are optional; when email is supplied, its verification code is required and consumed during registration.
 - Duplicate username → `409 username already exists`.
 - Registration consumes an **invitation code**: unknown → `404`, already used → `409 invitation code already used`, past its window → `410 invitation code expired`. Claiming is an atomic conditional `UPDATE` with a `rowcount` check, so two simultaneous registrations cannot share one code.
 - Invitation codes are created by a super admin with a validity of 1, 7, or 30 days and record `created_by_user_id` for audit.

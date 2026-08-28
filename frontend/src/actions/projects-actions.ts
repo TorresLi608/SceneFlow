@@ -65,10 +65,39 @@ import type {
   VoiceProfileItemResponse,
   VoiceProfileListResponse,
   VoiceSheetResponse,
+  AssetListResponse,
+  Asset,
+  CreateAssetInput,
+  UpdateAssetInput,
+  MergeAssetsInput,
 } from "@/types/project";
 
 export async function listProjectsAction() {
   const response = await httpClient.get<ProjectListResponse>("/api/bff/projects");
+  return response.data;
+}
+
+export async function listAssetsAction(projectID: string) {
+  const response = await httpClient.get<AssetListResponse>(`/api/bff/projects/${projectID}/assets`);
+  return response.data;
+}
+
+export async function createAssetAction(projectID: string, payload: CreateAssetInput) {
+  const response = await httpClient.post<{ asset: Asset }>(`/api/bff/projects/${projectID}/assets`, payload);
+  return response.data;
+}
+
+export async function updateAssetAction(projectID: string, assetID: string, payload: UpdateAssetInput) {
+  const response = await httpClient.patch<{ asset: Asset }>(`/api/bff/projects/${projectID}/assets/${assetID}`, payload);
+  return response.data;
+}
+
+export async function deleteAssetAction(projectID: string, assetID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/assets/${assetID}`);
+}
+
+export async function mergeAssetsAction(projectID: string, payload: MergeAssetsInput) {
+  const response = await httpClient.post<{ asset: Asset }>(`/api/bff/projects/${projectID}/assets/merge`, payload);
   return response.data;
 }
 

@@ -137,7 +137,7 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
             raise ValueError("image generation currently only supports provider openai/gemini/qwen")
         await scene_event(project_id, scene_id, imageStatus="generating", imageProgress=20, errorMsg="")
         references: list[tuple[str, bytes, str]] = []
-        if scene.get("explicitReferences"):
+        if scene.get("explicitImageReferences") or scene.get("explicitReferences"):
             for stored in scene.get("referenceImagePaths") or []:
                 try:
                     path = artifact_absolute_path(stored)
@@ -156,7 +156,7 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
                 str(scene.get("visual_prompt") or ""),
                 provider=config["provider"],
                 model=config["model"],
-                references=scene.get("compiledReferenceItems") or [],
+                references=scene.get("compiledImageReferenceItems") or [],
             )["prompt"],
         }
         if references:
@@ -330,6 +330,8 @@ def persist_scene_image(project_id: str, scene_id: str, data: bytes, ext: str) -
 
 
 def _stored_media(stored: str) -> dict[str, str]:
+    if str(stored).startswith(("http://", "https://")):
+        return {"url": str(stored)}
     path = artifact_absolute_path(stored)
     data = path.read_bytes()
     return {
@@ -371,17 +373,22 @@ async def _generate_scene_video(
     try:
         capabilities = config["videoCapabilities"]
         references = []
-        if capabilities["referenceImages"] and scene.get("image_path"):
-            references.append(_stored_media(scene["image_path"]))
-        # How many images the render prepends before the user's own. `图1` in a compiled
-        # prompt has to name the slot in the request, and the storyboard frame takes the
-        # first one whenever the model accepts images.
-        image_offset = len(references)
-        if scene.get("explicitReferences") or options.get("explicitReferences"):
+        explicit_references = scene.get("explicitVideoReferences") is True or (
+            "explicitVideoReferences" not in scene and (scene.get("explicitReferences") or options.get("explicitReferences"))
+        )
+        if explicit_references:
+            # Explicit editor references are authoritative, so deleting the default
+            # storyboard frame really removes it from the provider payload.
+            if "explicitVideoReferences" not in scene and capabilities["referenceImages"] and scene.get("image_path"):
+                references.append(_stored_media(scene["image_path"]))
             references.extend(_stored_media(stored) for stored in (
                 scene.get("referenceImagePaths") or options.get("referenceImagePaths") or []
             ))
+            image_offset = 0
         else:
+            if capabilities["referenceImages"] and scene.get("image_path"):
+                references.append(_stored_media(scene["image_path"]))
+            image_offset = 0 if scene.get("compiledVideoReferenceItems") else len(references)
             for _, data, mime_type in character_references(scene):
                 if len(references) >= capabilities["maxReferenceImages"]:
                     break
@@ -401,7 +408,11 @@ async def _generate_scene_video(
         # The motion prompt first: `visual_prompt` describes a frame, and a clip generated
         # from it tends to hold still. Narration is the last resort.
         prompt = str(
-            scene.get("video_prompt") or scene.get("visual_prompt") or scene.get("narration") or ""
+            scene.get("video_prompt")
+            or scene.get("visual_prompt")
+            or scene.get("narration")
+            or scene.get("dialogue")
+            or ""
         ).strip()
         if not prompt:
             raise ValueError("该分镜缺少画面提示词")
@@ -421,9 +432,10 @@ async def _generate_scene_video(
             prompt,
             provider=config["provider"],
             model=config["model"],
-            references=scene.get("compiledReferenceItems") or options.get("compiledReferenceItems") or [],
+            references=scene.get("compiledVideoReferenceItems") or options.get("compiledVideoReferenceItems") or [],
             dialogue=str(scene.get("dialogue") or ""),
             image_offset=image_offset,
+            speaker_name=str((scene.get("speaker") or {}).get("name") or ""),
         )["prompt"]
         previous_prompt = str(scene.get("previous_video_prompt") or "").strip()
         if previous_prompt:

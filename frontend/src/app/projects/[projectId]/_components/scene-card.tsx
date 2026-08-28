@@ -10,13 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
@@ -25,12 +18,9 @@ import { cn } from "@/lib/utils";
 import type { SceneEdit } from "@/store/project-store";
 import type { Character, Scene } from "@/types/project";
 
-/** Stands in for "nobody speaks": Select cannot carry an empty string as a value. */
-const NO_SPEAKER = "__none__";
-
 interface SceneCardProps {
   scene: Scene;
-  /** The series bible, so a shot can be cast and given a speaker. */
+  /** The series bible, so a shot can carry its cast into generation. */
   characters: Character[];
   onNarrationChange: (value: string) => void;
   onPromptChange: (value: string) => void;
@@ -308,9 +298,9 @@ export function SceneCard({
           />
         </div>
 
-        {/* 出场角色与说话人 */}
+        {/* 出场角色；台词角色在生成时从台词文本自动识别。 */}
         {characters.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 rounded-xl border border-border/50 bg-muted/20 p-3">
+          <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-foreground">{t("scene.cast")}</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -338,27 +328,6 @@ export function SceneCard({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-foreground">{t("scene.speaker")}</Label>
-              <Select
-                value={scene.speakerCharacterId ?? NO_SPEAKER}
-                onValueChange={(value) =>
-                  onFieldChange({ speakerCharacterId: !value || value === NO_SPEAKER ? "" : value })
-                }
-              >
-                <SelectTrigger className="h-7 rounded-lg text-xs bg-muted/40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_SPEAKER} className="text-xs">{t("scene.speakerNone")}</SelectItem>
-                  {characters.map((character) => (
-                    <SelectItem key={character.id} value={character.id} className="text-xs">
-                      {character.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         ) : null}
 

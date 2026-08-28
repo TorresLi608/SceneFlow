@@ -41,10 +41,10 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
     password = str(payload.get("password", ""))
     invitation_code = str(payload.get("invitationCode", "")).strip().upper()
 
-    if not email:
-        raise HTTPException(400, "email is required")
-    if not verification_code:
-        raise HTTPException(400, "verification code is required")
+    if email and not verification_code:
+        raise HTTPException(400, "verification code is required when email is provided")
+    if verification_code and not email:
+        raise HTTPException(400, "email is required when verification code is provided")
     if not 3 <= len(username) <= 64 or not 6 <= len(password) <= 128:
         raise HTTPException(400, "invalid username or password length")
     if len(nickname) > 64:
@@ -52,13 +52,14 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
     if not invitation_code:
         raise HTTPException(400, "invitation code required")
 
-    cleaned_email = validate_email_format(email)
+    cleaned_email = validate_email_format(email) if email else None
     stamp = now()
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     with db() as session:
         # 1. 校验并核销验证码
-        verify_and_consume_code(session, cleaned_email, verification_code)
+        if cleaned_email:
+            verify_and_consume_code(session, cleaned_email, verification_code)
 
         # 2. 校验邀请码
         invitation = session.exec(select(InvitationCode).where(InvitationCode.code == invitation_code)).first()
@@ -72,7 +73,7 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
         # 3. 校验用户名与邮箱唯一性
         if session.exec(select(User.id).where(User.username == username, User.deleted_at.is_(None))).first():
             raise HTTPException(409, "username already exists")
-        if session.exec(select(User.id).where(User.email == cleaned_email, User.deleted_at.is_(None))).first():
+        if cleaned_email and session.exec(select(User.id).where(User.email == cleaned_email, User.deleted_at.is_(None))).first():
             raise HTTPException(409, "email already exists")
 
         # 4. 创建用户

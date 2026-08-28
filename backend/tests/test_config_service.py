@@ -17,7 +17,7 @@ from app.core.database import db, init_db
 from app.core.security import decrypt, encrypt
 from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, base_url_for, gemini_openai_base_url, image_base_url_for
 from app.models import ChatMessage, ChatSession, ModelConfig, User, UserOfficialConfigDefault
-from app.services.config_service import active_model_config, config_api_key, config_create_fields, config_update_fields, default_video_capabilities, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
+from app.services.config_service import VIDEO_MODEL_CAPABILITIES, active_model_config, config_api_key, config_create_fields, config_update_fields, default_video_capabilities, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
 
 
 def _stored_config() -> ModelConfig:
@@ -94,6 +94,7 @@ def test_discover_qwen_native_models_returns_all_known_models() -> None:
             "wan2.7-image-pro",
             "wan2.7-t2v",
             "wan2.7-i2v",
+            "wan2.7",
             "wan2.7-r2v",
             "wan-t2v",
             "wan-r2v",
@@ -564,6 +565,12 @@ def test_every_video_provider_resolves_capabilities() -> None:
         # The render path subscripts these directly; a missing key is a 500, not a default.
         for key in ("referenceImages", "maxReferenceImages", "referenceAudio", "audioParam", "audioDefault"):
             assert key in capabilities, f"{provider}/{model} is missing {key}"
+
+    seedance25 = default_video_capabilities("doubao", "doubao-seedance-2.5")
+    assert (seedance25["minDuration"], seedance25["maxDuration"]) == (4, 30)
+    assert (seedance25["maxReferenceImages"], seedance25["maxReferenceVideos"], seedance25["maxReferenceAudios"]) == (30, 10, 10)
+    assert default_video_capabilities("doubao", "doubao-seedance-2.0")["maxReferenceVideos"] == 3
+    assert VIDEO_MODEL_CAPABILITIES["wan2.7"]["catalog"] is True
 
 
 def test_audio_switch_survives_the_capability_round_trip() -> None:

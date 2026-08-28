@@ -74,6 +74,51 @@ def test_dialogue_is_appended_once() -> None:
     assert compile_prompt("她转身", provider="doubao", model="doubao-seedance-2.5", dialogue="   ")["prompt"] == "她转身"
 
 
+def test_doubao_uses_angle_bracket_media_placeholders_with_label() -> None:
+    result = compile_prompt(
+        "@韩立青年回头",
+        provider="doubao",
+        model="doubao-seedance-2-5-260628",
+        references=[{"kind": "character", "id": "c1", "label": "韩立青年"}],
+        dialogue="别走",
+        speaker_name="韩立青年",
+    )
+    assert result["prompt"] == "<图片1> 韩立青年回头\n角色“韩立青年”台词：“别走”"
+
+
+def test_existing_provider_markers_are_normalized() -> None:
+    result = compile_prompt(
+        "图3回头",
+        provider="doubao",
+        model="doubao-seedance-2-5-260628",
+        references=[
+            {"kind": "character", "id": "c1", "label": "小满"},
+            {"kind": "prop", "id": "p1", "label": "房间"},
+            {"kind": "character", "id": "c2", "label": "韩立青年"},
+        ],
+    )
+    assert result["prompt"] == "<图片3> 韩立青年回头"
+
+
+def test_character_state_reference_resolves_parent_label() -> None:
+    """characterState preview must include its parent character name, not 500."""
+    # The database resolver is covered by the API suite; this assertion documents the
+    # label contract consumed by the compiler.
+    result = compile_prompt(
+        "@韩立 · 青年",
+        provider="doubao",
+        model="doubao-seedance-2.5",
+        references=[{"kind": "characterState", "id": "cstate", "label": "韩立 · 青年"}],
+    )
+    assert result["prompt"] == "<图片1> 韩立青年"
+    assert compile_prompt(
+        "@韩立青年",
+        provider="doubao",
+        model="doubao-seedance-2.5",
+        references=[{"kind": "characterState", "id": "cstate", "label": "韩立 · 青年"}],
+    )["prompt"] == "<图片1> 韩立青年"
+
+
 if __name__ == "__main__":
     test_labels_become_positional_references()
     test_each_media_kind_counts_separately()
@@ -81,3 +126,6 @@ if __name__ == "__main__":
     test_longer_labels_win_over_their_own_prefixes()
     test_deleted_label_still_ships_its_reference()
     test_dialogue_is_appended_once()
+    test_doubao_uses_angle_bracket_media_placeholders_with_label()
+    test_existing_provider_markers_are_normalized()
+    test_character_state_reference_resolves_parent_label()

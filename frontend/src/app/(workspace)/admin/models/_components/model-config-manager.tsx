@@ -99,6 +99,71 @@ const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = [
 ];
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
+  const normalized = model.toLowerCase();
+  if (provider === "doubao" && normalized.startsWith("doubao-seedance")) {
+    const is25 = normalized.includes("2.5");
+    return {
+      qualities: is25 ? ["480p", "720p", "1080p"] : normalized.includes("fast") || normalized.includes("mini") ? ["480p", "720p"] : ["480p", "720p", "1080p", "4K"],
+      fps: [],
+      aspectRatios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"],
+      promptExtend: false,
+      minDuration: 4,
+      maxDuration: is25 ? 30 : 15,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: is25 ? 30 : 9,
+      referenceVideo: true,
+      maxReferenceVideos: is25 ? 10 : 3,
+      referenceVideosRequired: false,
+      referenceAudio: true,
+      maxReferenceAudios: is25 ? 10 : 3,
+      referenceAudiosRequired: false,
+      audioParam: "with_audio",
+      audioDefault: true,
+    };
+  }
+  if (provider === "qwen" && (normalized === "wan2.7" || normalized.startsWith("wan2.7-r2v"))) {
+    return {
+      qualities: ["720p", "1080p"],
+      fps: [],
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4"],
+      promptExtend: true,
+      minDuration: 2,
+      maxDuration: 15,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: 5,
+      referenceVideo: true,
+      maxReferenceVideos: 1,
+      referenceVideosRequired: false,
+      referenceAudio: true,
+      maxReferenceAudios: 1,
+      referenceAudiosRequired: false,
+      audioParam: "reference_voice",
+      audioDefault: false,
+    };
+  }
+  if (provider === "qwen" && normalized.startsWith("wan3.0")) {
+    return {
+      qualities: ["480p", "720p", "1080p"],
+      fps: [],
+      aspectRatios: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      promptExtend: true,
+      minDuration: 2,
+      maxDuration: 30,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: 10,
+      referenceVideo: true,
+      maxReferenceVideos: 5,
+      referenceVideosRequired: false,
+      referenceAudio: true,
+      maxReferenceAudios: 5,
+      referenceAudiosRequired: false,
+      audioParam: "audio",
+      audioDefault: true,
+    };
+  }
   const isI2v = model.includes("-i2v");
   const isR2v = model.includes("-r2v");
   const isVideoEdit = model.includes("videoedit");
@@ -1534,7 +1599,7 @@ export function ModelConfigManager() {
                           label={t("admin.maxReferenceVideos")}
                           value={videoCapabilities.maxReferenceVideos}
                           min={1}
-                          max={9}
+                          max={10}
                           onChange={(maxReferenceVideos) =>
                             setVideoCapabilities((current) => ({
                               ...current,
@@ -1602,7 +1667,7 @@ export function ModelConfigManager() {
                           label={t("admin.maxReferenceAudios")}
                           value={videoCapabilities.maxReferenceAudios}
                           min={1}
-                          max={9}
+                          max={10}
                           onChange={(maxReferenceAudios) =>
                             setVideoCapabilities((current) => ({
                               ...current,

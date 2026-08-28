@@ -65,8 +65,8 @@ export interface SendVerificationCodeResponse {
 export interface RegisterInput {
   username: string;
   nickname?: string;
-  email: string;
-  verificationCode: string;
+  email?: string;
+  verificationCode?: string;
   password: string;
   invitationCode: string;
 }

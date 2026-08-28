@@ -167,7 +167,7 @@ def qwen_video_family(model: str) -> str:
     normalized = model.strip().lower()
     if normalized.startswith("wan3.0"):
         return "wan3"
-    if normalized.startswith("wan2.7"):
+    if normalized == "wan2.7" or normalized.startswith("wan2.7-r2v"):
         return "wan27"
     return "legacy"
 
@@ -187,7 +187,7 @@ def validate_qwen_video_input(model: str, references: list[dict[str, Any]], refe
     family = qwen_video_family(model)
     # Wan 2.7-r2v and the whole Wan 3.0 line take references by name rather than by an
     # `-i2v`-style suffix, so the suffix sniffing below only decides for older models.
-    accepts_images = family == "wan3" or any(part in normalized for part in ("-i2v", "-r2v", "videoedit"))
+    accepts_images = family in {"wan3", "wan27"} or any(part in normalized for part in ("-i2v", "-r2v", "videoedit"))
     accepts_videos = family in {"wan3", "wan27"} or "videoedit" in normalized
     if "-i2v" in normalized and not references:
         raise ValueError(f"Qwen image-to-video model {model} requires a reference image")
@@ -256,23 +256,23 @@ def build_doubao_payload(
     duration: int,
     reference: dict[str, Any] | None = None,
     output_audio: bool | None = None,
+    additional_references: list[dict[str, Any]] | None = None,
+    reference_videos: list[dict[str, Any]] | None = None,
+    reference_audios: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-    if reference:
-        reference_url = external_media_url(reference)
-        if reference_url:
-            image_url = reference_url
-        else:
-            data, mime_type = parse_reference(reference)
-            encoded = base64.b64encode(data).decode("ascii")
-            image_url = f"data:{mime_type};base64,{encoded}"
+    for index, image in enumerate(([reference] if reference else []) + (additional_references or [])):
         content.append(
             {
                 "type": "image_url",
-                "image_url": {"url": image_url},
-                "role": "first_frame",
+                "image_url": {"url": media_data_url(image, "image")},
+                "role": "first_frame" if index == 0 else "reference_image",
             }
         )
+    for video in reference_videos or []:
+        content.append({"type": "video_url", "video_url": {"url": media_data_url(video, "video")}, "role": "reference_video"})
+    for audio in reference_audios or []:
+        content.append({"type": "audio_url", "audio_url": {"url": media_data_url(audio, "audio")}, "role": "reference_audio"})
     payload: dict[str, Any] = {
         "model": model,
         "content": content,
@@ -348,13 +348,19 @@ async def _generate_doubao_video_sdk(
     reference: dict[str, Any] | None,
     base_url: str,
     output_audio: bool | None = None,
+    additional_references: list[dict[str, Any]] | None = None,
+    reference_videos: list[dict[str, Any]] | None = None,
+    reference_audios: list[dict[str, Any]] | None = None,
 ) -> VideoResult:
     try:
         from volcenginesdkarkruntime import Ark
     except ImportError as exc:
         raise RuntimeError("volcengine-python-sdk[ark] is required for Doubao video generation") from exc
 
-    payload = build_doubao_payload(model, prompt, settings, quality, fps, duration, reference, output_audio)
+    payload = build_doubao_payload(
+        model, prompt, settings, quality, fps, duration, reference, output_audio,
+        additional_references, reference_videos, reference_audios,
+    )
     # Ark's official task schema has no fps field; the model uses its service default.
     payload.pop("fps", None)
     client = Ark(api_key=api_key.strip(), base_url=(base_url or DOUBAO_VIDEO_BASE_URL).rstrip("/"))
@@ -395,9 +401,13 @@ async def _generate_doubao_video(
     reference: dict[str, Any] | None,
     base_url: str,
     output_audio: bool | None = None,
+    additional_references: list[dict[str, Any]] | None = None,
+    reference_videos: list[dict[str, Any]] | None = None,
+    reference_audios: list[dict[str, Any]] | None = None,
 ) -> VideoResult:
     return await _generate_doubao_video_sdk(
-        api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio
+        api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio,
+        additional_references, reference_videos, reference_audios,
     )
 
 
@@ -509,7 +519,7 @@ async def _generate_qwen_video(
         media: list[dict[str, str]] = []
         normalized_model = model.lower()
         video_type, audio_type = qwen_media_types(model)
-        if "-r2v" in normalized_model:
+        if "-r2v" in normalized_model and qwen_video_family(model) == "legacy":
             payload["input"]["reference_image_urls"] = [media_data_url(item, "image") for item in references]
         else:
             if references:
@@ -597,7 +607,7 @@ async def _generate_qwen_video_sdk(
 
     try:
         video_type, audio_type = qwen_media_types(model)
-        if "-r2v" in model.lower():
+        if "-r2v" in model.lower() and qwen_video_family(model) == "legacy":
             input_data: dict[str, Any] = {"reference_image_urls": [await upload(item, "image") for item in references]}
         else:
             for index, item in enumerate(references):
@@ -671,5 +681,8 @@ async def generate_video(
     reference = references[0] if references else None
     settings = resolve_video_settings(provider, aspect_ratio, quality) if aspect_ratio else None
     if provider == "doubao":
-        return await _generate_doubao_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio)
+        return await _generate_doubao_video(
+            api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio,
+            references[1:], reference_videos, reference_audios,
+        )
     return await _generate_gemini_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)

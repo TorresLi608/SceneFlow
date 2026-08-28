@@ -10,6 +10,7 @@ export const queryKeys = {
   characters: (projectId: string) => ["characters", projectId] as const,
   props: (projectId: string) => ["props", projectId] as const,
   voices: (projectId: string) => ["voices", projectId] as const,
+  assets: (projectId: string) => ["assets", projectId] as const,
   exports: (projectId: string) => ["exports", projectId] as const,
   adminUsers: ["admin-users"] as const,
   adminUsageLogs: (search: string, page: number) => ["admin-usage-logs", search, page] as const,

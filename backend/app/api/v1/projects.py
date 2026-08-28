@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -133,13 +134,34 @@ def _scene_payloads(
             cast[character_id].as_payload() for character_id in links.get(scene.id, []) if character_id in cast
         ]
         # The speaker need not be on screen, so it is resolved independently of the cast.
-        speaker = cast.get(scene.speaker_character_id or "")
+        # When the editor has no speaker field, infer the common `角色：台词` form at
+        # generation time; old rows and newly typed dialogue both keep working.
+        speaker_id = scene.speaker_character_id
+        if not speaker_id and scene.dialogue:
+            match = re.match(r"^\s*([^：:]{1,40})\s*[：:]", scene.dialogue)
+            if match:
+                speaker_id = breakdown_service.resolve_speaker(session, project.id, match.group(1))
+        speaker = cast.get(speaker_id or "")
         payload["speaker"] = speaker.as_payload() if speaker else None
         if index:
             previous = scenes[index - 1]
             payload["previous_video_prompt"] = str(
                 previous.video_prompt or previous.visual_prompt or previous.narration or ""
             ).strip()
+        payload["explicitImageReferences"] = bool(scene.image_references_explicit)
+        payload["explicitVideoReferences"] = bool(scene.video_references_explicit)
+        default_reference_items = [
+            {"kind": "character", "id": character["id"], "label": character["name"], "media": "image"}
+            for character in payload["characters"]
+            if character.get("reference_image_path")
+        ][:4]
+        if not scene.image_references_explicit:
+            payload["compiledImageReferenceItems"] = default_reference_items
+        if not scene.video_references_explicit:
+            video_defaults = list(default_reference_items)
+            if scene.image_path:
+                video_defaults.insert(0, {"kind": "sceneImage", "id": scene.id, "label": f"分镜 {scene.order_num}", "media": "image"})
+            payload["compiledVideoReferenceItems"] = video_defaults
         payloads.append(payload)
     return payloads
 
@@ -531,8 +553,9 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
     for field, column in (("image_references", "image_references_json"), ("video_references", "video_references_json")):
         if field in sent and sent[field] is not None:
             updates[column] = json.dumps(
-                [{"kind": item.kind, "id": item.id} for item in sent[field]], separators=(",", ":")
+                [{"kind": item["kind"], "id": item["id"]} for item in sent[field]], separators=(",", ":")
             )
+            updates[f"{field}_explicit"] = True
     if not updates:
         raise HTTPException(400, "no fields to update")
     # "Nobody in particular" arrives as an empty string, because a JSON null would be
@@ -552,7 +575,7 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
             if field not in sent or sent[field] is None:
                 continue
             resolved = resolve_generation_references(
-                session, project_id, [(item.kind, item.id) for item in sent[field]]
+                session, project_id, [(item["kind"], item["id"]) for item in sent[field]]
             )
             if field == "image_references" and (resolved["videos"] or resolved["audios"]):
                 raise HTTPException(400, "image prompts only accept image references")
@@ -616,6 +639,8 @@ async def create_project_scene(
             video_references_json=json.dumps(
                 [{"kind": item.kind, "id": item.id} for item in body.video_references or []], separators=(",", ":")
             ),
+            image_references_explicit=body.image_references is not None,
+            video_references_explicit=body.video_references is not None,
             duration_ms=body.duration_ms or 0,
             subtitle_text=body.subtitle_text or "",
             is_locked=bool(body.is_locked),
@@ -908,7 +933,7 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
             if len(resolved["images"]) > maximum:
                 raise HTTPException(400, f"selected image model accepts at most {maximum} reference images")
             payload["referenceImagePaths"] = [stored for stored, _ in resolved["images"]]
-            payload["compiledReferenceItems"] = resolved["items"]
+            payload["compiledImageReferenceItems"] = resolved["items"]
             payload["explicitReferences"] = True
     await broadcast(
         project_id,
@@ -967,6 +992,8 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         pending = selected_scenes(
             scenes, body.scene_ids, status_column="video_status", pending_only=body.pending_only
         )
+        if any(not scene.image_path for scene in pending):
+            raise HTTPException(400, "generate the storyboard image before generating its video")
         resolved_references = (
             resolve_generation_references(
                 session, project_id, [(reference.kind, reference.id) for reference in body.references]
@@ -1030,7 +1057,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
                 payload["referenceImagePaths"] = [stored for stored, _ in resolved["images"]]
                 payload["referenceVideoPaths"] = resolved["videos"]
                 payload["referenceAudioPaths"] = resolved["audios"]
-                payload["compiledReferenceItems"] = resolved["items"]
+                payload["compiledVideoReferenceItems"] = resolved["items"]
                 payload["explicitReferences"] = True
         claim_project_status(
             session,
@@ -1071,7 +1098,7 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
                 "referenceAudioPaths": resolved_references["audios"],
                 # Batch references replace the per-shot ones, so the labels compiled into
                 # the prompt have to come from the same list.
-                "compiledReferenceItems": resolved_references.get("items", []),
+                "compiledVideoReferenceItems": resolved_references.get("items", []),
                 "explicitReferences": body.references is not None,
             },
             cancellation=cancellation,

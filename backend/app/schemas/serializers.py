@@ -123,10 +123,12 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
             {"kind": kind, "id": asset_id}
             for kind, asset_id in stored_generation_references(scene.image_references_json)
         ],
+        "imageReferencesExplicit": bool(scene.image_references_explicit),
         "videoReferences": [
             {"kind": kind, "id": asset_id}
             for kind, asset_id in stored_generation_references(scene.video_references_json)
         ],
+        "videoReferencesExplicit": bool(scene.video_references_explicit),
         # 0 means undecided; the renderer falls back to the project's default shot length.
         "durationMs": scene.duration_ms or 0,
         "subtitleText": scene.subtitle_text or "",
@@ -156,6 +158,7 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
 
 
 def asset_json(asset: Asset) -> dict[str, Any]:
+    media_url = asset.path if str(asset.path).startswith(("http://", "https://")) else scene_asset_url(asset.path, f"asset-{asset.id}")
     return {
         "id": asset.id,
         "projectId": asset.project_id,
@@ -163,7 +166,7 @@ def asset_json(asset: Asset) -> dict[str, Any]:
         "description": asset.description or "",
         "kind": asset.kind,
         "mediaType": asset.media_type,
-        "url": scene_asset_url(asset.path, f"asset-{asset.id}"),
+        "url": media_url,
         "createdAt": asset.created_at,
         "updatedAt": asset.updated_at,
     }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -11,7 +12,7 @@ from sqlmodel import select
 from app.api.deps import current_user_id
 from app.core.database import db
 from app.llms.registry import models
-from app.models import Scene
+from app.models import Episode, Scene
 from app.schemas.requests import CompilePromptRequest, OptimizePromptRequest
 from app.services.config_service import active_model_config, project_model_config
 from app.services.project_service import owned_project
@@ -89,12 +90,26 @@ def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(c
             session, body.project_id, [(item.kind, item.id) for item in body.references]
         )
         image_offset = 0
+        speaker_name = ""
         if body.kind == "video" and body.scene_id:
             scene = session.exec(
                 select(Scene).where(Scene.id == body.scene_id, Scene.project_id == body.project_id)
             ).first()
             capabilities = config.get("videoCapabilities") or {}
-            image_offset = int(bool(scene and scene.image_path and capabilities.get("referenceImages")))
+            has_explicit_references = bool(scene and scene.video_references_explicit)
+            has_explicit_storyboard = any(item.kind == "sceneImage" and item.id == body.scene_id for item in body.references)
+            image_offset = int(bool(scene and scene.image_path and capabilities.get("referenceImages") and not has_explicit_references and not has_explicit_storyboard))
+            speaker_name = str((scene and scene.speaker_character_id) or "")
+            if not speaker_name and body.dialogue:
+                match = re.match(r"^\s*([^：:]{1,40})\s*[：:]", body.dialogue)
+                if match:
+                    from app.services.breakdown_service import resolve_speaker
+                    speaker_name = resolve_speaker(session, body.project_id, match.group(1)) or ""
+            if speaker_name:
+                from app.services.character_service import cast_for_episode
+                episode = session.get(Episode, scene.episode_id) if scene else None
+                speaker = cast_for_episode(session, body.project_id, episode.episode_number if episode else 0).get(speaker_name)
+                speaker_name = speaker.name if speaker else speaker_name
     return compile_prompt(
         body.prompt,
         provider=config["provider"],
@@ -102,6 +117,7 @@ def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(c
         references=resolved["items"],
         dialogue=body.dialogue,
         image_offset=image_offset,
+        speaker_name=speaker_name,
     )
 
 

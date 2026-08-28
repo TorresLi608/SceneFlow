@@ -20,7 +20,9 @@ export interface Scene {
   /** The motion prompt. `visualPrompt` describes the frame; this describes the seconds. */
   videoPrompt: string;
   imageReferences: GenerationReferenceInput[];
+  imageReferencesExplicit?: boolean;
   videoReferences: GenerationReferenceInput[];
+  videoReferencesExplicit?: boolean;
   /** Estimated screen time in ms. 0 means undecided — the project default applies. */
   durationMs: number;
   subtitleText: string;
@@ -347,12 +349,29 @@ export interface GenerateStoryboardInput {
   pendingOnly?: boolean;
 }
 
-export type GenerationReferenceKind = "character" | "characterState" | "prop" | "tone" | "sceneImage" | "sceneVideo" | "voice";
+export type GenerationReferenceKind = "character" | "characterState" | "prop" | "tone" | "sceneImage" | "sceneVideo" | "voice" | "asset";
 
 export interface GenerationReferenceInput {
   kind: GenerationReferenceKind;
   id: string;
 }
+
+export interface Asset {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  kind: "image" | "video" | "audio";
+  mediaType: string;
+  url: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface AssetListResponse { assets: Asset[] }
+export interface CreateAssetInput { name: string; description?: string; kind: Asset["kind"]; data: string }
+export interface UpdateAssetInput { name?: string; description?: string; data?: string }
+export interface MergeAssetsInput { name: string; description?: string; kind: "image"; assetIds: string[] }
 
 export interface GenerateStoryboardResponse {
   projectId: string;

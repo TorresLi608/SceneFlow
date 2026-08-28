@@ -73,13 +73,13 @@ export function ReferencePicker({
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+    <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/20 p-3.5 shadow-2xs">
       <div>
-        <p className="text-xs font-semibold">{title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
+        <p className="text-xs font-semibold text-foreground">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{hint}</p>
       </div>
       {visible.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{t("episode.referenceEmpty")}</p>
+        <p className="text-xs text-muted-foreground py-2">{t("episode.referenceEmpty")}</p>
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
           {visible.map((asset) => {
@@ -92,8 +92,10 @@ export function ReferencePicker({
               <div
                 key={keyOf(asset)}
                 className={cn(
-                  "flex min-w-0 items-center rounded-md border transition-colors",
-                  active ? "border-primary bg-primary/10" : "border-border/60 hover:border-primary/50",
+                  "flex min-w-0 items-center rounded-lg border transition-all duration-150",
+                  active
+                    ? "border-primary/80 bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                    : "border-border/60 bg-background/60 hover:border-primary/50"
                 )}
               >
                 <button
@@ -102,14 +104,14 @@ export function ReferencePicker({
                   disabled={disabled}
                   onClick={() => toggle(asset)}
                   className={cn(
-                    "flex min-w-0 flex-1 cursor-pointer items-center gap-2 p-2 text-left",
-                    disabled && "cursor-not-allowed opacity-45"
+                    "flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 p-2 text-left",
+                    disabled && "cursor-not-allowed opacity-40"
                   )}
                 >
                   <span
                     role="button"
                     tabIndex={0}
-                    className="relative flex size-10 shrink-0 cursor-zoom-in items-center justify-center overflow-hidden rounded bg-muted"
+                    className="relative flex size-10 shrink-0 cursor-zoom-in items-center justify-center overflow-hidden rounded-md bg-muted group/thumb border border-border/40"
                     aria-label={t("episode.openPreview")}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -127,22 +129,22 @@ export function ReferencePicker({
                     }}
                   >
                     {asset.media === "image" ? (
-                      <Image src={asset.url} alt="" fill unoptimized sizes="40px" className="object-cover" />
+                      <Image src={asset.url} alt="" fill unoptimized sizes="40px" className="object-cover transition-transform duration-200 group-hover/thumb:scale-110" />
                     ) : asset.media === "video" ? (
                       <Film className="size-4 text-muted-foreground" />
                     ) : (
                       <Volume2 className="size-4 text-muted-foreground" />
                     )}
                     {active ? (
-                      <span className="absolute inset-0 flex items-center justify-center bg-primary/70 text-primary-foreground">
-                        <Check className="size-4" />
+                      <span className="absolute inset-0 flex items-center justify-center bg-primary/80 text-primary-foreground backdrop-blur-2xs">
+                        <Check className="size-4 stroke-[2.5]" />
                       </span>
                     ) : null}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-xs font-medium">{asset.label}</span>
+                    <span className="block truncate text-xs font-medium text-foreground">{asset.label}</span>
                     <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                      {asset.media === "image" ? <ImageIcon className="size-3" /> : null}
+                      {asset.media === "image" ? <ImageIcon className="size-3 text-muted-foreground/80" /> : null}
                       {t(`episode.referenceType.${asset.media}`)}
                     </span>
                   </span>
@@ -153,7 +155,7 @@ export function ReferencePicker({
                     title={t("episode.referenceDelete")}
                     aria-label={t("episode.referenceDeleteLabel", { name: asset.label })}
                     onClick={() => setPendingDelete(asset)}
-                    className="mr-1 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    className="mr-1.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -163,7 +165,7 @@ export function ReferencePicker({
           })}
         </div>
       )}
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[11px] text-muted-foreground/80 font-mono">
         {(["image", "video", "audio"] as const)
           .filter((media) => (limits[media] ?? 0) > 0)
           .map((media) => {
@@ -186,11 +188,11 @@ export function ReferencePicker({
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" disabled={deleting} onClick={() => setPendingDelete(null)}>
+            <Button variant="outline" disabled={deleting} onClick={() => setPendingDelete(null)} className="cursor-pointer">
               <X data-icon="inline-start" />
               {t("common.cancel")}
             </Button>
-            <Button variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+            <Button variant="destructive" disabled={deleting} onClick={() => void confirmDelete()} className="cursor-pointer">
               {deleting ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Trash2 data-icon="inline-start" />}
               {t("common.delete")}
             </Button>

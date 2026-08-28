@@ -150,8 +150,28 @@ def test_email_registration_via_api() -> None:
             database.DB_PATH = original_path
 
 
+def test_registration_without_email() -> None:
+    from app.main import app
+
+    original_path = database.DB_PATH
+    with tempfile.TemporaryDirectory() as directory:
+        database.DB_PATH = Path(directory) / "test_no_email.db"
+        try:
+            init_db()
+            invitation = create_invitation_code({"days": 7}, 1)["invitationCode"]
+            with TestClient(app) as client:
+                response = client.post("/api/auth/register", json={
+                    "username": "noemail", "password": "securepassword123", "invitationCode": invitation["code"],
+                })
+                assert response.status_code == 201, response.text
+                assert response.json()["user"]["email"] == ""
+        finally:
+            database.DB_PATH = original_path
+
+
 if __name__ == "__main__":
     test_email_verification_flow_and_cooldown()
     test_email_verification_expired_code()
     test_email_registration_via_api()
+    test_registration_without_email()
     print("test_email_verification ok")

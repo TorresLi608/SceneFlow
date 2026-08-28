@@ -28,11 +28,11 @@ AUDIO_PARAMS = ("with_audio", "audio", "reference_voice")
 # entries the admin picker offers — superseded revisions stay here so an existing config
 # pinned to one still resolves its capabilities.
 VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
-    "doubao-seedance-2.0": {"provider": "doubao", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], "minDuration": 2, "maxDuration": 12, "maxReferenceImages": 4, "audioParam": "with_audio", "audioDefault": True},
-    "doubao-seedance-2.0-fast": {"provider": "doubao", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], "minDuration": 2, "maxDuration": 12, "maxReferenceImages": 4, "audioParam": "with_audio", "audioDefault": True},
-    "doubao-seedance-2.0-mini": {"provider": "doubao", "catalog": True, "qualities": ["720p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 10, "maxReferenceImages": 4, "audioParam": "with_audio", "audioDefault": True},
-    "doubao-seedance-2.5": {"provider": "doubao", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], "minDuration": 2, "maxDuration": 12, "maxReferenceImages": 5, "audioParam": "with_audio", "audioDefault": True},
-    "wan2.7": {"provider": "qwen", "catalog": False, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
+    "doubao-seedance-2.0": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p", "1080p", "4K"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0-fast": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0-mini": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.5": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 30, "maxReferenceImages": 30, "maxReferenceVideos": 10, "maxReferenceAudios": 10, "audioParam": "with_audio", "audioDefault": True},
+    "wan2.7": {"provider": "qwen", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
     "wan2.7-r2v": {"provider": "qwen", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
     "wan2.7-r2v-2026-06-12": {"provider": "qwen", "catalog": False, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
     "wan3.0-video": {"provider": "qwen", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"], "minDuration": 2, "maxDuration": 30, "maxReferenceImages": 10, "maxReferenceVideos": 5, "maxReferenceAudios": 5, "audioParam": "audio", "audioDefault": True},
@@ -45,7 +45,7 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
     if known:
         return {
             "qualities": list(known["qualities"]), "fps": [], "aspectRatios": list(known["aspectRatios"]),
-            "promptExtend": True, "minDuration": known["minDuration"], "maxDuration": known["maxDuration"],
+            "promptExtend": known.get("promptExtend", True), "minDuration": known["minDuration"], "maxDuration": known["maxDuration"],
             "referenceImages": known.get("maxReferenceImages", 0) > 0, "referenceImagesRequired": False,
             "maxReferenceImages": known.get("maxReferenceImages", 0), "referenceVideo": known.get("maxReferenceVideos", 0) > 0,
             "maxReferenceVideos": known.get("maxReferenceVideos", 0), "referenceVideosRequired": False,
@@ -121,7 +121,7 @@ def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> 
     prompt_extend = value.get("promptExtend", False)
     if not isinstance(prompt_extend, bool):
         raise HTTPException(400, "videoCapabilities.promptExtend must be boolean")
-    def limit(name: str, supported: bool, maximum: int | None = 9) -> int:
+    def limit(name: str, supported: bool, maximum: int | None = 10) -> int:
         try:
             result = int(value.get(name, 0))
         except (TypeError, ValueError) as exc:

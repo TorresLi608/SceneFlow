@@ -144,7 +144,7 @@ class CreateEpisodeRequest(CamelModel):
     source_text: str = Field(default="", max_length=200_000)
 
 
-GenerationReferenceKind = Literal["character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice"]
+GenerationReferenceKind = Literal["character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice", "asset"]
 
 AssetKind = Literal["image", "video", "audio"]
 
@@ -154,6 +154,12 @@ class CreateAssetRequest(CamelModel):
     description: str = Field(default="", max_length=4000)
     kind: AssetKind
     data: str = Field(min_length=20, max_length=80_000_000)
+
+
+class UpdateAssetRequest(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=4000)
+    data: str | None = Field(default=None, min_length=1, max_length=80_000_000)
 
 
 class MergeAssetsRequest(CamelModel):

@@ -25,6 +25,7 @@ KNOWN_MODELS = {
         "wan2.7-image-pro",
         "wan2.7-t2v",
         "wan2.7-i2v",
+        "wan2.7",
         "wan2.7-r2v",
         "wan-t2v",
         "wan-r2v",
