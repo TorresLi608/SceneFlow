@@ -351,6 +351,41 @@ def _image_format_from_mime(mime_type: str) -> str:
     return {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}.get(mime_type, "png")
 
 
+def _image_response_field(image: Any, name: str) -> Any:
+    return image.get(name) if isinstance(image, dict) else getattr(image, name, None)
+
+
+async def _openai_image_result(response: Any) -> ImageResult:
+    """Accept both base64 and URL responses from OpenAI-compatible image gateways."""
+    items = getattr(response, "data", None) or []
+    image = items[0] if items else None
+    b64_json = _image_response_field(image, "b64_json") if image else ""
+    if b64_json:
+        return ImageResult(data=base64.b64decode(str(b64_json)), format="png")
+
+    url = str(_image_response_field(image, "url") or "").strip() if image else ""
+    if url.startswith("data:image/") and ";base64," in url:
+        header, encoded = url.split(",", 1)
+        mime_type = header.removeprefix("data:").split(";", 1)[0].lower()
+        return ImageResult(data=base64.b64decode(encoded), format=_image_format_from_mime(mime_type))
+    if not url:
+        raise ValueError("empty image response (expected data[0].b64_json or data[0].url)")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("image response contained an unsupported URL")
+    async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        image_response = await client.get(url)
+        try:
+            image_response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ValueError(f"image download status {exc.response.status_code}") from exc
+    if not image_response.content:
+        raise ValueError("image URL returned an empty body")
+    mime_type = image_response.headers.get("content-type", "image/png").split(";", 1)[0].strip().lower()
+    return ImageResult(data=image_response.content, format=_image_format_from_mime(mime_type))
+
+
 def _gemini_image_size(value: str) -> str:
     return {"low": "1K", "medium": "2K", "high": "4K"}.get(value, value if value in {"1K", "2K", "4K"} else "2K")
 
@@ -735,11 +770,7 @@ class ModelRouter:
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        image = response.data[0] if response.data else None
-        b64_json = image.b64_json if image else ""
-        if not b64_json:
-            raise ValueError("empty image response")
-        return ImageResult(data=base64.b64decode(b64_json), format="png")
+        return await _openai_image_result(response)
 
     async def edit_image(
         self,
@@ -781,11 +812,7 @@ class ModelRouter:
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        image = response.data[0] if response.data else None
-        b64_json = image.b64_json if image else ""
-        if not b64_json:
-            raise ValueError("empty image response")
-        return ImageResult(data=base64.b64decode(b64_json), format="png")
+        return await _openai_image_result(response)
 
     async def _generate_gemini_image(
         self,

@@ -13,23 +13,32 @@ export function MediaPreviewDialog({
 }) {
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[95vh] max-w-6xl overflow-hidden p-3 sm:p-5">
-        <DialogHeader>
-          <DialogTitle className="truncate pr-8 text-sm">{item?.title}</DialogTitle>
+      <DialogContent className="w-[98vw] max-w-[1850px] h-[95vh] max-h-[96vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
+        <DialogHeader className="p-3.5 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+          <DialogTitle className="truncate pr-8 text-sm font-bold">{item?.title}</DialogTitle>
         </DialogHeader>
         {item ? (
-          <div className="flex max-h-[78vh] min-h-0 items-center justify-center overflow-auto rounded-lg bg-black/80 p-2">
+          <div className="relative flex flex-1 min-h-0 items-center justify-center overflow-hidden bg-black/95 dark:bg-black p-2 sm:p-4">
+            <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-10" />
             {item.kind === "image" ? (
-              <Image
-                src={item.url}
-                alt={item.title}
-                width={2400}
-                height={1600}
-                unoptimized
-                className="h-auto max-h-[74vh] w-auto max-w-full object-contain"
-              />
+              <div className="relative h-full w-full flex items-center justify-center">
+                <Image
+                  src={item.url}
+                  alt={item.title}
+                  fill
+                  unoptimized
+                  sizes="100vw"
+                  className="object-contain drop-shadow-2xl select-none"
+                />
+              </div>
             ) : (
-              <video src={item.url} controls autoPlay className="max-h-[74vh] max-w-full rounded object-contain" />
+              <video
+                src={item.url}
+                controls
+                autoPlay
+                loop
+                className="max-h-full max-w-full rounded-2xl shadow-2xl object-contain border border-white/10"
+              />
             )}
           </div>
         ) : null}

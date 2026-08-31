@@ -370,14 +370,16 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
                 <button
                   type="button"
                   onClick={onStop}
-                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive text-destructive-foreground transition hover:bg-destructive/90"
+                  className="group relative inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs transition-all hover:bg-primary/90 hover:scale-105 active:scale-95 cursor-pointer"
                   aria-label={t("common.stopGeneration")}
+                  title={t("common.stopGeneration")}
                 >
-                  <Square className="size-3.5 fill-current" />
+                  <span className="absolute inset-0 size-8 animate-ping rounded-full bg-primary/30 opacity-30 duration-1000" />
+                  <Square className="relative z-10 size-3 fill-current transition-transform group-hover:scale-90" />
                 </button>
               ) : (
                 <ComposerPrimitive.Send
-                  className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground")}
+                  className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs transition-all hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:bg-muted disabled:text-muted-foreground disabled:scale-100 disabled:shadow-none cursor-pointer")}
                   aria-label={t("chat.send")}
                 >
                   <Send className="size-4" />

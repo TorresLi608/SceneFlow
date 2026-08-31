@@ -1,7 +1,20 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Check, Loader2, Save, Sparkles, Square, Trash2, Volume2, Wand2 } from "lucide-react";
+import {
+  AudioLines,
+  Check,
+  Copy,
+  Download,
+  Loader2,
+  Maximize2,
+  Save,
+  Sparkles,
+  Square,
+  Trash2,
+  Volume2,
+  Wand2,
+} from "lucide-react";
 import { isCancel } from "axios";
 import { useMemo, useRef, useState } from "react";
 
@@ -15,6 +28,13 @@ import {
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,6 +77,23 @@ export function VoiceGenerationPanel({
   const [promptLanguage, setPromptLanguage] = useState<"auto" | "zh" | "en">("auto");
   const [previewText, setPreviewText] = useState("");
   const [draftVoice, setDraftVoice] = useState<UserVoice | null>(null);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyPrompt = (text: string) => {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const downloadAudio = (url: string, filename?: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "voice_preview.wav";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestController = useRef<AbortController | null>(null);
   const optimizeController = useRef<AbortController | null>(null);
@@ -368,33 +405,89 @@ export function VoiceGenerationPanel({
 
           <div className="min-h-60 border-t border-border/70 pt-6">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-bold">{t("voice.preview")}</h2>
-              {previewVoice ? <Badge variant="outline">{previewVoice.targetModel}</Badge> : null}
+              <div className="flex items-center gap-2">
+                <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Volume2 className="size-4" />
+                </div>
+                <h2 className="text-sm font-bold">{t("voice.preview")}</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {previewVoice ? <Badge variant="outline" className="text-xs">{previewVoice.targetModel}</Badge> : null}
+                {previewVoice && previewVoice.previewAudioUrl ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs font-medium cursor-pointer"
+                    onClick={() => setPreviewModalOpen(true)}
+                  >
+                    <Maximize2 className="size-3.5 text-primary" />
+                    <span>{t("voice.enlargeAudition")}</span>
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            <div className="mt-3 flex min-h-48 items-center justify-center rounded-2xl bg-muted/25 p-5">
+
+            <div className="mt-4 flex min-h-52 items-center justify-center rounded-2xl border border-border/70 bg-card/40 p-6 shadow-inner backdrop-blur-md">
               {designMutation.isPending ? (
-                <div className="text-center">
-                  <AudioLines className="mx-auto size-9 animate-pulse text-primary" />
-                  <p className="mt-3 text-sm font-semibold">{t("voice.generating")}</p>
+                <div className="text-center space-y-3">
+                  <div className="relative mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <AudioLines className="size-7 animate-pulse text-primary" />
+                    <span className="absolute inset-0 size-14 animate-ping rounded-2xl bg-primary/20 opacity-40" />
+                  </div>
+                  <p className="text-sm font-bold text-foreground">{t("voice.generating")}</p>
+                  <p className="text-xs text-muted-foreground">{t("voice.generatingHint")}</p>
                 </div>
               ) : previewVoice ? (
-                <div className="w-full max-w-xl space-y-4">
-                  <div className="flex items-start gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <Volume2 className="size-5" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold">{previewVoice.name || previewVoice.voiceId}</p>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{previewVoice.voicePrompt}</p>
+                <div className="w-full max-w-3xl space-y-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-xs">
+                        <Volume2 className="size-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-bold text-foreground">
+                          {previewVoice.name || previewVoice.voiceId}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground font-mono">
+                          {previewVoice.voicePrompt}
+                        </p>
+                      </div>
                     </div>
+                    {previewVoice.previewAudioUrl ? (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 text-xs cursor-pointer"
+                          onClick={() => copyPrompt(previewVoice.voicePrompt)}
+                        >
+                          {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                          {copied ? t("voice.copiedPrompt") : t("voice.copyPrompt")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 text-xs cursor-pointer"
+                          onClick={() => downloadAudio(artifactBffUrl(previewVoice.previewAudioUrl!), `${previewVoice.name || "voice"}.wav`)}
+                        >
+                          <Download className="size-3.5" />
+                          {t("voice.downloadAudio")}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
+
                   {previewVoice.previewAudioUrl ? (
-                    <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls className="w-full" />
+                    <div className="rounded-xl border border-border/70 bg-muted/30 p-3 shadow-inner">
+                      <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls className="w-full" />
+                    </div>
                   ) : null}
+
                   {draftVoice ? (
                     <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
                       <p className="text-xs text-muted-foreground">{t("voice.draftHint")}</p>
-                      <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                      <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="cursor-pointer">
                         {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                         {saveMutation.isPending ? t("common.saving") : t("voice.save")}
                       </Button>
@@ -402,13 +495,104 @@ export function VoiceGenerationPanel({
                   ) : null}
                 </div>
               ) : (
-                <div className="text-center text-muted-foreground">
-                  <AudioLines className="mx-auto size-9 opacity-60" />
-                  <p className="mt-3 text-sm font-semibold">{t("voice.previewEmpty")}</p>
+                <div className="text-center text-muted-foreground space-y-2">
+                  <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
+                    <AudioLines className="size-6 opacity-60" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">{t("voice.previewEmpty")}</p>
+                  <p className="text-xs text-muted-foreground">{t("voice.emptyPreviewHint")}</p>
                 </div>
               )}
             </div>
           </div>
+
+          {/* 音色大屏试听与参数详情 Dialog */}
+          <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
+            <DialogContent className="w-[94vw] max-w-3xl rounded-2xl border border-border/80 p-0 overflow-hidden shadow-2xl bg-background">
+              <DialogHeader className="p-4 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Volume2 className="size-4.5" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-base font-bold">
+                      {previewVoice?.name || t("voice.modalTitle")}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs">
+                      {t("voice.modalDesc")}
+                    </DialogDescription>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              {previewVoice ? (
+                <div className="p-6 space-y-6">
+                  {/* 声波播放区 */}
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-border/70 bg-muted/20 p-6 space-y-4 shadow-inner">
+                    <div className="flex items-center justify-center gap-1.5 h-12 w-full max-w-md">
+                      <div className="w-1.5 h-6 bg-primary/60 rounded-full animate-pulse" />
+                      <div className="w-1.5 h-10 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                      <div className="w-1.5 h-8 bg-primary rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+                      <div className="w-1.5 h-12 bg-primary rounded-full animate-pulse" style={{ animationDelay: "75ms" }} />
+                      <div className="w-1.5 h-7 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "225ms" }} />
+                      <div className="w-1.5 h-11 bg-primary/90 rounded-full animate-pulse" style={{ animationDelay: "400ms" }} />
+                      <div className="w-1.5 h-5 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: "100ms" }} />
+                      <div className="w-1.5 h-9 bg-primary/75 rounded-full animate-pulse" style={{ animationDelay: "350ms" }} />
+                    </div>
+
+                    {previewVoice.previewAudioUrl ? (
+                      <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls autoPlay className="w-full max-w-lg" />
+                    ) : null}
+                  </div>
+
+                  {/* 详细参数 */}
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        {t("voice.promptDetailTitle")}
+                      </span>
+                      <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 text-xs leading-relaxed font-mono text-foreground whitespace-pre-wrap">
+                        {previewVoice.voicePrompt}
+                      </div>
+                    </div>
+
+                    {previewText.trim() ? (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                          {t("voice.scriptDetailTitle")}
+                        </span>
+                        <div className="rounded-xl border border-border/70 bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                          {previewText}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-border/70">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 cursor-pointer"
+                      onClick={() => copyPrompt(previewVoice.voicePrompt)}
+                    >
+                      {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+                      {copied ? t("voice.copiedPromptFull") : t("voice.copyPrompt")}
+                    </Button>
+                    {previewVoice.previewAudioUrl ? (
+                      <Button
+                        size="sm"
+                        className="gap-2 cursor-pointer"
+                        onClick={() => downloadAudio(artifactBffUrl(previewVoice.previewAudioUrl!), `${previewVoice.name || "voice"}.wav`)}
+                      >
+                        <Download className="size-4" />
+                        {t("voice.downloadFullAudio")}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
 
           {errorMessage ? (
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
