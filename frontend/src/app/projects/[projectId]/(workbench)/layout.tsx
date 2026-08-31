@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import { listProjectsAction } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
+import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +64,10 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
               </Badge>
             ) : null}
           </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <PreferencesSwitcher />
         </div>
       </header>
 

@@ -43,6 +43,7 @@ import {
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -429,6 +430,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               {cancelMutation.isPending ? t("episode.stopping") : t("common.stopGeneration")}
             </Button>
           ) : null}
+          <PreferencesSwitcher />
         </div>
       </header>
 
