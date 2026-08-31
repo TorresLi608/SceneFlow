@@ -103,6 +103,12 @@ def scene_asset_url(stored_path: str | None, download_stem: str) -> str | None:
 
 
 def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str, Any]:
+    def frame_reference(value: str | None) -> dict[str, str] | None:
+        try:
+            item = json.loads(value or "")
+        except (TypeError, ValueError):
+            return None
+        return {"kind": str(item.get("kind")), "id": str(item.get("id"))} if isinstance(item, dict) and item.get("kind") and item.get("id") else None
     stem = f"scene-{scene.order_num or 0}"
     progress = lambda status: 100 if status == "success" else 20 if status == "generating" else 0
     return {
@@ -129,6 +135,8 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
             for kind, asset_id in stored_generation_references(scene.video_references_json)
         ],
         "videoReferencesExplicit": bool(scene.video_references_explicit),
+        "videoFirstFrame": frame_reference(scene.video_first_frame_json),
+        "videoLastFrame": frame_reference(scene.video_last_frame_json),
         # 0 means undecided; the renderer falls back to the project's default shot length.
         "durationMs": scene.duration_ms or 0,
         "subtitleText": scene.subtitle_text or "",

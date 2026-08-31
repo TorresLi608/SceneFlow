@@ -23,6 +23,8 @@ export interface Scene {
   imageReferencesExplicit?: boolean;
   videoReferences: GenerationReferenceInput[];
   videoReferencesExplicit?: boolean;
+  videoFirstFrame: GenerationReferenceInput | null;
+  videoLastFrame: GenerationReferenceInput | null;
   /** Estimated screen time in ms. 0 means undecided — the project default applies. */
   durationMs: number;
   subtitleText: string;
@@ -681,6 +683,8 @@ export interface UpdateSceneInput {
   videoPrompt?: string;
   imageReferences?: GenerationReferenceInput[];
   videoReferences?: GenerationReferenceInput[];
+  videoFirstFrame?: GenerationReferenceInput | null;
+  videoLastFrame?: GenerationReferenceInput | null;
   durationMs?: number;
   subtitleText?: string;
   isLocked?: boolean;

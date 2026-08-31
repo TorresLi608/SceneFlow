@@ -259,16 +259,23 @@ def build_doubao_payload(
     additional_references: list[dict[str, Any]] | None = None,
     reference_videos: list[dict[str, Any]] | None = None,
     reference_audios: list[dict[str, Any]] | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-    for index, image in enumerate(([reference] if reference else []) + (additional_references or [])):
+    images = ([reference] if reference else []) + (additional_references or [])
+    for image in images:
         content.append(
             {
                 "type": "image_url",
                 "image_url": {"url": media_data_url(image, "image")},
-                "role": "first_frame" if index == 0 else "reference_image",
+                "role": "reference_image",
             }
         )
+    if first_frame:
+        content.append({"type": "image_url", "image_url": {"url": media_data_url(first_frame, "image")}, "role": "first_frame"})
+    if last_frame:
+        content.append({"type": "image_url", "image_url": {"url": media_data_url(last_frame, "image")}, "role": "last_frame"})
     for video in reference_videos or []:
         content.append({"type": "video_url", "video_url": {"url": media_data_url(video, "video")}, "role": "reference_video"})
     for audio in reference_audios or []:
@@ -351,6 +358,8 @@ async def _generate_doubao_video_sdk(
     additional_references: list[dict[str, Any]] | None = None,
     reference_videos: list[dict[str, Any]] | None = None,
     reference_audios: list[dict[str, Any]] | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
 ) -> VideoResult:
     try:
         from volcenginesdkarkruntime import Ark
@@ -359,7 +368,7 @@ async def _generate_doubao_video_sdk(
 
     payload = build_doubao_payload(
         model, prompt, settings, quality, fps, duration, reference, output_audio,
-        additional_references, reference_videos, reference_audios,
+        additional_references, reference_videos, reference_audios, first_frame, last_frame,
     )
     # Ark's official task schema has no fps field; the model uses its service default.
     payload.pop("fps", None)
@@ -404,10 +413,12 @@ async def _generate_doubao_video(
     additional_references: list[dict[str, Any]] | None = None,
     reference_videos: list[dict[str, Any]] | None = None,
     reference_audios: list[dict[str, Any]] | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
 ) -> VideoResult:
     return await _generate_doubao_video_sdk(
         api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio,
-        additional_references, reference_videos, reference_audios,
+        additional_references, reference_videos, reference_audios, first_frame, last_frame,
     )
 
 
@@ -489,6 +500,8 @@ async def _generate_qwen_video(
     base_url: str,
     aspect_ratio: str | None = None,
     output_audio: bool | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
 ) -> VideoResult:
     references = references or []
     reference_videos = reference_videos or []
@@ -513,7 +526,7 @@ async def _generate_qwen_video(
     if is_native_qwen_video_url(base):
         return await _generate_qwen_video_sdk(
             api_key, model, prompt, quality, duration, prompt_extend,
-            references, reference_videos, reference_audios, base, aspect_ratio, output_audio,
+            references, reference_videos, reference_audios, base, aspect_ratio, output_audio, first_frame, last_frame,
         )
     async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
         media: list[dict[str, str]] = []
@@ -522,9 +535,12 @@ async def _generate_qwen_video(
         if "-r2v" in normalized_model and qwen_video_family(model) == "legacy":
             payload["input"]["reference_image_urls"] = [media_data_url(item, "image") for item in references]
         else:
+            if first_frame:
+                media.append({"type": "first_frame", "url": media_data_url(first_frame, "image")})
+            if last_frame:
+                media.append({"type": "last_frame", "url": media_data_url(last_frame, "image")})
             if references:
-                media.append({"type": "first_frame", "url": media_data_url(references[0], "image")})
-                for item in references[1:]:
+                for item in references:
                     media.append({"type": "reference_image", "url": media_data_url(item, "image")})
             for reference_video in reference_videos:
                 media.append({"type": video_type, "url": media_data_url(reference_video, "video")})
@@ -573,6 +589,8 @@ async def _generate_qwen_video_sdk(
     base: str,
     aspect_ratio: str | None = None,
     output_audio: bool | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
 ) -> VideoResult:
     references = references or []
     reference_videos = reference_videos or []
@@ -610,8 +628,12 @@ async def _generate_qwen_video_sdk(
         if "-r2v" in model.lower() and qwen_video_family(model) == "legacy":
             input_data: dict[str, Any] = {"reference_image_urls": [await upload(item, "image") for item in references]}
         else:
-            for index, item in enumerate(references):
-                media.append({"type": "first_frame" if index == 0 else "reference_image", "url": await upload(item, "image")})
+            if first_frame:
+                media.append({"type": "first_frame", "url": await upload(first_frame, "image")})
+            if last_frame:
+                media.append({"type": "last_frame", "url": await upload(last_frame, "image")})
+            for item in references:
+                media.append({"type": "reference_image", "url": await upload(item, "image")})
             for reference_video in reference_videos:
                 media.append({"type": video_type, "url": await upload(reference_video, "video")})
             for reference_audio in reference_audios:
@@ -669,6 +691,8 @@ async def generate_video(
     reference_audios: list[dict[str, Any]] | None = None,
     base_url: str = "",
     output_audio: bool | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
 ) -> VideoResult:
     references = references or []
     reference_videos = reference_videos or ([reference_video] if reference_video else [])
@@ -676,13 +700,13 @@ async def generate_video(
     if provider == "qwen":
         return await _generate_qwen_video(
             api_key, model, prompt, quality or "", duration, prompt_extend, references, reference_videos, reference_audios, base_url,
-            aspect_ratio, output_audio,
+            aspect_ratio, output_audio, first_frame, last_frame,
         )
     reference = references[0] if references else None
     settings = resolve_video_settings(provider, aspect_ratio, quality) if aspect_ratio else None
     if provider == "doubao":
         return await _generate_doubao_video(
             api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio,
-            references[1:], reference_videos, reference_audios,
+            references[1:], reference_videos, reference_audios, first_frame, last_frame,
         )
     return await _generate_gemini_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)

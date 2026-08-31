@@ -283,6 +283,8 @@ class UpdateSceneRequest(CamelModel):
     video_prompt: str | None = Field(default=None, max_length=4000)
     image_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
     video_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
+    video_first_frame: GenerationReferenceRequest | None = None
+    video_last_frame: GenerationReferenceRequest | None = None
     # 0 means undecided — the renderer falls back to the project's default shot length.
     duration_ms: int | None = Field(default=None, ge=0, le=600_000)
     subtitle_text: str | None = Field(default=None, max_length=4000)

@@ -51,6 +51,7 @@ POST /api/projects/:id/episodes/:episodeId/storyboard     ← frames, against th
 - **The tone sheet is its own step.** It decides lighting, palette, and render style for every frame that follows, so approving it first is much cheaper than discovering after twenty full-resolution renders that the episode looks wrong. `/storyboard` still generates one when none exists, so a caller that skipped the step gets an anchored render rather than twenty unrelated frames.
 - `references` contains project-owned asset ids, never signed URLs. Tone-sheet generation accepts character, character-state, prop, and existing tone images and merges the selection into one provider slot. Storyboard generation passes selected image assets separately after reserving one slot for the tone sheet.
 - `sceneIds` selects a subset — one shot for a regenerate, several for a batch. Omitted means every unlocked shot. Locked shots are skipped, and all-locked is a `400` rather than a silent no-op.
+- System anchors (tone sheet, current storyboard frame, first/last frame selections, and continuity references) are rendered as visible, editable mentions in the episode editor. Removing an anchor removes it from the generation payload; no hidden fallback re-injects it.
 - The model config's `imageMaxReferenceImages` is enforced by both the editor and endpoint. A zero-reference model uses text-to-image; the renderer no longer assumes every image model supports edits.
 - A portrait whose file is missing is skipped rather than failing the shot: losing consistency is a smaller harm than losing the render.
 - The terminal status reflects what actually landed. `partial` is a real outcome, not an error state to normalise away.
@@ -104,7 +105,8 @@ POST /api/projects/:id/generate-video   { sceneIds?, references? }
    -> project's video config + its declared capabilities
    -> project's saved defaults under whatever the request sent
    -> selected shots, <=2 concurrent, cancellable between shots
-        storyboard image -> first-frame reference when supported/required
+        storyboard image -> first-frame reference when the model supports it; an explicit
+        first/last-frame selection is kept separate from additional references
         video_prompt (falling back to visual_prompt) + camera move + transition
         per-shot duration_ms, clamped to the model's min/max
         selected project images / prior clips / voice samples -> references when supported
@@ -113,7 +115,7 @@ POST /api/projects/:id/generate-video   { sceneIds?, references? }
    -> terminal project + episode status
 ```
 
-- The storyboard image is the automatic first-frame reference only when the selected model accepts images. Additional image, existing clip, and voice references are user-selected, resolved back to stored paths under the same project, and capped by `videoCapabilities`. Required reference kinds disable generation until satisfied; text-to-video models do not require a frame first.
+- The storyboard image is the automatic first-frame reference only when the selected model supports first frames. Wan 2.7 advertises first-frame only; Wan 3.0 advertises first and last frames. The editor places first/last-frame selectors below the video prompt, while image/video/audio mentions remain additional references. Additional references are resolved back to stored paths under the same project and capped by `videoCapabilities`. When either a first or last frame is used and the model supports `adaptive`, the renderer overrides the configured ratio to `adaptive`, matching the provider recommendation. Required reference kinds disable generation until satisfied; text-to-video models do not require a frame first.
 - The motion prompt is tried before the frame prompt: `visual_prompt` describes a still, and a clip generated from it tends to hold still.
 - Duration comes from the shot, not the batch. A six-second beat and a two-second reaction rendered at one fixed length is the pacing problem the breakdown's estimate exists to fix; a shot with no estimate falls back to the project default.
 - The same capability validator serves the standalone video page and this batch path. Aspect ratio, quality, duration, prompt enhancement, output audio, and reference media are omitted when the selected model does not support them. The editor's `@素材` labels are compiled immediately before the call into provider positional references (`图1` / `视频1` / `音频1`) — numbered over the list the request actually carries, so a shot whose storyboard frame is prepended as the automatic first frame starts its own selections at `图2`. `withAudio` left unset means "whatever the project is configured for" and can only be dropped, never fail the render; an explicit `true` a model cannot honour is still a 400. Models that generate their own track (`with_audio`, `audio`) are switched on by default; those that only imitate a supplied timbre (`reference_voice`) need the merged voice sheet and stay off until asked.

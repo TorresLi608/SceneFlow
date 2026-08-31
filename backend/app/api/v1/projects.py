@@ -150,18 +150,49 @@ def _scene_payloads(
             ).strip()
         payload["explicitImageReferences"] = bool(scene.image_references_explicit)
         payload["explicitVideoReferences"] = bool(scene.video_references_explicit)
-        default_reference_items = [
-            {"kind": "character", "id": character["id"], "label": character["name"], "media": "image"}
-            for character in payload["characters"]
-            if character.get("reference_image_path")
-        ][:4]
+        for field, raw in (("videoFirstFrame", scene.video_first_frame_json), ("videoLastFrame", scene.video_last_frame_json)):
+            try:
+                ref = json.loads(raw or "")
+            except (TypeError, ValueError):
+                ref = None
+            if isinstance(ref, dict) and ref.get("kind") and ref.get("id"):
+                try:
+                    resolved = resolve_generation_references(session, project.id, [(str(ref["kind"]), str(ref["id"]))])
+                    payload[field] = {"kind": ref["kind"], "id": ref["id"], "path": resolved["images"][0][0]} if resolved["images"] else None
+                except Exception:
+                    payload[field] = None
+            else:
+                payload[field] = None
         if not scene.image_references_explicit:
-            payload["compiledImageReferenceItems"] = default_reference_items
+            image_defaults = [
+                character["reference_image_path"]
+                for character in payload["characters"]
+                if character.get("reference_image_path")
+            ][:4]
+            payload["defaultImageReferencePaths"] = image_defaults
+            payload["compiledImageReferenceItems"] = [
+                {"kind": "character", "id": character["id"], "label": character["name"], "media": "image"}
+                for character in payload["characters"]
+                if character.get("reference_image_path")
+            ][:4]
         if not scene.video_references_explicit:
-            video_defaults = list(default_reference_items)
+            video_defaults = []
             if scene.image_path:
-                video_defaults.insert(0, {"kind": "sceneImage", "id": scene.id, "label": f"分镜 {scene.order_num}", "media": "image"})
-            payload["compiledVideoReferenceItems"] = video_defaults
+                video_defaults.append(scene.image_path)
+            video_defaults.extend(
+                character["reference_image_path"]
+                for character in payload["characters"]
+                if character.get("reference_image_path")
+            )
+            payload["defaultVideoReferencePaths"] = video_defaults
+            payload["compiledVideoReferenceItems"] = (
+                ([{"kind": "sceneImage", "id": scene.id, "label": f"分镜 {scene.order_num}", "media": "image"}] if scene.image_path else [])
+                + [
+                    {"kind": "character", "id": character["id"], "label": character["name"], "media": "image"}
+                    for character in payload["characters"]
+                    if character.get("reference_image_path")
+                ]
+            )
         payloads.append(payload)
     return payloads
 
@@ -556,6 +587,9 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
                 [{"kind": item["kind"], "id": item["id"]} for item in sent[field]], separators=(",", ":")
             )
             updates[f"{field}_explicit"] = True
+    for field, column in (("video_first_frame", "video_first_frame_json"), ("video_last_frame", "video_last_frame_json")):
+        if field in sent and sent[field] is not None:
+            updates[column] = json.dumps(sent[field], separators=(",", ":")) if sent[field] else ""
     if not updates:
         raise HTTPException(400, "no fields to update")
     # "Nobody in particular" arrives as an empty string, because a JSON null would be

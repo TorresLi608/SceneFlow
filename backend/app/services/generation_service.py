@@ -145,7 +145,12 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
                 except (ValueError, OSError):
                     logger.info("skipping unreadable selected image reference scene=%s", scene_id)
         else:
-            references = character_references(scene)
+            for stored in scene.get("defaultImageReferencePaths") or []:
+                try:
+                    path = artifact_absolute_path(stored)
+                    references.append((path.name, path.read_bytes(), media_type_for(path.name)))
+                except (ValueError, OSError):
+                    logger.info("skipping unreadable default image reference scene=%s", scene_id)
         references = references[: max(0, int(config.get("imageMaxReferenceImages", MAX_REFERENCE_IMAGES)))]
         # Substituted into the shot's own text before the frame template wraps it, so the
         # `图N` the user previewed is the `图N` the model is asked for. Nothing is
@@ -386,13 +391,37 @@ async def _generate_scene_video(
             ))
             image_offset = 0
         else:
-            if capabilities["referenceImages"] and scene.get("image_path"):
-                references.append(_stored_media(scene["image_path"]))
-            image_offset = 0 if scene.get("compiledVideoReferenceItems") else len(references)
-            for _, data, mime_type in character_references(scene):
-                if len(references) >= capabilities["maxReferenceImages"]:
-                    break
-                references.append({"name": "character.png", "data": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"})
+            image_offset = 0
+            for stored in scene.get("defaultVideoReferencePaths") or []:
+                try:
+                    references.append(_stored_media(stored))
+                except (ValueError, OSError):
+                    logger.info("skipping unreadable default video image reference scene=%s", scene_id)
+        first_frame = scene.get("videoFirstFrame")
+        last_frame = scene.get("videoLastFrame")
+        if not capabilities.get("supportsFirstFrame"):
+            first_frame = None
+        if not capabilities.get("supportsLastFrame"):
+            last_frame = None
+        if first_frame:
+            first_path = first_frame.get("path") if isinstance(first_frame, dict) else None
+            if first_path:
+                references.insert(0, _stored_media(first_path))
+        if last_frame:
+            last_path = last_frame.get("path") if isinstance(last_frame, dict) else None
+            if last_path:
+                references.append(_stored_media(last_path))
+        first_frame_media = None
+        last_frame_media = None
+        if first_frame and isinstance(first_frame, dict) and first_frame.get("path"):
+            first_frame_media = _stored_media(first_frame["path"])
+            references = [item for item in references if item != first_frame_media]
+        if last_frame and isinstance(last_frame, dict) and last_frame.get("path"):
+            last_frame_media = _stored_media(last_frame["path"])
+            references = [item for item in references if item != last_frame_media]
+        aspect_ratio = options["aspectRatio"]
+        if (first_frame_media or last_frame_media) and "adaptive" in (capabilities.get("aspectRatios") or []):
+            aspect_ratio = "adaptive"
         references = references[: capabilities["maxReferenceImages"]]
         if capabilities["referenceImagesRequired"] and not references:
             raise ValueError("该分镜缺少模型必需的参考图")
@@ -454,7 +483,7 @@ async def _generate_scene_video(
             model=config["model"],
             prompt=prompt,
             quality=options["quality"],
-            aspect_ratio=options["aspectRatio"],
+            aspect_ratio=aspect_ratio,
             fps=options["fps"],
             duration=duration,
             prompt_extend=options["promptExtend"],
@@ -462,6 +491,8 @@ async def _generate_scene_video(
             references=references,
             reference_videos=reference_videos,
             reference_audios=reference_audios,
+            first_frame=first_frame_media,
+            last_frame=last_frame_media,
             base_url=config.get("baseUrl", ""),
         )
         record_usage(user_id, config, "scene_video", started_at, quantity=duration)

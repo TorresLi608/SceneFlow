@@ -28,10 +28,10 @@ AUDIO_PARAMS = ("with_audio", "audio", "reference_voice")
 # entries the admin picker offers — superseded revisions stay here so an existing config
 # pinned to one still resolves its capabilities.
 VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
-    "doubao-seedance-2.0": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p", "1080p", "4K"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
-    "doubao-seedance-2.0-fast": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
-    "doubao-seedance-2.0-mini": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
-    "doubao-seedance-2.5": {"provider": "doubao", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 30, "maxReferenceImages": 30, "maxReferenceVideos": 10, "maxReferenceAudios": 10, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p", "1080p", "4K"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0-fast": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0-mini": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.5": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 30, "maxReferenceImages": 30, "maxReferenceVideos": 10, "maxReferenceAudios": 10, "audioParam": "with_audio", "audioDefault": True},
     "wan2.7": {"provider": "qwen", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
     "wan2.7-r2v": {"provider": "qwen", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
     "wan2.7-r2v-2026-06-12": {"provider": "qwen", "catalog": False, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
@@ -42,6 +42,9 @@ VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
 
 def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]:
     known = VIDEO_MODEL_CAPABILITIES.get(model.strip().lower())
+    normalized_model = model.strip().lower()
+    supports_first_frame = normalized_model.startswith(("wan2.7", "wan3.0", "doubao-seedance"))
+    supports_last_frame = normalized_model.startswith(("wan3.0", "doubao-seedance"))
     if known:
         return {
             "qualities": list(known["qualities"]), "fps": [], "aspectRatios": list(known["aspectRatios"]),
@@ -51,6 +54,9 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
             "maxReferenceVideos": known.get("maxReferenceVideos", 0), "referenceVideosRequired": False,
             "referenceAudio": known.get("maxReferenceAudios", 0) > 0, "maxReferenceAudios": known.get("maxReferenceAudios", 0),
             "referenceAudiosRequired": False, "audioParam": known.get("audioParam"), "audioDefault": known.get("audioDefault", True),
+            "supportsStartEndFrames": known.get("supportsStartEndFrames", supports_first_frame or supports_last_frame),
+            "supportsFirstFrame": known.get("supportsFirstFrame", supports_first_frame),
+            "supportsLastFrame": known.get("supportsLastFrame", supports_last_frame),
         }
     if normalize_provider(provider) == "qwen":
         is_i2v = "-i2v" in model.lower()
@@ -96,6 +102,9 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
         "referenceAudiosRequired": False,
         "audioParam": None,
         "audioDefault": False,
+        "supportsStartEndFrames": False,
+        "supportsFirstFrame": False,
+        "supportsLastFrame": False,
     }
 
 
@@ -207,6 +216,9 @@ def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> 
         "referenceAudiosRequired": reference_audios_required,
         "audioParam": audio_param,
         "audioDefault": flag("audioDefault", bool(catalog.get("audioDefault"))) if audio_param else False,
+        "supportsStartEndFrames": flag("supportsStartEndFrames", bool(catalog.get("supportsStartEndFrames"))),
+        "supportsFirstFrame": flag("supportsFirstFrame", bool(catalog.get("supportsFirstFrame"))),
+        "supportsLastFrame": flag("supportsLastFrame", bool(catalog.get("supportsLastFrame"))),
     }
 
 

@@ -42,6 +42,7 @@ from app.services.generation_service import (
     update_scene_row,
 )
 from app.services.media_service import SheetCell, merge_images
+from app.services.prompt_compiler import compile_prompt
 from app.services.prompt_service import shot_prompt, tone_sheet_prompt
 from app.services.usage_service import record_usage, require_model_balance
 
@@ -71,6 +72,7 @@ class StoryboardPlan:
     # tone sheet — whichever of them exist.
     reference_sources: list[tuple[str, str]] = field(default_factory=list)
     scene_reference_sources: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+    scene_reference_items: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     merge_references: bool = True
     regenerate: bool = False
     existing_tone_path: str | None = None
@@ -183,9 +185,19 @@ async def _generate_shot(
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
-        text = str(scene.get("narration") or scene.get("visual_prompt") or "").strip()
+        narration = str(scene.get("narration") or "").strip()
+        visual_prompt = str(scene.get("visual_prompt") or "").strip()
+        text = visual_prompt or narration
         if not text:
             raise ValueError("该分镜没有内容，先填写分镜描述")
+        if narration and visual_prompt and narration != visual_prompt:
+            text = f"{narration}\n画面提示词：{visual_prompt}"
+        text = compile_prompt(
+            text,
+            provider=config["provider"],
+            model=config["model"],
+            references=scene.get("compiledImageReferenceItems") or [],
+        )["prompt"]
         prompt = shot_prompt(
             text,
             index + 1,
@@ -402,8 +414,14 @@ async def run_storyboard(
                 break
             scene_context = build_context_references(
                 plan.scene_reference_sources.get(scene["id"], []), merge=False
-            ) or context
-            references = [item for item in (tone, *scene_context, previous) if item][: plan.max_reference_images]
+            )
+            # Only references represented by the shot's editor mentions are sent. The tone
+            # sheet and previous frame are not silently injected into the provider request.
+            references = scene_context[: plan.max_reference_images]
+            scene = {
+                **scene,
+                "compiledImageReferenceItems": plan.scene_reference_items.get(scene["id"], []),
+            }
             succeeded = await _generate_shot(plan, scene, index, config, user_id, references)
             results.append(succeeded)
             if succeeded:

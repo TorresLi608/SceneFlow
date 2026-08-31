@@ -52,6 +52,11 @@ const withDefaultMentions = (
     return asset && !value.includes(`@${asset.label}`) ? `${value.trim()} @${asset.label}`.trim() : value;
   }, prompt.trim());
 
+const effectiveReferences = (
+  saved: GenerationReferenceInput[],
+  defaults: GenerationReferenceInput[],
+) => saved.length ? saved : defaults;
+
 export interface ShotRowProps {
   projectId: string;
   scene: Scene;
@@ -72,6 +77,9 @@ export interface ShotRowProps {
   videoReferenceAssets: ReferenceAssetOption[];
   imageReferenceLimit: number;
   videoReferenceLimits: { image: number; video: number; audio: number };
+  supportsStartEndFrames?: boolean;
+  supportsFirstFrame?: boolean;
+  supportsLastFrame?: boolean;
   onError: (message: string) => void;
 }
 
@@ -94,6 +102,9 @@ export function ShotRow({
   videoReferenceAssets,
   imageReferenceLimit,
   videoReferenceLimits,
+  supportsStartEndFrames = false,
+  supportsFirstFrame = supportsStartEndFrames,
+  supportsLastFrame = supportsStartEndFrames,
   onError,
 }: ShotRowProps) {
   const { t } = useI18n();
@@ -102,7 +113,7 @@ export function ShotRow({
   const [visualPrompt, setVisualPrompt] = useState(() =>
     withDefaultMentions(
       scene.visualPrompt,
-      scene.imageReferencesExplicit ? [] : defaultImageReferences,
+      effectiveReferences(scene.imageReferences, scene.imageReferencesExplicit ? [] : defaultImageReferences),
       imageReferenceAssets
     )
   );
@@ -112,16 +123,19 @@ export function ShotRow({
   const [videoPrompt, setVideoPrompt] = useState(() =>
     withDefaultMentions(
       scene.videoPrompt,
-      scene.videoReferencesExplicit ? [] : defaultVideoReferences,
+      effectiveReferences(scene.videoReferences, scene.videoReferencesExplicit ? [] : defaultVideoReferences),
       videoReferenceAssets
     )
   );
   const [imageReferences, setImageReferences] = useState<GenerationReferenceInput[]>(
-    scene.imageReferencesExplicit ? scene.imageReferences : defaultImageReferences
+    effectiveReferences(scene.imageReferences, scene.imageReferencesExplicit ? [] : defaultImageReferences)
   );
   const [videoReferences, setVideoReferences] = useState<GenerationReferenceInput[]>(
-    scene.videoReferencesExplicit ? scene.videoReferences : defaultVideoReferences
+    effectiveReferences(scene.videoReferences, scene.videoReferencesExplicit ? [] : defaultVideoReferences)
   );
+  const [videoFirstFrame, setVideoFirstFrame] = useState<GenerationReferenceInput | null>(scene.videoFirstFrame ?? (supportsFirstFrame && scene.image.url ? { kind: "sceneImage", id: scene.id } : null));
+  const [firstFrameTouched, setFirstFrameTouched] = useState(false);
+  const [videoLastFrame, setVideoLastFrame] = useState<GenerationReferenceInput | null>(scene.videoLastFrame ?? null);
   const [seconds, setSeconds] = useState(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
   const [open, setOpen] = useState(false);
   const [userMediaTab, setUserMediaTab] = useState<"image" | "video" | null>(null);
@@ -158,21 +172,32 @@ export function ShotRow({
     const resolvedDefaults = defaultImageReferences.filter((reference) =>
       imageReferenceAssets.some((asset) => referenceKey(asset) === referenceKey(reference))
     );
-    if (imageDefaultsApplied.current || scene.imageReferencesExplicit || !resolvedDefaults.length) return;
+    if (imageDefaultsApplied.current || scene.imageReferences.length || scene.imageReferencesExplicit || !resolvedDefaults.length) return;
     imageDefaultsApplied.current = true;
     setImageReferences(resolvedDefaults);
     setVisualPrompt((current) => withDefaultMentions(current, resolvedDefaults, imageReferenceAssets));
-  }, [defaultImageReferences, imageReferenceAssets, scene.imageReferencesExplicit]);
+  }, [defaultImageReferences, imageReferenceAssets, scene.imageReferences, scene.imageReferencesExplicit]);
+
+  const effectiveFirstFrame = videoFirstFrame ?? (
+    !firstFrameTouched && supportsFirstFrame && !scene.videoFirstFrame && scene.image.url
+      ? { kind: "sceneImage" as const, id: scene.id }
+      : null
+  );
+  const updateVideoReferences = (next: GenerationReferenceInput[]) => {
+    setVideoReferences(next);
+    if (videoFirstFrame && !next.some((item) => referenceKey(item) === referenceKey(videoFirstFrame))) setVideoFirstFrame(null);
+    if (videoLastFrame && !next.some((item) => referenceKey(item) === referenceKey(videoLastFrame))) setVideoLastFrame(null);
+  };
 
   useEffect(() => {
     const resolvedDefaults = defaultVideoReferences.filter((reference) =>
       videoReferenceAssets.some((asset) => referenceKey(asset) === referenceKey(reference))
     );
-    if (videoDefaultsApplied.current || scene.videoReferencesExplicit || !resolvedDefaults.length) return;
+    if (videoDefaultsApplied.current || scene.videoReferences.length || scene.videoReferencesExplicit || !resolvedDefaults.length) return;
     videoDefaultsApplied.current = true;
     setVideoReferences(resolvedDefaults);
     setVideoPrompt((current) => withDefaultMentions(current, resolvedDefaults, videoReferenceAssets));
-  }, [defaultVideoReferences, videoReferenceAssets, scene.videoReferencesExplicit]);
+  }, [defaultVideoReferences, videoReferenceAssets, scene.videoReferences, scene.videoReferencesExplicit]);
 
   const lastSyncUpdatedAt = useRef(scene.updatedAt);
   useEffect(() => {
@@ -213,6 +238,8 @@ export function ShotRow({
     videoPrompt !== scene.videoPrompt ||
     JSON.stringify(imageReferences) !== JSON.stringify(scene.imageReferences ?? []) ||
     JSON.stringify(videoReferences) !== JSON.stringify(scene.videoReferences ?? []) ||
+    JSON.stringify(effectiveFirstFrame) !== JSON.stringify(scene.videoFirstFrame ?? null) ||
+    JSON.stringify(videoLastFrame) !== JSON.stringify(scene.videoLastFrame ?? null) ||
     (seconds.trim() ? Number(seconds) * 1000 : 0) !== scene.durationMs;
 
   const saveMutation = useMutation({
@@ -226,6 +253,8 @@ export function ShotRow({
         videoPrompt,
         imageReferences,
         videoReferences,
+        videoFirstFrame: effectiveFirstFrame,
+        videoLastFrame,
         durationMs: seconds.trim() ? Math.round(Number(seconds) * 1000) : 0,
       }),
     onSuccess: () => void refresh(),
@@ -729,11 +758,17 @@ export function ShotRow({
                 placeholder={t("episode.videoPromptPlaceholder")}
                 onChange={(event) => setVideoPrompt(event.target.value)}
                 references={videoReferences}
-                onReferencesChange={setVideoReferences}
+                onReferencesChange={updateVideoReferences}
                 assets={videoReferenceAssets}
                 limits={videoReferenceLimits}
                 className="field-sizing-fixed min-h-16 resize-y bg-background/80 text-xs"
               />
+              {supportsFirstFrame || supportsLastFrame ? (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {supportsFirstFrame ? <label className="flex items-center gap-1"><span>{t("episode.useFirstFrame")}</span><select className="h-7 rounded border bg-background px-1" value={effectiveFirstFrame ? `${effectiveFirstFrame.kind}:${effectiveFirstFrame.id}` : ""} onChange={(event) => { setFirstFrameTouched(true); const next = event.target.value ? (() => { const [kind, id] = event.target.value.split(":"); return { kind: kind as GenerationReferenceInput["kind"], id }; })() : null; setVideoFirstFrame(next); if (next && !videoReferences.some((item) => referenceKey(item) === referenceKey(next))) { updateVideoReferences([...videoReferences, next]); setVideoPrompt((current) => withDefaultMentions(current, [next], videoReferenceAssets)); } }}><option value="">{t("episode.frameNone")}</option>{videoReferenceAssets.filter((asset) => asset.media === "image").map((asset) => <option key={`first-${asset.kind}:${asset.id}`} value={`${asset.kind}:${asset.id}`}>{asset.label}</option>)}</select></label> : null}
+                  {supportsLastFrame ? <label className="flex items-center gap-1"><span>{t("episode.useLastFrame")}</span><select className="h-7 rounded border bg-background px-1" value={videoLastFrame ? `${videoLastFrame.kind}:${videoLastFrame.id}` : ""} onChange={(event) => { const next = event.target.value ? (() => { const [kind, id] = event.target.value.split(":"); return { kind: kind as GenerationReferenceInput["kind"], id }; })() : null; setVideoLastFrame(next); if (next && !videoReferences.some((item) => referenceKey(item) === referenceKey(next))) { updateVideoReferences([...videoReferences, next]); setVideoPrompt((current) => withDefaultMentions(current, [next], videoReferenceAssets)); } }}>{/* options */}<option value="">{t("episode.frameNone")}</option>{videoReferenceAssets.filter((asset) => asset.media === "image").map((asset) => <option key={`last-${asset.kind}:${asset.id}`} value={`${asset.kind}:${asset.id}`}>{asset.label}</option>)}</select></label> : null}
+                </div>
+              ) : null}
             </Field>
           </div>
         </div>

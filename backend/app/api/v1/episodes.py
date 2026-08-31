@@ -14,6 +14,7 @@ from app.api.deps import current_user_id
 from app.core.database import db
 from app.core.realtime import broadcast
 from app.core import runs
+from app.services.character_service import scene_cast
 from app.llms.registry import models
 from app.models import Episode, Project, Scene
 from app.schemas.requests import (
@@ -25,7 +26,6 @@ from app.schemas.requests import (
 )
 from app.schemas.serializers import episode_json, episode_summary_json, scene_json
 from app.services import breakdown_service
-from app.services.character_service import scene_cast
 from app.services.config_service import project_model_config
 from app.services.episode_service import (
     create_episode,
@@ -392,6 +392,7 @@ def _plan(
     regenerate: bool,
     max_reference_images: int,
     scene_reference_sources: dict[str, list[tuple[str, str]]] | None = None,
+    scene_reference_items: dict[str, list[dict[str, Any]]] | None = None,
 ) -> StoryboardPlan:
     """Everything a background render needs, resolved before the session closes."""
     return StoryboardPlan(
@@ -411,6 +412,7 @@ def _plan(
         quality=(project.image_resolution or "").strip(),
         max_reference_images=max_reference_images,
         scene_reference_sources=scene_reference_sources or {},
+        scene_reference_items=scene_reference_items or {},
     )
 
 
@@ -501,13 +503,16 @@ async def generate_storyboard(
         config = _image_config(session, user_id, project)
         maximum = max(0, int(config.get("imageMaxReferenceImages", 4)))
         sources = _requested_reference_sources(session, project, previous, body.references)
-        selected_limit = max(0, maximum - 1)
+        selected_limit = maximum
         if body.references is not None and len(sources) > selected_limit:
             raise HTTPException(400, f"selected image model accepts at most {selected_limit} additional references")
         scene_sources: dict[str, list[tuple[str, str]]] = {}
+        scene_reference_items: dict[str, list[dict[str, Any]]] = {}
         if body.references is None:
             for scene in pending:
                 pairs = stored_generation_references(scene.image_references_json)
+                if scene.image_references_explicit and not pairs:
+                    continue
                 if not pairs:
                     continue
                 resolved = resolve_generation_references(session, project_id, pairs)
@@ -516,6 +521,9 @@ async def generate_storyboard(
                 if len(resolved["images"]) > selected_limit:
                     raise HTTPException(400, f"selected image model accepts at most {selected_limit} additional references")
                 scene_sources[scene.id] = resolved["images"]
+                scene_reference_items[scene.id] = [
+                    item for item in resolved["items"] if item.get("media") == "image"
+                ]
 
         # The lock stays on the project: one run owns the series, so a second episode cannot
         # start rendering into the same worker pool while this one is going.
@@ -530,6 +538,7 @@ async def generate_storyboard(
             regenerate=body.regenerate,
             max_reference_images=maximum,
             scene_reference_sources=scene_sources,
+            scene_reference_items=scene_reference_items,
         )
 
     await broadcast(

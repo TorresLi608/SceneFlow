@@ -120,6 +120,9 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
       referenceAudiosRequired: false,
       audioParam: "with_audio",
       audioDefault: true,
+      supportsFirstFrame: true,
+      supportsLastFrame: true,
+      supportsStartEndFrames: true,
     };
   }
   if (provider === "qwen" && (normalized === "wan2.7" || normalized.startsWith("wan2.7-r2v"))) {
@@ -141,6 +144,9 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
       referenceAudiosRequired: false,
       audioParam: "reference_voice",
       audioDefault: false,
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsStartEndFrames: false,
     };
   }
   if (provider === "qwen" && normalized.startsWith("wan3.0")) {
@@ -162,6 +168,9 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
       referenceAudiosRequired: false,
       audioParam: "audio",
       audioDefault: true,
+      supportsFirstFrame: true,
+      supportsLastFrame: true,
+      supportsStartEndFrames: false,
     };
   }
   const isI2v = model.includes("-i2v");
@@ -243,6 +252,8 @@ function editableVideoCapabilities(config: UserConfig): VideoCapabilities {
     maxReferenceVideos: current.maxReferenceVideos ?? (referenceVideo ? 1 : 0),
     referenceAudio,
     maxReferenceAudios: current.maxReferenceAudios ?? (referenceAudio ? 1 : 0),
+    supportsFirstFrame: current.supportsFirstFrame ?? defaults.supportsFirstFrame,
+    supportsLastFrame: current.supportsLastFrame ?? defaults.supportsLastFrame,
   };
 }
 
@@ -1501,7 +1512,7 @@ export function ModelConfigManager() {
                             {t("admin.supportsReferenceImages")}
                           </p>
                           <p className="text-[10px] text-muted-foreground">
-                            支持以首尾帧或角色垫图生成视频
+                            图片仅作为附加参考素材，不使用首尾帧语义
                           </p>
                         </div>
                       </div>
@@ -1557,6 +1568,14 @@ export function ModelConfigManager() {
                         </div>
                       </div>
                     ) : null}
+                    <div className="grid gap-2 border-t border-border/40 pt-2 sm:grid-cols-2">
+                      {(["supportsFirstFrame", "supportsLastFrame"] as const).map((key) => (
+                        <div key={key} className="flex items-center justify-between rounded-lg bg-muted/40 p-2.5">
+                          <span className="text-xs font-medium">{key === "supportsFirstFrame" ? "支持首帧" : "支持尾帧"}</span>
+                          <Switch checked={Boolean(videoCapabilities[key])} onCheckedChange={(checked) => setVideoCapabilities((current) => ({ ...current, [key]: checked }))} />
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   {/* 3.2 参考视频 */}

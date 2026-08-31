@@ -19,6 +19,9 @@ export interface VideoCapabilities {
   referenceAudiosRequired: boolean;
   audioParam?: "with_audio" | "audio" | "reference_voice" | null;
   audioDefault?: boolean;
+  supportsStartEndFrames?: boolean;
+  supportsFirstFrame?: boolean;
+  supportsLastFrame?: boolean;
 }
 
 export interface ModelPricing {

@@ -190,10 +190,10 @@ def test_each_shot_carries_the_anchor_and_its_predecessor() -> None:
             assert _wait_idle(client, headers, project_id) == "done"
 
             shots = recorder.calls[1:]
-            # Tone sheet + merged context for the first shot; the second onward also carry
-            # the previous render, which is what holds scene continuity.
-            assert len(shots[0]["references"]) == 2
-            assert len(shots[1]["references"]) == 3
+            # Shot requests do not silently inject the tone/context/previous frame. Those
+            # references must be visible in the editor and explicitly selected first.
+            assert len(shots[0]["references"]) == 0
+            assert len(shots[1]["references"]) == 0
             assert all(len(call["references"]) <= MAX_REFERENCE_IMAGES for call in shots)
 
 
@@ -216,8 +216,9 @@ def test_unmerged_references_arrive_separately() -> None:
             )
             assert _wait_idle(client, headers, project_id) == "done"
 
-            # Tone sheet + cast + props, rather than tone sheet + one merged context image.
-            assert len(recorder.calls[1]["references"]) == 3
+            # The tone-sheet call may use the unmerged context, but shot references remain
+            # empty until the editor explicitly selects them.
+            assert len(recorder.calls[1]["references"]) == 0
 
 
 def test_a_failed_tone_sheet_stops_the_run_before_it_bills_for_shots() -> None:
@@ -331,7 +332,9 @@ def test_selected_project_images_reach_tone_and_storyboard_generation() -> None:
             assert started.status_code == 202, started.text
             assert _wait_idle(client, headers, project_id) == "done"
             assert len(recorder.calls[0]["references"]) == 1
-            assert len(recorder.calls[1]["references"]) == 2
+            # `references` on the storyboard request only anchors the tone sheet; shot
+            # references come from the scene prompt's visible @ mentions.
+            assert len(recorder.calls[1]["references"]) == 0
 
 
 def test_reference_media_can_be_deleted_without_deleting_its_card() -> None:

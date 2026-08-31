@@ -728,17 +728,23 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   projectId={projectId}
                   scene={scene}
                   index={index}
-                  defaultImageReferences={scene.imageReferencesExplicit ? [] : (scene.characterIds ?? []).flatMap((id) => {
-                    const asset = characterAssets.find((item) => item.id === id);
-                    return asset ? [{ kind: asset.kind, id: asset.id }] : [];
-                  }).slice(0, imageReferenceLimit)}
-                  defaultVideoReferences={scene.videoReferencesExplicit ? [] : [
-                    ...(scene.image.url ? [{ kind: "sceneImage" as const, id: scene.id }] : []),
-                    ...(scene.characterIds ?? []).flatMap((id) => {
+                  defaultImageReferences={
+                    scene.imageReferencesExplicit ? [] : (scene.characterIds ?? []).flatMap((id) => {
                       const asset = characterAssets.find((item) => item.id === id);
                       return asset ? [{ kind: asset.kind, id: asset.id }] : [];
-                    }),
-                  ].slice(0, videoCapabilities?.maxReferenceImages ?? 0)}
+                    }).slice(0, imageReferenceLimit)
+                  }
+                  defaultVideoReferences={
+                    scene.videoReferencesExplicit || !scene.image.url || !videoCapabilities?.referenceImages
+                      ? []
+                      : [
+                          { kind: "sceneImage" as const, id: scene.id },
+                          ...(scene.characterIds ?? []).flatMap((id) => {
+                            const asset = characterAssets.find((item) => item.id === id);
+                            return asset ? [{ kind: asset.kind, id: asset.id }] : [];
+                          }),
+                        ].slice(0, videoCapabilities.maxReferenceImages)
+                  }
                   selected={selectedShots.includes(scene.id)}
                   toneReady={toneReady}
                   onToggle={() => toggleShot(scene.id)}
@@ -779,6 +785,9 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                     video: videoCapabilities?.referenceVideo ? videoCapabilities.maxReferenceVideos : 0,
                     audio: videoCapabilities?.referenceAudio ? videoCapabilities.maxReferenceAudios : 0,
                   }}
+                  supportsStartEndFrames={Boolean(videoCapabilities?.supportsStartEndFrames)}
+                  supportsFirstFrame={Boolean(videoCapabilities?.supportsFirstFrame)}
+                  supportsLastFrame={Boolean(videoCapabilities?.supportsLastFrame)}
                   videoDisabled={!scene.image.url}
                   onError={setMessage}
                 />

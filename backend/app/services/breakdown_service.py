@@ -161,6 +161,7 @@ def build_user_prompt(
     voices = [str(item).strip() for item in (voices or []) if item is not None and str(item).strip()]
     existing_shots = [item for item in (existing_shots or []) if isinstance(item, dict)]
     parts = [TARGET_INSTRUCTIONS.get(target, TARGET_INSTRUCTIONS["both"])]
+    parts.append("连续性要求：按镜头顺序保持同场景中的人物外观、服装、道具、空间位置、视线、光线和情绪变化连贯；切换场景时写明转场并保留人物形象设定。")
     if detail_level == "custom" and (detail_prompt or "").strip():
         parts.append(f"自定义拆分要求（优先遵守）：\n{detail_prompt.strip()[:6000]}")
     else:

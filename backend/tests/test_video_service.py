@@ -45,7 +45,7 @@ def test_doubao_payload_with_and_without_reference() -> None:
 
     image_payload = build_doubao_payload("seedance", "camera move", settings, "1080p", 24, 5, REFERENCE)
     assert len(image_payload["content"]) == 2
-    assert image_payload["content"][1]["role"] == "first_frame"
+    assert image_payload["content"][1]["role"] == "reference_image"
     assert image_payload["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
     assert image_payload["resolution"] == "1080p"
 
@@ -94,7 +94,7 @@ def test_doubao_sdk_uses_configured_relay() -> None:
     assert "fps" not in Client.instances[0].content_generation.tasks.request
 
 
-def test_qwen_video_uses_reference_frame_and_async_task() -> None:
+def test_qwen_video_uses_additional_reference_images_and_async_task() -> None:
     response = SimpleNamespace(json=lambda: {"output": {"task_id": "task-1"}}, raise_for_status=lambda: None)
     task = SimpleNamespace(json=lambda: {"output": {"task_status": "SUCCEEDED", "video_url": "https://video.test/result.mp4"}}, raise_for_status=lambda: None)
     video = SimpleNamespace(content=b"mp4", raise_for_status=lambda: None)
@@ -108,7 +108,7 @@ def test_qwen_video_uses_reference_frame_and_async_task() -> None:
 
     assert result.data == b"mp4"
     request = client.post.call_args.kwargs
-    assert request["json"]["input"]["media"][0]["type"] == "first_frame"
+    assert request["json"]["input"]["media"][0]["type"] == "reference_image"
     assert request["json"]["input"]["media"][0]["url"].startswith("data:image/png;base64,")
     assert request["json"]["parameters"]["resolution"] == "480P"
     assert request["json"]["parameters"]["ratio"] == "9:16"
@@ -153,7 +153,7 @@ def test_qwen_native_video_uploads_media_to_temporary_oss() -> None:
     request = submit.call_args.kwargs
     assert request["base_address"] == "https://dashscope.aliyuncs.com/api/v1"
     assert request["ratio"] == "16:9"
-    assert request["extra_input"]["media"] == [{"type": "first_frame", "url": "oss://temp/frame.png"}]
+    assert request["extra_input"]["media"] == [{"type": "reference_image", "url": "oss://temp/frame.png"}]
     wait.assert_called_once_with(created, api_key="test-key", wait_timeout=GENERATION_TIMEOUT_SECONDS)
 
 
@@ -232,12 +232,20 @@ def _render_scene_video(options: dict, media: list[dict], max_images: int = 1):
             "maxReferenceImages": max_images,
             "referenceImagesRequired": True,
             "referenceAudio": True,
+            "aspectRatios": ["adaptive", "16:9"],
         },
     }
     scene = {"id": "scene-1", "order_num": 1, "visual_prompt": "camera move", "image_path": "frame.png", "characters": []}
+    if options.get("explicitVideoReferences") or options.get("explicitReferences"):
+        scene["explicitVideoReferences"] = True
+        scene["referenceImagePaths"] = list(options.get("referenceImagePaths") or ["frame.png"])
     generate = AsyncMock(return_value=VideoResult(b"mp4"))
+    media_by_path = {"frame.png": media[0]}
+    if len(media) > 1: media_by_path.update({"props/p.png": media[1], "voices/voices.mp3": media[1], "voices/p/voices.mp3": media[1]})
+    if len(media) > 2: media_by_path["videos/v.mp4"] = media[2]
+    if len(media) > 3: media_by_path["voices/a.mp3"] = media[3]
     with (
-        patch("app.services.generation_service._stored_media", side_effect=media),
+        patch("app.services.generation_service._stored_media", side_effect=lambda path: media_by_path[path]),
         patch("app.services.generation_service.generate_video", new=generate),
         patch("app.services.generation_service.db", return_value=MagicMock()),
         patch("app.services.generation_service.require_model_balance"),
@@ -257,7 +265,7 @@ def test_storyboard_video_passes_scene_media_and_capabilities() -> None:
 
     succeeded, request = _render_scene_video(
         {"quality": "720p", "aspectRatio": None, "fps": None, "duration": 5, "promptExtend": True,
-         "voiceSheetPath": "voices/p/voices.mp3"},
+         "voiceSheetPath": "voices/p/voices.mp3", "explicitVideoReferences": True},
         [image, voices],
     )
 
@@ -273,7 +281,7 @@ def test_a_render_without_audio_sends_none() -> None:
 
     succeeded, request = _render_scene_video(
         {"quality": "720p", "aspectRatio": None, "fps": None, "duration": 5, "promptExtend": False,
-         "voiceSheetPath": None},
+         "voiceSheetPath": None, "explicitVideoReferences": True},
         [image],
     )
 
@@ -299,7 +307,7 @@ def test_selected_video_references_replace_automatic_character_media() -> None:
     )
 
     assert succeeded
-    assert request["references"] == [frame, image]
+    assert request["references"] == [image]
     assert request["reference_videos"] == [video]
     assert request["reference_audios"] == [audio]
 
@@ -308,7 +316,7 @@ if __name__ == "__main__":
     test_aspect_ratio_mapping_and_provider_limits()
     test_doubao_payload_with_and_without_reference()
     test_gemini_video_base_url_does_not_duplicate_api_version()
-    test_qwen_video_uses_reference_frame_and_async_task()
+    test_qwen_video_uses_additional_reference_images_and_async_task()
     test_qwen_video_model_matches_input_type()
     test_qwen_native_video_uploads_media_to_temporary_oss()
     test_qwen_media_policy_uses_supported_upload_model()
