@@ -208,10 +208,25 @@ def _json_breakdown_payload(text: str) -> dict[str, Any]:
             parsed, _ = decoder.raw_decode(value[index:])
         except json.JSONDecodeError:
             continue
-        if isinstance(parsed, dict):
+        if isinstance(parsed, dict) and ("shots" in parsed or "scenes" in parsed):
             return parsed
         if isinstance(parsed, list):
             return {"shots": parsed}
+    # Some gateways truncate a long array after one or more complete shot objects. Keep
+    # the complete objects instead of failing the whole breakdown; the editor can still
+    # regenerate or adjust the resulting shots.
+    recovered: list[dict[str, Any]] = []
+    for index, character in enumerate(value):
+        if character != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(value[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and ("narration" in parsed or "visualPrompt" in parsed):
+            recovered.append(parsed)
+    if recovered:
+        return {"shots": recovered}
     raise ValueError("response did not contain a JSON object")
 
 

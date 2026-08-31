@@ -110,6 +110,13 @@ def test_breakdown_payload_accepts_a_bare_shot_array() -> None:
     assert _json_breakdown_payload('[{"narration":"雾中山门"}]')["shots"][0]["narration"] == "雾中山门"
 
 
+def test_breakdown_payload_recovers_complete_shots_from_a_truncated_array() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    payload = _json_breakdown_payload('[{"narration":"第一镜","visualPrompt":"山门"},{"narration":"未完成')
+    assert payload["shots"] == [{"narration": "第一镜", "visualPrompt": "山门"}]
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
@@ -118,3 +125,4 @@ if __name__ == "__main__":
     test_breakdown_disables_stream_usage_for_compatibility_gateways()
     test_json_object_ignores_wrappers_and_trailing_model_text()
     test_breakdown_payload_accepts_a_bare_shot_array()
+    test_breakdown_payload_recovers_complete_shots_from_a_truncated_array()

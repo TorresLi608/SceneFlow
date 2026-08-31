@@ -274,6 +274,7 @@ export interface CreateEpisodeInput {
 
 /** Which half of the storyboard a breakdown produces. */
 export type BreakdownTarget = "shots" | "video" | "both";
+export type BreakdownDetailLevel = "concise" | "standard" | "detailed" | "custom";
 
 /**
  * What the breakdown may look at. Selecting nothing is meaningful: it tells the model to
@@ -291,6 +292,8 @@ export interface BreakdownReferences {
 
 export interface BreakdownEpisodeInput {
   target: BreakdownTarget;
+  detailLevel?: BreakdownDetailLevel;
+  detailPrompt?: string;
   script?: string;
   references?: BreakdownReferences;
   /** Re-splitting discards rendered shots; the first call reports, this confirms. */
@@ -302,8 +305,10 @@ export interface BreakdownEpisodeResponse {
   projectId: string;
   episodeId: string;
   target: BreakdownTarget;
+  detailLevel?: BreakdownDetailLevel;
   applied: boolean;
   discardsGeneratedScenes: number;
+  discardsScenes?: number;
   shotCount?: number;
   scenes: Scene[];
 }

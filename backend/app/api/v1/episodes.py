@@ -287,18 +287,24 @@ async def breakdown_episode(
         script = (body.script if body.script is not None else episode.source_text or "").strip()
         if not script:
             raise HTTPException(400, "script is required")
+        if body.detail_level == "custom" and not (body.detail_prompt or "").strip():
+            raise HTTPException(400, "detailPrompt is required when detailLevel is custom")
         existing = episode_scenes(session, episode.id)
         if body.target == "video" and not existing:
             raise HTTPException(400, "no shots to annotate, split the script into shots first")
 
-        at_risk = scenes_with_assets(existing)
-        if body.target != "video" and at_risk and not body.replace_all:
+        # Re-splitting replaces the episode's shot rows, so it must be confirmed even when
+        # the existing shots have no rendered files yet. Generated media is only the stronger
+        # warning case; the destructive operation is replacing the rows themselves.
+        if body.target != "video" and existing and not body.replace_all:
+            generated = scenes_with_assets(existing)
             return {
                 "projectId": project_id,
                 "episodeId": episode.id,
                 "target": body.target,
                 "applied": False,
-                "discardsGeneratedScenes": len(at_risk),
+                "discardsGeneratedScenes": len(generated),
+                "discardsScenes": len(existing),
                 "scenes": [scene_json(scene) for scene in existing],
             }
 
@@ -313,6 +319,8 @@ async def breakdown_episode(
             episode=episode,
             script=script,
             target=body.target,
+            detail_level=body.detail_level,
+            detail_prompt=body.detail_prompt,
             use_cast_sheet=references.use_cast_sheet,
             use_prop_sheet=references.use_prop_sheet,
             use_voice_sheet=references.use_voice_sheet,
@@ -366,6 +374,7 @@ async def breakdown_episode(
         "projectId": project_id,
         "episodeId": episode_id,
         "target": body.target,
+        "detailLevel": body.detail_level,
         "applied": True,
         "discardsGeneratedScenes": 0,
         "shotCount": len(result.shots),

@@ -23,7 +23,7 @@ episode editor ─▶ breakdownEpisodeAction ─▶ POST /api/projects/:id/episo
    ─▶ replace the episode's shots, or annotate them in place
 ```
 
-- Body: `{ target, script?, references, replaceAll?, model? }`.
+- Body: `{ target, detailLevel?, detailPrompt?, script?, references, replaceAll?, model? }`; `detailLevel` is `concise`, `standard` (default), `detailed`, or `custom`. `custom` uses the caller's `detailPrompt` to control how aggressively secondary actions and reactions become separate shots.
 - **`target` picks which half is produced.** `shots` fills narration, dialogue, speaker, frame prompt, and shot size. `video` fills camera move, transition, duration, and motion prompt. `both` fills everything.
 - **`target: "video"` updates rows in place and never replaces them.** Re-deriving how the camera moves is no reason to throw away frames that have already been rendered and paid for. It requires existing shots and 400s without them.
 - **`references` decides what the model defers to**, and the three cases are deliberately distinct: a selected character *with* a drawn sheet is named so the prompt says "参照《…》三面图" rather than re-describing a face the renderer already pins; a character with only written setting is reasoned about from that text; anyone the bible has never heard of (walk-ons, 甲乙丙丁) is invented from the script. Selecting nothing is a fourth, valid case — decide everything from the script.

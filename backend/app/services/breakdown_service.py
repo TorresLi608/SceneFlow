@@ -132,12 +132,21 @@ TARGET_INSTRUCTIONS = {
     "both": "本次需要同时拆解画面分镜与视频分镜：所有字段都要填写完整。",
 }
 
+DETAIL_INSTRUCTIONS = {
+    "concise": "拆分粒度：精简。只保留推动主要剧情的关键镜头，合并连续的次要动作与过渡，通常控制在约 3-8 个分镜。",
+    "standard": "拆分粒度：普通。保留主要剧情、关键动作和必要的反应镜头，在镜头数量与叙事完整性之间保持平衡，通常控制在约 4-20 个分镜。",
+    "detailed": "拆分粒度：细节。尽可能拆出有叙事价值的动作、反应、台词节奏、视线和镜头变化，通常控制在约 8-40 个分镜，但不要为了凑数量制造重复镜头。",
+}
+STANDARD_DETAIL_INSTRUCTION = DETAIL_INSTRUCTIONS["standard"]
+
 
 def build_user_prompt(
     *,
     episode: Episode,
     script: str,
     target: str,
+    detail_level: str = "standard",
+    detail_prompt: str | None = None,
     characters: list[dict[str, Any]],
     props: list[dict[str, Any]],
     voices: list[str],
@@ -152,6 +161,10 @@ def build_user_prompt(
     voices = [str(item).strip() for item in (voices or []) if item is not None and str(item).strip()]
     existing_shots = [item for item in (existing_shots or []) if isinstance(item, dict)]
     parts = [TARGET_INSTRUCTIONS.get(target, TARGET_INSTRUCTIONS["both"])]
+    if detail_level == "custom" and (detail_prompt or "").strip():
+        parts.append(f"自定义拆分要求（优先遵守）：\n{detail_prompt.strip()[:6000]}")
+    else:
+        parts.append(DETAIL_INSTRUCTIONS.get(detail_level, STANDARD_DETAIL_INSTRUCTION))
     parts.append(f"剧集标题：{(episode.title or '').strip()}")
     if (episode.synopsis or "").strip():
         parts.append(f"本集简介：{episode.synopsis.strip()}")
@@ -173,7 +186,7 @@ def build_user_prompt(
         )
         parts.append(f"已有分镜（共 {len(existing_shots)} 个，请逐一对应补充视频分镜）：\n{numbered}")
     else:
-        parts.append("请把剧本拆解成 4 到 20 个分镜，按剧情顺序排列。")
+        parts.append("请按上述拆分粒度把剧本拆解成合适数量的分镜，按剧情顺序排列。精简档应明显少于普通档，细节档应明显多于普通档；不要为了凑数量制造重复镜头。")
     parts.append(f"剧本：\n{script.strip()}")
     return "\n\n".join(part for part in parts if part)
 

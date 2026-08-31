@@ -222,6 +222,7 @@ class GenerateStoryboardRequest(CamelModel):
 
 
 BreakdownTarget = Literal["shots", "video", "both"]
+BreakdownDetailLevel = Literal["concise", "standard", "detailed", "custom"]
 
 
 class BreakdownReferencesRequest(CamelModel):
@@ -251,6 +252,8 @@ class BreakdownEpisodeRequest(CamelModel):
     """
 
     target: BreakdownTarget = "both"
+    detail_level: BreakdownDetailLevel = "standard"
+    detail_prompt: str | None = Field(default=None, max_length=6000)
     script: str | None = Field(default=None, max_length=200_000)
     references: BreakdownReferencesRequest = Field(default_factory=BreakdownReferencesRequest)
     # Re-splitting discards rendered shots, so the first call reports what it would destroy

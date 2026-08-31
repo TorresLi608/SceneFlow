@@ -26,6 +26,7 @@ import {
   cancelProjectRunAction,
   createProjectSceneAction,
   deleteGenerationReferenceAction,
+  deleteAssetAction,
   generateStoryboardAction,
   generateToneSheetAction,
   generateVideoAction,
@@ -51,7 +52,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { BreakdownTarget, Episode, GenerationReferenceInput, Scene } from "@/types/project";
+import type { BreakdownDetailLevel, BreakdownTarget, Episode, GenerationReferenceInput, Scene } from "@/types/project";
 
 import { BreakdownPanel, EMPTY_SELECTION, type BreakdownSelection } from "./_components/breakdown-panel";
 import { ReferencePicker, type ReferenceAssetOption } from "./_components/reference-picker";
@@ -82,6 +83,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const [toneReferences, setToneReferences] = useState<GenerationReferenceInput[]>([]);
   const [tonePreview, setTonePreview] = useState<{ kind: "image"; url: string; title: string } | null>(null);
   const [target, setTarget] = useState<BreakdownTarget>("both");
+  const [detailLevel, setDetailLevel] = useState<BreakdownDetailLevel>("standard");
+  const [detailPrompt, setDetailPrompt] = useState(() => t("episode.detailStandardPrompt"));
   const [selection, setSelection] = useState<BreakdownSelection>(EMPTY_SELECTION);
   const [selectedShots, setSelectedShots] = useState<string[]>([]);
   const [confirmDiscard, setConfirmDiscard] = useState<number | null>(null);
@@ -161,13 +164,13 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
       breakdownEpisodeAction(
         projectId,
         episode.id,
-        { target, script, references: selection, replaceAll },
+        { target, detailLevel, detailPrompt: detailLevel === "custom" ? detailPrompt : undefined, script, references: selection, replaceAll },
         breakdownController.current?.signal
       ),
     onSuccess: (response) => {
       // The backend holds off rather than silently discarding rendered shots.
       if (!response.applied) {
-        setConfirmDiscard(response.discardsGeneratedScenes);
+        setConfirmDiscard(response.discardsScenes ?? response.discardsGeneratedScenes);
         return;
       }
       setConfirmDiscard(null);
@@ -246,7 +249,9 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
 
   const deleteReferenceMutation = useMutation({
     mutationFn: (asset: ReferenceAssetOption) =>
-      deleteGenerationReferenceAction(projectId, asset.kind, asset.id),
+      asset.kind === "asset"
+        ? deleteAssetAction(projectId, asset.id)
+        : deleteGenerationReferenceAction(projectId, asset.kind, asset.id),
     onSuccess: (_response, asset) => {
       const deleted = (item: GenerationReferenceInput) => item.kind === asset.kind && item.id === asset.id;
       setToneReferences((current) => current.filter((item) => !deleted(item)));
@@ -255,6 +260,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         queryClient.invalidateQueries({ queryKey: queryKeys.characters(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.props(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.assets(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.episodes(projectId) }),
         refreshEpisode(),
         refreshProject(),
@@ -528,6 +534,10 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
           onSelectionChange={setSelection}
           target={target}
           onTargetChange={setTarget}
+          detailLevel={detailLevel}
+          onDetailLevelChange={setDetailLevel}
+          detailPrompt={detailPrompt}
+          onDetailPromptChange={setDetailPrompt}
           running={breakdownMutation.isPending}
           disabled={busy || breakdownBlocked}
           targetDisabled={busy || (!toneReady && shots.length > 0)}

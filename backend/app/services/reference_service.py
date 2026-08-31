@@ -232,6 +232,20 @@ def clear_generation_reference(session: Session, project_id: str, kind: str, ass
         if row:
             clear(row, "audio_path")
             clear_project_sheet("voice_sheet_path")
+    elif kind == "asset":
+        row = session.exec(
+            select(Asset).where(
+                Asset.id == asset_id,
+                Asset.project_id == project_id,
+                Asset.deleted_at.is_(None),
+            )
+        ).first()
+        if row:
+            if row.path:
+                paths.append(row.path)
+            row.deleted_at = stamp
+            row.updated_at = stamp
+            session.add(row)
     else:
         row = None
 

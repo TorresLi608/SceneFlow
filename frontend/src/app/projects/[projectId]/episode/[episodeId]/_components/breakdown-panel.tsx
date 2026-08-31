@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { BreakdownTarget, Character, Prop, VoiceProfile } from "@/types/project";
+import type { BreakdownDetailLevel, BreakdownTarget, Character, Prop, VoiceProfile } from "@/types/project";
 
 export interface BreakdownSelection {
   characterIds: string[];
@@ -75,6 +76,10 @@ export function BreakdownPanel({
   onSelectionChange,
   target,
   onTargetChange,
+  detailLevel,
+  onDetailLevelChange,
+  detailPrompt,
+  onDetailPromptChange,
   running,
   disabled,
   disabledReason,
@@ -89,6 +94,10 @@ export function BreakdownPanel({
   onSelectionChange: (next: BreakdownSelection) => void;
   target: BreakdownTarget;
   onTargetChange: (next: BreakdownTarget) => void;
+  detailLevel: BreakdownDetailLevel;
+  onDetailLevelChange: (next: BreakdownDetailLevel) => void;
+  detailPrompt: string;
+  onDetailPromptChange: (next: string) => void;
   running: boolean;
   disabled: boolean;
   disabledReason?: string;
@@ -111,8 +120,15 @@ export function BreakdownPanel({
     { value: "video", label: t("episode.targetVideo"), icon: Film },
     { value: "both", label: t("episode.targetBoth"), icon: Clapperboard },
   ];
+  const detailLevels: { value: BreakdownDetailLevel; label: string }[] = [
+    { value: "concise", label: t("episode.detailConcise") },
+    { value: "standard", label: t("episode.detailStandard") },
+    { value: "detailed", label: t("episode.detailDetailed") },
+    { value: "custom", label: t("episode.detailCustom") },
+  ];
 
   const nothingToPick = characters.length === 0 && props.length === 0 && voices.length === 0;
+  const cannotStart = disabled || (detailLevel === "custom" && !detailPrompt.trim());
 
   return (
     <section className="flex flex-col gap-4 rounded-xl border border-border/70 bg-card/50 p-4.5 shadow-sm">
@@ -156,6 +172,42 @@ export function BreakdownPanel({
           })}
         </div>
         <FieldDescription className="text-xs text-muted-foreground/80">{t("episode.targetHint")}</FieldDescription>
+      </Field>
+
+      <Field>
+        <FieldLabel className="text-xs text-muted-foreground">{t("episode.breakdownDetail")}</FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {detailLevels.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={detailLevel === item.value}
+              disabled={disabled || running}
+              onClick={() => onDetailLevelChange(item.value)}
+              className={cn(
+                "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                detailLevel === item.value
+                  ? "border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/30"
+                  : "border-border/70 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                (disabled || running) && "cursor-not-allowed opacity-50"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <FieldDescription className="text-xs text-muted-foreground/80">{t("episode.breakdownDetailHint")}</FieldDescription>
+        {detailLevel === "custom" ? (
+          <Textarea
+            value={detailPrompt}
+            onChange={(event) => onDetailPromptChange(event.target.value)}
+            placeholder={t("episode.detailCustomPlaceholder")}
+            maxLength={6000}
+            rows={4}
+            disabled={disabled || running}
+            className="mt-2 min-h-24 resize-y bg-background/70 text-sm leading-relaxed"
+          />
+        ) : null}
       </Field>
 
       {nothingToPick ? (
@@ -281,8 +333,8 @@ export function BreakdownPanel({
         <Button
           type="button"
           variant={running ? "destructive" : "default"}
-          disabled={running ? false : disabled}
-          title={disabled ? disabledReason : undefined}
+          disabled={running ? false : cannotStart}
+          title={disabled ? disabledReason : detailLevel === "custom" && !detailPrompt.trim() ? t("episode.detailCustomRequired") : undefined}
           onClick={running ? onStop : onStart}
           className={cn(
             "cursor-pointer transition-all",
