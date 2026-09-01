@@ -288,9 +288,3 @@ SceneFlow/
 
 - **开源协议**：SceneFlow 基于 [GNU Affero General Public License v3.0 or later](LICENSE)（`AGPL-3.0-or-later`）开源发布。
 - **免责声明**：使用本项目即代表你已知悉并同意 [免责声明 DISCLAIMER.md](DISCLAIMER.md) 中的全部条款。
-
-<div align="center">
-
-**为全球 AI 短剧与动态视觉创作者用心打造 ❤️**
-
-</div>

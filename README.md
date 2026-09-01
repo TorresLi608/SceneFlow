@@ -288,9 +288,3 @@ We warmly welcome issues, feedback, and pull requests!
 
 - **License**: SceneFlow is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
 - **Disclaimer**: Please read [DISCLAIMER.md](DISCLAIMER.md) regarding AI generation output review, third-party provider terms, intellectual property, and usage costs.
-
-<div align="center">
-
-**Made with ❤️ for AI Creators Worldwide**
-
-</div>
