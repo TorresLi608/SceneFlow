@@ -17,6 +17,7 @@ from app.api.deps import current_super_admin_id
 from app.models import ChatSession, InvitationCode, ModelConfig, RedemptionCode, UsageLog, User, UserOfficialConfigDefault
 from app.schemas.serializers import config_json, official_config_json, user_json
 from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_api_key
+from app.services.error_log_service import error_log_json, find_error_logs
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates, usage_log_json
 from app.utils.common import now
 
@@ -154,6 +155,29 @@ def list_all_usage_logs(
         ],
         "pagination": pagination(total, page, page_size),
     }
+
+
+@router.get("/error-logs")
+def list_error_logs(
+    _: int = Depends(current_super_admin_id),
+    search: Annotated[str, Query(max_length=128)] = "",
+    error_code: Annotated[str, Query(alias="errorCode", max_length=64)] = "",
+    project_id: Annotated[str, Query(alias="projectId", max_length=80)] = "",
+    request_id: Annotated[str, Query(alias="requestId", max_length=80)] = "",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+) -> dict[str, Any]:
+    with db() as session:
+        total, logs = find_error_logs(
+            session,
+            search=search,
+            error_code=error_code,
+            project_id=project_id,
+            request_id=request_id,
+            page=page,
+            page_size=page_size,
+        )
+    return {"errorLogs": [error_log_json(item) for item in logs], "pagination": pagination(total, page, page_size)}
 
 
 @router.post("/users", status_code=201)

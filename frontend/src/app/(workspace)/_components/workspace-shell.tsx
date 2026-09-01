@@ -34,6 +34,7 @@ function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/admin/models")) return "home.modelManagement";
   if (pathname.startsWith("/admin/users")) return "home.userManagement";
   if (pathname.startsWith("/admin/usage-logs")) return "home.allUsageRecords";
+  if (pathname.startsWith("/admin/error-logs")) return "home.errorLogs";
   if (pathname.startsWith("/admin/invitation-codes")) return "home.invitationCodeManagement";
   if (pathname.startsWith("/admin/redemption-codes")) return "home.redemptionCodeManagement";
   return "home.chat";

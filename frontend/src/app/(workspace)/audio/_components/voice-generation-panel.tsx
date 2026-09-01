@@ -218,8 +218,8 @@ export function VoiceGenerationPanel({
   };
 
   return (
-    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[340px_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/35 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-5">
+    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[300px_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/35 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -288,19 +288,19 @@ export function VoiceGenerationPanel({
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto p-4 md:p-7 chat-message-list-scrollbar">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-          <header className="border-b border-border/70 pb-5">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto p-4 md:p-6 chat-message-list-scrollbar">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+          <header className="border-b border-border/70 pb-4">
             <div className="flex items-center gap-2 text-primary">
               <Wand2 className="size-4" />
               <span className="text-xs font-bold uppercase tracking-[0.18em]">{t("voice.eyebrow")}</span>
             </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">{t("voice.create")}</h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("voice.createHint")}</p>
+            <h1 className="mt-1.5 text-xl font-bold tracking-tight">{t("voice.create")}</h1>
+            <p className="mt-1 max-w-2xl text-xs text-muted-foreground">{t("voice.createHint")}</p>
           </header>
 
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5 md:col-span-2">
               <label htmlFor="voice-name" className="text-xs font-semibold text-foreground/90">
                 {t("voice.name")}
               </label>
@@ -309,11 +309,11 @@ export function VoiceGenerationPanel({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={t("voice.namePlaceholder")}
-                className="h-10 text-xs rounded-xl"
+                className="h-9 text-xs rounded-xl"
               />
             </div>
-            <div className="space-y-2">
-              <div className="flex h-7 items-center justify-between gap-2">
+            <div className="space-y-1.5">
+              <div className="flex h-6 items-center justify-between gap-2">
                 <label htmlFor="voice-prompt" className="text-xs font-semibold text-foreground/90">
                   {t("voice.prompt")}
                 </label>
@@ -324,7 +324,7 @@ export function VoiceGenerationPanel({
                       setPromptLanguage((value ?? "auto") as "auto" | "zh" | "en")
                     }
                   >
-                    <SelectTrigger className="h-7 min-w-20 text-[11px]">
+                    <SelectTrigger className="h-6 min-w-18 text-[10px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent alignItemWithTrigger={false}>
@@ -346,7 +346,7 @@ export function VoiceGenerationPanel({
                     disabled={!voicePrompt.trim() && !optimizeMutation.isPending}
                     onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
                     className={cn(
-                      "h-7 gap-1 text-[11px] cursor-pointer transition-colors",
+                      "h-6 gap-1 text-[10px] cursor-pointer transition-colors px-2",
                       optimizeMutation.isPending && "animate-pulse font-medium"
                     )}
                     title={
@@ -358,7 +358,7 @@ export function VoiceGenerationPanel({
                     {optimizeMutation.isPending ? (
                       <Square className="size-2.5 fill-current" />
                     ) : (
-                      <Sparkles className="size-3 text-primary" />
+                      <Sparkles className="size-2.5 text-primary" />
                     )}
                     {optimizeMutation.isPending
                       ? t("common.stopOptimizePrompt")
@@ -371,39 +371,39 @@ export function VoiceGenerationPanel({
                 value={voicePrompt}
                 onChange={(event) => setVoicePrompt(event.target.value)}
                 placeholder={t("voice.promptPlaceholder")}
-                className="min-h-36 resize-none rounded-xl text-xs"
+                className="min-h-24 resize-none rounded-xl text-xs"
               />
             </div>
-            <div className="space-y-2">
-              <div className="flex h-7 items-center justify-between gap-2">
+            <div className="space-y-1.5">
+              <div className="flex h-6 items-center justify-between gap-2">
                 <label htmlFor="voice-preview-text" className="text-xs font-semibold text-foreground/90">
                   {t("voice.previewText")}
                 </label>
-                <span className="text-[11px] text-muted-foreground">{t("voice.previewTextHint")}</span>
+                <span className="text-[10px] text-muted-foreground">{t("voice.previewTextHint")}</span>
               </div>
               <Textarea
                 id="voice-preview-text"
                 value={previewText}
                 onChange={(event) => setPreviewText(event.target.value)}
                 placeholder={t("voice.previewTextPlaceholder")}
-                className="min-h-36 resize-none rounded-xl text-xs"
+                className="min-h-24 resize-none rounded-xl text-xs"
               />
             </div>
           </div>
 
           <div className="flex justify-end">
             <Button
-              className="min-w-36"
+              className="min-w-32 h-9 text-xs font-bold shadow-sm"
               onClick={designMutation.isPending ? stopGeneration : startGeneration}
               disabled={!canGenerate && !designMutation.isPending}
               variant={designMutation.isPending ? "destructive" : "default"}
             >
-              {designMutation.isPending ? <Square className="size-3.5 fill-current" /> : <Sparkles className="size-4" />}
+              {designMutation.isPending ? <Square className="size-3.5 fill-current" /> : <Sparkles className="size-3.5" />}
               {designMutation.isPending ? t("common.stopGeneration") : t("voice.generatePreview")}
             </Button>
           </div>
 
-          <div className="min-h-60 border-t border-border/70 pt-6">
+          <div className="min-h-64 border-t border-border/70 pt-5">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -428,7 +428,7 @@ export function VoiceGenerationPanel({
               </div>
             </div>
 
-            <div className="mt-4 flex min-h-52 items-center justify-center rounded-2xl border border-border/70 bg-card/40 p-6 shadow-inner backdrop-blur-md">
+            <div className="mt-3.5 flex min-h-60 items-center justify-center rounded-2xl border border-border/70 bg-card/40 p-5 md:p-6 shadow-inner backdrop-blur-md">
               {designMutation.isPending ? (
                 <div className="text-center space-y-3">
                   <div className="relative mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -439,11 +439,11 @@ export function VoiceGenerationPanel({
                   <p className="text-xs text-muted-foreground">{t("voice.generatingHint")}</p>
                 </div>
               ) : previewVoice ? (
-                <div className="w-full max-w-3xl space-y-5">
+                <div className="w-full space-y-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3.5 min-w-0">
-                      <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-xs">
-                        <Volume2 className="size-5" />
+                      <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary shadow-xs">
+                        <Volume2 className="size-6" />
                       </span>
                       <div className="min-w-0">
                         <p className="truncate text-base font-bold text-foreground">
@@ -479,13 +479,27 @@ export function VoiceGenerationPanel({
                   </div>
 
                   {previewVoice.previewAudioUrl ? (
-                    <div className="rounded-xl border border-border/70 bg-muted/30 p-3 shadow-inner">
+                    <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 shadow-inner">
+                      {/* 动态声波条可视化 */}
+                      <div className="flex items-center justify-center gap-1.5 h-10 w-full mb-3 px-4">
+                        <div className="w-1.5 h-4 bg-primary/60 rounded-full animate-pulse" />
+                        <div className="w-1.5 h-7 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                        <div className="w-1.5 h-5 bg-primary rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+                        <div className="w-1.5 h-9 bg-primary rounded-full animate-pulse" style={{ animationDelay: "75ms" }} />
+                        <div className="w-1.5 h-6 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "225ms" }} />
+                        <div className="w-1.5 h-8 bg-primary/90 rounded-full animate-pulse" style={{ animationDelay: "400ms" }} />
+                        <div className="w-1.5 h-4 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: "100ms" }} />
+                        <div className="w-1.5 h-7 bg-primary/75 rounded-full animate-pulse" style={{ animationDelay: "350ms" }} />
+                        <div className="w-1.5 h-5 bg-primary/85 rounded-full animate-pulse" style={{ animationDelay: "180ms" }} />
+                        <div className="w-1.5 h-8 bg-primary rounded-full animate-pulse" style={{ animationDelay: "260ms" }} />
+                        <div className="w-1.5 h-4 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: "320ms" }} />
+                      </div>
                       <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls className="w-full" />
                     </div>
                   ) : null}
 
                   {draftVoice ? (
-                    <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-4">
+                    <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3.5">
                       <p className="text-xs text-muted-foreground">{t("voice.draftHint")}</p>
                       <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="cursor-pointer">
                         {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
@@ -496,8 +510,8 @@ export function VoiceGenerationPanel({
                 </div>
               ) : (
                 <div className="text-center text-muted-foreground space-y-2">
-                  <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
-                    <AudioLines className="size-6 opacity-60" />
+                  <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
+                    <AudioLines className="size-7 opacity-60" />
                   </div>
                   <p className="text-sm font-semibold text-foreground">{t("voice.previewEmpty")}</p>
                   <p className="text-xs text-muted-foreground">{t("voice.emptyPreviewHint")}</p>
@@ -508,14 +522,14 @@ export function VoiceGenerationPanel({
 
           {/* 音色大屏试听与参数详情 Dialog */}
           <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
-            <DialogContent className="w-[94vw] max-w-3xl rounded-2xl border border-border/80 p-0 overflow-hidden shadow-2xl bg-background">
-              <DialogHeader className="p-4 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+            <DialogContent className="w-[85vw] sm:w-[85vw] min-w-[80vw] sm:max-w-[90vw] max-h-[90vh] sm:max-h-[90vh] rounded-2xl border border-border/80 p-0 overflow-hidden shadow-2xl bg-background">
+              <DialogHeader className="p-3 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Volume2 className="size-4.5" />
+                  <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Volume2 className="size-4" />
                   </div>
                   <div>
-                    <DialogTitle className="text-base font-bold">
+                    <DialogTitle className="text-sm font-bold">
                       {previewVoice?.name || t("voice.modalTitle")}
                     </DialogTitle>
                     <DialogDescription className="text-xs">
@@ -526,65 +540,70 @@ export function VoiceGenerationPanel({
               </DialogHeader>
 
               {previewVoice ? (
-                <div className="p-6 space-y-6">
-                  {/* 声波播放区 */}
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-border/70 bg-muted/20 p-6 space-y-4 shadow-inner">
-                    <div className="flex items-center justify-center gap-1.5 h-12 w-full max-w-md">
-                      <div className="w-1.5 h-6 bg-primary/60 rounded-full animate-pulse" />
-                      <div className="w-1.5 h-10 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
-                      <div className="w-1.5 h-8 bg-primary rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
-                      <div className="w-1.5 h-12 bg-primary rounded-full animate-pulse" style={{ animationDelay: "75ms" }} />
-                      <div className="w-1.5 h-7 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "225ms" }} />
-                      <div className="w-1.5 h-11 bg-primary/90 rounded-full animate-pulse" style={{ animationDelay: "400ms" }} />
-                      <div className="w-1.5 h-5 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: "100ms" }} />
-                      <div className="w-1.5 h-9 bg-primary/75 rounded-full animate-pulse" style={{ animationDelay: "350ms" }} />
+                <div className="p-6 space-y-5">
+                  {/* 大屏声波舞台播放区 */}
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-border/70 bg-card/60 p-6 space-y-5 shadow-inner">
+                    <div className="flex items-center justify-center gap-2.5 h-20 w-full max-w-4xl px-2">
+                      <div className="w-2.5 h-8 bg-primary/50 rounded-full animate-pulse" />
+                      <div className="w-2.5 h-12 bg-primary/70 rounded-full animate-pulse" style={{ animationDelay: "120ms" }} />
+                      <div className="w-2.5 h-16 bg-primary/90 rounded-full animate-pulse" style={{ animationDelay: "240ms" }} />
+                      <div className="w-2.5 h-10 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: "60ms" }} />
+                      <div className="w-2.5 h-20 bg-primary rounded-full animate-pulse" style={{ animationDelay: "180ms" }} />
+                      <div className="w-2.5 h-14 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+                      <div className="w-2.5 h-18 bg-primary/90 rounded-full animate-pulse" style={{ animationDelay: "90ms" }} />
+                      <div className="w-2.5 h-10 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: "210ms" }} />
+                      <div className="w-2.5 h-16 bg-primary/85 rounded-full animate-pulse" style={{ animationDelay: "330ms" }} />
+                      <div className="w-2.5 h-12 bg-primary/70 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                      <div className="w-2.5 h-20 bg-primary rounded-full animate-pulse" style={{ animationDelay: "270ms" }} />
+                      <div className="w-2.5 h-14 bg-primary/80 rounded-full animate-pulse" style={{ animationDelay: "45ms" }} />
+                      <div className="w-2.5 h-7 bg-primary/50 rounded-full animate-pulse" style={{ animationDelay: "165ms" }} />
                     </div>
 
                     {previewVoice.previewAudioUrl ? (
-                      <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls autoPlay className="w-full max-w-lg" />
+                      <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls autoPlay className="w-full max-w-4xl" />
                     ) : null}
                   </div>
 
-                  {/* 详细参数 */}
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
+                  {/* 紧凑双列参数与台本展示区 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
                       <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
                         {t("voice.promptDetailTitle")}
                       </span>
-                      <div className="rounded-xl border border-border/70 bg-card/60 p-3.5 text-xs leading-relaxed font-mono text-foreground whitespace-pre-wrap">
+                      <div className="rounded-xl border border-border/70 bg-card/40 p-2.5 text-xs leading-relaxed font-mono text-foreground whitespace-pre-wrap max-h-28 overflow-y-auto chat-message-list-scrollbar">
                         {previewVoice.voicePrompt}
                       </div>
                     </div>
 
                     {previewText.trim() ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1">
                         <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
                           {t("voice.scriptDetailTitle")}
                         </span>
-                        <div className="rounded-xl border border-border/70 bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+                        <div className="rounded-xl border border-border/70 bg-muted/30 p-2.5 text-xs leading-relaxed text-muted-foreground max-h-28 overflow-y-auto chat-message-list-scrollbar">
                           {previewText}
                         </div>
                       </div>
                     ) : null}
                   </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-border/70">
+                  <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/70">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="gap-2 cursor-pointer"
+                      className="h-8 gap-1.5 text-xs cursor-pointer"
                       onClick={() => copyPrompt(previewVoice.voicePrompt)}
                     >
-                      {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+                      {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
                       {copied ? t("voice.copiedPromptFull") : t("voice.copyPrompt")}
                     </Button>
                     {previewVoice.previewAudioUrl ? (
                       <Button
                         size="sm"
-                        className="gap-2 cursor-pointer"
+                        className="h-8 gap-1.5 text-xs cursor-pointer font-bold shadow-sm"
                         onClick={() => downloadAudio(artifactBffUrl(previewVoice.previewAudioUrl!), `${previewVoice.name || "voice"}.wav`)}
                       >
-                        <Download className="size-4" />
+                        <Download className="size-3.5" />
                         {t("voice.downloadFullAudio")}
                       </Button>
                     ) : null}

@@ -102,12 +102,28 @@ def test_json_object_ignores_wrappers_and_trailing_model_text() -> None:
     )
     assert payload["shots"][0]["narration"] == "雾中山门"
     assert _json_object('{"shots": []}\n{"extra": true}') == {"shots": []}
+    assert _json_object(r'{\"scenes\": []}') == {"scenes": []}
 
 
 def test_breakdown_payload_accepts_a_bare_shot_array() -> None:
     from app.llms.router import _json_breakdown_payload
 
     assert _json_breakdown_payload('[{"narration":"雾中山门"}]')["shots"][0]["narration"] == "雾中山门"
+
+
+def test_breakdown_payload_accepts_escaped_quotes_from_model() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    payload = _json_breakdown_payload(r'[{\"narration\": \"深夜，韩立躺在床上\", \"dialogue\": \"他说：\\\"别出声。\\\"\"}]')
+    assert payload["shots"][0]["narration"].startswith("深夜")
+    assert payload["shots"][0]["dialogue"] == '他说："别出声。"'
+
+
+def test_breakdown_payload_accepts_twice_escaped_quotes_from_model() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    payload = _json_breakdown_payload(r'[{\\\"narration\\\": \\\"深夜，韩立躺在床上\\\"}]')
+    assert payload["shots"][0]["narration"].startswith("深夜")
 
 
 def test_breakdown_payload_recovers_complete_shots_from_a_truncated_array() -> None:
@@ -125,4 +141,6 @@ if __name__ == "__main__":
     test_breakdown_disables_stream_usage_for_compatibility_gateways()
     test_json_object_ignores_wrappers_and_trailing_model_text()
     test_breakdown_payload_accepts_a_bare_shot_array()
+    test_breakdown_payload_accepts_escaped_quotes_from_model()
+    test_breakdown_payload_accepts_twice_escaped_quotes_from_model()
     test_breakdown_payload_recovers_complete_shots_from_a_truncated_array()

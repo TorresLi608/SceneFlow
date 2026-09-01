@@ -8,6 +8,7 @@ Start here. These files describe how this codebase already works — they are de
 | `error-handling.md` | Status codes, the error envelope, validation, frontend surfacing |
 | `testing.md` | How the two test setups work and how to add a test |
 | `logging.md` | Logger setup, levels, and what must never be logged |
+| `../reference/known-errors.md` | Recurring failure modes, owners, and regression checks |
 
 ## The non-negotiables
 

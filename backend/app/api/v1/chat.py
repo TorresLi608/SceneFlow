@@ -4,7 +4,7 @@ import json
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Session
 
@@ -16,6 +16,7 @@ from app.services.agent_service import run_chat_agent, stream_chat_agent
 from app.services.artifact_service import artifact_from_token
 from app.services.chat_service import begin_chat_turn, create_chat_session, delete_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
 from app.services.config_service import active_model_config
+from app.services.error_log_service import record_http_error
 from app.services.usage_service import record_usage
 
 
@@ -113,7 +114,12 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
 
 
 @router.post("/sessions/{session_id}/messages/stream")
-async def stream_message(session_id: str, payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> StreamingResponse:
+async def stream_message(
+    session_id: str,
+    payload: dict[str, Any],
+    request: Request,
+    user_id: int = Depends(current_user_id),
+) -> StreamingResponse:
     content = str(payload.get("content", "")).strip()
     attachments = payload.get("attachments")
     config_id = payload.get("configId")
@@ -181,6 +187,7 @@ async def stream_message(session_id: str, payload: dict[str, Any], user_id: int 
             ) + "\n"
             yield json.dumps({"type": "assistantMessage", "message": chat_message_json(assistant_message)}, ensure_ascii=False) + "\n"
         except Exception as exc:
+            record_http_error(request, 502, "failed to chat", "CHAT_STREAM_FAILED")
             yield json.dumps(
                 {"type": "agent_step", "step": {"id": "runtime_error", "label": "执行失败", "status": "error", "detail": str(exc)[:180]}},
                 ensure_ascii=False,

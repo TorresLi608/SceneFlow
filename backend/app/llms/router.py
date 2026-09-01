@@ -184,47 +184,66 @@ def _json_object(text: str) -> dict[str, Any]:
     the first complete value while still respecting braces inside JSON strings.
     """
     decoder = json.JSONDecoder()
-    value = text.strip()
-    for index, character in enumerate(value):
-        if character != "{":
-            continue
-        try:
-            parsed, _ = decoder.raw_decode(value[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
+    for candidate in _json_text_candidates(text):
+        for index, character in enumerate(candidate):
+            if character != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
     raise ValueError("response did not contain a JSON object")
+
+
+def _json_text_candidates(text: str) -> list[str]:
+    candidates = [text.strip()]
+    # Some OpenAI-compatible relays serialize the whole JSON payload as text once or
+    # twice. Decode that layer as JSON rather than replacing backslashes, which would
+    # corrupt legitimate escaped quotes inside a dialogue field.
+    for _ in range(2):
+        escaped = candidates[-1].replace("\n", "\\n").replace("\r", "\\r")
+        try:
+            unescaped = json.loads(f'"{escaped}"')
+        except json.JSONDecodeError:
+            break
+        if not isinstance(unescaped, str) or unescaped in candidates:
+            break
+        candidates.append(unescaped)
+    return candidates
 
 
 def _json_breakdown_payload(text: str) -> dict[str, Any]:
     """Accept either the documented object or a bare shot array."""
     decoder = json.JSONDecoder()
-    value = text.strip()
-    for index, character in enumerate(value):
-        if character not in "[{":
-            continue
-        try:
-            parsed, _ = decoder.raw_decode(value[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict) and ("shots" in parsed or "scenes" in parsed):
-            return parsed
-        if isinstance(parsed, list):
-            return {"shots": parsed}
+    candidates = _json_text_candidates(text)
+    for candidate in candidates:
+        for index, character in enumerate(candidate):
+            if character not in "[{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and ("shots" in parsed or "scenes" in parsed):
+                return parsed
+            if isinstance(parsed, list):
+                return {"shots": parsed}
     # Some gateways truncate a long array after one or more complete shot objects. Keep
     # the complete objects instead of failing the whole breakdown; the editor can still
     # regenerate or adjust the resulting shots.
     recovered: list[dict[str, Any]] = []
-    for index, character in enumerate(value):
-        if character != "{":
-            continue
-        try:
-            parsed, _ = decoder.raw_decode(value[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict) and ("narration" in parsed or "visualPrompt" in parsed):
-            recovered.append(parsed)
+    for candidate in candidates:
+        for index, character in enumerate(candidate):
+            if character != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and ("narration" in parsed or "visualPrompt" in parsed) and parsed not in recovered:
+                recovered.append(parsed)
     if recovered:
         return {"shots": recovered}
     raise ValueError("response did not contain a JSON object")
@@ -580,8 +599,7 @@ class ModelRouter:
         try:
             payload = _json_breakdown_payload(text)
         except ValueError as exc:
-            preview = " ".join(text.split())[:240]
-            raise ValueError(f"response did not contain a JSON object; model output: {preview}") from exc
+            raise ValueError("response did not contain a JSON object") from exc
         if not isinstance(payload, dict):
             raise ValueError("breakdown response must be a JSON object")
         raw = payload.get("shots")

@@ -16,6 +16,7 @@ import tempfile
 from typing import Any, Iterator
 
 from fastapi.testclient import TestClient
+from sqlmodel import select
 
 from app.core import database, runs
 from app.core.security import encrypt, token_for
@@ -189,6 +190,40 @@ def test_breakdown_releases_project_lock_when_usage_recording_fails() -> None:
                 from app.models import Project
 
                 assert session.get(Project, project["id"]).status == "idle"
+
+
+def test_breakdown_failure_records_a_redacted_error_with_request_id() -> None:
+    async def _invalid_response(*_args: Any, **_kwargs: Any) -> BreakdownResult:
+        raise ValueError("response did not contain a JSON object; model output: [private script]")
+
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers, _):
+            project = _project(client, headers)
+            episode_id = project["episodes"][0]["id"]
+            models.breakdown_script = _invalid_response
+
+            response = _breakdown(client, headers, project["id"], episode_id)
+
+            assert response.status_code == 502
+            request_id = response.headers["X-Request-Id"]
+            with database.db() as session:
+                from app.models import ErrorLog
+
+                error = session.exec(select(ErrorLog).where(ErrorLog.request_id == request_id)).one()
+            assert error.error_code == "BREAKDOWN_INVALID_JSON"
+            assert error.project_id == project["id"]
+            assert error.episode_id == episode_id
+            assert "private script" not in error.message
+            with database.db() as session:
+                admin_id = int(session.exec(select(User).where(User.role == "superAdmin")).one().id)
+            listed = client.get(
+                "/api/admin/error-logs",
+                params={"requestId": request_id},
+                headers={"Authorization": f"Bearer {token_for(admin_id)}"},
+            )
+            assert listed.status_code == 200
+            assert listed.json()["errorLogs"][0]["requestId"] == request_id
+            assert client.get("/api/admin/error-logs", headers=headers).status_code == 403
 
 
 def test_shots_only_breakdown_leaves_the_motion_fields_empty() -> None:
@@ -425,6 +460,8 @@ def test_tone_sheet_is_its_own_step_and_needs_shots() -> None:
 
 if __name__ == "__main__":
     test_breakdown_writes_camera_transition_duration_and_motion_prompt()
+    test_breakdown_releases_project_lock_when_usage_recording_fails()
+    test_breakdown_failure_records_a_redacted_error_with_request_id()
     test_shots_only_breakdown_leaves_the_motion_fields_empty()
     test_video_pass_annotates_existing_shots_without_replacing_them()
     test_video_pass_refuses_when_there_are_no_shots_to_annotate()

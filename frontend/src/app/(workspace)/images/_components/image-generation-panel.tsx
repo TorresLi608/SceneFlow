@@ -363,9 +363,9 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
   const generatingLabel = t("images.generatingImageWithSeconds", { seconds: elapsedSeconds });
 
   return (
-    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[380px_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[320px_minmax(0,1fr)]">
       {/* 左侧控制栏 */}
-      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-5">
+      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         {/* 头部标题 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -708,7 +708,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
       </aside>
 
       {/* 右侧：专业图片监视视窗 */}
-      <section className="flex min-h-0 min-w-0 flex-col p-4 md:p-6">
+      <section className="flex min-h-0 min-w-0 flex-col p-3 md:p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold tracking-tight text-foreground">
@@ -756,7 +756,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
         </div>
 
         {/* 监视器视口 */}
-        <div className="relative mt-4 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-3xl border border-border/80 bg-card/20 p-4 shadow-inner backdrop-blur-md dark:bg-black/20">
+        <div className="relative mt-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-3xl border border-border/80 bg-card/20 p-2 sm:p-3 shadow-inner backdrop-blur-md dark:bg-black/20">
           <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-20" />
 
           {generateMutation.isPending ? (
@@ -815,8 +815,8 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
 
       {/* 图片全屏与参数详情 Dialog（大屏沉浸式视窗） */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="w-[98vw] max-w-[1850px] h-[95vh] max-h-[96vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
-          <DialogHeader className="p-3.5 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+        <DialogContent className="w-[88vw] sm:w-[88vw] min-w-[80vw] sm:max-w-[92vw] h-[94vh] sm:max-h-[96vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
+          <DialogHeader className="p-2.5 px-4 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
             <div className="flex items-center gap-3">
               <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <ImageIcon className="size-4" />
@@ -835,7 +835,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 text-xs font-medium cursor-pointer"
+                className="h-7 gap-1.5 text-xs font-medium cursor-pointer"
                 onClick={() => setShowLightboxSidebar((prev) => !prev)}
                 title={showLightboxSidebar ? t("images.pureViewTitle") : t("images.showParamsTitle")}
               >
@@ -857,7 +857,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
           {lightboxItem ? (
             <div className="flex flex-col md:flex-row flex-1 min-h-0 bg-background/50 overflow-hidden">
               {/* 大图主视窗：深色暗影影院背景 */}
-              <div className="relative flex-1 min-w-0 h-full flex items-center justify-center bg-black/95 dark:bg-black p-2 sm:p-4 overflow-hidden min-h-0">
+              <div className="relative flex-1 min-w-0 h-full flex items-center justify-center bg-black/95 dark:bg-black p-1 sm:p-2 overflow-hidden min-h-0">
                 <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-10" />
                 <div className="relative h-full w-full flex items-center justify-center">
                   <Image
@@ -873,24 +873,24 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
 
               {/* 右侧参数与操作面板 */}
               {showLightboxSidebar ? (
-                <div className="w-full md:w-80 lg:w-96 flex flex-col justify-between shrink-0 border-t md:border-t-0 md:border-l border-border/70 bg-card/60 p-5 space-y-4 overflow-y-auto chat-message-list-scrollbar animate-in slide-in-from-right-4 duration-200">
-                  <div className="space-y-4">
+                <div className="w-full md:w-64 lg:w-72 flex flex-col justify-between shrink-0 border-t md:border-t-0 md:border-l border-border/70 bg-card/75 p-3.5 space-y-3 overflow-y-auto chat-message-list-scrollbar animate-in slide-in-from-right-4 duration-200">
+                  <div className="space-y-3">
                     <div className="space-y-1.5">
                       <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
                         {t("images.specsTitle")}
                       </span>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {lightboxItem.resolution ? (
-                          <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
+                          <Badge variant="secondary" className="text-[11px] font-semibold px-2 py-0.5">
                             {lightboxItem.resolution}
                           </Badge>
                         ) : null}
                         {lightboxItem.ratio ? (
-                          <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                          <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
                             {t("images.ratioLabel", { ratio: lightboxItem.ratio })}
                           </Badge>
                         ) : null}
-                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
+                        <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
                           PNG / WebP
                         </Badge>
                       </div>
@@ -900,33 +900,33 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
                       <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
                         {t("images.promptTitle")}
                       </label>
-                      <div className="rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs leading-relaxed max-h-72 overflow-y-auto text-foreground whitespace-pre-wrap font-mono chat-message-list-scrollbar">
+                      <div className="rounded-xl border border-border/70 bg-muted/40 p-2.5 text-xs leading-relaxed max-h-56 overflow-y-auto text-foreground whitespace-pre-wrap font-mono chat-message-list-scrollbar">
                         {lightboxItem.prompt}
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2.5 pt-3 border-t border-border/70 shrink-0">
+                  <div className="space-y-2 pt-2.5 border-t border-border/70 shrink-0">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-10 w-full gap-2 text-xs font-medium cursor-pointer shadow-2xs"
+                      className="h-9 w-full gap-1.5 text-xs font-medium cursor-pointer shadow-2xs"
                       onClick={() => copyPrompt(lightboxItem.prompt)}
                     >
                       {copied ? (
-                        <Check className="size-4 text-emerald-500" />
+                        <Check className="size-3.5 text-emerald-500" />
                       ) : (
-                        <Copy className="size-4" />
+                        <Copy className="size-3.5" />
                       )}
                       {copied ? t("images.copiedPrompt") : t("images.copyPrompt")}
                     </Button>
                     <Button
                       size="sm"
-                      className="h-10 w-full gap-2 text-xs font-bold cursor-pointer shadow-sm"
+                      className="h-9 w-full gap-1.5 text-xs font-bold cursor-pointer shadow-sm"
                       onClick={() => downloadImage(lightboxItem.url)}
                     >
-                      <Download className="size-4" />
-                      下载高清原图
+                      <Download className="size-3.5" />
+                      {t("images.downloadFull")}
                     </Button>
                   </div>
                 </div>

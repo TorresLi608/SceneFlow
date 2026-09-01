@@ -342,6 +342,85 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/error-logs:
+    get:
+      tags:
+      - admin
+      summary: List Error Logs
+      operationId: list_error_logs_api_admin_error_logs_get
+      parameters:
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 128
+          default: ''
+          title: Search
+      - name: errorCode
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          default: ''
+          title: Errorcode
+      - name: projectId
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+          default: ''
+          title: Projectid
+      - name: requestId
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+          default: ''
+          title: Requestid
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: pageSize
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Pagesize
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Error Logs Api Admin Error Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/admin/users/{target_user_id}:
     patch:
       tags:
@@ -858,6 +937,254 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets:
+    get:
+      tags:
+      - assets
+      summary: List Assets
+      operationId: list_assets_api_projects__project_id__assets_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: kind
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Kind
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Assets Api Projects  Project Id  Assets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - assets
+      summary: Create Asset
+      operationId: create_asset_api_projects__project_id__assets_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssetRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Asset Api Projects  Project Id  Assets Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets/{asset_id}:
+    patch:
+      tags:
+      - assets
+      summary: Update Asset
+      operationId: update_asset_api_projects__project_id__assets__asset_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssetRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Asset Api Projects  Project Id  Assets  Asset Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - assets
+      summary: Delete Asset
+      operationId: delete_asset_api_projects__project_id__assets__asset_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets/merge:
+    post:
+      tags:
+      - assets
+      summary: Merge Assets
+      operationId: merge_assets_api_projects__project_id__assets_merge_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeAssetsRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Merge Assets Api Projects  Project Id  Assets Merge Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/video-models:
+    get:
+      tags:
+      - settings
+      summary: Video Model Catalog
+      description: 'The video models the admin picker offers, with the capabilities each one implies.
+
+
+        Only `catalog` entries are listed: superseded revisions stay in
+
+        `VIDEO_MODEL_CAPABILITIES` so a config already pinned to one keeps resolving, but
+
+        offering them for new configs would just be a longer list of the same model.'
+      operationId: video_model_catalog_api_settings_video_models_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Video Model Catalog Api Settings Video Models Get
         '422':
           description: Validation Error
           content:
@@ -1556,6 +1883,50 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Get Usage Logs Api Usage Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/prompts/compile:
+    post:
+      tags:
+      - prompts
+      summary: Preview Compiled Prompt
+      description: 'What the editor''s `@素材` labels turn into for the project''s current model.
+
+
+        `sceneId` matters for video: the render prepends the shot''s storyboard frame when the
+
+        model takes images, so `图1` there is the frame and the first selection is `图2`. The
+
+        preview has to count the same way or it teaches the user the wrong number.'
+      operationId: preview_compiled_prompt_api_prompts_compile_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompilePromptRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Compiled Prompt Api Prompts Compile Post
         '422':
           description: Validation Error
           content:
@@ -2272,6 +2643,7 @@ paths:
           - sceneImage
           - sceneVideo
           - voice
+          - asset
           type: string
           title: Kind
       - name: asset_id
@@ -4594,6 +4966,21 @@ components:
           - both
           title: Target
           default: both
+        detailLevel:
+          type: string
+          enum:
+          - concise
+          - standard
+          - detailed
+          - custom
+          title: Detaillevel
+          default: standard
+        detailPrompt:
+          anyOf:
+          - type: string
+            maxLength: 6000
+          - type: 'null'
+          title: Detailprompt
         script:
           anyOf:
           - type: string
@@ -4666,6 +5053,79 @@ components:
         everything from the script alone. Selecting a character with a turnaround sheet is what
 
         turns "a woman in a red coat" into "参照《林小满》三面图" in the generated prompt.'
+    CompilePromptRequest:
+      properties:
+        projectId:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Projectid
+        kind:
+          type: string
+          enum:
+          - image
+          - video
+          title: Kind
+        sceneId:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 1
+          - type: 'null'
+          title: Sceneid
+        prompt:
+          type: string
+          maxLength: 10000
+          title: Prompt
+          default: ''
+        dialogue:
+          type: string
+          maxLength: 4000
+          title: Dialogue
+          default: ''
+        references:
+          items:
+            $ref: '#/components/schemas/GenerationReferenceRequest'
+          type: array
+          maxItems: 64
+          title: References
+      additionalProperties: false
+      type: object
+      required:
+      - projectId
+      - kind
+      title: CompilePromptRequest
+    CreateAssetRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        description:
+          type: string
+          maxLength: 4000
+          title: Description
+          default: ''
+        kind:
+          type: string
+          enum:
+          - image
+          - video
+          - audio
+          title: Kind
+        data:
+          type: string
+          maxLength: 80000000
+          minLength: 20
+          title: Data
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - kind
+      - data
+      title: CreateAssetRequest
     CreateCharacterRequest:
       properties:
         name:
@@ -4941,6 +5401,14 @@ components:
             maxItems: 64
           - type: 'null'
           title: Videoreferences
+        videoFirstFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: 'null'
+        videoLastFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: 'null'
         durationMs:
           anyOf:
           - type: integer
@@ -5285,9 +5753,10 @@ components:
           title: Promptextend
           default: false
         withAudio:
-          type: boolean
+          anyOf:
+          - type: boolean
+          - type: 'null'
           title: Withaudio
-          default: false
         sceneIds:
           anyOf:
           - items:
@@ -5324,6 +5793,7 @@ components:
           - sceneImage
           - sceneVideo
           - voice
+          - asset
           title: Kind
         id:
           type: string
@@ -5373,6 +5843,39 @@ components:
       - userVoiceId
       title: ImportVoiceProfileRequest
       description: Bind a timbre already saved on the account to this series.
+    MergeAssetsRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        description:
+          type: string
+          maxLength: 4000
+          title: Description
+          default: ''
+        kind:
+          type: string
+          enum:
+          - image
+          - video
+          - audio
+          title: Kind
+        assetIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Assetids
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - kind
+      - assetIds
+      title: MergeAssetsRequest
     OptimizeProjectRequest:
       properties:
         script:
@@ -5631,6 +6134,11 @@ components:
           - type: boolean
           - type: 'null'
           title: Videopromptextend
+        videoAudioEnabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Videoaudioenabled
       additionalProperties: false
       type: object
       title: ProjectModelConfigRequest
@@ -5726,6 +6234,31 @@ components:
       type: object
       title: SetSceneCastRequest
       description: The full cast of a shot; sending an empty list clears it.
+    UpdateAssetRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 120
+            minLength: 1
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Description
+        data:
+          anyOf:
+          - type: string
+            maxLength: 80000000
+            minLength: 1
+          - type: 'null'
+          title: Data
+      additionalProperties: false
+      type: object
+      title: UpdateAssetRequest
     UpdateCharacterRequest:
       properties:
         name:
@@ -6018,6 +6551,14 @@ components:
             maxItems: 64
           - type: 'null'
           title: Videoreferences
+        videoFirstFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: 'null'
+        videoLastFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: 'null'
         durationMs:
           anyOf:
           - type: integer

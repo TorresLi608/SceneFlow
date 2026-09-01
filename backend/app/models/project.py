@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import CheckConstraint, Index, text
+from sqlalchemy import CheckConstraint, Column, Index, Text, text
 from sqlmodel import Field, SQLModel
 
 
@@ -166,8 +166,8 @@ class Scene(SQLModel, table=True):
     image_references_explicit: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
     video_references_json: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
     video_references_explicit: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
-    video_first_frame_json: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
-    video_last_frame_json: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    video_first_frame_json: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=text("''")))
+    video_last_frame_json: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=text("''")))
     # The shot's screen time. Written by the breakdown as an estimate and editable after;
     # 0 means "undecided", and the renderer falls back to the project default.
     duration_ms: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})

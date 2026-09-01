@@ -18,6 +18,25 @@ export interface AdminUsageLogListResponse {
   pagination: Pagination;
 }
 
+export interface AdminErrorLog {
+  id: string;
+  createdAt: string;
+  requestId: string;
+  method: string;
+  route: string;
+  statusCode: number;
+  errorCode: string;
+  message: string;
+  userId: number | null;
+  projectId: string | null;
+  episodeId: string | null;
+}
+
+export interface AdminErrorLogListResponse {
+  errorLogs: AdminErrorLog[];
+  pagination: Pagination;
+}
+
 export interface CreateAdminUserInput {
   username: string;
   password: string;

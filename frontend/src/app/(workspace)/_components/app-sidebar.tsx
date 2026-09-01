@@ -14,6 +14,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  TriangleAlert,
   Video,
 } from "lucide-react";
 import Link from "next/link";
@@ -167,6 +168,13 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
                     icon={History}
                   >
                     {t("home.allUsageRecords")}
+                  </SidebarLink>
+                  <SidebarLink
+                    href="/admin/error-logs"
+                    active={isActive("/admin/error-logs")}
+                    icon={TriangleAlert}
+                  >
+                    {t("home.errorLogs")}
                   </SidebarLink>
                   <SidebarLink
                     href="/admin/invitation-codes"
