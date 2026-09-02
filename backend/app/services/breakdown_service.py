@@ -180,8 +180,22 @@ def build_user_prompt(
         )
     )
     if target == "video" and existing_shots:
+        # Narration alone is not enough to write a 承接块 against: the continuity the video
+        # pass has to honour lives in the frame prompt the storyboard already rendered from.
         numbered = "\n".join(
-            f"{index}. {shot.get('narration') or shot.get('visual_prompt') or ''}"
+            "\n".join(
+                line
+                for line in (
+                    f"{index}. 剧情：{str(shot.get('narration') or '').strip()}",
+                    f"   画面提示词：{str(shot.get('visual_prompt') or '').strip()}"
+                    if str(shot.get("visual_prompt") or "").strip()
+                    else "",
+                    f"   现有视频提示词：{str(shot.get('video_prompt') or '').strip()}"
+                    if str(shot.get("video_prompt") or "").strip()
+                    else "",
+                )
+                if line
+            )
             for index, shot in enumerate(existing_shots, start=1)
             if isinstance(shot, dict)
         )

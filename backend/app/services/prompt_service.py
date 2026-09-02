@@ -10,6 +10,8 @@ These are instructions sent to a model, not user-facing UI copy, so they stay ou
 
 from __future__ import annotations
 
+import re
+
 
 COVER_SYSTEM = (
     "你是短剧海报设计师。根据用户描述的封面画面，写一段用于生成竖屏短剧封面海报的图像提示词。"
@@ -254,9 +256,42 @@ BREAKDOWN_SYSTEM = (
     "- durationSeconds：这一分镜预计生成多少秒视频，整数，通常 2 到 10 秒，按台词长度与动作复杂度估算。\n"
     "- videoPrompt：动态提示词，描述这几秒内人物与镜头如何运动、表情与情绪如何变化；"
     "它描述的是一段时间，不是一张静止画面，不要照抄 visualPrompt。\n"
-    "每个分镜的 visualPrompt 和 videoPrompt 都要承接前后镜头：同场景保持人物五官、发型、服装、配饰、位置、朝向、光线和环境连续；发生转场时明确写出切换到的新场景并注明人物形象与服装延续。提示词应包含可执行的连续性约束，而不是只重复剧情。"
+    "写法要求（visualPrompt 与 videoPrompt 都必须遵守）：\n"
+    "1. 开头写「分镜X：」，X 是这一分镜在本集中的序号，从 1 开始。\n"
+    "2. 从第 2 个分镜起，紧接着写一个【】承接块，说明与上一镜的关系：是否同一场景、"
+    "人物的样貌与衣着是否延续、上一镜结束时的姿态与位置朝向如何被接住。"
+    "发生转场时在【】里写明切到的新场景，并注明人物形象与服装保持不变。第 1 个分镜不写【】。\n"
+    "3.【】之后才写这一分镜自己的内容：visualPrompt 写构图、环境、人物姿态、光线、氛围；"
+    "videoPrompt 写这几秒内人物与镜头如何运动、表情与情绪如何变化，并在结尾带上景别。\n"
+    "4. 承接块要写出可执行的连续性约束（具体到五官、发型、服装、配饰、位置、朝向、光线、环境），"
+    "而不是只重复剧情。\n"
+    "示例：\n"
+    "分镜 1：男主站客厅，愤怒看向女主\n"
+    "分镜 2：【承接上一个镜头，同一客厅场景，男主还是刚才的样貌衣着】男主往前走一步，"
+    "伸手拉住女主手臂，面部表情生气，中景镜头\n"
     "只输出 JSON，不要解释、不要 Markdown 代码块。"
 )
+
+
+# The opener the convention above asks for. Models drop it often enough — and shots get
+# reordered, inserted and deleted afterwards — that the number is re-derived from
+# `order_num` on write rather than trusted from the model. Full-width digits included
+# because a model writing Chinese sometimes emits them.
+SHOT_LABEL_PATTERN = re.compile(r"^\s*分镜\s*[0-9０-９]+\s*[：:]\s*")
+
+
+def shot_label(order: int) -> str:
+    return f"分镜 {order}："
+
+
+def with_shot_label(text: str, order: int) -> str:
+    """`text` opening with the correct `分镜X：`, replacing a wrong or missing one.
+
+    Empty text stays empty: a shot with no prompt should not acquire one made of nothing
+    but its own number.
+    """
+    body = SHOT_LABEL_PATTERN.sub("", str(text or "").strip())
+    return f"{shot_label(order)}{body}" if body else ""
 
 
 def breakdown_reference_block(

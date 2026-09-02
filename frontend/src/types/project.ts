@@ -25,6 +25,13 @@ export interface Scene {
   videoReferencesExplicit?: boolean;
   videoFirstFrame: GenerationReferenceInput | null;
   videoLastFrame: GenerationReferenceInput | null;
+  /**
+   * True once the user has decided about the slot at all. A null frame with this set is
+   * "off, deliberately"; a null frame without it is "nobody chose", which the editor may
+   * still fill with the shot's own render.
+   */
+  videoFirstFrameExplicit?: boolean;
+  videoLastFrameExplicit?: boolean;
   /** Estimated screen time in ms. 0 means undecided — the project default applies. */
   durationMs: number;
   subtitleText: string;
@@ -683,8 +690,9 @@ export interface UpdateSceneInput {
   videoPrompt?: string;
   imageReferences?: GenerationReferenceInput[];
   videoReferences?: GenerationReferenceInput[];
-  videoFirstFrame?: GenerationReferenceInput | null;
-  videoLastFrame?: GenerationReferenceInput | null;
+  /** `""` clears the slot; omitting the key leaves it alone. `null` would mean "leave alone". */
+  videoFirstFrame?: GenerationReferenceInput | "" | null;
+  videoLastFrame?: GenerationReferenceInput | "" | null;
   durationMs?: number;
   subtitleText?: string;
   isLocked?: boolean;

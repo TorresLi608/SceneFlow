@@ -736,16 +736,19 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                       return asset ? [{ kind: asset.kind, id: asset.id }] : [];
                     }).slice(0, imageReferenceLimit)
                   }
+                  // The shot's own frame is deliberately absent: it is the first-frame
+                  // slot's job, and the render prepends it anyway (`defaultVideoReferencePaths`).
+                  // Listing it here too spent a second reference slot on the same image and
+                  // wrote `@分镜 N` into the motion prompt on every reload.
                   defaultVideoReferences={
-                    scene.videoReferencesExplicit || !scene.image.url || !videoCapabilities?.referenceImages
+                    scene.videoReferencesExplicit || !videoCapabilities?.referenceImages
                       ? []
-                      : [
-                          { kind: "sceneImage" as const, id: scene.id },
-                          ...(scene.characterIds ?? []).flatMap((id) => {
+                      : (scene.characterIds ?? [])
+                          .flatMap((id) => {
                             const asset = characterAssets.find((item) => item.id === id);
                             return asset ? [{ kind: asset.kind, id: asset.id }] : [];
-                          }),
-                        ].slice(0, videoCapabilities.maxReferenceImages)
+                          })
+                          .slice(0, videoCapabilities.maxReferenceImages)
                   }
                   selected={selectedShots.includes(scene.id)}
                   toneReady={toneReady}

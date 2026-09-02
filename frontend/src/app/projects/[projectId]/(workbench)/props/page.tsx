@@ -148,6 +148,8 @@ function PropCard({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState(prop.finalPrompt);
+  // Which built-in template the draft is written against; empty means the backend default.
+  const [preset, setPreset] = useState("");
   const draftController = useRef<AbortController | null>(null);
   const drawController = useRef<AbortController | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.props(projectId) });
@@ -158,7 +160,7 @@ function PropCard({
       draftPropPromptAction(
         projectId,
         prop.id,
-        { name: prop.name, description: prop.description },
+        { name: prop.name, description: prop.description, preset },
         draftController.current?.signal
       ),
     onSuccess: (response) => setPrompt(response.prompt),
@@ -232,6 +234,8 @@ function PropCard({
           label={t("prop.prompt")}
           kind="prop"
           presetKind="prop"
+          preset={preset}
+          onPresetChange={setPreset}
           value={prompt}
           onChange={setPrompt}
           placeholder={t("prop.promptPlaceholder")}

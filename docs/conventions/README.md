@@ -15,7 +15,7 @@ Start here. These files describe how this codebase already works — they are de
 Violating any of these produces a bug that does not show up until production data or a long-running series exists.
 
 1. **Requests are camelCase, storage is snake_case, and `CamelModel` bridges them.** Unknown fields are a 422 (`extra="forbid"`), not a silent drop.
-2. **`null` in a PATCH means "leave alone".** Clearing a value is `""` or `false`. Never filter request fields with `is not None`.
+2. **`null` in a PATCH means "leave alone".** Clearing a value is `""` or `false`. Never filter request fields with `is not None`. This holds for object-valued fields too: `videoFirstFrame` takes `GenerationReferenceRequest | Literal[""]`, and `""` is what clears the slot. When "cleared" and "nobody has chosen yet" have to behave differently, the serializer exposes a companion `…Explicit` flag (as `imageReferencesExplicit` and `videoFirstFrameExplicit` do) rather than overloading `null`.
 3. **Media is stored as a relative path, never a URL.** Signed links expire in 30 days; serializers mint a fresh one per response.
 4. **Money is `Decimal`/string end to end**, in micros. A price must never become a JS `number`.
 5. **Timestamps are ISO-8601 strings.** Not `datetime`, not epoch.
@@ -30,6 +30,7 @@ Violating any of these produces a bug that does not show up until production dat
 - **pnpm, not npm.** `npm install` does not update `pnpm-lock.yaml`; a dependency added that way is invisible to everyone else.
 - **Comments explain *why*.** This codebase's comments encode constraints that are expensive to rediscover (see `project-store.ts`, `generation_service.py`, `main.py`). Match that register, and do not strip them while refactoring.
 - **Prefer fewer, sharper abstractions.** Reuse existing module boundaries rather than introducing one-off indirection. `AppSidebar` is concrete because there is one sidebar; do not build a framework for a single caller.
+- **A base-ui `Select` needs `items` on the root, not just `label` on each item.** `Select.Value` resolves the trigger's text from the root's `items` prop; the `label` on `Select.Item` only feeds keyboard typeahead. Omit `items` and the trigger renders the raw value — a language picker showed `zh` after the user chose 中文, and the production-settings mode showed `comic`. Either pass `items={[{value, label}]}` or give `Select.Value` explicit children. The shared prompt-language list is `promptLanguageItems(t)` in `components/prompt-field.tsx`.
 
 ## Writing a migration
 

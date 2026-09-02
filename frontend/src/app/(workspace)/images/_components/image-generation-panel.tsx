@@ -34,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { promptLanguageItems } from "@/components/prompt-field";
 import {
   Select,
   SelectContent,
@@ -472,6 +473,7 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
               </label>
               <div className="flex items-center gap-1.5">
                 <Select
+                  items={promptLanguageItems(t)}
                   value={promptLanguage}
                   onValueChange={(value) =>
                     setPromptLanguage((value ?? "auto") as "auto" | "zh" | "en")

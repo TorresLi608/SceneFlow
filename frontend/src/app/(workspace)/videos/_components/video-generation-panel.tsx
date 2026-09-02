@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { promptLanguageItems } from "@/components/prompt-field";
 import {
   Select,
   SelectContent,
@@ -615,6 +616,7 @@ export function VideoGenerationPanel({
               </label>
               <div className="flex items-center gap-1.5">
                 <Select
+                  items={promptLanguageItems(t)}
                   value={promptLanguage}
                   onValueChange={(val) =>
                     setPromptLanguage((val ?? "auto") as "auto" | "zh" | "en")

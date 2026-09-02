@@ -42,6 +42,19 @@ import { MentionTextarea } from "./mention-textarea";
 import { MediaPreviewDialog } from "./media-preview-dialog";
 
 const referenceKey = (item: GenerationReferenceInput) => `${item.kind}:${item.id}`;
+/**
+ * A frame slot is not a reference: the render passes it as `first_frame`/`last_frame` and
+ * strips it back out of the reference list, so it is never one of the numbered `图N` the
+ * prompt can talk about. Picking one therefore adds no chip and no `@mention`.
+ */
+const parseFrameValue = (value: string): GenerationReferenceInput | null => {
+  if (!value) return null;
+  const separator = value.indexOf(":");
+  return {
+    kind: value.slice(0, separator) as GenerationReferenceInput["kind"],
+    id: value.slice(separator + 1),
+  };
+};
 const withDefaultMentions = (
   prompt: string,
   references: GenerationReferenceInput[],
@@ -133,7 +146,9 @@ export function ShotRow({
   const [videoReferences, setVideoReferences] = useState<GenerationReferenceInput[]>(
     effectiveReferences(scene.videoReferences, scene.videoReferencesExplicit ? [] : defaultVideoReferences)
   );
-  const [videoFirstFrame, setVideoFirstFrame] = useState<GenerationReferenceInput | null>(scene.videoFirstFrame ?? (supportsFirstFrame && scene.image.url ? { kind: "sceneImage", id: scene.id } : null));
+  // Just the stored value. The "use this shot's own render" suggestion lives in
+  // `effectiveFirstFrame` alone, so there is one place that decides it.
+  const [videoFirstFrame, setVideoFirstFrame] = useState<GenerationReferenceInput | null>(scene.videoFirstFrame ?? null);
   const [firstFrameTouched, setFirstFrameTouched] = useState(false);
   const [videoLastFrame, setVideoLastFrame] = useState<GenerationReferenceInput | null>(scene.videoLastFrame ?? null);
   const [seconds, setSeconds] = useState(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
@@ -179,15 +194,12 @@ export function ShotRow({
   }, [defaultImageReferences, imageReferenceAssets, scene.imageReferences, scene.imageReferencesExplicit]);
 
   const effectiveFirstFrame = videoFirstFrame ?? (
-    !firstFrameTouched && supportsFirstFrame && !scene.videoFirstFrame && scene.image.url
+    // Only suggest the shot's own render while nobody has decided. Once the user has
+    // saved a choice — including "不使用" — the slot is theirs and the suggestion stops.
+    !firstFrameTouched && !scene.videoFirstFrameExplicit && supportsFirstFrame && !scene.videoFirstFrame && scene.image.url
       ? { kind: "sceneImage" as const, id: scene.id }
       : null
   );
-  const updateVideoReferences = (next: GenerationReferenceInput[]) => {
-    setVideoReferences(next);
-    if (videoFirstFrame && !next.some((item) => referenceKey(item) === referenceKey(videoFirstFrame))) setVideoFirstFrame(null);
-    if (videoLastFrame && !next.some((item) => referenceKey(item) === referenceKey(videoLastFrame))) setVideoLastFrame(null);
-  };
 
   useEffect(() => {
     const resolvedDefaults = defaultVideoReferences.filter((reference) =>
@@ -211,6 +223,11 @@ export function ShotRow({
       setVideoPrompt(scene.videoPrompt);
       setImageReferences(scene.imageReferences ?? []);
       setVideoReferences(scene.videoReferences ?? []);
+      // Re-seed the frame slots too, or a saved "不使用首帧" reads back as the old value
+      // and the row keeps showing what the user just cleared.
+      setVideoFirstFrame(scene.videoFirstFrame ?? null);
+      setVideoLastFrame(scene.videoLastFrame ?? null);
+      setFirstFrameTouched(false);
       setSeconds(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
     }
   }, [
@@ -223,6 +240,8 @@ export function ShotRow({
     scene.videoPrompt,
     scene.imageReferences,
     scene.videoReferences,
+    scene.videoFirstFrame,
+    scene.videoLastFrame,
     scene.durationMs,
   ]);
 
@@ -253,8 +272,10 @@ export function ShotRow({
         videoPrompt,
         imageReferences,
         videoReferences,
-        videoFirstFrame: effectiveFirstFrame,
-        videoLastFrame,
+        // "" rather than null: the backend reads an absent key and a null alike as
+        // "leave alone", so null could never clear a frame the user turned off.
+        videoFirstFrame: effectiveFirstFrame ?? "",
+        videoLastFrame: videoLastFrame ?? "",
         durationMs: seconds.trim() ? Math.round(Number(seconds) * 1000) : 0,
       }),
     onSuccess: () => void refresh(),
@@ -310,6 +331,9 @@ export function ShotRow({
       (item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "audio"
     ).length,
   };
+
+  // Frame slots take a still, whatever its source.
+  const frameOptions = videoReferenceAssets.filter((asset) => asset.media === "image");
 
   return (
     <div
@@ -758,15 +782,52 @@ export function ShotRow({
                 placeholder={t("episode.videoPromptPlaceholder")}
                 onChange={(event) => setVideoPrompt(event.target.value)}
                 references={videoReferences}
-                onReferencesChange={updateVideoReferences}
+                // Just the chips. Removing one must not clear a frame slot: the frame is not
+                // in this list, so "the chip is gone" says nothing about the frame choice.
+                onReferencesChange={setVideoReferences}
                 assets={videoReferenceAssets}
                 limits={videoReferenceLimits}
                 className="field-sizing-fixed min-h-16 resize-y bg-background/80 text-xs"
               />
               {supportsFirstFrame || supportsLastFrame ? (
                 <div className="flex flex-wrap gap-2 text-xs">
-                  {supportsFirstFrame ? <label className="flex items-center gap-1"><span>{t("episode.useFirstFrame")}</span><select className="h-7 rounded border bg-background px-1" value={effectiveFirstFrame ? `${effectiveFirstFrame.kind}:${effectiveFirstFrame.id}` : ""} onChange={(event) => { setFirstFrameTouched(true); const next = event.target.value ? (() => { const [kind, id] = event.target.value.split(":"); return { kind: kind as GenerationReferenceInput["kind"], id }; })() : null; setVideoFirstFrame(next); if (next && !videoReferences.some((item) => referenceKey(item) === referenceKey(next))) { updateVideoReferences([...videoReferences, next]); setVideoPrompt((current) => withDefaultMentions(current, [next], videoReferenceAssets)); } }}><option value="">{t("episode.frameNone")}</option>{videoReferenceAssets.filter((asset) => asset.media === "image").map((asset) => <option key={`first-${asset.kind}:${asset.id}`} value={`${asset.kind}:${asset.id}`}>{asset.label}</option>)}</select></label> : null}
-                  {supportsLastFrame ? <label className="flex items-center gap-1"><span>{t("episode.useLastFrame")}</span><select className="h-7 rounded border bg-background px-1" value={videoLastFrame ? `${videoLastFrame.kind}:${videoLastFrame.id}` : ""} onChange={(event) => { const next = event.target.value ? (() => { const [kind, id] = event.target.value.split(":"); return { kind: kind as GenerationReferenceInput["kind"], id }; })() : null; setVideoLastFrame(next); if (next && !videoReferences.some((item) => referenceKey(item) === referenceKey(next))) { updateVideoReferences([...videoReferences, next]); setVideoPrompt((current) => withDefaultMentions(current, [next], videoReferenceAssets)); } }}>{/* options */}<option value="">{t("episode.frameNone")}</option>{videoReferenceAssets.filter((asset) => asset.media === "image").map((asset) => <option key={`last-${asset.kind}:${asset.id}`} value={`${asset.kind}:${asset.id}`}>{asset.label}</option>)}</select></label> : null}
+                  {supportsFirstFrame ? (
+                    <label className="flex items-center gap-1">
+                      <span>{t("episode.useFirstFrame")}</span>
+                      <select
+                        className="h-7 rounded border bg-background px-1"
+                        value={effectiveFirstFrame ? referenceKey(effectiveFirstFrame) : ""}
+                        onChange={(event) => {
+                          setFirstFrameTouched(true);
+                          setVideoFirstFrame(parseFrameValue(event.target.value));
+                        }}
+                      >
+                        <option value="">{t("episode.frameNone")}</option>
+                        {frameOptions.map((asset) => (
+                          <option key={`first-${referenceKey(asset)}`} value={referenceKey(asset)}>
+                            {asset.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {supportsLastFrame ? (
+                    <label className="flex items-center gap-1">
+                      <span>{t("episode.useLastFrame")}</span>
+                      <select
+                        className="h-7 rounded border bg-background px-1"
+                        value={videoLastFrame ? referenceKey(videoLastFrame) : ""}
+                        onChange={(event) => setVideoLastFrame(parseFrameValue(event.target.value))}
+                      >
+                        <option value="">{t("episode.frameNone")}</option>
+                        {frameOptions.map((asset) => (
+                          <option key={`last-${referenceKey(asset)}`} value={referenceKey(asset)}>
+                            {asset.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
               ) : null}
             </Field>

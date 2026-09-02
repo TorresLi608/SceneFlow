@@ -1,5 +1,3 @@
-# SceneFlow
-
 <div align="center">
 
 # 🎬 SceneFlow
@@ -35,13 +33,13 @@ The system runs on a clean decoupled architecture: a **Next.js 16** frontend (BF
 
 ## ✨ Key Highlights
 
-- 📝 **Intelligent Script Breakdown**: Decompose scripts into granular, structured shot metadata (narration, dialogue, speaker, composition, camera moves, transitions, and duration).
-- 🎭 **Series Continuity Bible**: Maintain cast faces, costumes, turnaround sheets, voice profiles, and prop cards across episodes using character states and merged reference sheets.
-- 🎨 **Two-Pass Storyboard Anchor**: Approve an episode-wide **Tone Sheet** first to lock in color palette, style, and lighting before rendering full-resolution sequential shots.
-- ⚡ **Multi-Model Routing**: Mix and match text, image, video, and voice models per project (OpenAI, Google Gemini, Qwen/Wan, ByteDance Doubao Seedance, DeepSeek, Anthropic, or custom OpenAI-compatible endpoints).
-- 💬 **AI Production Copilot**: Embedded conversational assistant with context compression, prompt refinement, and real-time streaming output.
-- 🔒 **Secure Expiring Media**: Assets are stored safely with relative paths and served via time-limited, backend-signed URLs.
-- 🌐 **Full Bilingual UI**: Complete internationalization support for both **English** and **简体中文**.
+- 📝 **Intelligent Script Breakdown**: Decompose scripts into structured shots — narration, dialogue, speaker, shot size, composition prompt, camera move, transition, and duration. The frame side and the motion side are separate fields, so re-deriving camera work never discards frames you already rendered.
+- 🎭 **Series Continuity Bible**: Character cards, per-episode character states, turnaround sheets, props, and voice profiles. References are merged into one sheet before they reach the renderer, so a cast of any size keeps its faces and costumes across episodes.
+- 🎨 **Two-Pass Storyboard Anchor**: Approve an episode-wide **Tone Sheet** to lock palette, lighting, and render style before paying for full-resolution shots.
+- ⚡ **Multi-Model Routing**: Pick text, image, video, and voice models per project, falling back to the account default (OpenAI, Google Gemini, Qwen/Wan, ByteDance Doubao Seedance, DeepSeek, Anthropic, or any OpenAI-compatible endpoint).
+- 💬 **AI Production Copilot**: Conversational assistant with session history, context compression, media attachments, and streaming output.
+- 🔒 **Secure Expiring Media**: Assets are stored as relative paths and served only through time-limited, backend-signed HMAC links.
+- 🌐 **Full Bilingual UI**: Complete internationalization for both **English** and **简体中文**.
 
 ---
 
@@ -57,12 +55,12 @@ flowchart LR
     F --> G[📦 Export & Deliver]
 ```
 
-1. **Project & Script Setup**: Create a series and import raw episode scripts.
-2. **Model & Cast Setup**: Configure AI providers, design character looks, turnaround sheets, and timbre references.
-3. **Breakdown**: Parse text into separate frame (visual) and motion (camera) prompts.
-4. **Tone Sheet**: Resample and approve the episode anchor style.
-5. **Storyboard & Video**: Sequentially generate storyboard frames and animate clips.
-6. **Workspace Polish**: Review, regenerate, lock, and manage assets in the visual editor.
+1. **Project & script** — create a series, then import each episode's script.
+2. **Models & bible** — set a provider per purpose, then design character states, turnaround sheets, props, and voice profiles. What you draw here is what holds faces steady later.
+3. **Breakdown** — split the script into shots. `target` chooses which half is produced, so motion can be re-derived without touching rendered frames.
+4. **Tone sheet** — one image sampling the whole episode. It is the style anchor, never a deliverable, and it is approved before any full-resolution frame is paid for.
+5. **Storyboard & clips** — shots render *sequentially*, each carrying the tone sheet, the merged cast sheet, and the previous shot's frame; clips are then generated per shot.
+6. **Polish & export** — regenerate individual shots, lock the approved ones so a batch rerun skips them, and merge a selection into the final deliverable.
 
 ---
 
@@ -214,47 +212,50 @@ Visit [http://localhost:4000](http://localhost:4000) in your browser.
 
 ---
 
-## ⚙️ Environment Variables Reference
+## ⚙️ Environment Variables
 
-### Backend Configuration (`backend/.env`)
+`backend/.env.example` and `frontend/.env.example` are the reference — every variable is listed there with a bilingual comment, and the defaults work as-is for local development. Only the ones below usually need your attention.
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8080` | Backend port |
-| `SCENEFLOW_ENV` | `development` | Environment mode (`development` / `production`) |
-| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite database file path |
-| `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | Private media storage directory |
-| `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | Public backend URL for signed media links |
-| `SCENEFLOW_JWT_SECRET` | *(Dev default)* | JWT secret (Must replace in production) |
-| `SCENEFLOW_AES_KEY` | *(Dev default)* | Key encryption master secret (Must replace in production) |
-| `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | Initial super admin password |
-| `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000` | Allowed CORS origins (comma-separated) |
-| `SCENEFLOW_MAX_CONTEXT_TOKENS` | `100000` | Maximum token budget for chat context |
-| `SCENEFLOW_LOG_LEVEL` | `INFO` | Logging verbosity |
-
-### Frontend Configuration (`frontend/.env.local`)
+### Backend (`backend/.env`)
 
 | Variable | Default | Description |
 |---|---|---|
-| `BACKEND_API_BASE_URL` | `http://127.0.0.1:8080` | Next.js server-side BFF proxy target |
-| `NEXT_PUBLIC_BFF_BASE_URL` | `""` | Client-side BFF base URL (empty = same origin) |
-| `NEXT_PUBLIC_WS_BASE_URL` | `ws://127.0.0.1:8080` | Browser WebSocket server URL |
+| `SCENEFLOW_JWT_SECRET` | *(dev default)* | JWT signing secret. **Production startup refuses to boot on the dev value.** |
+| `SCENEFLOW_AES_KEY` | *(dev default)* | Master key encrypting stored provider API keys. **Same refusal applies.** |
+| `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | Initial super-admin password. **Same refusal applies.** |
+| `SCENEFLOW_ENV` | `development` | Set to `production` to enable the checks above. |
+| `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | Backend address baked into signed media links — must be reachable by the browser. |
+| `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | Allowed frontend origins, comma-separated. |
+| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite file; relative paths resolve from `backend/`. |
+| `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | Generated media directory. Back this up together with the database. |
+
+The full list — port, log level, context budget, and CJK font overrides — is in [`backend/README.md`](backend/README.md#environment).
+
+### Frontend (`frontend/.env.local`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `BACKEND_API_BASE_URL` | `http://127.0.0.1:8080` | Next.js server-side BFF proxy target. |
+| `NEXT_PUBLIC_BFF_BASE_URL` | `""` | Client-side BFF base URL; empty means same origin. |
+| `NEXT_PUBLIC_WS_BASE_URL` | `ws://127.0.0.1:8080` | Browser WebSocket URL for render progress. |
 
 ---
 
 ## 🧪 Testing & Pre-Commit Checks
 
 ```bash
-# Run backend tests
+# Backend — one process and one throwaway database per file
 cd backend
 sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')
 
-# Run frontend typecheck & lint
+# Frontend
 cd ../frontend
 pnpm exec tsc --noEmit
 pnpm lint
 node --no-warnings --experimental-strip-types --test src/lib/money.test.mts
 ```
+
+There is no pytest here: backend tests are plain modules that call their own test functions and drive the real ASGI app through `TestClient`. Use `scripts/run_tests.sh` rather than `tests/run_all.py` — the latter runs every file in one process, so state leaks between files and the first failure aborts the rest.
 
 ---
 
@@ -264,22 +265,20 @@ node --no-warnings --experimental-strip-types --test src/lib/money.test.mts
 SceneFlow/
 ├── backend/                 # FastAPI app, SQLModel schemas, services, migrations, tests
 ├── frontend/                # Next.js 16 app, BFF routes, zustand stores, UI primitives
-├── docs/                    # Architecture, design specs, conventions, and roadmaps
-├── scripts/                 # Cross-platform development runners (Mac / Windows / Linux)
-├── docker-compose.yml       # Production/development Docker orchestration
-├── LICENSE                  # GNU AGPL v3 License
-└── DISCLAIMER.md            # Bilingual Disclaimer
+├── docs/                    # Architecture, conventions, feature designs, and generated reference
+├── scripts/                 # Cross-platform install & dev runners (macOS / Windows / Linux)
+└── docker-compose.yml       # Container orchestration
 ```
 
 ---
 
 ## 🤝 Contributing
 
-We warmly welcome issues, feedback, and pull requests!
+Issues, feedback, and pull requests are welcome.
 
-1. Check our [Architecture Overview](docs/architecture/overview.md) and [Coding Conventions](docs/conventions/README.md).
-2. For UI changes, ensure all visible strings are added to both `zh` and `en` in `frontend/src/lib/i18n.ts`.
-3. Verify changes with backend tests and frontend `pnpm exec tsc --noEmit`.
+1. Read the [Architecture Overview](docs/architecture/overview.md) and [Coding Conventions](docs/conventions/README.md) first — the conventions list the rules that break things silently when violated.
+2. For UI changes, add every visible string to **both** `zh` and `en` in `frontend/src/lib/i18n.ts`.
+3. Pass the checks above, and regenerate `docs/reference/api-spec.yaml` if you touched an endpoint or a request model.
 4. Open a pull request against `main`.
 
 ---
@@ -287,4 +286,4 @@ We warmly welcome issues, feedback, and pull requests!
 ## 📄 License & Disclaimer
 
 - **License**: SceneFlow is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
-- **Disclaimer**: Please read [DISCLAIMER.md](DISCLAIMER.md) regarding AI generation output review, third-party provider terms, intellectual property, and usage costs.
+- **Disclaimer**: Please read [DISCLAIMER.md](DISCLAIMER.md) regarding AI generation output review, third-party provider terms, intellectual property, usage costs, and what support to expect.

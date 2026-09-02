@@ -1,5 +1,3 @@
-# SceneFlow
-
 <div align="center">
 
 # 🎬 SceneFlow
@@ -35,12 +33,12 @@
 
 ## ✨ 核心能力
 
-- 📝 **智能剧本拆镜**：将整集剧本精准拆解为叙事、对白、说话人、景别构图、画面提示、运镜轨迹、转场与时长等结构化镜头数据。
-- 🎭 **连续性设定库**：通过角色卡、多形态状态卡、三视图设定图、道具绑定以及音色库，严格锁定跨集的人物样貌、服装与音色。
-- 🎨 **两阶段分镜锚定**：首创两阶段渲染管线——先生成并确认整集「基调图（Tone Sheet）」锁定整体光影与画风，再携带基调图与上一镜头顺序渲染高清分镜。
-- ⚡ **多模型自由路由**：项目级模型自由配置，按需混合搭配文本、图像、视频与音频模型（支持 OpenAI、Google Gemini、阿里通义/Wan、字节豆包 Seedance、DeepSeek、Anthropic 以及任意 OpenAI 兼容接口）。
+- 📝 **智能剧本拆镜**：把整集剧本拆解为结构化镜头——叙事、对白、说话人、景别、画面提示词、运镜、转场与时长。画面侧与运镜侧是分开的字段，因此重新推导运镜不会丢掉已经渲染好的分镜图。
+- 🎭 **连续性设定库**：角色卡、分集生效的角色状态、三视图设定图、道具与音色库。参考图在送进渲染前会先合并成一张总图，因此无论出场人数多少，跨集的样貌与服装都能保持稳定。
+- 🎨 **两阶段分镜锚定**：先生成并确认整集「基调图（Tone Sheet）」锁定色调、光影与画风，再为高清分镜付费渲染。
+- ⚡ **多模型自由路由**：按项目分别指定文本、图像、视频与音频模型，未指定时回落到账号默认配置（支持 OpenAI、Google Gemini、阿里通义/Wan、字节豆包 Seedance、DeepSeek、Anthropic 以及任意 OpenAI 兼容接口）。
 - 💬 **AI 创作协作助手**：内置支持历史会话、上下文压缩、素材附件与流式响应的智能对话 Copilot。
-- 🔒 **安全签名媒体分发**：生成媒体资产保存在受保护的本地目录，数据库只存相对路径，前端仅通过后端生成的防盗链限时 HMAC 签名链接访问。
+- 🔒 **安全签名媒体分发**：生成资产以相对路径入库，仅通过后端签发的限时 HMAC 链接访问。
 - 🌐 **完备的中英双语**：全站 UI 原生内置中文与英文国际化支持。
 
 ---
@@ -57,12 +55,12 @@ flowchart LR
     F --> G[📦 成果导出与交付]
 ```
 
-1. **项目与剧本创建**：建立短剧系列，导入分集剧本文本。
-2. **模型与设定配置**：配置 AI 提供商模型密钥，创建角色三视图与音色参考。
-3. **剧本拆解**：分离画面静态描述与动态运镜指令。
-4. **基调图审核**：采样并审核全集视觉基调锚点。
-5. **分镜与视频生成**：按上下文依赖关系批量或单镜头渲染分镜画面与动态视频。
-6. **工作台微调与导出**：在可视化分镜工作台中调整、锁定、重生成并导出最终成片资产。
+1. **项目与剧本**：建立短剧系列，导入分集剧本文本。
+2. **模型与设定**：为各用途分别配置模型，然后设计角色状态、三视图设定图、道具与音色。这里画好的东西，就是后面稳住人物长相的依据。
+3. **剧本拆解**：把剧本拆成分镜。`target` 决定本次只产出哪一半，因此补充运镜不会动到已渲染的画面。
+4. **基调图审核**：一张采样整集的图片。它只是画风锚点，不是交付物，并且要在为任何高清分镜付费之前先确认。
+5. **分镜与视频**：分镜**按顺序**渲染，每一镜都携带基调图、合并后的角色总图和上一镜的成图；随后逐镜生成视频。
+6. **微调与导出**：单独重生成某一镜，锁定已满意的分镜使批量重跑跳过它们，最后挑选分镜合并导出成片。
 
 ---
 
@@ -214,47 +212,50 @@ pnpm run dev:frontend
 
 ---
 
-## ⚙️ 环境变量配置参考
+## ⚙️ 环境变量配置
 
-### 后端配置（`backend/.env`）
+`backend/.env.example` 与 `frontend/.env.example` 是完整参考——每个变量都带中英双语注释，且默认值可直接用于本地开发。通常只有下面这些需要你关心。
 
-| 变量名 | 默认值 | 说明 |
-|---|---|---|
-| `PORT` | `8080` | 后端监听端口 |
-| `SCENEFLOW_ENV` | `development` | 运行环境（`development` / `production`） |
-| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite 数据库文件路径 |
-| `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | 私有媒体文件存储目录 |
-| `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | 生成媒体签名链接时使用的后端公开地址 |
-| `SCENEFLOW_JWT_SECRET` | *(开发默认值)* | JWT 签名密钥（生产环境必须替换） |
-| `SCENEFLOW_AES_KEY` | *(开发默认值)* | 模型 API Key 加密主密钥（生产环境必须替换） |
-| `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | 初始超级管理员密码 |
-| `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000` | 允许跨域的前端 Origin 列表（逗号分隔） |
-| `SCENEFLOW_MAX_CONTEXT_TOKENS` | `100000` | 聊天上下文最大 Token 上限 |
-| `SCENEFLOW_LOG_LEVEL` | `INFO` | 日志输出级别 |
-
-### 前端配置（`frontend/.env.local`）
+### 后端（`backend/.env`）
 
 | 变量名 | 默认值 | 说明 |
 |---|---|---|
-| `BACKEND_API_BASE_URL` | `http://127.0.0.1:8080` | Next.js 服务端 BFF 代理目标地址 |
-| `NEXT_PUBLIC_BFF_BASE_URL` | `""` | 浏览器客户端 BFF 基础地址（留空表示同源） |
-| `NEXT_PUBLIC_WS_BASE_URL` | `ws://127.0.0.1:8080` | 浏览器 WebSocket 实时连接地址 |
+| `SCENEFLOW_JWT_SECRET` | *(开发默认值)* | JWT 签名密钥。**生产环境使用开发默认值会直接拒绝启动。** |
+| `SCENEFLOW_AES_KEY` | *(开发默认值)* | 加密已保存的模型 API Key 的主密钥。**同样会拒绝启动。** |
+| `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | 初始超级管理员密码。**同样会拒绝启动。** |
+| `SCENEFLOW_ENV` | `development` | 设为 `production` 后才会启用上述校验。 |
+| `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | 写进媒体签名链接的后端地址，必须是浏览器能访问到的。 |
+| `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | 允许跨域的前端 Origin，英文逗号分隔。 |
+| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite 文件；相对路径以 `backend/` 为基准。 |
+| `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | 生成媒体目录，备份时需与数据库一起备份。 |
+
+端口、日志级别、上下文 Token 上限与中文字体覆盖等完整清单见 [`backend/README.md`](backend/README.md#environment)。
+
+### 前端（`frontend/.env.local`）
+
+| 变量名 | 默认值 | 说明 |
+|---|---|---|
+| `BACKEND_API_BASE_URL` | `http://127.0.0.1:8080` | Next.js 服务端 BFF 代理目标地址。 |
+| `NEXT_PUBLIC_BFF_BASE_URL` | `""` | 浏览器端 BFF 基础地址，留空表示同源。 |
+| `NEXT_PUBLIC_WS_BASE_URL` | `ws://127.0.0.1:8080` | 浏览器接收渲染进度的 WebSocket 地址。 |
 
 ---
 
 ## 🧪 测试与质量门禁
 
 ```bash
-# 运行后端测试集
+# 后端——每个测试文件一个独立进程与一份临时数据库
 cd backend
 sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')
 
-# 运行前端类型检查与 Lint
+# 前端
 cd ../frontend
 pnpm exec tsc --noEmit
 pnpm lint
 node --no-warnings --experimental-strip-types --test src/lib/money.test.mts
 ```
+
+本项目不使用 pytest：后端测试是普通模块，各自调用自己的测试函数，通过 `TestClient` 驱动真实的 ASGI 应用。请使用 `scripts/run_tests.sh` 而不是 `tests/run_all.py`——后者在同一个进程里跑完所有文件，模块状态会互相污染，且第一个失败就会中断其余文件。
 
 ---
 
@@ -264,22 +265,20 @@ node --no-warnings --experimental-strip-types --test src/lib/money.test.mts
 SceneFlow/
 ├── backend/                 # FastAPI 应用、SQLModel 数据模型、业务服务、迁移、测试
 ├── frontend/                # Next.js 16 页面、BFF 路由、状态仓库、UI 组件
-├── docs/                    # 系统架构、功能设计、开发约定、项目计划与参考手册
-├── scripts/                 # 跨平台开发启动与安装脚本（兼容 Mac / Windows / Linux）
-├── docker-compose.yml       # 容器化部署编排配置
-├── LICENSE                  # GNU AGPL v3 开源许可证
-└── DISCLAIMER.md            # 中英文免责声明
+├── docs/                    # 系统架构、工程约定、功能设计与生成的参考手册
+├── scripts/                 # 跨平台安装与开发启动脚本（macOS / Windows / Linux）
+└── docker-compose.yml       # 容器化部署编排配置
 ```
 
 ---
 
 ## 🤝 参与贡献
 
-热烈欢迎提交 Issue、功能建议与 Pull Request！
+欢迎提交 Issue、功能建议与 Pull Request。
 
-1. 开发前请查阅 [架构概览](docs/architecture/overview.md) 与 [工程约定规范](docs/conventions/README.md)。
-2. 如涉及界面文本，请同步在 `frontend/src/lib/i18n.ts` 的中英文字典中增加词条。
-3. 提交前确保通过后端测试与前端 `pnpm exec tsc --noEmit`。
+1. 开发前请先阅读 [架构概览](docs/architecture/overview.md) 与 [工程约定规范](docs/conventions/README.md)——约定里列出的是那些一旦违反就会悄无声息出问题的规则。
+2. 涉及界面文本时，请在 `frontend/src/lib/i18n.ts` 的 `zh` 与 `en` 字典中**同时**添加词条。
+3. 提交前跑通上面的检查；若改动了接口或请求模型，请重新生成 `docs/reference/api-spec.yaml`。
 4. 欢迎向 `main` 分支提交 PR。
 
 ---
@@ -287,4 +286,4 @@ SceneFlow/
 ## 📄 开源许可证与免责声明
 
 - **开源协议**：SceneFlow 基于 [GNU Affero General Public License v3.0 or later](LICENSE)（`AGPL-3.0-or-later`）开源发布。
-- **免责声明**：使用本项目即代表你已知悉并同意 [免责声明 DISCLAIMER.md](DISCLAIMER.md) 中的全部条款。
+- **免责声明**：关于 AI 生成结果的人工审核、第三方服务商条款、知识产权、调用成本以及支持预期，请阅读 [DISCLAIMER.md](DISCLAIMER.md)。

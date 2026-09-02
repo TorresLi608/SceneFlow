@@ -1,5 +1,5 @@
 # SceneFlow backend OpenAPI spec.
-# GENERATED FILE - do not hand-edit. Regenerate with the command in docs/reference/error-codes.md.
+# GENERATED FILE - do not hand-edit. Regenerate with scripts/regen_api_spec.py.
 openapi: 3.1.0
 info:
   title: SceneFlow Backend
@@ -5404,11 +5404,17 @@ components:
         videoFirstFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
           - type: 'null'
+          title: Videofirstframe
         videoLastFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
           - type: 'null'
+          title: Videolastframe
         durationMs:
           anyOf:
           - type: integer
@@ -6554,11 +6560,17 @@ components:
         videoFirstFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
           - type: 'null'
+          title: Videofirstframe
         videoLastFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
           - type: 'null'
+          title: Videolastframe
         durationMs:
           anyOf:
           - type: integer

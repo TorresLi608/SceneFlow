@@ -137,6 +137,12 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
         "videoReferencesExplicit": bool(scene.video_references_explicit),
         "videoFirstFrame": frame_reference(scene.video_first_frame_json),
         "videoLastFrame": frame_reference(scene.video_last_frame_json),
+        # A cleared frame and a frame nobody ever chose are both `videoFirstFrame: null`,
+        # but they mean opposite things to the editor: the first must stay off, the second
+        # may still be filled with the shot's own render. The column tells them apart —
+        # "" is untouched, "null" is the user turning it off.
+        "videoFirstFrameExplicit": bool((scene.video_first_frame_json or "").strip()),
+        "videoLastFrameExplicit": bool((scene.video_last_frame_json or "").strip()),
         # 0 means undecided; the renderer falls back to the project's default shot length.
         "durationMs": scene.duration_ms or 0,
         "subtitleText": scene.subtitle_text or "",

@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { promptLanguageItems } from "@/components/prompt-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { artifactBffUrl } from "@/lib/artifact-url";
@@ -319,6 +320,7 @@ export function VoiceGenerationPanel({
                 </label>
                 <div className="flex items-center gap-1.5">
                   <Select
+                    items={promptLanguageItems(t)}
                     value={promptLanguage}
                     onValueChange={(value) =>
                       setPromptLanguage((value ?? "auto") as "auto" | "zh" | "en")

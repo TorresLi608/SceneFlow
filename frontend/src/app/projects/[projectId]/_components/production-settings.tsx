@@ -61,6 +61,10 @@ export function ProductionSettingsForm({
         <div className="space-y-1.5">
           <Label className="text-xs font-medium text-foreground">{t("home.productionMode")}</Label>
           <Select
+            items={[
+              { value: "comic", label: t("home.comicMode") },
+              { value: "drama", label: t("home.dramaMode") },
+            ]}
             value={draft.mode}
             onValueChange={(value) =>
               setDraft((current) => ({ ...current, mode: value as ProjectMode }))
@@ -80,6 +84,11 @@ export function ProductionSettingsForm({
         <div className="space-y-1.5">
           <Label className="text-xs font-medium text-foreground">{t("home.aspectRatio")}</Label>
           <Select
+            items={[
+              { value: "9:16", label: "9:16（竖屏短剧）" },
+              { value: "16:9", label: "16:9（横屏漫剧）" },
+              { value: "1:1", label: "1:1（方形画幅）" },
+            ]}
             value={draft.aspectRatio}
             onValueChange={(value) =>
               updateAspectRatio(value as ProductionSettings["aspectRatio"])
@@ -100,6 +109,10 @@ export function ProductionSettingsForm({
         <div className="space-y-1.5">
           <Label className="text-xs font-medium text-foreground">{t("home.frameRate")}</Label>
           <Select
+            items={[
+              { value: "24", label: "24 FPS（电影质感）" },
+              { value: "30", label: "30 FPS（流畅画质）" },
+            ]}
             value={String(draft.fps)}
             onValueChange={(value) =>
               setDraft((current) => ({ ...current, fps: Number(value) as 24 | 30 }))

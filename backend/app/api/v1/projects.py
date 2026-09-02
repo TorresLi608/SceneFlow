@@ -589,7 +589,12 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
             updates[f"{field}_explicit"] = True
     for field, column in (("video_first_frame", "video_first_frame_json"), ("video_last_frame", "video_last_frame_json")):
         if field in sent and sent[field] is not None:
-            updates[column] = json.dumps(sent[field], separators=(",", ":")) if sent[field] else ""
+            # `""` is the client saying "no frame". It has to reach the column as a stored
+            # `null` rather than "", because "" is the server default meaning "nobody has
+            # chosen yet" — and the editor refills that one with the shot's own render.
+            # Dropping "" here, as `is not None` already does for an absent key, made
+            # "不使用首帧" impossible to save.
+            updates[column] = json.dumps(sent[field] or None, separators=(",", ":"))
     if not updates:
         raise HTTPException(400, "no fields to update")
     # "Nobody in particular" arrives as an empty string, because a JSON null would be

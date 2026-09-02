@@ -18,6 +18,19 @@ import { cn } from "@/lib/utils";
 type OutputLanguage = "auto" | "zh" | "en";
 export type PresetKind = "character" | "prop" | "cover";
 
+/**
+ * Options for a prompt-language `Select`, in the shape base-ui's `items` prop wants.
+ *
+ * Passing this to `Select.Root` is not optional: base-ui resolves the trigger's text from
+ * `items`, not from the `label` prop on each `Select.Item` (which only feeds typeahead).
+ * Without it `Select.Value` renders the raw value, so picking 中文 left "zh" on screen.
+ */
+export const promptLanguageItems = (t: (key: string) => string) => [
+  { value: "auto", label: t("common.promptLanguageAuto") },
+  { value: "zh", label: t("common.promptLanguageZh") },
+  { value: "en", label: t("common.promptLanguageEn") },
+];
+
 interface PromptFieldProps {
   id: string;
   label: string;
@@ -27,6 +40,13 @@ interface PromptFieldProps {
   onChange: (value: string) => void;
   /** Omit to hide the preset dropdown — voice prompts have no templates worth offering. */
   presetKind?: PresetKind;
+  /**
+   * The chosen preset's key. Lifted out of this component because the caller has to send it
+   * with "draft it for me": the backend falls back to the *first* preset for an unknown key,
+   * so a dropped key silently drafts a turnaround sheet no matter what the user picked.
+   */
+  preset?: string;
+  onPresetChange?: (key: string) => void;
   placeholder?: string;
   /** Rendered to the right of the preset dropdown; where a "draft it for me" button goes. */
   actions?: React.ReactNode;
@@ -54,6 +74,8 @@ export function PromptField({
   value,
   onChange,
   presetKind,
+  preset,
+  onPresetChange,
   placeholder,
   actions,
   busy = false,
@@ -102,6 +124,10 @@ export function PromptField({
 
   const presets = presetsQuery.data?.presets ?? [];
   const optimizing = optimizeMutation.isPending;
+  // base-ui resolves the trigger's text from `items` on the root, not from the `label` prop
+  // on each item — without it `Select.Value` renders the raw value ("zh", "expressions").
+  const presetItems = presets.map((item) => ({ value: item.key, label: item.label }));
+  const languageItems = promptLanguageItems(t);
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -113,25 +139,28 @@ export function PromptField({
           {actions}
           {presetKind && presets.length > 0 ? (
             <Select
-              value=""
+              items={presetItems}
+              value={preset ?? ""}
               onValueChange={(next) => {
-                const preset = presets.find((item) => item.key === next);
-                if (preset) onChange(preset.template);
+                const chosen = presets.find((item) => item.key === next);
+                if (!chosen) return;
+                onPresetChange?.(chosen.key);
+                onChange(chosen.template);
               }}
             >
               <SelectTrigger size="sm" className="h-7 min-w-28 text-[11px]" aria-label={t("prompt.presets")}>
                 <SelectValue placeholder={t("prompt.presets")} />
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
-                {presets.map((preset) => (
-                  <SelectItem key={preset.key} value={preset.key} label={preset.label} className="text-xs">
-                    {preset.label}
+                {presets.map((item) => (
+                  <SelectItem key={item.key} value={item.key} label={item.label} className="text-xs">
+                    {item.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           ) : null}
-          <Select value={language} onValueChange={(next) => setLanguage((next ?? "auto") as OutputLanguage)}>
+          <Select items={languageItems} value={language} onValueChange={(next) => setLanguage((next ?? "auto") as OutputLanguage)}>
             <SelectTrigger size="sm" className="h-7 min-w-20 text-[11px]" aria-label={t("common.promptLanguageAuto")}>
               <SelectValue />
             </SelectTrigger>

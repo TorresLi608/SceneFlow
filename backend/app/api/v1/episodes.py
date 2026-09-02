@@ -44,6 +44,7 @@ from app.services.project_service import (
     scenes_with_assets,
     selected_scenes,
 )
+from app.services.prompt_service import with_shot_label
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
 from app.services.usage_service import record_usage, require_model_balance
@@ -175,13 +176,18 @@ def _image_config(session, user_id: int, project) -> dict[str, Any]:
     return config
 
 
-def _shot_values(draft: Any, target: str) -> dict[str, Any]:
-    """Columns a drafted shot writes, narrowed to what this target actually produced."""
+def _shot_values(draft: Any, target: str, order: int) -> dict[str, Any]:
+    """Columns a drafted shot writes, narrowed to what this target actually produced.
+
+    Both prompts are re-labelled from `order` rather than trusting the model's own
+    numbering: it drops the opener often enough, and the number has to survive shots being
+    inserted, deleted or reordered afterwards.
+    """
     values: dict[str, Any] = {}
     if target in {"shots", "both"}:
         values.update(
             narration=draft.narration,
-            visual_prompt=draft.visualPrompt,
+            visual_prompt=with_shot_label(draft.visualPrompt, order),
             dialogue=draft.dialogue,
             shot_type=draft.shotType,
         )
@@ -189,7 +195,7 @@ def _shot_values(draft: Any, target: str) -> dict[str, Any]:
         values.update(
             camera_move=draft.cameraMove,
             transition=draft.transition,
-            video_prompt=draft.videoPrompt,
+            video_prompt=with_shot_label(draft.videoPrompt, order),
             # Seconds in, milliseconds out: the column is milliseconds like every other
             # duration here, but a model asked for milliseconds guesses far worse.
             duration_ms=draft.durationSeconds * 1000,
@@ -244,7 +250,7 @@ def _replace_shots(project_id: str, episode_id: str, drafts: list[Any], source_t
                 image_status="idle",
                 audio_status="idle",
                 speaker_character_id=speaker,
-                **_shot_values(draft, target),
+                **_shot_values(draft, target, index),
             )
             for index, (draft, speaker) in enumerate(zip(drafts, speakers), start=1)
         )
@@ -258,11 +264,11 @@ def _apply_video_shots(project_id: str, scenes: list[Scene], drafts: list[Any]) 
     """
     stamp = now()
     with db() as session:
-        for scene, draft in zip(scenes, drafts):
+        for index, (scene, draft) in enumerate(zip(scenes, drafts), start=1):
             session.execute(
                 update(Scene)
                 .where(Scene.id == scene.id)
-                .values(updated_at=stamp, **_shot_values(draft, "video")),
+                .values(updated_at=stamp, **_shot_values(draft, "video", scene.order_num or index)),
                 execution_options={"synchronize_session": False},
             )
 

@@ -158,7 +158,11 @@ def test_breakdown_writes_camera_transition_duration_and_motion_prompt() -> None
             assert len(shots) == 2
             assert shots[0]["cameraMove"] == "缓慢推镜"
             assert shots[0]["transition"] == "淡入"
-            assert shots[0]["videoPrompt"].startswith("镜头自雾中")
+            # Both prompts open with the shot's own number, re-derived from `order_num`
+            # rather than trusted from the model — see `prompt_service.with_shot_label`.
+            assert shots[0]["videoPrompt"] == "分镜 1：镜头自雾中缓缓推向山门，风吹动幡旗"
+            assert shots[1]["videoPrompt"].startswith("分镜 2：")
+            assert shots[0]["visualPrompt"].startswith("分镜 1：")
             # Seconds in, milliseconds out — the column is milliseconds like every duration
             # here, but a model asked for milliseconds guesses far worse.
             assert shots[0]["durationMs"] == 6000
