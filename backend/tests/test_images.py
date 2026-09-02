@@ -146,6 +146,53 @@ def test_openai_image_does_not_retry_provider_errors() -> None:
     assert client.call_args.kwargs["max_retries"] == 0
 
 
+def test_openai_compatible_image_downloads_url_response() -> None:
+    generate = AsyncMock(
+        return_value=SimpleNamespace(data=[SimpleNamespace(b64_json=None, url="https://images.example.test/result.webp")])
+    )
+    openai_client = Mock(return_value=SimpleNamespace(images=SimpleNamespace(generate=generate)))
+    image_response = SimpleNamespace(
+        content=b"webp",
+        headers={"content-type": "image/webp; charset=binary"},
+        raise_for_status=lambda: None,
+    )
+    http_client = AsyncMock()
+    http_client.get.return_value = image_response
+    http_context = AsyncMock()
+    http_context.__aenter__.return_value = http_client
+
+    with (
+        patch("app.llms.router.AsyncOpenAI", openai_client),
+        patch("app.llms.router.httpx.AsyncClient", return_value=http_context),
+    ):
+        result = asyncio.run(
+            ModelRouter().generate_image(
+                "test-key", "image-model", "draw it", base_url="https://relay.example.test/v1"
+            )
+        )
+
+    assert result.data == b"webp"
+    assert result.format == "webp"
+    http_client.get.assert_awaited_once_with("https://images.example.test/result.webp")
+
+
+def test_openai_compatible_image_accepts_data_url_response() -> None:
+    edit = AsyncMock(
+        return_value=SimpleNamespace(data=[SimpleNamespace(b64_json=None, url="data:image/webp;base64,d2VicA==")])
+    )
+    openai_client = Mock(return_value=SimpleNamespace(images=SimpleNamespace(edit=edit)))
+
+    with patch("app.llms.router.AsyncOpenAI", openai_client):
+        result = asyncio.run(
+            ModelRouter().edit_image(
+                "test-key", "image-model", "edit it", [("reference.png", b"png", "image/png")]
+            )
+        )
+
+    assert result.data == b"webp"
+    assert result.format == "webp"
+
+
 def test_qwen_image_uses_async_task_with_reference_images() -> None:
     assert _qwen_image_size("2:3", "2K", False) == "1360*2048"
     assert _qwen_image_size("16:9", "4K", True, "wan2.7-image-pro") == "2048*1152"
@@ -218,6 +265,8 @@ if __name__ == "__main__":
     test_official_image_requires_balance_but_personal_config_does_not()
     test_gemini_image_uses_generate_content_without_duplicate_api_version()
     test_openai_image_does_not_retry_provider_errors()
+    test_openai_compatible_image_downloads_url_response()
+    test_openai_compatible_image_accepts_data_url_response()
     test_qwen_image_uses_async_task_with_reference_images()
     test_qwen_image_reads_wan27_choice_result()
     test_qwen_image_relay_uses_openai_compatibility()

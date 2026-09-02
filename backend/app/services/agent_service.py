@@ -11,9 +11,11 @@ from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool, ToolException
 
 from app.core.database import db
+from app.models import User
 from app.llms.registry import models
 from app.llms.router import _content_text, _lc_messages, _openai_image_size, _reasoning_text
 from app.services.artifact_service import save_document_artifact, save_image_artifact, tool_result
+from app.services.error_log_service import error_log_json, find_error_logs
 from app.services.usage_service import aggregate_token_usage, record_usage, require_model_balance
 
 
@@ -25,12 +27,14 @@ You can generate images, PDF files, and Word documents with tools.
 - After a successful tool call, include the exact Markdown link or image Markdown returned by the tool.
 - Never claim a file was generated unless the tool returned a successful result.
 - Do not expose internal paths, API keys, tool arguments, or implementation details.
+- When a super admin asks why a request failed, use the error-log tool before proposing a fix.
 """
 
 TOOL_LABELS = {
     "generate_image": "生成图片",
     "generate_pdf": "生成 PDF",
     "generate_word_document": "生成 Word 文档",
+    "search_error_logs": "查询错误日志",
 }
 
 
@@ -48,6 +52,12 @@ def _tool_detail(value: Any) -> str:
 
 
 def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user_id: int | None = None) -> list[StructuredTool]:
+    can_read_error_logs = False
+    if user_id is not None:
+        with db() as session:
+            user = session.get(User, user_id)
+            can_read_error_logs = bool(user and user.role == "superAdmin")
+
     async def generate_image(prompt: str, title: str = "生成图片", aspect_ratio: Literal["1:1", "3:2", "2:3", "16:9", "9:16"] = "1:1") -> str:
         """Generate an image and return a signed image URL plus Markdown. Use when the user asks to create, draw, render, or illustrate an image."""
         prompt = prompt.strip()
@@ -94,11 +104,29 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
         except Exception as exc:
             raise ToolException(str(exc)) from exc
 
+    def search_error_logs(search: str = "", request_id: str = "", project_id: str = "", error_code: str = "") -> str:
+        """Search redacted server failures by text, request ID, project ID, or error code. Available to super admins for diagnosis only."""
+        with db() as session:
+            user = session.get(User, user_id) if user_id is not None else None
+            if not user or user.role != "superAdmin":
+                raise ToolException("error logs are only available to super admins")
+            _, logs = find_error_logs(
+                session,
+                search=search,
+                request_id=request_id,
+                project_id=project_id,
+                error_code=error_code,
+                page_size=10,
+            )
+        return json.dumps([error_log_json(item) for item in logs], ensure_ascii=False)
+
     tools = [
         StructuredTool.from_function(coroutine=generate_image, name="generate_image", description=generate_image.__doc__),
         StructuredTool.from_function(coroutine=generate_pdf, name="generate_pdf", description=generate_pdf.__doc__),
         StructuredTool.from_function(coroutine=generate_word_document, name="generate_word_document", description=generate_word_document.__doc__),
     ]
+    if can_read_error_logs:
+        tools.append(StructuredTool.from_function(func=search_error_logs, name="search_error_logs", description=search_error_logs.__doc__))
     for item in tools:
         item.handle_tool_error = True
     return tools

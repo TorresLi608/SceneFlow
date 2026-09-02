@@ -45,6 +45,34 @@ class SceneDraft:
 
 
 @dataclass
+class ShotDraft:
+    """One shot as the breakdown produces it: a frame, a performance, and a duration.
+
+    Wider than `SceneDraft`, which only ever carried a line and a picture prompt — enough
+    for a comic panel, but silent on how the camera moves, how the cut is made, and how
+    long the shot runs, all of which a generated clip needs.
+    """
+
+    narration: str
+    visualPrompt: str
+    dialogue: str = ""
+    speaker: str = ""
+    shotType: str = ""
+    cameraMove: str = ""
+    transition: str = ""
+    durationSeconds: int = 0
+    videoPrompt: str = ""
+
+
+@dataclass
+class BreakdownResult:
+    shots: list[ShotDraft]
+    source: str = "llm"
+    warning: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class ParseResult:
     scenes: list[SceneDraft]
     source: str = "llm"
@@ -149,13 +177,84 @@ def _qwen_image_url(output: dict[str, Any]) -> str:
 
 
 def _json_object(text: str) -> dict[str, Any]:
-    text = text.strip()
-    if not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError("response did not contain a JSON object")
-        text = text[start : end + 1]
-    return json.loads(text)
+    """Extract the first complete JSON object from permissive model output.
+
+    Models occasionally wrap JSON in Markdown or append an explanation/second JSON
+    object. ``json.loads`` rejects that with ``Extra data``; ``raw_decode`` stops at
+    the first complete value while still respecting braces inside JSON strings.
+    """
+    decoder = json.JSONDecoder()
+    for candidate in _json_text_candidates(text):
+        for index, character in enumerate(candidate):
+            if character != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    raise ValueError("response did not contain a JSON object")
+
+
+def _json_text_candidates(text: str) -> list[str]:
+    candidates = [text.strip()]
+    # Some OpenAI-compatible relays serialize the whole JSON payload as text once or
+    # twice. Decode that layer as JSON rather than replacing backslashes, which would
+    # corrupt legitimate escaped quotes inside a dialogue field.
+    for _ in range(2):
+        escaped = candidates[-1].replace("\n", "\\n").replace("\r", "\\r")
+        try:
+            unescaped = json.loads(f'"{escaped}"')
+        except json.JSONDecodeError:
+            break
+        if not isinstance(unescaped, str) or unescaped in candidates:
+            break
+        candidates.append(unescaped)
+    return candidates
+
+
+def _json_breakdown_payload(text: str) -> dict[str, Any]:
+    """Accept either the documented object or a bare shot array."""
+    decoder = json.JSONDecoder()
+    candidates = _json_text_candidates(text)
+    for candidate in candidates:
+        for index, character in enumerate(candidate):
+            if character not in "[{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and ("shots" in parsed or "scenes" in parsed):
+                return parsed
+            if isinstance(parsed, list):
+                return {"shots": parsed}
+    # Some gateways truncate a long array after one or more complete shot objects. Keep
+    # the complete objects instead of failing the whole breakdown; the editor can still
+    # regenerate or adjust the resulting shots.
+    recovered: list[dict[str, Any]] = []
+    for candidate in candidates:
+        for index, character in enumerate(candidate):
+            if character != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(candidate[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and ("narration" in parsed or "visualPrompt" in parsed) and parsed not in recovered:
+                recovered.append(parsed)
+    if recovered:
+        return {"shots": recovered}
+    raise ValueError("response did not contain a JSON object")
+
+
+def _json_model(llm: Any, provider: str) -> Any:
+    # JSON mode is not portable: several OpenAI-compatible deployments accept the
+    # parameter but return a response shape LangChain's parser cannot handle (notably
+    # ``None.tool_calls``/``None.get``).  The prompt plus the tolerant parser below is
+    # enough, and keeps every provider on the same code path.
+    return llm
 
 
 def _trim_prompt(value: str) -> str:
@@ -239,6 +338,23 @@ def _content_text(content: Any) -> str:
     return str(content or "")
 
 
+def _completion_text(response: Any) -> str:
+    """Read compatible chat responses without LangChain's message conversion."""
+    payload = response.model_dump() if hasattr(response, "model_dump") else response
+    if not isinstance(payload, dict):
+        return ""
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        message = choice.get("message") or {}
+        if isinstance(message, dict):
+            text = _content_text(message.get("content"))
+            if text:
+                return text
+        return str(choice.get("text") or "").strip()
+    return str(payload.get("output_text") or "").strip()
+
+
 def _reasoning_text(content: Any, additional_kwargs: dict[str, Any] | None = None) -> str:
     parts = [str((additional_kwargs or {}).get("reasoning_content") or (additional_kwargs or {}).get("reasoning") or "")]
     if isinstance(content, list):
@@ -252,6 +368,41 @@ def _reasoning_text(content: Any, additional_kwargs: dict[str, Any] | None = Non
 
 def _image_format_from_mime(mime_type: str) -> str:
     return {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}.get(mime_type, "png")
+
+
+def _image_response_field(image: Any, name: str) -> Any:
+    return image.get(name) if isinstance(image, dict) else getattr(image, name, None)
+
+
+async def _openai_image_result(response: Any) -> ImageResult:
+    """Accept both base64 and URL responses from OpenAI-compatible image gateways."""
+    items = getattr(response, "data", None) or []
+    image = items[0] if items else None
+    b64_json = _image_response_field(image, "b64_json") if image else ""
+    if b64_json:
+        return ImageResult(data=base64.b64decode(str(b64_json)), format="png")
+
+    url = str(_image_response_field(image, "url") or "").strip() if image else ""
+    if url.startswith("data:image/") and ";base64," in url:
+        header, encoded = url.split(",", 1)
+        mime_type = header.removeprefix("data:").split(";", 1)[0].lower()
+        return ImageResult(data=base64.b64decode(encoded), format=_image_format_from_mime(mime_type))
+    if not url:
+        raise ValueError("empty image response (expected data[0].b64_json or data[0].url)")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("image response contained an unsupported URL")
+    async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        image_response = await client.get(url)
+        try:
+            image_response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ValueError(f"image download status {exc.response.status_code}") from exc
+    if not image_response.content:
+        raise ValueError("image URL returned an empty body")
+    mime_type = image_response.headers.get("content-type", "image/png").split(";", 1)[0].strip().lower()
+    return ImageResult(data=image_response.content, format=_image_format_from_mime(mime_type))
 
 
 def _gemini_image_size(value: str) -> str:
@@ -312,12 +463,13 @@ class ModelRouter:
                 **kwargs,
             )
         compatible_base_url = gemini_openai_base_url(base_url) if provider == "gemini" else base_url_for(provider, base_url)
+        stream_usage = kwargs.pop("stream_usage", True)
         return ChatOpenAI(
             model=pick_model(provider, model),
             api_key=api_key.strip(),
             base_url=compatible_base_url,
             # Explicit base URLs disable langchain-openai's automatic stream usage.
-            stream_usage=True,
+            stream_usage=stream_usage,
             timeout=GENERATION_TIMEOUT_SECONDS,
             max_retries=1,
             **kwargs,
@@ -354,8 +506,7 @@ class ModelRouter:
             raise ValueError("script is empty")
 
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.2)
-        if provider.strip().lower() != "anthropic":
-            llm = llm.bind(response_format={"type": "json_object"})
+        llm = _json_model(llm, provider)
         with get_usage_metadata_callback() as usage_callback:
             response = await llm.ainvoke(
                 _lc_messages(
@@ -393,14 +544,108 @@ class ModelRouter:
             usage = aggregate_token_usage(response.usage_metadata)
         return ParseResult(scenes=scenes, usage=usage)
 
+    async def breakdown_script(
+        self,
+        provider: str,
+        api_key: str,
+        model: str,
+        system: str,
+        user: str,
+        base_url: str = "",
+        limit: int = 40,
+    ) -> BreakdownResult:
+        """Split a script into shots carrying both the frame and the motion.
+
+        Kept apart from `complete_text` because it binds a JSON response format, and apart
+        from `parse_script` because the two schemas are not compatible — `parse_script`
+        still serves the legacy single-screen editor, which knows nothing about camera
+        moves or transitions and would break on the wider shape.
+        """
+        user = user.strip()
+        if not user:
+            raise ValueError("script is empty")
+
+        provider_name = provider.strip().lower()
+        usage: dict[str, int] = {}
+        if provider_name == "anthropic":
+            llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3, max_tokens=8192)
+            with get_usage_metadata_callback() as usage_callback:
+                response = await llm.ainvoke(
+                    _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}])
+                )
+                usage = aggregate_token_usage(usage_callback.usage_metadata)
+            text = _content_text(response.content)
+            if not any(usage.values()):
+                usage = aggregate_token_usage(getattr(response, "usage_metadata", None))
+        else:
+            # Use the same LangChain path as chat. JSON mode is deliberately not bound:
+            # Gemini's OpenAI compatibility layer streams normal text correctly, while its
+            # structured-response adapter may manufacture a null tool/message object.
+            llm = self.chat_model(
+                provider, api_key, model, base_url, temperature=0.3, max_tokens=8192, stream_usage=False
+            )
+            with get_usage_metadata_callback() as usage_callback:
+                response = await llm.ainvoke(
+                    _lc_messages([{"role": "system", "content": system}, {"role": "user", "content": user}], provider)
+                )
+                usage = aggregate_token_usage(usage_callback.usage_metadata)
+            text = _content_text(getattr(response, "content", response))
+            if not text.strip():
+                extras = getattr(response, "additional_kwargs", {}) or {}
+                text = str(extras.get("reasoning_content") or extras.get("reasoning") or "")
+            if not any(usage.values()):
+                usage = aggregate_token_usage(getattr(response, "usage_metadata", None))
+
+        try:
+            payload = _json_breakdown_payload(text)
+        except ValueError as exc:
+            raise ValueError("response did not contain a JSON object") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("breakdown response must be a JSON object")
+        raw = payload.get("shots")
+        if not isinstance(raw, list):
+            # Some models answer under the key the schema example used rather than the one
+            # it asked for; accepting both is cheaper than a retry.
+            raw = payload.get("scenes") if isinstance(payload.get("scenes"), list) else []
+
+        shots: list[ShotDraft] = []
+        for item in raw[:limit]:
+            if not isinstance(item, dict):
+                continue
+            narration = str(item.get("narration", "")).strip()
+            visual = str(item.get("visualPrompt", "")).strip()
+            if not narration and not visual:
+                continue
+            try:
+                duration = int(float(item.get("durationSeconds") or 0))
+            except (TypeError, ValueError):
+                duration = 0
+            shots.append(
+                ShotDraft(
+                    narration=narration or _trim_prompt(visual),
+                    visualPrompt=visual or f"anime storyboard frame, cinematic composition, {_trim_prompt(narration)}",
+                    dialogue=str(item.get("dialogue", "")).strip(),
+                    speaker=str(item.get("speaker", "")).strip(),
+                    shotType=str(item.get("shotType", "")).strip()[:80],
+                    cameraMove=str(item.get("cameraMove", "")).strip()[:80],
+                    transition=str(item.get("transition", "")).strip()[:80],
+                    # Clamped rather than rejected: an out-of-range estimate is a bad guess,
+                    # not a failed breakdown, and the user can edit it afterwards.
+                    durationSeconds=min(max(duration, 0), 60),
+                    videoPrompt=str(item.get("videoPrompt", "")).strip(),
+                )
+            )
+        if not shots:
+            raise ValueError("no shots in breakdown output")
+        return BreakdownResult(shots=shots, usage=usage)
+
     async def optimize_script(self, provider: str, api_key: str, model: str, script: str, base_url: str = "") -> OptimizeResult:
         script = script.strip()
         if not script:
             raise ValueError("script is empty")
 
         llm = self.chat_model(provider, api_key, model, base_url, temperature=0.3)
-        if provider.strip().lower() != "anthropic":
-            llm = llm.bind(response_format={"type": "json_object"})
+        llm = _json_model(llm, provider)
         with get_usage_metadata_callback() as usage_callback:
             response = await llm.ainvoke(
                 _lc_messages(
@@ -543,11 +788,7 @@ class ModelRouter:
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        image = response.data[0] if response.data else None
-        b64_json = image.b64_json if image else ""
-        if not b64_json:
-            raise ValueError("empty image response")
-        return ImageResult(data=base64.b64decode(b64_json), format="png")
+        return await _openai_image_result(response)
 
     async def edit_image(
         self,
@@ -589,11 +830,7 @@ class ModelRouter:
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        image = response.data[0] if response.data else None
-        b64_json = image.b64_json if image else ""
-        if not b64_json:
-            raise ValueError("empty image response")
-        return ImageResult(data=base64.b64decode(b64_json), format="png")
+        return await _openai_image_result(response)
 
     async def _generate_gemini_image(
         self,

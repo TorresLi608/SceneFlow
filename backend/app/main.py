@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1 import (
     admin,
+    assets,
     auth,
     characters,
     chat,
@@ -30,17 +32,47 @@ from app.api.v1 import (
 )
 from app.core.config import CORS_ORIGINS, PRIVATE_GENERATED_DIR
 from app.core.database import init_db
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, reset_request_id, set_request_id
+from app.services.error_log_service import error_code_for, record_http_error
+from app.services import job_handlers  # noqa: F401 -- registers the generation job handlers
+from app.services.job_worker import worker
+from app.services.project_service import release_orphaned_runs
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
     init_db()
-    yield
+    # A render is an in-process task, so a restart kills it holding the project's busy lock
+    # and nothing else can ever release it. Startup is the one point where "no run is in
+    # flight" is a fact rather than a guess.
+    release_orphaned_runs()
+    # Paid generation runs here rather than inside the request, so that stopping is a
+    # database operation instead of a hung-up socket. See `app/services/job_worker.py`.
+    worker.start()
+    try:
+        yield
+    finally:
+        await worker.stop()
 
 
 app = FastAPI(title="SceneFlow Backend", lifespan=lifespan)
+logger = logging.getLogger(__name__)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next: Any):
+    # Server-generated IDs prevent clients from overwriting the diagnostic trail.
+    from app.utils.common import new_id
+
+    request.state.request_id = new_id("req")
+    token = set_request_id(request.state.request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = request.state.request_id
+        return response
+    finally:
+        reset_request_id(token)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +80,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Origin", "Content-Type", "Authorization"],
+    expose_headers=["X-Request-Id"],
 )
 
 PRIVATE_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,6 +89,7 @@ PRIVATE_GENERATED_DIR.chmod(0o700)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
+app.include_router(assets.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(images.router)
@@ -79,7 +113,11 @@ def healthz() -> dict[str, str]:
 
 
 @app.exception_handler(HTTPException)
-async def http_exception_handler(_: Any, exc: HTTPException) -> JSONResponse:
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    if exc.status_code >= 500:
+        code = error_code_for(exc.status_code, exc.detail)
+        logger.warning("request failed request=%s status=%s code=%s", request.state.request_id, exc.status_code, code)
+        record_http_error(request, exc.status_code, exc.detail, code)
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 
@@ -102,3 +140,10 @@ async def validation_exception_handler(_: Any, exc: RequestValidationError) -> J
     # Without this, rejected bodies would come back as {"detail": [...]} while every other
     # error is {"error": "..."}, leaving the client with two shapes to parse.
     return JSONResponse(status_code=422, content={"error": validation_message(exc)})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("unhandled request error request=%s", request.state.request_id)
+    record_http_error(request, 500, "internal server error", "INTERNAL_ERROR")
+    return JSONResponse(status_code=500, content={"error": "internal server error"})

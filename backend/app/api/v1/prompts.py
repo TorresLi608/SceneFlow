@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import select
 
 from app.api.deps import current_user_id
 from app.core.database import db
 from app.llms.registry import models
-from app.schemas.requests import OptimizePromptRequest
-from app.services.config_service import active_model_config
+from app.models import Episode, Scene
+from app.schemas.requests import CompilePromptRequest, OptimizePromptRequest
+from app.services.config_service import active_model_config, project_model_config
+from app.services.project_service import owned_project
+from app.services.prompt_compiler import compile_prompt
+from app.services.prompt_service import PRESETS
+from app.services.reference_service import resolve_generation_references
 from app.services.usage_service import record_usage, require_model_balance
 
 
@@ -38,6 +45,27 @@ SYSTEM_PROMPTS = {
         "你是专业的配音文稿编辑。保留原意、事实、语言和人称，改善断句、标点、口语自然度与朗读节奏，"
         "并适配给定音色和语气；不要扩写新信息。只输出最终朗读文本，不要标题、解释、引号或 Markdown。"
     ),
+    # The three below draw *setting sheets*, not frames, so unlike `image` they must keep the
+    # on-image labelling the reference depends on rather than optimising it away.
+    "character": (
+        "你是动画角色设定师。把用户给的角色设定图提示词补全得更专业：明确三视图或多视图的排布、"
+        "服装材质、体型比例、发型五官特征、配色、光照与背景处理。"
+        "务必保留「画面中标注角色名称、角色简介与角色设定」这一要求，"
+        "并说明文字排布在信息栏内、不遮挡角色。不要编造与原意冲突的设定。"
+        "只输出最终提示词，不要标题、解释、引号或 Markdown。"
+    ),
+    "prop": (
+        "你是美术道具设计师。把用户给的道具设定图提示词补全得更专业：明确物体的形制、材质、工艺、"
+        "磨损痕迹、尺度参照、打光与背景处理。"
+        "务必保留「画面中标注道具名称、归属角色、道具简介与道具设定」这一要求，"
+        "并说明文字排布在信息栏内、不遮挡道具。不要编造与原意冲突的设定。"
+        "只输出最终提示词，不要标题、解释、引号或 Markdown。"
+    ),
+    "cover": (
+        "你是短剧海报设计师。把用户描述的封面画面补全成专业的竖屏海报提示词：明确单一主体、"
+        "构图与视线、情绪张力、打光方案、色调与景深。海报画面本身不要出现文字或水印。"
+        "不要编造与原意冲突的剧情。只输出最终提示词，不要标题、解释、引号或 Markdown。"
+    ),
 }
 
 OUTPUT_LANGUAGES = {
@@ -45,6 +73,65 @@ OUTPUT_LANGUAGES = {
     "zh": "中文",
     "en": "英文",
 }
+
+
+@router.post("/compile")
+def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """What the editor's `@素材` labels turn into for the project's current model.
+
+    `sceneId` matters for video: the render prepends the shot's storyboard frame when the
+    model takes images, so `图1` there is the frame and the first selection is `图2`. The
+    preview has to count the same way or it teaches the user the wrong number.
+    """
+    with db() as session:
+        project = owned_project(session, body.project_id, user_id)
+        config = project_model_config(session, user_id, project, body.kind, "最终提示词预览")
+        resolved = resolve_generation_references(
+            session, body.project_id, [(item.kind, item.id) for item in body.references]
+        )
+        image_offset = 0
+        speaker_name = ""
+        if body.kind == "video" and body.scene_id:
+            scene = session.exec(
+                select(Scene).where(Scene.id == body.scene_id, Scene.project_id == body.project_id)
+            ).first()
+            capabilities = config.get("videoCapabilities") or {}
+            has_explicit_references = bool(scene and scene.video_references_explicit)
+            has_explicit_storyboard = any(item.kind == "sceneImage" and item.id == body.scene_id for item in body.references)
+            image_offset = int(bool(scene and scene.image_path and capabilities.get("referenceImages") and not has_explicit_references and not has_explicit_storyboard))
+            speaker_name = str((scene and scene.speaker_character_id) or "")
+            if not speaker_name and body.dialogue:
+                match = re.match(r"^\s*([^：:]{1,40})\s*[：:]", body.dialogue)
+                if match:
+                    from app.services.breakdown_service import resolve_speaker
+                    speaker_name = resolve_speaker(session, body.project_id, match.group(1)) or ""
+            if speaker_name:
+                from app.services.character_service import cast_for_episode
+                episode = session.get(Episode, scene.episode_id) if scene else None
+                speaker = cast_for_episode(session, body.project_id, episode.episode_number if episode else 0).get(speaker_name)
+                speaker_name = speaker.name if speaker else speaker_name
+    return compile_prompt(
+        body.prompt,
+        provider=config["provider"],
+        model=config["model"],
+        references=resolved["items"],
+        dialogue=body.dialogue,
+        image_offset=image_offset,
+        speaker_name=speaker_name,
+    )
+
+
+@router.get("/presets")
+def list_prompt_presets(kind: str = "character") -> dict[str, Any]:
+    """Starting points for a prompt field, so a blank box is never the only option.
+
+    Public within the app and free of model calls — these are static templates, and gating
+    them behind a balance check would make an empty form unusable for a user out of credit.
+    """
+    presets = PRESETS.get(kind.strip().lower())
+    if presets is None:
+        raise HTTPException(400, f"unknown preset kind: {kind[:40]}")
+    return {"kind": kind.strip().lower(), "presets": [dict(preset) for preset in presets]}
 
 
 @router.post("/optimize")
@@ -59,8 +146,7 @@ async def optimize_prompt(
     context = body.context.model_dump(by_alias=True, exclude_none=True)
     output_language = context.pop("outputLanguage", "auto")
     user_prompt = f"待优化内容：\n{body.prompt}"
-    if body.kind in {"image", "video", "voice", "audio"}:
-        user_prompt += f"\n\n输出语言：{OUTPUT_LANGUAGES.get(output_language, '跟随原始输入语言')}"
+    user_prompt += f"\n\n输出语言：{OUTPUT_LANGUAGES.get(output_language, '跟随原始输入语言')}"
     if context:
         user_prompt += "\n\n生成参数（仅作适配上下文）：\n" + json.dumps(context, ensure_ascii=False)
 

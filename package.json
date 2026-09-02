@@ -2,14 +2,16 @@
   "name": "sceneflow",
   "version": "0.0.6",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=22",
     "pnpm": ">=10"
   },
   "scripts": {
+    "install:frontend": "pnpm --dir frontend install",
+    "install:backend": "node scripts/install-backend.mjs",
     "dev:frontend": "pnpm --dir frontend dev",
-    "dev:backend": "cd backend && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080",
+    "dev:backend": "node scripts/dev-backend.mjs",
     "docker:backup": "./backup.sh",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d --build"

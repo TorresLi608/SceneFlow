@@ -9,8 +9,9 @@ import {
   Film,
   History,
   ImageIcon,
-  Loader2,
   Maximize2,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   RotateCcw,
   Sparkles,
@@ -35,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { promptLanguageItems } from "@/components/prompt-field";
 import {
   Select,
   SelectContent,
@@ -148,12 +150,25 @@ export function VideoGenerationPanel({
   const [isDownloading, setIsDownloading] = useState(false);
   const [history, setHistory] = useState<VideoHistoryItem[]>(readVideoHistory);
   const requestController = useRef<AbortController | null>(null);
+  const optimizeController = useRef<AbortController | null>(null);
+
+  const stopOptimize = () => {
+    optimizeController.current?.abort();
+    optimizeController.current = null;
+    optimizeMutation.reset();
+  };
+
+  const startOptimize = () => {
+    optimizeController.current = new AbortController();
+    optimizeMutation.mutate();
+  };
 
   // 多模态参考素材 Tab
   const [activeAssetTab, setActiveAssetTab] = useState<AssetTab>("images");
 
   // 视频全屏预览 Dialog
   const [modalOpen, setModalOpen] = useState(false);
+  const [showModalSidebar, setShowModalSidebar] = useState(true);
   const [modalItem, setModalItem] = useState<{
     url: string;
     prompt: string;
@@ -206,9 +221,9 @@ export function VideoGenerationPanel({
   const resolvedVideoUrl = artifactBffUrl(videoUrl);
   const durationOptions = capabilities
     ? Array.from(
-        { length: capabilities.maxDuration - capabilities.minDuration + 1 },
-        (_, index) => capabilities.minDuration + index
-      )
+      { length: capabilities.maxDuration - capabilities.minDuration + 1 },
+      (_, index) => capabilities.minDuration + index
+    )
     : [];
 
   const hasAnyReferenceCapabilities = Boolean(
@@ -245,22 +260,30 @@ export function VideoGenerationPanel({
 
   const optimizeMutation = useMutation({
     mutationFn: () =>
-      optimizePromptAction({
-        kind: "video",
-        prompt: prompt.trim(),
-        context: {
-          outputLanguage: promptLanguage,
-          aspectRatio: selectedAspectRatio,
-          quality: selectedQuality,
-          duration: selectedDuration,
+      optimizePromptAction(
+        {
+          kind: "video",
+          prompt: prompt.trim(),
+          context: {
+            outputLanguage: promptLanguage,
+            aspectRatio: selectedAspectRatio,
+            quality: selectedQuality,
+            duration: selectedDuration,
+          },
         },
-      }),
+        optimizeController.current?.signal
+      ),
     onSuccess: (response) => {
       setPrompt(response.prompt);
       setErrorMessage(null);
     },
-    onError: (error) =>
-      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setErrorMessage(resolveRequestError(error, t("common.optimizePromptFailed")));
+    },
+    onSettled: () => {
+      optimizeController.current = null;
+    },
   });
 
   useEffect(() => {
@@ -439,9 +462,9 @@ export function VideoGenerationPanel({
   });
 
   return (
-    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[380px_minmax(0,1fr)]">
+    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[320px_minmax(0,1fr)]">
       {/* 左侧控制侧边栏 */}
-      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-5">
+      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -593,6 +616,7 @@ export function VideoGenerationPanel({
               </label>
               <div className="flex items-center gap-1.5">
                 <Select
+                  items={promptLanguageItems(t)}
                   value={promptLanguage}
                   onValueChange={(val) =>
                     setPromptLanguage((val ?? "auto") as "auto" | "zh" | "en")
@@ -618,19 +642,27 @@ export function VideoGenerationPanel({
                 </Select>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={optimizeMutation.isPending ? "destructive" : "outline"}
                   size="xs"
-                  disabled={!prompt.trim() || optimizeMutation.isPending}
-                  onClick={() => optimizeMutation.mutate()}
-                  className="h-7 gap-1 text-[11px] cursor-pointer"
+                  disabled={!prompt.trim() && !optimizeMutation.isPending}
+                  onClick={optimizeMutation.isPending ? stopOptimize : startOptimize}
+                  className={cn(
+                    "h-7 gap-1 text-[11px] cursor-pointer transition-colors",
+                    optimizeMutation.isPending && "animate-pulse font-medium"
+                  )}
+                  title={
+                    optimizeMutation.isPending
+                      ? t("common.stopOptimizePrompt")
+                      : t("common.optimizePrompt")
+                  }
                 >
                   {optimizeMutation.isPending ? (
-                    <Loader2 className="size-3 animate-spin text-primary" />
+                    <Square className="size-2.5 fill-current" />
                   ) : (
                     <Sparkles className="size-3 text-primary" />
                   )}
                   {optimizeMutation.isPending
-                    ? t("common.optimizingPrompt")
+                    ? t("common.stopOptimizePrompt")
                     : t("common.optimizePrompt")}
                 </Button>
               </div>
@@ -728,7 +760,7 @@ export function VideoGenerationPanel({
                 <div className="space-y-2.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground text-[11px]">
-                      限制：最多 {capabilities.maxReferenceImages} 张图片 (10MB 内)
+                      {t("video.limitImages", { count: capabilities.maxReferenceImages })}
                     </span>
                     <Button
                       type="button"
@@ -831,7 +863,7 @@ export function VideoGenerationPanel({
                 <div className="space-y-2.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground text-[11px]">
-                      限制：最多 {capabilities.maxReferenceVideos} 个视频 (50MB 内)
+                      {t("video.limitVideos", { count: capabilities.maxReferenceVideos })}
                     </span>
                     <Button
                       type="button"
@@ -928,7 +960,7 @@ export function VideoGenerationPanel({
                 <div className="space-y-2.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground text-[11px]">
-                      限制：最多 {capabilities.maxReferenceAudios} 个音频 (50MB 内)
+                      {t("video.limitAudios", { count: capabilities.maxReferenceAudios })}
                     </span>
                     <Button
                       type="button"
@@ -1038,22 +1070,22 @@ export function VideoGenerationPanel({
             <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
               {history.map((item) => (
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
-                <button
-                  type="button"
-                  onClick={() => { setVideoUrl(item.videoUrl); setPrompt(item.prompt); }}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
-                >
-                  <Film className="size-4 shrink-0 text-primary" />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                    {item.prompt}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {formatDateTime(item.createdAt)}
-                  </span>
-                </button>
-                <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("videos.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
-                  <Trash2 className="size-3.5" />
-                </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setVideoUrl(item.videoUrl); setPrompt(item.prompt); }}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
+                  >
+                    <Film className="size-4 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                      {item.prompt}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {formatDateTime(item.createdAt)}
+                    </span>
+                  </button>
+                  <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("videos.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>
@@ -1083,8 +1115,8 @@ export function VideoGenerationPanel({
         </div>
       </aside>
 
-      {/* 右侧：视频监视播放区 */}
-      <section className="flex min-h-0 min-w-0 flex-col p-4 md:p-6">
+      {/* 右侧：专业视频监视视窗 */}
+      <section className="flex min-h-0 min-w-0 flex-col p-3 md:p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold tracking-tight text-foreground">
@@ -1141,7 +1173,7 @@ export function VideoGenerationPanel({
         </div>
 
         {/* 视频渲染视窗 */}
-        <div className="relative mt-4 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-3xl border border-border/80 bg-card/20 p-4 shadow-inner backdrop-blur-md dark:bg-black/20">
+        <div className="relative mt-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-3xl border border-border/80 bg-card/20 p-2 sm:p-3 shadow-inner backdrop-blur-md dark:bg-black/20">
           <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-20" />
 
           {generateMutation.isPending ? (
@@ -1153,7 +1185,7 @@ export function VideoGenerationPanel({
               <div>
                 <p className="text-sm font-bold text-foreground">{generatingLabel}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  正在进行神经动作物理模拟与高质量动态视频渲染...
+                  {t("videos.generatingHint")}
                 </p>
               </div>
               {/* 动态视频进度条微动效 */}
@@ -1188,7 +1220,7 @@ export function VideoGenerationPanel({
               </div>
               <p className="text-sm font-semibold text-foreground">{t("videos.emptyPreview")}</p>
               <p className="max-w-xs text-xs text-muted-foreground">
-                在左侧配置参数与提示词，即可渲染高质量动态视频
+                {t("videos.emptyPreviewHint")}
               </p>
             </div>
           )}
@@ -1203,23 +1235,49 @@ export function VideoGenerationPanel({
 
       {/* 视频详情与全屏播放 Dialog（大屏沉浸式视窗） */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-6xl xl:max-w-7xl w-[94vw] h-[86vh] max-h-[88vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl">
-          <DialogHeader className="p-4 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
-            <div className="space-y-0.5">
-              <DialogTitle className="text-sm font-bold flex items-center gap-2">
-                <Film className="size-4 text-primary" />
-                大屏视频播放与详情
-              </DialogTitle>
-              <DialogDescription className="text-xs">
-                高清全尺寸无损回放、规格参数及生成提示词
-              </DialogDescription>
+        <DialogContent className="w-[88vw] sm:w-[88vw] min-w-[80vw] sm:max-w-[92vw] h-[94vh] sm:max-h-[96vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
+          <DialogHeader className="p-2.5 px-4 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Film className="size-4" />
+              </div>
+              <div className="space-y-0.5">
+                <DialogTitle className="text-sm font-bold flex items-center gap-2">
+                  {t("videos.modalTitle")}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  {t("videos.modalDesc")}
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pr-8">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 text-xs font-medium cursor-pointer"
+                onClick={() => setShowModalSidebar((prev) => !prev)}
+                title={showModalSidebar ? t("videos.pureViewTitle") : t("videos.showParamsTitle")}
+              >
+                {showModalSidebar ? (
+                  <>
+                    <PanelRightClose className="size-3.5" />
+                    <span>{t("videos.pureView")}</span>
+                  </>
+                ) : (
+                  <>
+                    <PanelRightOpen className="size-3.5" />
+                    <span>{t("videos.showParams")}</span>
+                  </>
+                )}
+              </Button>
             </div>
           </DialogHeader>
 
           {modalItem ? (
-            <div className="grid md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_360px] flex-1 min-h-0 bg-background/50 overflow-hidden">
+            <div className="flex flex-col md:flex-row flex-1 min-h-0 bg-background/50 overflow-hidden">
               {/* 大屏播放器主视窗：深色暗影影院背景 */}
-              <div className="relative flex items-center justify-center bg-black/95 p-4 sm:p-6 overflow-hidden min-h-0">
+              <div className="relative flex-1 min-w-0 h-full flex items-center justify-center bg-black/95 dark:bg-black p-1 sm:p-2 overflow-hidden min-h-0">
                 <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-10" />
                 <video
                   src={modalItem.url}
@@ -1231,73 +1289,75 @@ export function VideoGenerationPanel({
               </div>
 
               {/* 右侧参数与提示词面板 */}
-              <div className="flex flex-col justify-between border-t md:border-t-0 md:border-l border-border/70 bg-card/60 p-5 space-y-4 overflow-y-auto chat-message-list-scrollbar">
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                      视频生成规格
-                    </span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {modalItem.quality ? (
-                        <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5">
-                          {modalItem.quality}
+              {showModalSidebar ? (
+                <div className="w-full md:w-64 lg:w-72 flex flex-col justify-between shrink-0 border-t md:border-t-0 md:border-l border-border/70 bg-card/75 p-3.5 space-y-3 overflow-y-auto chat-message-list-scrollbar animate-in slide-in-from-right-4 duration-200">
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        {t("videos.specsTitle")}
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {modalItem.quality ? (
+                          <Badge variant="secondary" className="text-[11px] font-semibold px-2 py-0.5">
+                            {modalItem.quality}
+                          </Badge>
+                        ) : null}
+                        {modalItem.aspectRatio ? (
+                          <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
+                            {t("videos.ratioLabel", { ratio: modalItem.aspectRatio })}
+                          </Badge>
+                        ) : null}
+                        {modalItem.duration ? (
+                          <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
+                            {modalItem.duration}s
+                          </Badge>
+                        ) : null}
+                        {modalItem.fps ? (
+                          <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
+                            {modalItem.fps} FPS
+                          </Badge>
+                        ) : null}
+                        <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
+                          MP4 H.264
                         </Badge>
-                      ) : null}
-                      {modalItem.aspectRatio ? (
-                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
-                          比例 {modalItem.aspectRatio}
-                        </Badge>
-                      ) : null}
-                      {modalItem.duration ? (
-                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
-                          {modalItem.duration}s
-                        </Badge>
-                      ) : null}
-                      {modalItem.fps ? (
-                        <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
-                          {modalItem.fps} FPS
-                        </Badge>
-                      ) : null}
-                      <Badge variant="outline" className="text-xs font-medium px-2 py-0.5">
-                        MP4 H.264
-                      </Badge>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        {t("videos.promptTitle")}
+                      </label>
+                      <div className="rounded-xl border border-border/70 bg-muted/40 p-2.5 text-xs leading-relaxed max-h-56 overflow-y-auto text-foreground whitespace-pre-wrap font-mono chat-message-list-scrollbar">
+                        {modalItem.prompt}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                      视频运镜提示词
-                    </label>
-                    <div className="rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs leading-relaxed max-h-64 overflow-y-auto text-foreground whitespace-pre-wrap font-mono chat-message-list-scrollbar">
-                      {modalItem.prompt}
-                    </div>
+                  <div className="space-y-2 pt-2.5 border-t border-border/70 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 w-full gap-1.5 text-xs font-medium cursor-pointer shadow-2xs"
+                      onClick={() => copyPrompt(modalItem.prompt)}
+                    >
+                      {copied ? (
+                        <Check className="size-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                      {copied ? t("videos.copiedPrompt") : t("videos.copyPrompt")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-9 w-full gap-1.5 text-xs font-bold cursor-pointer shadow-sm"
+                      onClick={() => downloadVideo(modalItem.url)}
+                    >
+                      <Download className="size-3.5" />
+                      {t("videos.downloadFull")}
+                    </Button>
                   </div>
                 </div>
-
-                <div className="space-y-2.5 pt-3 border-t border-border/70 shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-10 w-full gap-2 text-xs font-medium cursor-pointer shadow-2xs"
-                    onClick={() => copyPrompt(modalItem.prompt)}
-                  >
-                    {copied ? (
-                      <Check className="size-4 text-emerald-500" />
-                    ) : (
-                      <Copy className="size-4" />
-                    )}
-                    {copied ? "已复制提示词到剪贴板" : "复制视频提示词"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-10 w-full gap-2 text-xs font-bold cursor-pointer shadow-sm"
-                    onClick={() => downloadVideo(modalItem.url)}
-                  >
-                    <Download className="size-4" />
-                    下载高清视频文件
-                  </Button>
-                </div>
-              </div>
+              ) : null}
             </div>
           ) : null}
         </DialogContent>

@@ -2,6 +2,8 @@
 @import "tw-animate-css";
 @import "streamdown/styles.css";
 
+@source "../../node_modules/prompt-area/dist/*.js";
+@source "../../node_modules/prompt-area/dist/**/*.js";
 @source "../../node_modules/streamdown/dist/*.js";
 @source "../../node_modules/@streamdown/code/dist/*.js";
 @source "../../node_modules/@streamdown/cjk/dist/*.js";
@@ -125,15 +127,18 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground selection:bg-primary/20 selection:text-primary;
   }
+
   html {
     @apply font-sans;
   }
 }
 
 @layer components {
+
   /* 高级毛玻璃面板 */
   .glass-panel {
     background: color-mix(in oklch, var(--card) 75%, transparent);
@@ -146,6 +151,7 @@
   .glow-box {
     position: relative;
   }
+
   .glow-box::before {
     content: "";
     position: absolute;
@@ -197,5 +203,132 @@
 
   .chat-message-list-scrollbar::-webkit-scrollbar-track {
     background: transparent;
+  }
+
+  /* PromptArea 组件样式 */
+  .prompt-area-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    vertical-align: baseline;
+    margin: 0 1px;
+    background-color: var(--secondary);
+    color: var(--foreground);
+    transition: background-color 0.2s ease, transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .prompt-area-chip:hover {
+    background-color: color-mix(in srgb, var(--secondary) 80%, var(--foreground) 20%);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--foreground) 10%, transparent);
+  }
+
+  .prompt-area-chip:active {
+    transform: scale(0.93);
+    background-color: color-mix(in srgb, var(--secondary) 70%, var(--foreground) 30%);
+    box-shadow: 0 0 0 transparent;
+    transition: background-color 0.05s ease, transform 0.08s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.05s ease;
+  }
+
+  @keyframes prompt-area-chip-ripple {
+    0% {
+      transform: scale(0);
+      opacity: 0.4;
+    }
+    100% {
+      transform: scale(2.5);
+      opacity: 0;
+    }
+  }
+
+  .prompt-area-chip-ripple {
+    position: absolute;
+    border-radius: 50%;
+    width: 100%;
+    aspect-ratio: 1;
+    background: color-mix(in srgb, var(--foreground) 15%, transparent);
+    pointer-events: none;
+    animation: prompt-area-chip-ripple 0.45s ease-out forwards;
+  }
+
+  .prompt-area-md-marker {
+    font-size: 0;
+    display: inline;
+  }
+
+  .prompt-area-md-heading {
+    display: inline-block;
+    padding-top: 0.35em;
+  }
+
+  .prompt-area-md-heading-text {
+    font-weight: var(--prompt-area-heading-weight, 600);
+    line-height: 1.25;
+  }
+
+  [data-md-heading="1"] .prompt-area-md-heading-text {
+    font-size: var(--prompt-area-heading-1, 1.5rem);
+  }
+
+  [data-md-heading="2"] .prompt-area-md-heading-text {
+    font-size: var(--prompt-area-heading-2, 1.25rem);
+  }
+
+  [data-md-heading="3"] .prompt-area-md-heading-text {
+    font-size: var(--prompt-area-heading-3, 1.125rem);
+  }
+
+  [data-md-heading="4"] .prompt-area-md-heading-text {
+    font-size: var(--prompt-area-heading-4, 1rem);
+  }
+
+  [data-md-heading="5"] .prompt-area-md-heading-text {
+    font-size: var(--prompt-area-heading-5, 0.9375rem);
+  }
+
+  [data-md-heading="6"] .prompt-area-md-heading-text {
+    font-size: var(--prompt-area-heading-6, 0.875rem);
+    color: var(--muted-foreground);
+  }
+
+  .prompt-area-list-bullet {
+    font-size: 0;
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    transform: translateY(-1.5px);
+    margin-right: 4px;
+  }
+
+  .prompt-area-list-bullet::before {
+    content: "";
+    width: var(--prompt-area-bullet-size, 6px);
+    height: var(--prompt-area-bullet-size, 6px);
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .prompt-area-list-indent {
+    display: inline-block;
+    white-space: pre;
+  }
+
+  .prompt-area-chip--inline {
+    padding: 0;
+    border-radius: 0;
+    margin: 0;
+    font-weight: 700;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .prompt-area-editor {
+      transition: none !important;
+    }
   }
 }

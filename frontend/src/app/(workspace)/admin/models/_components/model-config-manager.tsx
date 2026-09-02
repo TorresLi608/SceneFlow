@@ -37,6 +37,7 @@ import {
   deleteUserConfigAction,
   discoverModelsAction,
   getUserConfigSecretAction,
+  getVideoModelCatalogAction,
   listUserConfigsAction,
   updateUserConfigAction,
 } from "@/actions/settings-actions";
@@ -87,7 +88,6 @@ const videoQualityOptions: VideoCapabilities["qualities"] = [
   "2K",
   "4K",
 ];
-const videoFpsOptions: VideoCapabilities["fps"] = [24, 30, 60];
 const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = [
   "21:9",
   "16:9",
@@ -99,6 +99,80 @@ const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = [
 ];
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
+  const normalized = model.toLowerCase();
+  if (provider === "doubao" && normalized.startsWith("doubao-seedance")) {
+    const is25 = normalized.includes("2.5");
+    return {
+      qualities: is25 ? ["480p", "720p", "1080p"] : normalized.includes("fast") || normalized.includes("mini") ? ["480p", "720p"] : ["480p", "720p", "1080p", "4K"],
+      fps: [],
+      aspectRatios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"],
+      promptExtend: false,
+      minDuration: 4,
+      maxDuration: is25 ? 30 : 15,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: is25 ? 30 : 9,
+      referenceVideo: true,
+      maxReferenceVideos: is25 ? 10 : 3,
+      referenceVideosRequired: false,
+      referenceAudio: true,
+      maxReferenceAudios: is25 ? 10 : 3,
+      referenceAudiosRequired: false,
+      audioParam: "with_audio",
+      audioDefault: true,
+      supportsFirstFrame: true,
+      supportsLastFrame: true,
+      supportsStartEndFrames: true,
+    };
+  }
+  if (provider === "qwen" && (normalized === "wan2.7" || normalized.startsWith("wan2.7-r2v"))) {
+    return {
+      qualities: ["720p", "1080p"],
+      fps: [],
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4"],
+      promptExtend: true,
+      minDuration: 2,
+      maxDuration: 15,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: 5,
+      referenceVideo: true,
+      maxReferenceVideos: 1,
+      referenceVideosRequired: false,
+      referenceAudio: true,
+      maxReferenceAudios: 1,
+      referenceAudiosRequired: false,
+      audioParam: "reference_voice",
+      audioDefault: false,
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsStartEndFrames: false,
+    };
+  }
+  if (provider === "qwen" && normalized.startsWith("wan3.0")) {
+    return {
+      qualities: ["480p", "720p", "1080p"],
+      fps: [],
+      aspectRatios: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      promptExtend: true,
+      minDuration: 2,
+      maxDuration: 30,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: 10,
+      referenceVideo: true,
+      maxReferenceVideos: 5,
+      referenceVideosRequired: false,
+      referenceAudio: true,
+      maxReferenceAudios: 5,
+      referenceAudiosRequired: false,
+      audioParam: "audio",
+      audioDefault: true,
+      supportsFirstFrame: true,
+      supportsLastFrame: true,
+      supportsStartEndFrames: false,
+    };
+  }
   const isI2v = model.includes("-i2v");
   const isR2v = model.includes("-r2v");
   const isVideoEdit = model.includes("videoedit");
@@ -178,6 +252,8 @@ function editableVideoCapabilities(config: UserConfig): VideoCapabilities {
     maxReferenceVideos: current.maxReferenceVideos ?? (referenceVideo ? 1 : 0),
     referenceAudio,
     maxReferenceAudios: current.maxReferenceAudios ?? (referenceAudio ? 1 : 0),
+    supportsFirstFrame: current.supportsFirstFrame ?? defaults.supportsFirstFrame,
+    supportsLastFrame: current.supportsLastFrame ?? defaults.supportsLastFrame,
   };
 }
 
@@ -278,6 +354,12 @@ export function ModelConfigManager() {
     queryKey: queryKeys.userConfigs,
     queryFn: listUserConfigsAction,
   });
+  const videoModelsQuery = useQuery({ queryKey: queryKeys.videoModelCatalog, queryFn: getVideoModelCatalogAction });
+  const videoCatalog = videoModelsQuery.data?.models ?? [];
+  // Suggestions, not a whitelist. Doubao's base URL is passed through unchanged so relays
+  // serve their own model ids, and locking the field to the catalog would make those
+  // unconfigurable — as would rendering it before the catalog has loaded.
+  const videoCatalogModels = videoCatalog.filter((item) => item.provider === provider).map((item) => item.model);
 
   const userConfigs = userQuery.data?.configs ?? emptyConfigs;
   const officialConfigs = isSuperAdmin
@@ -1270,11 +1352,14 @@ export function ModelConfigManager() {
                 <ModelSeriesCombobox
                   id="adminConfigModel"
                   value={modelSeries}
-                  options={modelOptions}
+                  options={purpose === "video" ? Array.from(new Set([...videoCatalogModels, ...modelOptions])) : modelOptions}
                   onChange={(value) => {
                     setModelSeries(value);
                     if (purpose === "video")
-                      setVideoCapabilities(defaultVideoCapabilities(provider, value));
+                      setVideoCapabilities(
+                        videoCatalog.find((item) => item.model === value)?.capabilities
+                          ?? defaultVideoCapabilities(provider, value),
+                      );
                   }}
                   placeholder={selectedProviderOption?.modelPlaceholder}
                   selectLabel={t("admin.selectModelSeries")}
@@ -1346,15 +1431,6 @@ export function ModelConfigManager() {
                       options={videoQualityOptions}
                       onChange={(qualities) =>
                         setVideoCapabilities((current) => ({ ...current, qualities }))
-                      }
-                    />
-                    <CapabilitySelect
-                      label={t("admin.supportsVideoFps")}
-                      values={videoCapabilities.fps}
-                      options={videoFpsOptions}
-                      format={(value) => `${value} FPS`}
-                      onChange={(fps) =>
-                        setVideoCapabilities((current) => ({ ...current, fps }))
                       }
                     />
                     <CapabilitySelect
@@ -1436,7 +1512,7 @@ export function ModelConfigManager() {
                             {t("admin.supportsReferenceImages")}
                           </p>
                           <p className="text-[10px] text-muted-foreground">
-                            支持以首尾帧或角色垫图生成视频
+                            图片仅作为附加参考素材，不使用首尾帧语义
                           </p>
                         </div>
                       </div>
@@ -1492,6 +1568,14 @@ export function ModelConfigManager() {
                         </div>
                       </div>
                     ) : null}
+                    <div className="grid gap-2 border-t border-border/40 pt-2 sm:grid-cols-2">
+                      {(["supportsFirstFrame", "supportsLastFrame"] as const).map((key) => (
+                        <div key={key} className="flex items-center justify-between rounded-lg bg-muted/40 p-2.5">
+                          <span className="text-xs font-medium">{key === "supportsFirstFrame" ? "支持首帧" : "支持尾帧"}</span>
+                          <Switch checked={Boolean(videoCapabilities[key])} onCheckedChange={(checked) => setVideoCapabilities((current) => ({ ...current, [key]: checked }))} />
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   {/* 3.2 参考视频 */}
@@ -1534,7 +1618,7 @@ export function ModelConfigManager() {
                           label={t("admin.maxReferenceVideos")}
                           value={videoCapabilities.maxReferenceVideos}
                           min={1}
-                          max={9}
+                          max={10}
                           onChange={(maxReferenceVideos) =>
                             setVideoCapabilities((current) => ({
                               ...current,
@@ -1602,7 +1686,7 @@ export function ModelConfigManager() {
                           label={t("admin.maxReferenceAudios")}
                           value={videoCapabilities.maxReferenceAudios}
                           min={1}
-                          max={9}
+                          max={10}
                           onChange={(maxReferenceAudios) =>
                             setVideoCapabilities((current) => ({
                               ...current,

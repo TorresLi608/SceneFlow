@@ -1,10 +1,39 @@
 # SceneFlow backend OpenAPI spec.
-# GENERATED FILE - do not hand-edit. Regenerate with the command in docs/reference/error-codes.md.
+# GENERATED FILE - do not hand-edit. Regenerate with scripts/regen_api_spec.py.
 openapi: 3.1.0
 info:
   title: SceneFlow Backend
   version: 0.1.0
 paths:
+  /api/auth/send-verification-code:
+    post:
+      tags:
+      - auth
+      summary: Send Verification Code
+      operationId: send_verification_code_api_auth_send_verification_code_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Payload
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Send Verification Code Api Auth Send Verification Code Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/auth/register:
     post:
       tags:
@@ -307,6 +336,85 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response List All Usage Logs Api Admin Usage Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/error-logs:
+    get:
+      tags:
+      - admin
+      summary: List Error Logs
+      operationId: list_error_logs_api_admin_error_logs_get
+      parameters:
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 128
+          default: ''
+          title: Search
+      - name: errorCode
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+          default: ''
+          title: Errorcode
+      - name: projectId
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+          default: ''
+          title: Projectid
+      - name: requestId
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+          default: ''
+          title: Requestid
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: pageSize
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Pagesize
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Error Logs Api Admin Error Logs Get
         '422':
           description: Validation Error
           content:
@@ -829,6 +937,254 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets:
+    get:
+      tags:
+      - assets
+      summary: List Assets
+      operationId: list_assets_api_projects__project_id__assets_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: kind
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Kind
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Assets Api Projects  Project Id  Assets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - assets
+      summary: Create Asset
+      operationId: create_asset_api_projects__project_id__assets_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssetRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Asset Api Projects  Project Id  Assets Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets/{asset_id}:
+    patch:
+      tags:
+      - assets
+      summary: Update Asset
+      operationId: update_asset_api_projects__project_id__assets__asset_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssetRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Asset Api Projects  Project Id  Assets  Asset Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - assets
+      summary: Delete Asset
+      operationId: delete_asset_api_projects__project_id__assets__asset_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets/merge:
+    post:
+      tags:
+      - assets
+      summary: Merge Assets
+      operationId: merge_assets_api_projects__project_id__assets_merge_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeAssetsRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Merge Assets Api Projects  Project Id  Assets Merge Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/settings/video-models:
+    get:
+      tags:
+      - settings
+      summary: Video Model Catalog
+      description: 'The video models the admin picker offers, with the capabilities each one implies.
+
+
+        Only `catalog` entries are listed: superseded revisions stay in
+
+        `VIDEO_MODEL_CAPABILITIES` so a config already pinned to one keeps resolving, but
+
+        offering them for new configs would just be a longer list of the same model.'
+      operationId: video_model_catalog_api_settings_video_models_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Video Model Catalog Api Settings Video Models Get
         '422':
           description: Validation Error
           content:
@@ -1533,6 +1889,85 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/prompts/compile:
+    post:
+      tags:
+      - prompts
+      summary: Preview Compiled Prompt
+      description: 'What the editor''s `@素材` labels turn into for the project''s current model.
+
+
+        `sceneId` matters for video: the render prepends the shot''s storyboard frame when the
+
+        model takes images, so `图1` there is the frame and the first selection is `图2`. The
+
+        preview has to count the same way or it teaches the user the wrong number.'
+      operationId: preview_compiled_prompt_api_prompts_compile_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompilePromptRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Compiled Prompt Api Prompts Compile Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/prompts/presets:
+    get:
+      tags:
+      - prompts
+      summary: List Prompt Presets
+      description: 'Starting points for a prompt field, so a blank box is never the only option.
+
+
+        Public within the app and free of model calls — these are static templates, and gating
+
+        them behind a balance check would make an empty form unusable for a user out of credit.'
+      operationId: list_prompt_presets_api_prompts_presets_get
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+          default: character
+          title: Kind
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Prompt Presets Api Prompts Presets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/prompts/optimize:
     post:
       tags:
@@ -1766,7 +2201,12 @@ paths:
 
         Synchronous like the character portrait it mirrors: it is one image, and the dialog the
 
-        user is looking at is the only thing waiting on it.'
+        user is looking at is the only thing waiting on it.
+
+
+        Driven by the user''s own description of the picture. It used to be drawn from the title
+
+        and synopsis, which meant the only way to change the cover was to rewrite the story.'
       operationId: generate_cover_api_projects_cover_generate_post
       parameters:
       - name: authorization
@@ -1792,43 +2232,6 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Generate Cover Api Projects Cover Generate Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/projects/description/optimize:
-    post:
-      tags:
-      - projects
-      summary: Optimize Description
-      description: Polish a synopsis and return it. Never saved — the user confirms the rewrite first.
-      operationId: optimize_description_api_projects_description_optimize_post
-      parameters:
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OptimizeDescriptionRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Optimize Description Api Projects Description Optimize Post
         '422':
           description: Validation Error
           content:
@@ -1944,6 +2347,104 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response List Jobs Api Projects  Project Id  Jobs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/models:
+    get:
+      tags:
+      - projects
+      summary: Project Models
+      description: 'The four models this series will actually use, and what each one accepts.
+
+
+        Resolved rather than merely echoed back: a project that has pinned nothing still needs
+
+        the panel to say which account default it is falling through to, and a pinned config
+
+        that was since deleted needs to show the fallback rather than a dangling id.
+
+
+        A purpose with nothing configured anywhere resolves to `null` instead of raising — the
+
+        panel exists partly to tell the user that, and a 400 would leave it blank instead.'
+      operationId: project_models_api_projects__project_id__models_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Project Models Api Projects  Project Id  Models Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/cancel:
+    post:
+      tags:
+      - projects
+      summary: Cancel Project Run
+      description: 'Ask whatever this project is rendering to stop after the shot in flight.
+
+
+        Cooperative rather than an interrupt: the run polls the flag between shots, so work the
+
+        provider has already been paid for is kept and the run still reports a terminal status.
+
+        See `app/core/runs.py`.
+
+
+        Releasing the busy lock is left to the run itself. Clearing it here would let a second
+
+        render start while the first is still unwinding, and both would write the same rows.'
+      operationId: cancel_project_run_api_projects__project_id__cancel_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Cancel Project Run Api Projects  Project Id  Cancel Post
         '422':
           description: Validation Error
           content:
@@ -2111,6 +2612,57 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Create Project Scene Api Projects  Project Id  Scenes Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/references/{kind}/{asset_id}:
+    delete:
+      tags:
+      - projects
+      summary: Delete Generation Reference
+      operationId: delete_generation_reference_api_projects__project_id__references__kind___asset_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: kind
+        in: path
+        required: true
+        schema:
+          enum:
+          - character
+          - characterState
+          - prop
+          - tone
+          - sceneImage
+          - sceneVideo
+          - voice
+          - asset
+          type: string
+          title: Kind
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -2486,12 +3038,133 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}/breakdown:
+    post:
+      tags:
+      - episodes
+      summary: Breakdown Episode
+      description: 'Split this episode''s script into shots, motion directions, or both.
+
+
+        Re-splitting is destructive: the old flow silently deleted every generated image. When
+
+        there is something to lose, the first call reports what it would discard and the client
+
+        repeats with `replaceAll` once the user has agreed. `target: "video"` never triggers
+
+        this, because it updates the existing rows rather than replacing them.'
+      operationId: breakdown_episode_api_projects__project_id__episodes__episode_id__breakdown_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BreakdownEpisodeRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Breakdown Episode Api Projects  Project Id  Episodes  Episode Id  Breakdown
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}/tone-sheet:
+    post:
+      tags:
+      - episodes
+      summary: Generate Tone Sheet
+      description: 'Anchor this episode''s look, without rendering any shots against it yet.
+
+
+        Its own step because the anchor decides lighting, palette, and render style for every
+
+        frame that follows: approving it first is much cheaper than discovering after twenty
+
+        full-resolution renders that the episode looks wrong.'
+      operationId: generate_tone_sheet_api_projects__project_id__episodes__episode_id__tone_sheet_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateToneSheetRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Generate Tone Sheet Api Projects  Project Id  Episodes  Episode Id  Tone
+                  Sheet Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/projects/{project_id}/episodes/{episode_id}/storyboard:
     post:
       tags:
       - episodes
       summary: Generate Storyboard
-      description: 'Render this episode: one tone sheet to anchor the look, then a frame per shot.'
+      description: 'Render this episode''s shots against the tone sheet that anchors them.
+
+
+        The anchor is generated here when it does not exist yet, so a caller that skipped the
+
+        explicit step still gets an anchored render rather than twenty unrelated frames.'
       operationId: generate_storyboard_api_projects__project_id__episodes__episode_id__storyboard_post
       parameters:
       - name: project_id
@@ -2845,12 +3518,16 @@ paths:
       tags:
       - characters
       summary: Draft State Prompt
-      description: 'Draft the turnaround prompt from the character and the state, for review.
+      description: 'Queue the turnaround prompt draft, for review.
 
 
-        Returned rather than saved: the user is meant to read and edit this before it draws
+        Read off the job result rather than saved: the user is meant to edit this before it draws
 
-        anything, so writing it here would make the preview step decorative.'
+        anything, so writing it here would make the preview step decorative. Queued because
+
+        Starlette does not cancel a handler on client disconnect, so a stop button could only
+
+        hang up the browser while this ran on and billed (`app/services/job_worker.py`).'
       operationId: draft_state_prompt_api_projects__project_id__characters__character_id__states__state_id__prompt_post
       parameters:
       - name: project_id
@@ -2886,7 +3563,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DraftPromptRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -2906,7 +3583,7 @@ paths:
       tags:
       - characters
       summary: Generate State Image
-      description: Draw the state's turnaround sheet from the approved prompt.
+      description: Queue the state's turnaround draw. The worker stores it and broadcasts `CHARACTER_UPDATE`.
       operationId: generate_state_image_api_projects__project_id__characters__character_id__states__state_id__image_post
       parameters:
       - name: project_id
@@ -2942,7 +3619,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GenerateReferenceImageRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3312,7 +3989,14 @@ paths:
       tags:
       - props
       summary: Draft Prop Prompt
-      description: Draft the image prompt for review. Returned, not saved.
+      description: 'Queue the image prompt draft. Read it off the job result; it is never saved.
+
+
+        Queued rather than awaited here because Starlette does not cancel a handler when the
+
+        client disconnects, so a stop button could only ever hang up the browser while this kept
+
+        running and billing. See `app/services/job_worker.py`.'
       operationId: draft_prop_prompt_api_projects__project_id__props__prop_id__prompt_post
       parameters:
       - name: project_id
@@ -3342,7 +4026,7 @@ paths:
             schema:
               $ref: '#/components/schemas/DraftPromptRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3361,6 +4045,7 @@ paths:
       tags:
       - props
       summary: Generate Prop Image
+      description: Queue the prop's reference draw. The worker stores it and broadcasts `PROP_UPDATE`.
       operationId: generate_prop_image_api_projects__project_id__props__prop_id__image_post
       parameters:
       - name: project_id
@@ -3390,7 +4075,7 @@ paths:
             schema:
               $ref: '#/components/schemas/GenerateReferenceImageRequest'
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3565,6 +4250,116 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/voices/design:
+    post:
+      tags:
+      - voices
+      summary: Design Project Voice
+      description: 'Queue a timbre design and bind it to this series when it lands.
+
+
+        The provider and model come from the project''s audio configuration rather than the
+
+        request. The old form asked the user to type them, which is how a series ended up with
+
+        profiles naming a model no synthesiser here could actually voice.
+
+
+        The designed voice is also saved to the account''s library, because a timbre that took a
+
+        paid request to produce should be reusable in the next series without paying again.
+
+
+        Queued rather than awaited: Starlette does not cancel a handler on client disconnect, so
+
+        the stop button could only hang up the browser while this ran on and billed. See
+
+        `app/services/job_worker.py`.'
+      operationId: design_project_voice_api_projects__project_id__voices_design_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DesignVoiceProfileRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Design Project Voice Api Projects  Project Id  Voices Design Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/voices/import:
+    post:
+      tags:
+      - voices
+      summary: Import Project Voice
+      description: 'Bind a timbre already in the account''s library to this series.
+
+
+        Copies the audition rather than referencing the library row: a series'' voice sheet must
+
+        keep working after the user tidies up their library, and the clip is small.'
+      operationId: import_project_voice_api_projects__project_id__voices_import_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportVoiceProfileRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Project Voice Api Projects  Project Id  Voices Import Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/projects/{project_id}/voices/{voice_id}:
     patch:
       tags:
@@ -3653,7 +4448,15 @@ paths:
       tags:
       - voices
       summary: Preview Voice
-      description: Synthesise the profile's sample line so the user can hear it before binding it.
+      description: 'Queue synthesis of the profile''s sample line so the user can hear it before binding
+        it.
+
+
+        Local TTS rather than a paid model, so this costs nothing — it goes through the queue for
+
+        the other half of the reason: a stop button that actually stops, and one audition per
+
+        profile at a time instead of one per impatient click.'
       operationId: preview_voice_api_projects__project_id__voices__voice_id__preview_post
       parameters:
       - name: project_id
@@ -3677,7 +4480,7 @@ paths:
           - type: 'null'
           title: Authorization
       responses:
-        '200':
+        '202':
           description: Successful Response
           content:
             application/json:
@@ -3982,6 +4785,89 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - exports
+      summary: Remove Export
+      operationId: remove_export_api_projects__project_id__exports__export_id__delete
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: export_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Export Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove Export Api Projects  Project Id  Exports  Export Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/jobs/{job_id}:
+    get:
+      tags:
+      - jobs
+      summary: Get Generation Job
+      description: 'One job, for a client waiting on the work it queued.
+
+
+        Its own endpoint rather than filtering the project list: a panel waiting on one image
+
+        should not pull every job in the series on a three-second interval.'
+      operationId: get_generation_job_api_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Generation Job Api Jobs  Job Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/jobs/{job_id}/cancel:
     post:
       tags:
@@ -4070,6 +4956,176 @@ paths:
                 title: Response Healthz Healthz Get
 components:
   schemas:
+    BreakdownEpisodeRequest:
+      properties:
+        target:
+          type: string
+          enum:
+          - shots
+          - video
+          - both
+          title: Target
+          default: both
+        detailLevel:
+          type: string
+          enum:
+          - concise
+          - standard
+          - detailed
+          - custom
+          title: Detaillevel
+          default: standard
+        detailPrompt:
+          anyOf:
+          - type: string
+            maxLength: 6000
+          - type: 'null'
+          title: Detailprompt
+        script:
+          anyOf:
+          - type: string
+            maxLength: 200000
+          - type: 'null'
+          title: Script
+        references:
+          $ref: '#/components/schemas/BreakdownReferencesRequest'
+        replaceAll:
+          type: boolean
+          title: Replaceall
+          default: false
+        model:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Model
+      additionalProperties: false
+      type: object
+      title: BreakdownEpisodeRequest
+      description: 'Split a script into shots, motion directions, or both.
+
+
+        `target` exists because the two halves have different lifetimes: re-deriving the motion
+
+        for shots whose frames are already rendered must not throw those frames away, so
+
+        `video` updates the existing rows in place instead of replacing them.'
+    BreakdownReferencesRequest:
+      properties:
+        characterIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          title: Characterids
+        propIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          title: Propids
+        voiceProfileIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          title: Voiceprofileids
+        useCastSheet:
+          type: boolean
+          title: Usecastsheet
+          default: false
+        usePropSheet:
+          type: boolean
+          title: Usepropsheet
+          default: false
+        useVoiceSheet:
+          type: boolean
+          title: Usevoicesheet
+          default: false
+      additionalProperties: false
+      type: object
+      title: BreakdownReferencesRequest
+      description: 'What the breakdown may look at when it splits the script.
+
+
+        Selecting nothing is a valid, meaningful choice: it tells the model to decide
+
+        everything from the script alone. Selecting a character with a turnaround sheet is what
+
+        turns "a woman in a red coat" into "参照《林小满》三面图" in the generated prompt.'
+    CompilePromptRequest:
+      properties:
+        projectId:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Projectid
+        kind:
+          type: string
+          enum:
+          - image
+          - video
+          title: Kind
+        sceneId:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 1
+          - type: 'null'
+          title: Sceneid
+        prompt:
+          type: string
+          maxLength: 10000
+          title: Prompt
+          default: ''
+        dialogue:
+          type: string
+          maxLength: 4000
+          title: Dialogue
+          default: ''
+        references:
+          items:
+            $ref: '#/components/schemas/GenerationReferenceRequest'
+          type: array
+          maxItems: 64
+          title: References
+      additionalProperties: false
+      type: object
+      required:
+      - projectId
+      - kind
+      title: CompilePromptRequest
+    CreateAssetRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        description:
+          type: string
+          maxLength: 4000
+          title: Description
+          default: ''
+        kind:
+          type: string
+          enum:
+          - image
+          - video
+          - audio
+          title: Kind
+        data:
+          type: string
+          maxLength: 80000000
+          minLength: 20
+          title: Data
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - kind
+      - data
+      title: CreateAssetRequest
     CreateCharacterRequest:
       properties:
         name:
@@ -4129,11 +5185,6 @@ components:
           type: string
           maxLength: 4000
           title: Appearanceprompt
-          default: ''
-        systemPrompt:
-          type: string
-          maxLength: 4000
-          title: Systemprompt
           default: ''
         finalPrompt:
           type: string
@@ -4236,6 +5287,11 @@ components:
           maxLength: 4000
           title: Description
           default: ''
+        coverPrompt:
+          type: string
+          maxLength: 4000
+          title: Coverprompt
+          default: ''
         originalScript:
           type: string
           maxLength: 200000
@@ -4258,10 +5314,10 @@ components:
           maxLength: 4000
           title: Description
           default: ''
-        systemPrompt:
+        ownerCharacterId:
           type: string
-          maxLength: 4000
-          title: Systemprompt
+          maxLength: 64
+          title: Ownercharacterid
           default: ''
         finalPrompt:
           type: string
@@ -4317,6 +5373,48 @@ components:
             maxLength: 80
           - type: 'null'
           title: Cameramove
+        transition:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Transition
+        videoPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Videoprompt
+        imageReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Imagereferences
+        videoReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Videoreferences
+        videoFirstFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Videofirstframe
+        videoLastFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Videolastframe
         durationMs:
           anyOf:
           - type: integer
@@ -4383,6 +5481,48 @@ components:
       - name
       title: CreateVoiceProfileRequest
       description: One voice in the show. Provider and model only — credentials stay on the account.
+    DesignVoiceProfileRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        voicePrompt:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Voiceprompt
+        previewText:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Previewtext
+        note:
+          type: string
+          maxLength: 4000
+          title: Note
+          default: ''
+        sampleText:
+          type: string
+          maxLength: 1000
+          title: Sampletext
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - voicePrompt
+      - previewText
+      title: DesignVoiceProfileRequest
+      description: 'Design a new timbre and bind it to this series in one step.
+
+
+        The provider and model come from the project''s audio configuration rather than the
+
+        request: they are an account credential detail, and typing them by hand was how the
+
+        old form let a user create a profile no synthesiser could actually voice.'
     DraftPromptRequest:
       properties:
         name:
@@ -4395,10 +5535,10 @@ components:
           maxLength: 4000
           title: Description
           default: ''
-        systemPrompt:
+        preset:
           type: string
-          maxLength: 4000
-          title: Systemprompt
+          maxLength: 40
+          title: Preset
           default: ''
         model:
           anyOf:
@@ -4414,18 +5554,22 @@ components:
 
         The fields are taken from the request rather than the stored row so the dialog can draft
 
-        against edits the user has not saved yet. `systemPrompt` overrides the built-in template.'
+        against edits the user has not saved yet. The instruction template is the built-in one
+
+        in `prompt_service` and is not overridable — a second editable prompt field next to the
+
+        one that actually draws only ever confused people about which was which.'
     GenerateCoverRequest:
       properties:
+        prompt:
+          type: string
+          maxLength: 4000
+          title: Prompt
+          default: ''
         title:
           type: string
           maxLength: 80
           title: Title
-          default: ''
-        description:
-          type: string
-          maxLength: 4000
-          title: Description
           default: ''
         stylePrompt:
           type: string
@@ -4435,14 +5579,21 @@ components:
       additionalProperties: false
       type: object
       title: GenerateCoverRequest
-      description: 'Draw a cover from details the caller is holding, not from a stored project.
+      description: 'Draw a cover from a prompt the caller is holding, not from a stored project.
 
 
         Project-less on purpose: the create dialog needs this before a project row exists, and
 
         an edit dialog holds unsaved edits the stored row would not reflect. Nothing is written
 
-        — the caller previews the result and applies it with `PUT /{id}/cover`.'
+        — the caller previews the result and applies it with `PUT /{id}/cover`.
+
+
+        `prompt` is the subject; title and style are context the model may lean on. It used to
+
+        be the other way round, and a cover drawn from the synopsis illustrated the plot rather
+
+        than being a poster.'
     GenerateProjectRequest:
       properties:
         model:
@@ -4466,6 +5617,10 @@ components:
             minItems: 1
           - type: 'null'
           title: Sceneids
+        pendingOnly:
+          type: boolean
+          title: Pendingonly
+          default: false
       additionalProperties: false
       type: object
       title: GenerateProjectRequest
@@ -4505,6 +5660,18 @@ components:
             minItems: 1
           - type: 'null'
           title: Sceneids
+        references:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: References
+        pendingOnly:
+          type: boolean
+          title: Pendingonly
+          default: false
       additionalProperties: false
       type: object
       title: GenerateStoryboardRequest
@@ -4516,6 +5683,41 @@ components:
         the previous episode''s tone sheet arrive as one image; separate, they arrive as several
 
         and cost more. `previousEpisodeId` carries continuity across an episode boundary.'
+    GenerateToneSheetRequest:
+      properties:
+        previousEpisodeId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Previousepisodeid
+        mergeReferences:
+          type: boolean
+          title: Mergereferences
+          default: true
+        references:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: References
+        regenerate:
+          type: boolean
+          title: Regenerate
+          default: false
+      additionalProperties: false
+      type: object
+      title: GenerateToneSheetRequest
+      description: 'Anchor this episode''s look, as a step of its own.
+
+
+        Split out of the storyboard run so the user can approve the anchor before paying for a
+
+        full-resolution frame per shot — an episode rendered against a tone sheet nobody looked
+
+        at is an episode that has to be rendered twice.'
     GenerateVideoRequest:
       properties:
         model:
@@ -4557,9 +5759,10 @@ components:
           title: Promptextend
           default: false
         withAudio:
-          type: boolean
+          anyOf:
+          - type: boolean
+          - type: 'null'
           title: Withaudio
-          default: false
         sceneIds:
           anyOf:
           - items:
@@ -4569,9 +5772,46 @@ components:
             minItems: 1
           - type: 'null'
           title: Sceneids
+        references:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: References
+        pendingOnly:
+          type: boolean
+          title: Pendingonly
+          default: false
       additionalProperties: false
       type: object
       title: GenerateVideoRequest
+    GenerationReferenceRequest:
+      properties:
+        kind:
+          type: string
+          enum:
+          - character
+          - characterState
+          - prop
+          - tone
+          - sceneImage
+          - sceneVideo
+          - voice
+          - asset
+          title: Kind
+        id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Id
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - id
+      title: GenerationReferenceRequest
     HTTPValidationError:
       properties:
         detail:
@@ -4581,30 +5821,67 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
-    OptimizeDescriptionRequest:
+    ImportVoiceProfileRequest:
       properties:
-        title:
+        userVoiceId:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Uservoiceid
+        name:
           type: string
           maxLength: 80
-          title: Title
+          title: Name
           default: ''
-        description:
+        note:
           type: string
           maxLength: 4000
-          minLength: 1
-          title: Description
-        model:
-          anyOf:
-          - type: string
-            maxLength: 160
-          - type: 'null'
-          title: Model
+          title: Note
+          default: ''
+        sampleText:
+          type: string
+          maxLength: 1000
+          title: Sampletext
+          default: ''
       additionalProperties: false
       type: object
       required:
-      - description
-      title: OptimizeDescriptionRequest
-      description: Polish a synopsis. Project-less and side-effect free, for the same reason as above.
+      - userVoiceId
+      title: ImportVoiceProfileRequest
+      description: Bind a timbre already saved on the account to this series.
+    MergeAssetsRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        description:
+          type: string
+          maxLength: 4000
+          title: Description
+          default: ''
+        kind:
+          type: string
+          enum:
+          - image
+          - video
+          - audio
+          title: Kind
+        assetIds:
+          items:
+            type: string
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Assetids
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - kind
+      - assetIds
+      title: MergeAssetsRequest
     OptimizeProjectRequest:
       properties:
         script:
@@ -4629,6 +5906,11 @@ components:
           enum:
           - image
           - video
+          - voice
+          - audio
+          - character
+          - prop
+          - cover
           title: Kind
         prompt:
           type: string
@@ -4759,6 +6041,121 @@ components:
         Range checks live here for the OpenAPI schema; `project_service.production_settings`
 
         stays the single place that resolves defaults and cross-field consistency.'
+    ProjectModelConfigRequest:
+      properties:
+        textConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Textconfigid
+        imageConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Imageconfigid
+        videoConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Videoconfigid
+        audioConfigId:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Audioconfigid
+        imageResolution:
+          anyOf:
+          - type: string
+            enum:
+            - 1K
+            - 2K
+            - 4K
+          - type: 'null'
+          title: Imageresolution
+        imageRatio:
+          anyOf:
+          - type: string
+            enum:
+            - auto
+            - '21:9'
+            - '16:9'
+            - '4:3'
+            - '3:2'
+            - '1:1'
+            - '2:3'
+            - '3:4'
+            - '9:16'
+            - '9:21'
+            - adaptive
+          - type: 'null'
+          title: Imageratio
+        videoQuality:
+          anyOf:
+          - type: string
+            enum:
+            - 480p
+            - 720p
+            - 1080p
+            - 2K
+            - 4K
+          - type: 'null'
+          title: Videoquality
+        videoAspectRatio:
+          anyOf:
+          - type: string
+            enum:
+            - auto
+            - '21:9'
+            - '16:9'
+            - '4:3'
+            - '3:2'
+            - '1:1'
+            - '2:3'
+            - '3:4'
+            - '9:16'
+            - '9:21'
+            - adaptive
+          - type: 'null'
+          title: Videoaspectratio
+        videoDuration:
+          anyOf:
+          - type: integer
+            maximum: 600.0
+            minimum: 1.0
+          - type: 'null'
+          title: Videoduration
+        videoFps:
+          anyOf:
+          - type: integer
+            maximum: 240.0
+            minimum: 1.0
+          - type: 'null'
+          title: Videofps
+        videoPromptExtend:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Videopromptextend
+        videoAudioEnabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Videoaudioenabled
+      additionalProperties: false
+      type: object
+      title: ProjectModelConfigRequest
+      description: 'Which model this series uses for each kind of work, and the defaults it renders with.
+
+
+        Every field is optional so a PATCH carries only what changed. A config id of `0` clears
+
+        the pick and returns that purpose to the account default — `null` cannot mean "clear",
+
+        because in a PATCH it already means "leave alone".'
     PromptOptimizationContext:
       properties:
         outputLanguage:
@@ -4843,6 +6240,31 @@ components:
       type: object
       title: SetSceneCastRequest
       description: The full cast of a shot; sending an empty list clears it.
+    UpdateAssetRequest:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 120
+            minLength: 1
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Description
+        data:
+          anyOf:
+          - type: string
+            maxLength: 80000000
+            minLength: 1
+          - type: 'null'
+          title: Data
+      additionalProperties: false
+      type: object
+      title: UpdateAssetRequest
     UpdateCharacterRequest:
       properties:
         name:
@@ -4924,12 +6346,6 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Appearanceprompt
-        systemPrompt:
-          anyOf:
-          - type: string
-            maxLength: 4000
-          - type: 'null'
-          title: Systemprompt
         finalPrompt:
           anyOf:
           - type: string
@@ -5013,6 +6429,12 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Description
+        coverPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Coverprompt
         originalScript:
           anyOf:
           - type: string
@@ -5025,6 +6447,10 @@ components:
             maxLength: 200000
           - type: 'null'
           title: Seriesbible
+        modelSettings:
+          anyOf:
+          - $ref: '#/components/schemas/ProjectModelConfigRequest'
+          - type: 'null'
       additionalProperties: false
       type: object
       title: UpdateProjectRequest
@@ -5043,12 +6469,12 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Description
-        systemPrompt:
+        ownerCharacterId:
           anyOf:
           - type: string
-            maxLength: 4000
+            maxLength: 64
           - type: 'null'
-          title: Systemprompt
+          title: Ownercharacterid
         finalPrompt:
           anyOf:
           - type: string
@@ -5103,6 +6529,48 @@ components:
             maxLength: 80
           - type: 'null'
           title: Cameramove
+        transition:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Transition
+        videoPrompt:
+          anyOf:
+          - type: string
+            maxLength: 4000
+          - type: 'null'
+          title: Videoprompt
+        imageReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Imagereferences
+        videoReferences:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GenerationReferenceRequest'
+            type: array
+            maxItems: 64
+          - type: 'null'
+          title: Videoreferences
+        videoFirstFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Videofirstframe
+        videoLastFrame:
+          anyOf:
+          - $ref: '#/components/schemas/GenerationReferenceRequest'
+          - type: string
+            const: ''
+          - type: 'null'
+          title: Videolastframe
         durationMs:
           anyOf:
           - type: integer

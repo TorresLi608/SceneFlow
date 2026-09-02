@@ -2,6 +2,7 @@ import { httpClient } from "@/lib/http/client";
 import type {
   AdminDefaultModelItemResponse,
   AdminDefaultModelListResponse,
+  AdminErrorLogListResponse,
   AdminUsageLogListResponse,
   AdminUserItemResponse,
   AdminUserListResponse,
@@ -25,6 +26,11 @@ export async function listAdminUsersAction() {
 
 export async function listAdminUsageLogsAction(params: { search?: string; page?: number; pageSize?: number } = {}) {
   const response = await httpClient.get<AdminUsageLogListResponse>("/api/bff/admin/usage-logs", { params });
+  return response.data;
+}
+
+export async function listAdminErrorLogsAction(params: { search?: string; page?: number; pageSize?: number } = {}) {
+  const response = await httpClient.get<AdminErrorLogListResponse>("/api/bff/admin/error-logs", { params });
   return response.data;
 }
 

@@ -37,7 +37,7 @@ def list_user_voices(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
 
 
 @router.post("/design")
-def design_voice(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+async def design_voice(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
     prompt = str(payload.get("voicePrompt") or "").strip()
     preview_text = str(payload.get("previewText") or "").strip()
     name = str(payload.get("name") or "custom_voice").strip()
@@ -52,7 +52,7 @@ def design_voice(payload: dict[str, Any], user_id: int = Depends(current_user_id
         require_model_balance(session, user_id, config)
     started_at = time.monotonic()
     try:
-        voice_id, audio = create_voice(config, prompt, preview_text, name)
+        voice_id, audio = await create_voice(config, prompt, preview_text, name)
     except Exception as exc:
         raise HTTPException(502, f"音色设计失败：{str(exc)[:220]}") from exc
     stored = store_artifact("voices", str(user_id), f"{voice_id}.wav", audio)

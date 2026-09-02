@@ -85,9 +85,11 @@ Raised by FastAPI, never by hand. Produced by an unknown field (`extra="forbid"`
 
 ### 502 — provider failure
 
-`failed to parse script: …` · `failed to optimize script: …` · `failed to optimize prompt: …` · `failed to chat: …` · `failed to generate portrait: …` · `AI 图片生成失败：…` · `AI 视频生成失败：…`
+`failed to parse script: …` · `failed to break down script: …` · `failed to optimize script: …` · `failed to optimize prompt: …` · `failed to chat: …` · `failed to generate portrait: …` · `AI 图片生成失败：…` · `AI 视频生成失败：…`
 
 Provider text is truncated (180–220 chars) before it reaches the client or a log line.
+
+Every 5xx has an `X-Request-Id` response header and a redacted super-admin-only error record. `BREAKDOWN_INVALID_JSON` is the stable code for malformed breakdown response shapes; see `known-errors.md` for its compatibility rules and regression samples.
 
 ## Application-level outcomes that are *not* errors
 

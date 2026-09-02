@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import tempfile
+from unittest.mock import AsyncMock, MagicMock
 
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 
 from app.services import agent_service, artifact_service
-from app.llms.router import ModelRouter, _content_text, _reasoning_text
+from app.llms.router import ModelRouter, _content_text, _json_object, _reasoning_text
 
 
 class ToolFakeModel(FakeMessagesListChatModel):
@@ -79,7 +80,67 @@ def test_openai_compatible_streams_report_usage() -> None:
     assert model.stream_usage is True
 
 
+def test_openai_compatible_breakdown_skips_the_openai_beta_parser() -> None:
+    router = ModelRouter()
+    model = MagicMock()
+    model.ainvoke = AsyncMock(
+        return_value=AIMessage(content='{"shots":[{"narration":"雾中山门","visualPrompt":"wide shot"}]}')
+    )
+    router.chat_model = MagicMock(return_value=model)
+    result = asyncio.run(router.breakdown_script("qwen", "test-key", "qwen-test", "system", "script"))
+    assert result.shots[0].narration == "雾中山门"
+
+
+def test_breakdown_disables_stream_usage_for_compatibility_gateways() -> None:
+    # Direct provider calls intentionally do not use LangChain streaming.
+    assert ModelRouter().chat_model("qwen", "test-key", "qwen-test", stream_usage=False).stream_usage is False
+
+
+def test_json_object_ignores_wrappers_and_trailing_model_text() -> None:
+    payload = _json_object(
+        '结果如下：\n```json\n{"shots":[{"narration":"雾中山门"}]}\n```\n补充说明：已完成。'
+    )
+    assert payload["shots"][0]["narration"] == "雾中山门"
+    assert _json_object('{"shots": []}\n{"extra": true}') == {"shots": []}
+    assert _json_object(r'{\"scenes\": []}') == {"scenes": []}
+
+
+def test_breakdown_payload_accepts_a_bare_shot_array() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    assert _json_breakdown_payload('[{"narration":"雾中山门"}]')["shots"][0]["narration"] == "雾中山门"
+
+
+def test_breakdown_payload_accepts_escaped_quotes_from_model() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    payload = _json_breakdown_payload(r'[{\"narration\": \"深夜，韩立躺在床上\", \"dialogue\": \"他说：\\\"别出声。\\\"\"}]')
+    assert payload["shots"][0]["narration"].startswith("深夜")
+    assert payload["shots"][0]["dialogue"] == '他说："别出声。"'
+
+
+def test_breakdown_payload_accepts_twice_escaped_quotes_from_model() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    payload = _json_breakdown_payload(r'[{\\\"narration\\\": \\\"深夜，韩立躺在床上\\\"}]')
+    assert payload["shots"][0]["narration"].startswith("深夜")
+
+
+def test_breakdown_payload_recovers_complete_shots_from_a_truncated_array() -> None:
+    from app.llms.router import _json_breakdown_payload
+
+    payload = _json_breakdown_payload('[{"narration":"第一镜","visualPrompt":"山门"},{"narration":"未完成')
+    assert payload["shots"] == [{"narration": "第一镜", "visualPrompt": "山门"}]
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
     test_openai_compatible_streams_report_usage()
+    test_openai_compatible_breakdown_skips_the_openai_beta_parser()
+    test_breakdown_disables_stream_usage_for_compatibility_gateways()
+    test_json_object_ignores_wrappers_and_trailing_model_text()
+    test_breakdown_payload_accepts_a_bare_shot_array()
+    test_breakdown_payload_accepts_escaped_quotes_from_model()
+    test_breakdown_payload_accepts_twice_escaped_quotes_from_model()
+    test_breakdown_payload_recovers_complete_shots_from_a_truncated_array()

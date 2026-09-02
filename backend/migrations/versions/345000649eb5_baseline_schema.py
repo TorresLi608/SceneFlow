@@ -186,18 +186,31 @@ def _migrate_legacy_model_configs(session: Session) -> None:
 
 
 def _migrate_scene_assets(session: Session) -> None:
-    scenes = session.exec(
-        select(Scene).where(or_(Scene.image_path.like("http%"), Scene.audio_path.like("http%")))
-    ).all()
-    for scene in scenes:
+    # Core SQL naming only the columns this rewrite touches, for the same reason as
+    # `_backfill_first_episode` below: the legacy `scenes` table predates every column
+    # added since, and an ORM select would name today's full column list against
+    # yesterday's table — so any future column on Scene would break upgrading a legacy
+    # database. (It did, when `transition` and `video_prompt` were added.)
+    scenes = sa.table("scenes", sa.column("id"), sa.column("image_path"), sa.column("audio_path"))
+    rows = session.execute(
+        sa.select(scenes.c.id, scenes.c.image_path, scenes.c.audio_path).where(
+            or_(scenes.c.image_path.like("http%"), scenes.c.audio_path.like("http%"))
+        )
+    ).mappings().all()
+    for row in rows:
+        updates: dict[str, str | None] = {}
         for field in ("image_path", "audio_path"):
-            value = str(getattr(scene, field) or "")
-            if value.startswith("http"):
-                try:
-                    setattr(scene, field, stored_relative_path(value))
-                except Exception:
-                    setattr(scene, field, None)
-        session.add(scene)
+            value = str(row[field] or "")
+            if not value.startswith("http"):
+                continue
+            try:
+                updates[field] = stored_relative_path(value)
+            except Exception:
+                # The token no longer decodes, so the link was already dead; drop it rather
+                # than carrying a reference that can only ever 404.
+                updates[field] = None
+        if updates:
+            session.execute(sa.update(scenes).where(scenes.c.id == row["id"]).values(**updates))
 
 
 def _backfill_first_episode(session: Session) -> None:
@@ -222,7 +235,14 @@ def _backfill_first_episode(session: Session) -> None:
             .where(Episode.project_id == project_id, Episode.deleted_at.is_(None))
             .order_by(Episode.episode_number)
         ).all()
-        project_scenes = session.exec(select(Scene).where(Scene.project_id == project_id)).all()
+        # Core SQL for `scenes` too, and for the same reason as `projects` above: an ORM
+        # select here names today's full column list against the legacy table, so every
+        # column later added to Scene would break this upgrade. Episodes are exempt — that
+        # table is created by this very revision, so it always matches the model.
+        scenes = sa.table("scenes", sa.column("id"), sa.column("project_id"), sa.column("deleted_at"), sa.column("episode_id"))
+        project_scenes = session.execute(
+            sa.select(scenes.c.id, scenes.c.deleted_at, scenes.c.episode_id).where(scenes.c.project_id == project_id)
+        ).mappings().all()
         if not episodes:
             stamp = row["updated_at"] or row["created_at"] or now()
             episode = Episode(
@@ -233,46 +253,79 @@ def _backfill_first_episode(session: Session) -> None:
                 episode_number=1,
                 title="第 1 集",
                 source_text=row["original_script"] or "",
-                status="storyboard" if any(scene.deleted_at is None for scene in project_scenes) else "draft",
+                status="storyboard" if any(scene["deleted_at"] is None for scene in project_scenes) else "draft",
             )
             session.add(episode)
             session.flush()
             episodes = [episode]
-        for scene in project_scenes:
-            if scene.episode_id is None:
-                scene.episode_id = episodes[0].id
-                session.add(scene)
+        orphans = [scene["id"] for scene in project_scenes if scene["episode_id"] is None]
+        if orphans:
+            session.execute(
+                sa.update(scenes).where(scenes.c.id.in_(orphans)).values(episode_id=episodes[0].id)
+            )
+
+
+def _dependency_rank(name: str) -> int:
+    """Where a table sits in foreign-key dependency order; higher means more dependent.
+
+    Renaming a table aside carries its foreign keys with it, so the `_alembic_old_` copies
+    have to be dropped children-first or SQLite refuses on a parent that a sibling still
+    references. Metadata supplies the ordering only — never the shape, per `_rebuild_schema`.
+    A table metadata no longer knows is genuinely legacy, and sorts last.
+    """
+    bare = name[len("_alembic_old_"):] if name.startswith("_alembic_old_") else name
+    order = [table.name for table in SQLModel.metadata.sorted_tables]
+    return order.index(bare) if bare in order else -1
 
 
 def _rebuild_schema() -> None:
-    """Copy an unversioned database into tables defined by current SQLModel metadata."""
+    """Copy an unversioned database into the tables *this revision* defines.
+
+    Frozen on purpose. `_create_schema()` is the baseline, and the rebuild has to land on
+    exactly that, because every revision after this one then runs on top of it. Building from
+    `SQLModel.metadata` instead materialises *today's* schema, so each table added since —
+    `assets`, `email_verifications` — already exists by the time its own migration calls
+    `create_table`, and a legacy upgrade dies with "table already exists". That is the same
+    trap the column-level comment in `_migrate_scene_assets` describes, one level up: a
+    migration must not read a model that is still moving.
+
+    Metadata is still used for one thing — the *order* tables are copied in, which has to
+    respect foreign keys. Names only, never shape.
+    """
     bind = op.get_bind()
-    tables = [table for table in SQLModel.metadata.sorted_tables if table.name in _tables()]
     indexes = list(bind.execute(
         sa.text("SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL")
     ).scalars())
     for name in indexes:
         op.drop_index(name)
 
-    for table in tables:
-        op.rename_table(table.name, f"_alembic_old_{table.name}")
-    for table in SQLModel.metadata.sorted_tables:
-        table.create(bind)
+    # Everything goes aside, including tables the staging step above created from live
+    # metadata: whatever the baseline does not define is dropped below and rebuilt later by
+    # the migration that owns it.
+    for name in _tables():
+        op.rename_table(name, f"_alembic_old_{name}")
+
+    _create_schema()
 
     inspector = inspect(bind)
-    for table in SQLModel.metadata.sorted_tables:
-        old_name = f"_alembic_old_{table.name}"
-        if old_name not in inspector.get_table_names():
+    present = set(inspector.get_table_names())
+    ordered = [table.name for table in SQLModel.metadata.sorted_tables if table.name in present]
+    ordered += sorted(name for name in present if name not in set(ordered) | {"alembic_version"}
+                      and not name.startswith("_alembic_old_"))
+    for name in ordered:
+        old_name = f"_alembic_old_{name}"
+        if old_name not in present:
             continue
         old_columns = {column["name"] for column in inspector.get_columns(old_name)}
-        columns = [column.name for column in table.columns if column.name in old_columns]
-        old_table = sa.table(old_name, *(sa.column(name) for name in columns))
-        bind.execute(table.insert().from_select(columns, sa.select(*(old_table.c[name] for name in columns))))
+        shared = [column["name"] for column in inspector.get_columns(name) if column["name"] in old_columns]
+        if not shared:
+            continue
+        quoted = ", ".join(f'"{column}"' for column in shared)
+        bind.execute(sa.text(f'INSERT INTO "{name}" ({quoted}) SELECT {quoted} FROM "{old_name}"'))
 
-    for table in reversed(SQLModel.metadata.sorted_tables):
-        old_name = f"_alembic_old_{table.name}"
-        if old_name in inspector.get_table_names():
-            op.drop_table(old_name)
+    for name in sorted(present, key=_dependency_rank, reverse=True):
+        if name.startswith("_alembic_old_"):
+            op.drop_table(name)
 
 
 def _upgrade_legacy_schema() -> None:

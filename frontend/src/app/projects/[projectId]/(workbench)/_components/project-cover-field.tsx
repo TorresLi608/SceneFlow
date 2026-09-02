@@ -1,20 +1,24 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Sparkles, Trash2 } from "lucide-react";
+import { isCancel } from "axios";
+import { Loader2, Save, Sparkles, Square, Trash2 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   clearProjectCoverAction,
   generateCoverAction,
   setProjectCoverAction,
+  updateProjectAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { PromptField } from "@/components/prompt-field";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/types/project";
 
 import { ReferenceImage } from "./reference-image";
@@ -26,7 +30,9 @@ import { ReferenceImage } from "./reference-image";
 export function ProjectCoverField({ project }: { project: Project }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const [coverPrompt, setCoverPrompt] = useState(project.coverPrompt);
   const [message, setMessage] = useState<string | null>(null);
+  const coverController = useRef<AbortController | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.projects });
 
@@ -39,17 +45,46 @@ export function ProjectCoverField({ project }: { project: Project }) {
     onError: (error) => setMessage(resolveRequestError(error, t("home.coverUploadFailed"))),
   });
 
+  const savePromptMutation = useMutation({
+    mutationFn: () => updateProjectAction(project.id, { coverPrompt: coverPrompt.trim() }),
+    onSuccess: () => {
+      setMessage(null);
+      void refresh();
+    },
+    onError: (error) => setMessage(resolveRequestError(error, t("home.saveProjectFailed"))),
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const drawn = await generateCoverAction({ title: project.title, description: project.description });
+      const drawn = await generateCoverAction(
+        { prompt: coverPrompt.trim(), title: project.title },
+        coverController.current?.signal
+      );
       return setProjectCoverAction(project.id, { imageData: drawn.imageData });
     },
     onSuccess: () => {
       setMessage(null);
       void refresh();
     },
-    onError: (error) => setMessage(resolveRequestError(error, t("home.generateCoverFailed"))),
+    onError: (error) => {
+      if (isCancel(error)) return;
+      setMessage(resolveRequestError(error, t("home.generateCoverFailed")));
+    },
+    onSettled: () => {
+      coverController.current = null;
+    },
   });
+
+  const stopGenerate = () => {
+    coverController.current?.abort();
+    coverController.current = null;
+    generateMutation.reset();
+  };
+
+  const startGenerate = () => {
+    coverController.current = new AbortController();
+    generateMutation.mutate();
+  };
 
   const clearMutation = useMutation({
     mutationFn: () => clearProjectCoverAction(project.id),
@@ -58,11 +93,44 @@ export function ProjectCoverField({ project }: { project: Project }) {
   });
 
   const busy = uploadMutation.isPending || generateMutation.isPending || clearMutation.isPending;
+  const promptDirty = coverPrompt.trim() !== project.coverPrompt;
 
   return (
     <Field>
       <FieldLabel>{t("home.projectCover")}</FieldLabel>
-      <div className="max-w-sm">
+
+      <PromptField
+        id="projectInfoCoverPrompt"
+        label={t("home.coverPrompt")}
+        kind="cover"
+        presetKind="cover"
+        value={coverPrompt}
+        onChange={setCoverPrompt}
+        placeholder={t("home.coverPromptPlaceholder")}
+        busy={busy}
+        onError={setMessage}
+        actions={
+          promptDirty ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={savePromptMutation.isPending}
+              onClick={() => savePromptMutation.mutate()}
+              className="h-7 gap-1 text-[11px] cursor-pointer"
+            >
+              {savePromptMutation.isPending ? (
+                <Loader2 data-icon="inline-start" className="size-3 animate-spin" />
+              ) : (
+                <Save data-icon="inline-start" className="size-3" />
+              )}
+              {t("common.save")}
+            </Button>
+          ) : null
+        }
+      />
+
+      <div className="mt-3 max-w-sm">
         <ReferenceImage
           url={project.coverImageUrl}
           generateLabel={t("home.generateCover")}
@@ -70,7 +138,11 @@ export function ProjectCoverField({ project }: { project: Project }) {
           uploadLabel={t("home.uploadCover")}
           busy={busy}
           generating={generateMutation.isPending}
-          onGenerate={() => generateMutation.mutate()}
+          // The cover has a subject only once the user has described one.
+          generateDisabled={!coverPrompt.trim()}
+          generateTitle={coverPrompt.trim() ? undefined : t("home.coverPromptRequired")}
+          onGenerate={startGenerate}
+          onStop={stopGenerate}
           onUpload={(dataUrl) => uploadMutation.mutate(dataUrl)}
           onError={setMessage}
         />
@@ -124,6 +196,47 @@ export function MergeButton({
     <Button type="button" disabled={pending || disabled} onClick={onClick}>
       {pending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
       {pending ? pendingLabel : label}
+    </Button>
+  );
+}
+
+/** A generate button that turns into a stop button while its request is in flight. */
+export function GenerateStopButton({
+  label,
+  stopLabel,
+  pending,
+  disabled,
+  title,
+  onStart,
+  onStop,
+  size = "sm",
+}: {
+  label: string;
+  stopLabel: string;
+  pending: boolean;
+  disabled?: boolean;
+  title?: string;
+  onStart: () => void;
+  onStop: () => void;
+  size?: "xs" | "sm" | "default";
+}) {
+  return (
+    <Button
+      type="button"
+      size={size}
+      variant={pending ? "destructive" : "default"}
+      // Stopping stays available while it runs; only starting can be disabled.
+      disabled={pending ? false : disabled}
+      title={title}
+      onClick={pending ? onStop : onStart}
+      className={cn("cursor-pointer transition-colors", pending && "animate-pulse font-medium")}
+    >
+      {pending ? (
+        <Square data-icon="inline-start" className="size-3 fill-current" />
+      ) : (
+        <Sparkles data-icon="inline-start" />
+      )}
+      {pending ? stopLabel : label}
     </Button>
   );
 }

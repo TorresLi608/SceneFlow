@@ -2,7 +2,7 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
-  "license": "SEE LICENSE IN ../LICENSE",
+  "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=22",
     "pnpm": ">=10"
@@ -32,6 +32,7 @@
     "i18next": "^26.3.5",
     "lucide-react": "^1.8.0",
     "next": "16.2.3",
+    "prompt-area": "0.6.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-i18next": "^17.0.8",

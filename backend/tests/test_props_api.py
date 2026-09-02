@@ -19,6 +19,7 @@ from app.models import ModelConfig, Prop, User
 from app.services import artifact_service
 from app.services.media_service import DEFAULT_CELL_WIDTH
 from app.utils.common import now
+from tests.job_queue import drain_one, succeeded
 
 
 PNG_BYTES = base64.b64decode(
@@ -133,14 +134,18 @@ def test_a_drafted_prompt_is_returned_for_review_and_not_saved() -> None:
             original = reference_service.models.complete_text
             reference_service.models.complete_text = _fake_text
             try:
-                drafted = client.post(
+                queued = client.post(
                     f"/api/projects/{project_id}/props/{prop['id']}/prompt", json={}, headers=headers
                 )
+                # The provider call happens while the job drains, not during the POST, so the
+                # stub has to still be in place here.
+                drafted = succeeded(drain_one())
             finally:
                 reference_service.models.complete_text = original
 
-            assert drafted.status_code == 200, drafted.text
-            assert drafted.json()["prompt"] == "单一物体居中，纯色背景"
+            assert queued.status_code == 202, queued.text
+            assert queued.json()["job"]["status"] == "queued"
+            assert drafted["prompt"] == "单一物体居中，纯色背景"
             listed = client.get(f"/api/projects/{project_id}/props", headers=headers).json()["props"]
             assert listed[0]["finalPrompt"] == ""
 
@@ -159,16 +164,17 @@ def test_the_drawn_image_and_the_prompt_behind_it_are_both_kept() -> None:
             original = reference_service.models.generate_image
             reference_service.models.generate_image = _fake_image
             try:
-                drawn = client.post(
+                queued = client.post(
                     f"/api/projects/{project_id}/props/{prop['id']}/image",
                     json={"prompt": "青铜锁参考图"},
                     headers=headers,
                 )
+                drawn = succeeded(drain_one())
             finally:
                 reference_service.models.generate_image = original
 
-            assert drawn.status_code == 200, drawn.text
-            data = drawn.json()["prop"]
+            assert queued.status_code == 202, queued.text
+            data = drawn["prop"]
             assert data["finalPrompt"] == "青铜锁参考图"
             # The row keeps a path; the response mints a link that resolves.
             fetched = client.get("/api/chat/artifacts/" + data["imageUrl"].rsplit("/", 1)[-1])
@@ -246,6 +252,36 @@ def test_merging_with_nothing_drawn_yet_says_so() -> None:
             assert refused.status_code == 400, refused.text
 
 
+def test_a_prop_carries_its_owner_and_the_sheet_says_whose_it_is() -> None:
+    """An unattributed object is the first thing continuity loses, so the owner is drawn on."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _project(client, headers)
+            character = client.post(
+                f"/api/projects/{project_id}/characters",
+                json={"name": "林小满"},
+                headers=headers,
+            ).json()["character"]
+
+            owned = _prop(client, headers, project_id, ownerCharacterId=character["id"])
+            assert owned["ownerCharacterId"] == character["id"]
+            # Resolved server-side, so a card renders the owner without a second request.
+            assert owned["ownerName"] == "林小满"
+
+            listed = client.get(f"/api/projects/{project_id}/props", headers=headers).json()["props"]
+            assert listed[0]["ownerName"] == "林小满"
+
+            # "" unbinds; a JSON null would read as "leave it alone".
+            cleared = client.patch(
+                f"/api/projects/{project_id}/props/{owned['id']}",
+                json={"ownerCharacterId": ""},
+                headers=headers,
+            )
+            assert cleared.status_code == 200, cleared.text
+            assert cleared.json()["prop"]["ownerCharacterId"] is None
+            assert cleared.json()["prop"]["ownerName"] == ""
+
+
 if __name__ == "__main__":
     test_props_round_trip_through_create_list_patch_and_delete()
     test_a_prop_from_another_project_is_not_reachable()
@@ -255,4 +291,5 @@ if __name__ == "__main__":
     test_an_upload_that_is_not_an_image_data_url_is_refused()
     test_merging_props_tiles_them_into_one_sheet_the_project_carries()
     test_merging_with_nothing_drawn_yet_says_so()
+    test_a_prop_carries_its_owner_and_the_sheet_says_whose_it_is()
     print("test_props_api ok")

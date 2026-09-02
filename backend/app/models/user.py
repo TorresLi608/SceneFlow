@@ -8,6 +8,11 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
     __table_args__ = (
         Index("idx_users_deleted_at", "deleted_at"),
+        # Named explicitly rather than via `Field(index=True)`, which SQLAlchemy would name
+        # `ix_users_email` — the one `ix_` in a codebase that is otherwise all `idx_`, and a
+        # name the migration does not use, so `alembic check` reported a drop-and-add of the
+        # same index on every run.
+        Index("idx_users_email", "email", unique=True),
         {"sqlite_autoincrement": True},
     )
 
@@ -17,12 +22,30 @@ class User(SQLModel, table=True):
     deleted_at: str | None = None
     username: str = Field(unique=True)
     nickname: str | None = None
+    email: str | None = Field(default=None)
     password: str
     role: str | None = Field(default="user", sa_column_kwargs={"server_default": text("'user'")})
     is_disabled: bool | None = Field(default=False, sa_column_kwargs={"server_default": text("false")})
     balance_micros: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})
     level: int = Field(default=1, sa_column_kwargs={"server_default": text("1")})
     user_group: str = Field(default="default", sa_column_kwargs={"server_default": text("'default'")})
+
+
+class EmailVerification(SQLModel, table=True):
+    __tablename__ = "email_verifications"
+    __table_args__ = (
+        Index("idx_email_verifications_email", "email"),
+        Index("idx_email_verifications_created_at", "created_at"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: str
+    expires_at: str
+    email: str
+    code: str
+    used_at: str | None = None
+    ip_address: str | None = None
 
 
 class InvitationCode(SQLModel, table=True):

@@ -216,6 +216,35 @@ def test_history_lists_newest_first_with_the_label_that_was_asked_for() -> None:
             assert {job["rangeLabel"] for job in listed} == {"第一版", "第二版"}
 
 
+def test_deleting_an_export_record_removes_it() -> None:
+    if not HAS_FFMPEG:
+        print("skipping export test: ffmpeg is not installed")
+        return
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id, scene_ids = _project_with_clips(client, headers, [_clip()])
+            started = client.post(
+                f"/api/projects/{project_id}/exports",
+                json={"sceneIds": scene_ids, "rangeLabel": "待删除"},
+                headers=headers,
+            )
+            export_id = started.json()["export"]["id"]
+            _wait_for(client, headers, project_id, export_id)
+
+            # Deleting the export succeeds
+            deleted = client.delete(f"/api/projects/{project_id}/exports/{export_id}", headers=headers)
+            assert deleted.status_code == 200, deleted.text
+            assert deleted.json() == {"success": True}
+
+            # Fetching the deleted export returns 404
+            missing = client.get(f"/api/projects/{project_id}/exports/{export_id}", headers=headers)
+            assert missing.status_code == 404
+
+            # Listing exports returns empty
+            listed = client.get(f"/api/projects/{project_id}/exports", headers=headers).json()["exports"]
+            assert len(listed) == 0
+
+
 if __name__ == "__main__":
     test_merging_clips_produces_one_downloadable_file()
     test_clips_of_different_sizes_still_merge()
@@ -224,4 +253,5 @@ if __name__ == "__main__":
     test_a_shot_from_another_project_is_refused()
     test_an_empty_selection_is_refused()
     test_history_lists_newest_first_with_the_label_that_was_asked_for()
+    test_deleting_an_export_record_removes_it()
     print("test_exports_api ok")

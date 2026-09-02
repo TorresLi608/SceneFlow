@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.core.database import db
 from app.core.realtime import broadcast
+from app.core import runs
 from app.llms.registry import models
 from app.models import Episode, Project, Scene
 from app.services.artifact_service import (
@@ -21,6 +22,7 @@ from app.services.artifact_service import (
 )
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video
+from app.services.prompt_compiler import compile_prompt
 from app.utils.common import now
 
 
@@ -38,6 +40,40 @@ def update_scene_row(scene_id: str, **values: Any) -> None:
     with db() as session:
         session.execute(
             update(Scene).where(Scene.id == scene_id).values(updated_at=now(), **values),
+            execution_options={"synchronize_session": False},
+        )
+
+
+def clear_generating_scenes(scene_ids: list[str], column: str) -> None:
+    """Drop the `generating` marker a stopped run left behind, and only that.
+
+    Guarded on the current value rather than written blind: a cancelled batch used to reset
+    *every* shot it had been given, so a frame that had already landed came back as
+    "not generated yet" and the next run re-rendered — and re-paid for — work the provider
+    had already been billed for. Only a shot that never finished is reset.
+    """
+    if not scene_ids:
+        return
+    with db() as session:
+        session.execute(
+            update(Scene)
+            .where(Scene.id.in_(scene_ids), getattr(Scene, column) == "generating")
+            .values(updated_at=now(), **{column: "idle"}),
+            execution_options={"synchronize_session": False},
+        )
+
+
+def clear_generating_episode(episode_id: str, column: str) -> None:
+    """The same guard as `clear_generating_scenes`, for an episode's own status columns.
+
+    Blind here would be worse than useless: a run cancelled *after* its tone sheet landed
+    would throw the anchor away and resample the episode's whole look on the next attempt.
+    """
+    with db() as session:
+        session.execute(
+            update(Episode)
+            .where(Episode.id == episode_id, getattr(Episode, column) == "generating")
+            .values(updated_at=now(), **{column: "idle"}),
             execution_options={"synchronize_session": False},
         )
 
@@ -100,7 +136,34 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         if config["provider"] not in {"openai", "gemini", "qwen"}:
             raise ValueError("image generation currently only supports provider openai/gemini/qwen")
         await scene_event(project_id, scene_id, imageStatus="generating", imageProgress=20, errorMsg="")
-        references = character_references(scene)
+        references: list[tuple[str, bytes, str]] = []
+        if scene.get("explicitImageReferences") or scene.get("explicitReferences"):
+            for stored in scene.get("referenceImagePaths") or []:
+                try:
+                    path = artifact_absolute_path(stored)
+                    references.append((path.name, path.read_bytes(), media_type_for(path.name)))
+                except (ValueError, OSError):
+                    logger.info("skipping unreadable selected image reference scene=%s", scene_id)
+        else:
+            for stored in scene.get("defaultImageReferencePaths") or []:
+                try:
+                    path = artifact_absolute_path(stored)
+                    references.append((path.name, path.read_bytes(), media_type_for(path.name)))
+                except (ValueError, OSError):
+                    logger.info("skipping unreadable default image reference scene=%s", scene_id)
+        references = references[: max(0, int(config.get("imageMaxReferenceImages", MAX_REFERENCE_IMAGES)))]
+        # Substituted into the shot's own text before the frame template wraps it, so the
+        # `图N` the user previewed is the `图N` the model is asked for. Nothing is
+        # prepended to an image request, so the numbering starts at the first selection.
+        scene = {
+            **scene,
+            "visual_prompt": compile_prompt(
+                str(scene.get("visual_prompt") or ""),
+                provider=config["provider"],
+                model=config["model"],
+                references=scene.get("compiledImageReferenceItems") or [],
+            )["prompt"],
+        }
         if references:
             # Image-to-image with the cast's portraits: the appearance prompt alone drifts
             # over a long series, the reference is what actually holds a face steady.
@@ -180,17 +243,46 @@ async def run_generation(
     config: dict[str, Any],
     user_id: int,
     episode_id: str | None = None,
+    cancellation: asyncio.Event | None = None,
 ) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_SCENES)
 
-    async def one(scene: dict[str, Any]) -> bool:
+    async def one(scene: dict[str, Any]) -> bool | None:
         async with semaphore:
+            # Checked after acquiring the slot, not before: a queued shot that has not
+            # started costs nothing to skip, and this is the last moment before it would.
+            if runs.is_cancelled(cancellation):
+                return None
             return await _generate_scene_image(project_id, scene, config, user_id)
 
-    results = await asyncio.gather(*(one(scene) for scene in scenes))
+    try:
+        outcomes = await asyncio.gather(*(one(scene) for scene in scenes))
+    except asyncio.CancelledError:
+        clear_generating_scenes([scene["id"] for scene in scenes], "image_status")
+        update_project_row(project_id, status="idle")
+        if episode_id:
+            update_episode_row(episode_id, status="storyboard")
+        await broadcast(
+            project_id,
+            {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "episodeId": episode_id, "canceled": True}},
+        )
+        return
+    finally:
+        runs.release(project_id, cancellation)
+    # None marks a shot that never ran. It is neither a success nor a failure, and counting
+    # it as either would make a cancelled run report an outcome nobody asked it to produce.
+    results = [outcome for outcome in outcomes if outcome is not None]
+    skipped = len(outcomes) - len(results)
     status = episode_media_status(episode_id, results) if episode_id else terminal_status(results)
+    if skipped:
+        status = "partial" if any(results) else "idle"
     logger.info(
-        "generation finished project=%s episode=%s scenes=%d status=%s", project_id, episode_id, len(scenes), status
+        "generation finished project=%s episode=%s scenes=%d skipped=%d status=%s",
+        project_id,
+        episode_id,
+        len(scenes),
+        skipped,
+        status,
     )
     # Both levels carry the outcome: the project because it holds the busy lock, the
     # episode because that is what the user was actually rendering.
@@ -199,7 +291,11 @@ async def run_generation(
         update_episode_row(episode_id, status=status)
     await broadcast(
         project_id,
-        {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "episodeId": episode_id}},
+        {
+            "type": "PROJECT_UPDATE",
+            "projectId": project_id,
+            "data": {"status": status, "episodeId": episode_id, "canceled": bool(skipped)},
+        },
     )
 
 
@@ -239,12 +335,30 @@ def persist_scene_image(project_id: str, scene_id: str, data: bytes, ext: str) -
 
 
 def _stored_media(stored: str) -> dict[str, str]:
+    if str(stored).startswith(("http://", "https://")):
+        return {"url": str(stored)}
     path = artifact_absolute_path(stored)
     data = path.read_bytes()
     return {
         "name": path.name,
         "data": f"data:{media_type_for(path.name)};base64,{base64.b64encode(data).decode('ascii')}",
     }
+
+
+def _scene_duration(scene: dict[str, Any], options: dict[str, Any], capabilities: dict[str, Any]) -> int:
+    """How many seconds this shot runs for.
+
+    The breakdown estimates a length per shot, which is the whole reason it asks the model
+    for one — a six-second beat and a two-second reaction rendered at the same fixed
+    duration is exactly the pacing problem the estimate exists to fix. A shot that never
+    got an estimate falls back to the batch default, and everything is clamped to what the
+    model will actually accept rather than refused.
+    """
+    milliseconds = int(scene.get("duration_ms") or 0)
+    seconds = round(milliseconds / 1000) if milliseconds else int(options["duration"])
+    minimum = int(capabilities.get("minDuration") or 1)
+    maximum = int(capabilities.get("maxDuration") or max(seconds, minimum))
+    return min(max(seconds, minimum), maximum)
 
 
 async def _generate_scene_video(
@@ -264,24 +378,101 @@ async def _generate_scene_video(
     try:
         capabilities = config["videoCapabilities"]
         references = []
-        if capabilities["referenceImages"] and scene.get("image_path"):
-            references.append(_stored_media(scene["image_path"]))
+        explicit_references = scene.get("explicitVideoReferences") is True or (
+            "explicitVideoReferences" not in scene and (scene.get("explicitReferences") or options.get("explicitReferences"))
+        )
+        if explicit_references:
+            # Explicit editor references are authoritative, so deleting the default
+            # storyboard frame really removes it from the provider payload.
+            if "explicitVideoReferences" not in scene and capabilities["referenceImages"] and scene.get("image_path"):
+                references.append(_stored_media(scene["image_path"]))
+            references.extend(_stored_media(stored) for stored in (
+                scene.get("referenceImagePaths") or options.get("referenceImagePaths") or []
+            ))
+            image_offset = 0
+        else:
+            image_offset = 0
+            for stored in scene.get("defaultVideoReferencePaths") or []:
+                try:
+                    references.append(_stored_media(stored))
+                except (ValueError, OSError):
+                    logger.info("skipping unreadable default video image reference scene=%s", scene_id)
+        first_frame = scene.get("videoFirstFrame")
+        last_frame = scene.get("videoLastFrame")
+        if not capabilities.get("supportsFirstFrame"):
+            first_frame = None
+        if not capabilities.get("supportsLastFrame"):
+            last_frame = None
+        if first_frame:
+            first_path = first_frame.get("path") if isinstance(first_frame, dict) else None
+            if first_path:
+                references.insert(0, _stored_media(first_path))
+        if last_frame:
+            last_path = last_frame.get("path") if isinstance(last_frame, dict) else None
+            if last_path:
+                references.append(_stored_media(last_path))
+        first_frame_media = None
+        last_frame_media = None
+        if first_frame and isinstance(first_frame, dict) and first_frame.get("path"):
+            first_frame_media = _stored_media(first_frame["path"])
+            references = [item for item in references if item != first_frame_media]
+        if last_frame and isinstance(last_frame, dict) and last_frame.get("path"):
+            last_frame_media = _stored_media(last_frame["path"])
+            references = [item for item in references if item != last_frame_media]
+        aspect_ratio = options["aspectRatio"]
+        if (first_frame_media or last_frame_media) and "adaptive" in (capabilities.get("aspectRatios") or []):
+            aspect_ratio = "adaptive"
+        references = references[: capabilities["maxReferenceImages"]]
         if capabilities["referenceImagesRequired"] and not references:
             raise ValueError("该分镜缺少模型必需的参考图")
-        for _, data, mime_type in character_references(scene):
-            if len(references) >= capabilities["maxReferenceImages"]:
-                break
-            references.append({"name": "character.png", "data": f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"})
-        driving_audio = (
-            # The project's timbre reference, not a per-shot track: shots no longer carry
-            # their own audio, and this is what tells the model who sounds like what.
-            _stored_media(options["voiceSheetPath"])
-            if capabilities["referenceAudio"] and options.get("voiceSheetPath")
-            else None
-        )
-        prompt = str(scene.get("visual_prompt") or scene.get("narration") or "").strip()
+        reference_videos = [_stored_media(stored) for stored in (
+            scene.get("referenceVideoPaths") or options.get("referenceVideoPaths") or []
+        )]
+        reference_audios = [_stored_media(stored) for stored in (
+            scene.get("referenceAudioPaths") or options.get("referenceAudioPaths") or []
+        )]
+        if capabilities["referenceAudio"] and options.get("voiceSheetPath"):
+            # Backward compatibility for callers that still opt into the merged timbre track.
+            reference_audios.append(_stored_media(options["voiceSheetPath"]))
+        # The motion prompt first: `visual_prompt` describes a frame, and a clip generated
+        # from it tends to hold still. Narration is the last resort.
+        prompt = str(
+            scene.get("video_prompt")
+            or scene.get("visual_prompt")
+            or scene.get("narration")
+            or scene.get("dialogue")
+            or ""
+        ).strip()
         if not prompt:
             raise ValueError("该分镜缺少画面提示词")
+        # Camera and transition reach the video model or nothing does — they are the two
+        # things the breakdown works out that the still prompt has no place to carry.
+        direction = "；".join(
+            part
+            for part in (
+                f"运镜：{str(scene.get('camera_move') or '').strip()}" if scene.get("camera_move") else "",
+                f"转场：{str(scene.get('transition') or '').strip()}" if scene.get("transition") else "",
+            )
+            if part
+        )
+        if direction:
+            prompt = f"{prompt}\n{direction}"
+        prompt = compile_prompt(
+            prompt,
+            provider=config["provider"],
+            model=config["model"],
+            references=scene.get("compiledVideoReferenceItems") or options.get("compiledVideoReferenceItems") or [],
+            dialogue=str(scene.get("dialogue") or ""),
+            image_offset=image_offset,
+            speaker_name=str((scene.get("speaker") or {}).get("name") or ""),
+        )["prompt"]
+        previous_prompt = str(scene.get("previous_video_prompt") or "").strip()
+        if previous_prompt:
+            prompt = (
+                f"{prompt}\n连续性约束：本镜开场必须直接承接上一镜结束时的人物姿态、位置、朝向、服装、手持物和环境状态，"
+                f"不得无过渡改变。上一镜提示词：{previous_prompt}"
+            )
+        duration = _scene_duration(scene, options, capabilities)
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
@@ -292,15 +483,19 @@ async def _generate_scene_video(
             model=config["model"],
             prompt=prompt,
             quality=options["quality"],
-            aspect_ratio=options["aspectRatio"],
+            aspect_ratio=aspect_ratio,
             fps=options["fps"],
-            duration=options["duration"],
+            duration=duration,
             prompt_extend=options["promptExtend"],
+            output_audio=options.get("outputAudio"),
             references=references,
-            driving_audio=driving_audio,
+            reference_videos=reference_videos,
+            reference_audios=reference_audios,
+            first_frame=first_frame_media,
+            last_frame=last_frame_media,
             base_url=config.get("baseUrl", ""),
         )
-        record_usage(user_id, config, "scene_video", started_at, quantity=options["duration"])
+        record_usage(user_id, config, "scene_video", started_at, quantity=duration)
         video_path = store_artifact("projects", project_id, f"{scene_id}.{result.format}", result.data)
     except Exception as exc:
         detail = str(exc)[:ERROR_DETAIL_CHARS]
@@ -328,14 +523,17 @@ async def run_video_generation(
     user_id: int,
     episode_id: str,
     options: dict[str, Any],
+    cancellation: asyncio.Event | None = None,
 ) -> None:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_VIDEO_SCENES)
     completed = 0
     completed_lock = asyncio.Lock()
 
-    async def run(scene: dict[str, Any]) -> bool:
+    async def run(scene: dict[str, Any]) -> bool | None:
         nonlocal completed
         async with semaphore:
+            if runs.is_cancelled(cancellation):
+                return None
             succeeded = await _generate_scene_video(project_id, scene, config, user_id, options)
         async with completed_lock:
             completed += 1
@@ -345,12 +543,31 @@ async def run_video_generation(
             await broadcast(project_id, {"type": "VIDEO_UPDATE", "projectId": project_id, "data": {"videoStatus": "generating", "videoProgress": progress, "videoModel": config["model"]}})
         return succeeded
 
-    results = await asyncio.gather(*(run(scene) for scene in scenes))
+    try:
+        outcomes = await asyncio.gather(*(run(scene) for scene in scenes))
+    except asyncio.CancelledError:
+        clear_generating_scenes([scene["id"] for scene in scenes], "video_status")
+        update_project_row(project_id, status="idle", video_status="idle", video_progress=0)
+        update_episode_row(episode_id, status="storyboard", video_status="idle", video_progress=0)
+        await broadcast(
+            project_id,
+            {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "idle", "videoStatus": "idle", "episodeId": episode_id, "canceled": True}},
+        )
+        return
+    finally:
+        runs.release(project_id, cancellation)
+    results = [outcome for outcome in outcomes if outcome is not None]
+    skipped = len(outcomes) - len(results)
     successes = sum(results)
     batch_status = terminal_status(results)
     status = episode_media_status(episode_id, results)
-    video_status = "success" if batch_status == "done" else "error"
-    detail = "" if batch_status == "done" else f"{len(scenes) - successes} 个分镜视频生成失败"
+    video_status = "success" if batch_status == "done" and not skipped else "error" if not skipped else "idle"
+    detail = ""
+    if skipped:
+        status = "partial" if any(results) else "idle"
+        detail = f"已停止，剩余 {skipped} 个分镜未生成"
+    elif batch_status != "done":
+        detail = f"{len(results) - successes} 个分镜视频生成失败"
     update_project_row(project_id, status=status, video_status=video_status, video_progress=100, video_url=None)
     update_episode_row(episode_id, status=status, video_status=video_status, video_progress=100, error_message=detail or None)
-    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"]}})
+    await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": status, "videoStatus": video_status, "videoProgress": 100, "videoModel": config["model"], "canceled": bool(skipped)}})

@@ -10,11 +10,12 @@ from typing import Any, Iterator
 from contextlib import contextmanager
 
 from fastapi.testclient import TestClient
+from sqlmodel import select
 
 from app.core import database
 from app.core.security import encrypt, token_for
 from app.llms.router import ImageResult
-from app.models import Episode, ModelConfig, Project, Scene, User
+from app.models import Character, CharacterState, Episode, ModelConfig, Project, Prop, Scene, User, VoiceProfile
 from app.services import artifact_service
 from app.services.generation_service import MAX_REFERENCE_IMAGES
 from app.services.storyboard_service import build_context_references
@@ -189,10 +190,10 @@ def test_each_shot_carries_the_anchor_and_its_predecessor() -> None:
             assert _wait_idle(client, headers, project_id) == "done"
 
             shots = recorder.calls[1:]
-            # Tone sheet + merged context for the first shot; the second onward also carry
-            # the previous render, which is what holds scene continuity.
-            assert len(shots[0]["references"]) == 2
-            assert len(shots[1]["references"]) == 3
+            # Shot requests do not silently inject the tone/context/previous frame. Those
+            # references must be visible in the editor and explicitly selected first.
+            assert len(shots[0]["references"]) == 0
+            assert len(shots[1]["references"]) == 0
             assert all(len(call["references"]) <= MAX_REFERENCE_IMAGES for call in shots)
 
 
@@ -215,8 +216,9 @@ def test_unmerged_references_arrive_separately() -> None:
             )
             assert _wait_idle(client, headers, project_id) == "done"
 
-            # Tone sheet + cast + props, rather than tone sheet + one merged context image.
-            assert len(recorder.calls[1]["references"]) == 3
+            # The tone-sheet call may use the unmerged context, but shot references remain
+            # empty until the editor explicitly selects them.
+            assert len(recorder.calls[1]["references"]) == 0
 
 
 def test_a_failed_tone_sheet_stops_the_run_before_it_bills_for_shots() -> None:
@@ -304,6 +306,128 @@ def test_the_previous_episodes_anchor_carries_across_the_boundary() -> None:
             assert len(recorder.calls[0]["references"]) == 1
 
 
+def test_selected_project_images_reach_tone_and_storyboard_generation() -> None:
+    recorder = Recorder()
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory, recorder) as (client, headers):
+            project_id, episode_id = _project_with_shots(client, headers, shots=1)
+            with database.db() as session:
+                session.add(
+                    Prop(
+                        id="prop_lantern",
+                        created_at=now(),
+                        updated_at=now(),
+                        project_id=project_id,
+                        name="灯笼",
+                        image_path=_sheet(project_id),
+                    )
+                )
+
+            started = client.post(
+                f"/api/projects/{project_id}/episodes/{episode_id}/storyboard",
+                json={"references": [{"kind": "prop", "id": "prop_lantern"}]},
+                headers=headers,
+            )
+
+            assert started.status_code == 202, started.text
+            assert _wait_idle(client, headers, project_id) == "done"
+            assert len(recorder.calls[0]["references"]) == 1
+            # `references` on the storyboard request only anchors the tone sheet; shot
+            # references come from the scene prompt's visible @ mentions.
+            assert len(recorder.calls[1]["references"]) == 0
+
+
+def test_reference_media_can_be_deleted_without_deleting_its_card() -> None:
+    recorder = Recorder()
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory, recorder) as (client, headers):
+            project_id, episode_id = _project_with_shots(client, headers, shots=1)
+            paths: list[str] = []
+
+            def stored() -> str:
+                path = _sheet(project_id)
+                paths.append(path)
+                return path
+
+            with database.db() as session:
+                character = Character(id="char_media", project_id=project_id, name="韩立", reference_image_path=stored())
+                state_character = Character(
+                    id="char_state_media", project_id=project_id, name="少年韩立", sheet_image_path=stored()
+                )
+                state = CharacterState(
+                    id="state_media", character_id=state_character.id, name="布衣", reference_image_path=stored()
+                )
+                prop = Prop(id="prop_media", project_id=project_id, name="药瓶", image_path=stored())
+                voice = VoiceProfile(id="voice_media", project_id=project_id, name="旁白", audio_path=stored())
+                project = session.get(Project, project_id)
+                project.character_sheet_path = stored()
+                project.prop_sheet_path = stored()
+                project.voice_sheet_path = stored()
+                episode = session.get(Episode, episode_id)
+                episode.tone_image_path = stored()
+                episode.tone_image_status = "success"
+                scene = session.get(Scene, "scene_0")
+                scene.image_path = stored()
+                scene.image_status = "success"
+                scene.video_path = stored()
+                scene.video_status = "success"
+                session.add_all([character, state_character, state, prop, voice, project, episode, scene])
+
+            for kind, asset_id in (
+                ("characterState", "state_media"),
+                ("character", "char_media"),
+                ("prop", "prop_media"),
+                ("tone", episode_id),
+                ("sceneImage", "scene_0"),
+                ("sceneVideo", "scene_0"),
+                ("voice", "voice_media"),
+            ):
+                response = client.delete(
+                    f"/api/projects/{project_id}/references/{kind}/{asset_id}", headers=headers
+                )
+                assert response.status_code == 204, response.text
+
+            with database.db() as session:
+                assert session.get(Character, "char_media").reference_image_path is None
+                assert session.get(CharacterState, "state_media").reference_image_path is None
+                assert session.get(Character, "char_state_media").sheet_image_path is None
+                assert session.get(Prop, "prop_media").image_path is None
+                assert session.get(VoiceProfile, "voice_media").audio_path is None
+                project = session.get(Project, project_id)
+                assert (project.character_sheet_path, project.prop_sheet_path, project.voice_sheet_path) == (None, None, None)
+                episode = session.get(Episode, episode_id)
+                assert (episode.tone_image_path, episode.tone_image_status) == (None, "idle")
+                scene = session.get(Scene, "scene_0")
+                assert (scene.image_path, scene.image_status, scene.video_path, scene.video_status) == (
+                    None,
+                    "idle",
+                    None,
+                    "idle",
+                )
+            assert all(not artifact_service.artifact_absolute_path(path).exists() for path in paths)
+
+
+def test_text_to_image_model_renders_without_reference_calls() -> None:
+    recorder = Recorder()
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory, recorder) as (client, headers):
+            project_id, episode_id = _project_with_shots(client, headers, shots=1)
+            with database.db() as session:
+                config = session.exec(select(ModelConfig).where(ModelConfig.purpose == "image")).one()
+                config.image_max_reference_images = 0
+                session.add(config)
+
+            started = client.post(
+                f"/api/projects/{project_id}/episodes/{episode_id}/storyboard",
+                json={"references": []},
+                headers=headers,
+            )
+
+            assert started.status_code == 202, started.text
+            assert _wait_idle(client, headers, project_id) == "done"
+            assert [call["kind"] for call in recorder.calls] == ["generate", "generate"]
+
+
 def test_an_episode_cannot_reference_itself() -> None:
     recorder = Recorder()
     with tempfile.TemporaryDirectory() as directory:
@@ -362,6 +486,9 @@ if __name__ == "__main__":
     test_a_failed_tone_sheet_stops_the_run_before_it_bills_for_shots()
     test_rerunning_reuses_the_anchor_unless_asked_to_resample()
     test_the_previous_episodes_anchor_carries_across_the_boundary()
+    test_selected_project_images_reach_tone_and_storyboard_generation()
+    test_reference_media_can_be_deleted_without_deleting_its_card()
+    test_text_to_image_model_renders_without_reference_calls()
     test_an_episode_cannot_reference_itself()
     test_rendering_an_empty_episode_says_so()
     test_context_references_merge_into_one_slot()

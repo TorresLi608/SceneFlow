@@ -17,6 +17,7 @@ thing this module exists to avoid, and it would bill the user for the privilege.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -25,11 +26,14 @@ from typing import Any
 from app.core.database import db
 from app.models import Scene
 from app.core.realtime import broadcast
+from app.core import runs
 from app.llms.registry import models
 from app.services.artifact_service import artifact_absolute_path, media_type_for, signed_url_for_stored
 from app.services.generation_service import (
     ERROR_DETAIL_CHARS,
     MAX_REFERENCE_IMAGES,
+    clear_generating_episode,
+    clear_generating_scenes,
     episode_media_status,
     persist_scene_image,
     scene_event,
@@ -38,11 +42,16 @@ from app.services.generation_service import (
     update_scene_row,
 )
 from app.services.media_service import SheetCell, merge_images
+from app.services.prompt_compiler import compile_prompt
 from app.services.prompt_service import shot_prompt, tone_sheet_prompt
 from app.services.usage_service import record_usage, require_model_balance
 
 
 logger = logging.getLogger(__name__)
+
+# ponytail: tone generation is one provider call; cap a stuck async image task so the
+# episode reaches a terminal state instead of keeping the UI in an endless poll.
+TONE_SHEET_TIMEOUT_SECONDS = 5 * 60
 
 # (filename, bytes, mime type) — the shape `ModelRouter.edit_image` takes.
 Reference = tuple[str, bytes, str]
@@ -62,9 +71,15 @@ class StoryboardPlan:
     # (stored path, label) for the cast sheet, the prop sheet, and the previous episode's
     # tone sheet — whichever of them exist.
     reference_sources: list[tuple[str, str]] = field(default_factory=list)
+    scene_reference_sources: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+    scene_reference_items: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     merge_references: bool = True
     regenerate: bool = False
     existing_tone_path: str | None = None
+    # The image size and quality this series renders at, from its model settings.
+    size: str = ""
+    quality: str = ""
+    max_reference_images: int = MAX_REFERENCE_IMAGES
 
 
 def _load(stored: str | None, label: str) -> Reference | None:
@@ -117,6 +132,11 @@ async def _generate_tone_sheet(
         plan.negative_prompt,
     )
     started_at = time.monotonic()
+    options: dict[str, Any] = {}
+    if plan.size:
+        options["size"] = plan.size
+    if plan.quality:
+        options["quality"] = plan.quality
     if context:
         image = await models.edit_image(
             config["apiKey"],
@@ -125,6 +145,7 @@ async def _generate_tone_sheet(
             context,
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
+            **options,
         )
     else:
         image = await models.generate_image(
@@ -133,6 +154,7 @@ async def _generate_tone_sheet(
             prompt,
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
+            **options,
         )
     record_usage(user_id, config, "storyboard_tone_sheet", started_at, quantity=1)
     return persist_scene_image(plan.project_id, f"{plan.episode_id}-tone", image.data, image.format)
@@ -163,23 +185,37 @@ async def _generate_shot(
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
-        text = str(scene.get("narration") or scene.get("visual_prompt") or "").strip()
+        narration = str(scene.get("narration") or "").strip()
+        visual_prompt = str(scene.get("visual_prompt") or "").strip()
+        text = visual_prompt or narration
         if not text:
             raise ValueError("该分镜没有内容，先填写分镜描述")
-        image = await models.edit_image(
+        if narration and visual_prompt and narration != visual_prompt:
+            text = f"{narration}\n画面提示词：{visual_prompt}"
+        text = compile_prompt(
+            text,
+            provider=config["provider"],
+            model=config["model"],
+            references=scene.get("compiledImageReferenceItems") or [],
+        )["prompt"]
+        prompt = shot_prompt(
+            text,
+            index + 1,
+            len(plan.scenes),
+            plan.episode_title,
+            plan.style_prompt,
+            plan.negative_prompt,
+        )
+        method = models.edit_image if references else models.generate_image
+        image = await method(
             config["apiKey"],
             config["model"],
-            shot_prompt(
-                text,
-                index + 1,
-                len(plan.scenes),
-                plan.episode_title,
-                plan.style_prompt,
-                plan.negative_prompt,
-            ),
-            references,
+            prompt,
+            *([references] if references else []),
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
+            **({"size": plan.size} if plan.size else {}),
+            **({"quality": plan.quality} if plan.quality else {}),
         )
         record_usage(user_id, config, "storyboard_image", started_at, quantity=1)
         image_path = persist_scene_image(plan.project_id, scene_id, image.data, image.format)
@@ -247,7 +283,7 @@ async def _anchor(plan: StoryboardPlan, config: dict[str, Any], user_id: int, co
         )
         return None
 
-    update_episode_row(plan.episode_id, tone_image_path=tone_path, tone_image_status="success")
+    update_episode_row(plan.episode_id, tone_image_path=tone_path, tone_image_status="success", error_message=None)
     await broadcast(
         plan.project_id,
         {
@@ -269,32 +305,159 @@ def _stored_image_path(scene_id: str) -> str | None:
         return scene.image_path if scene else None
 
 
-async def run_storyboard(plan: StoryboardPlan, config: dict[str, Any], user_id: int) -> None:
-    """Anchor the episode, then render its shots against the anchor."""
-    context = build_context_references(plan.reference_sources, merge=plan.merge_references)
-    tone_path = await _anchor(plan, config, user_id, context)
-    if tone_path is None:
-        return
+async def run_tone_sheet(
+    plan: StoryboardPlan,
+    config: dict[str, Any],
+    user_id: int,
+    cancellation: asyncio.Event | None = None,
+) -> None:
+    """Produce only the episode's style anchor, as a step the user can approve.
 
-    tone = _load(tone_path, "tone")
-    results: list[bool] = []
-    # Sequential, not fanned out: each shot references the previous shot's render, so the
-    # continuity anchor does not exist until its predecessor has landed. This costs
-    # wall-clock time and buys the one thing the old parallel path could not deliver.
-    previous: Reference | None = None
-    for index, scene in enumerate(plan.scenes):
-        references = [item for item in (tone, *context, previous) if item][:MAX_REFERENCE_IMAGES]
-        succeeded = await _generate_shot(plan, scene, index, config, user_id, references)
-        results.append(succeeded)
-        if succeeded:
-            previous = _load(_stored_image_path(scene["id"]), "previous") or previous
+    Split out of `run_storyboard` because the anchor is what every shot in the episode is
+    matched against: rendering twenty full-resolution frames against a tone sheet nobody
+    looked at is how an episode ends up being paid for twice.
+
+    One provider call, so the cancel flag is checked once — before it starts. There is no
+    "between shots" here to stop at, and abandoning a sheet already being drawn would bill
+    the user for nothing.
+    """
+    try:
+        if runs.is_cancelled(cancellation):
+            logger.info("tone sheet canceled before starting project=%s", plan.project_id)
+            update_project_row(plan.project_id, status="idle")
+            update_episode_row(plan.episode_id, status="storyboard")
+            await broadcast(
+                plan.project_id,
+                {
+                    "type": "PROJECT_UPDATE",
+                    "projectId": plan.project_id,
+                    "data": {"status": "idle", "episodeId": plan.episode_id, "canceled": True},
+                },
+            )
+            return
+        context = build_context_references(plan.reference_sources, merge=plan.merge_references)[: plan.max_reference_images]
+        try:
+            tone_path = await asyncio.wait_for(
+                _anchor(plan, config, user_id, context), timeout=TONE_SHEET_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            detail = f"基调图生成超过 {TONE_SHEET_TIMEOUT_SECONDS // 60} 分钟，已停止等待"
+            logger.warning("tone sheet timed out project=%s episode=%s", plan.project_id, plan.episode_id)
+            update_episode_row(
+                plan.episode_id,
+                tone_image_status="error",
+                status="failed",
+                error_message=detail,
+            )
+            update_project_row(plan.project_id, status="failed")
+            tone_path = None
+    except asyncio.CancelledError:
+        logger.info("tone sheet canceled project=%s episode=%s", plan.project_id, plan.episode_id)
+        update_episode_row(plan.episode_id, tone_image_status="idle", status="storyboard")
+        update_project_row(plan.project_id, status="idle")
+        await broadcast(
+            plan.project_id,
+            {
+                "type": "PROJECT_UPDATE",
+                "projectId": plan.project_id,
+                "data": {"status": "idle", "episodeId": plan.episode_id, "canceled": True},
+            },
+        )
+        return
+    finally:
+        runs.release(plan.project_id, cancellation)
+    status = "storyboard" if tone_path else "failed"
+    update_project_row(plan.project_id, status="idle" if tone_path else "failed")
+    update_episode_row(plan.episode_id, status=status)
+    await broadcast(
+        plan.project_id,
+        {
+            "type": "PROJECT_UPDATE",
+            "projectId": plan.project_id,
+            "data": {"status": "idle" if tone_path else "failed", "episodeId": plan.episode_id},
+        },
+    )
+
+
+async def run_storyboard(
+    plan: StoryboardPlan,
+    config: dict[str, Any],
+    user_id: int,
+    cancellation: asyncio.Event | None = None,
+) -> None:
+    """Anchor the episode, then render its shots against the anchor."""
+    try:
+        context = build_context_references(plan.reference_sources, merge=plan.merge_references)
+        tone_path = await _anchor(plan, config, user_id, context)
+        if tone_path is None:
+            return
+
+        tone = _load(tone_path, "tone") if plan.max_reference_images else None
+        results: list[bool] = []
+        skipped = 0
+        # Sequential, not fanned out: each shot references the previous shot's render, so the
+        # continuity anchor does not exist until its predecessor has landed. This costs
+        # wall-clock time and buys the one thing the old parallel path could not deliver.
+        previous: Reference | None = None
+        for index, scene in enumerate(plan.scenes):
+            # Between shots rather than mid-request: a frame the provider is already drawing
+            # has been paid for, so finishing it and keeping it is strictly better than
+            # throwing it away, and the next one is what the user is actually stopping.
+            if runs.is_cancelled(cancellation):
+                skipped = len(plan.scenes) - index
+                logger.info(
+                    "storyboard canceled project=%s episode=%s remaining=%d",
+                    plan.project_id,
+                    plan.episode_id,
+                    skipped,
+                )
+                break
+            scene_context = build_context_references(
+                plan.scene_reference_sources.get(scene["id"], []), merge=False
+            )
+            # Only references represented by the shot's editor mentions are sent. The tone
+            # sheet and previous frame are not silently injected into the provider request.
+            references = scene_context[: plan.max_reference_images]
+            scene = {
+                **scene,
+                "compiledImageReferenceItems": plan.scene_reference_items.get(scene["id"], []),
+            }
+            succeeded = await _generate_shot(plan, scene, index, config, user_id, references)
+            results.append(succeeded)
+            if succeeded:
+                previous = _load(_stored_image_path(scene["id"]), "previous") or previous
+    except asyncio.CancelledError:
+        logger.info("storyboard canceled project=%s episode=%s", plan.project_id, plan.episode_id)
+        # A stopped run must not leave a permanent "generating" marker on the rows it was
+        # holding — the shot the provider was drawing, and the tone sheet when the stop
+        # landed during the anchor. Both guards skip whatever already succeeded.
+        clear_generating_scenes([scene["id"] for scene in plan.scenes], "image_status")
+        clear_generating_episode(plan.episode_id, "tone_image_status")
+        update_project_row(plan.project_id, status="idle")
+        update_episode_row(plan.episode_id, status="storyboard")
+        await broadcast(
+            plan.project_id,
+            {
+                "type": "PROJECT_UPDATE",
+                "projectId": plan.project_id,
+                "data": {"status": "idle", "episodeId": plan.episode_id, "canceled": True},
+            },
+        )
+        return
+    finally:
+        runs.release(plan.project_id, cancellation)
 
     status = episode_media_status(plan.episode_id, results)
+    if skipped:
+        # A stopped run is not a failed one. Reporting `failed` would tell the user their
+        # render broke when in fact they stopped it, and would hide the frames that landed.
+        status = "partial" if any(results) else "idle"
     logger.info(
-        "storyboard finished project=%s episode=%s shots=%d status=%s",
+        "storyboard finished project=%s episode=%s shots=%d skipped=%d status=%s",
         plan.project_id,
         plan.episode_id,
         len(plan.scenes),
+        skipped,
         status,
     )
     # Both levels carry the outcome: the project because it holds the busy lock, the episode
@@ -306,6 +469,6 @@ async def run_storyboard(plan: StoryboardPlan, config: dict[str, Any], user_id: 
         {
             "type": "PROJECT_UPDATE",
             "projectId": plan.project_id,
-            "data": {"status": status, "episodeId": plan.episode_id},
+            "data": {"status": status, "episodeId": plan.episode_id, "canceled": bool(skipped)},
         },
     )

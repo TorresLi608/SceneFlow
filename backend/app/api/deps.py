@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlmodel import select
 
 from app.core.database import db
@@ -18,7 +18,7 @@ def bearer_token(authorization: str | None) -> str:
     return header[7:].strip() if header[:7].lower() == "bearer " else header
 
 
-def current_user(authorization: str | None = Header(default=None)) -> User:
+def current_user(request: Request, authorization: str | None = Header(default=None)) -> User:
     token = bearer_token(authorization)
     if not token:
         raise HTTPException(401, "missing token")
@@ -32,6 +32,7 @@ def current_user(authorization: str | None = Header(default=None)) -> User:
         raise HTTPException(401, "user not found")
     if bool(user.is_disabled):
         raise HTTPException(403, "user is disabled")
+    request.state.user_id = int(user.id)
     return user
 
 

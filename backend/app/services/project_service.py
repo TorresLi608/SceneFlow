@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,11 +8,13 @@ from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from app.core.database import db
-from app.models import Project, Scene
+from app.models import Episode, Project, Scene
 from app.services.config_service import active_model_config
 from app.services.usage_service import require_model_balance
 from app.utils.common import now
 
+
+logger = logging.getLogger(__name__)
 
 PROJECT_MODES = {"comic", "drama"}
 ASPECT_RATIOS = {"9:16", "16:9", "1:1"}
@@ -80,6 +83,96 @@ def production_settings(payload: dict[str, Any], *, defaults: bool = False) -> d
         if abs(values["width"] / values["height"] - ratios[values["aspect_ratio"]]) > 0.03:
             raise HTTPException(400, "width and height do not match aspectRatio")
     return values
+
+
+def selected_scenes(
+    scenes: list[Scene],
+    scene_ids: list[str] | None,
+    *,
+    status_column: str,
+    pending_only: bool = False,
+) -> list[Scene]:
+    """The shots a render targets, or a 400 saying why there are none.
+
+    An approved (locked) shot is left alone by a batch rerun. `pending_only` narrows that
+    further to shots that are not already rendered: a plain rerun re-renders — and re-pays
+    for — every unlocked shot, which is the wrong thing when the user is retrying the two
+    that failed out of twenty.
+
+    One implementation for both media on purpose. The image and video paths each carried
+    their own copy of this, and a cost rule that only half the app enforces is the rule that
+    bills twice.
+    """
+    if scene_ids is None:
+        selected = [scene for scene in scenes if not scene.is_locked]
+    else:
+        requested = {scene_id.strip() for scene_id in scene_ids if scene_id.strip()}
+        selected = [scene for scene in scenes if scene.id in requested]
+        if len(selected) != len(requested):
+            raise HTTPException(400, "sceneIds must belong to the selected episode")
+        if any(scene.is_locked for scene in selected):
+            raise HTTPException(400, "unlock selected shots before generating them")
+    if pending_only:
+        selected = [scene for scene in selected if getattr(scene, status_column) != "success"]
+    if not selected:
+        raise HTTPException(
+            400,
+            "every selected shot is already rendered, nothing to retry"
+            if pending_only
+            else "every shot in this episode is locked, unlock one to regenerate",
+        )
+    return selected
+
+
+def release_orphaned_runs() -> int:
+    """Clear busy markers left by runs that died with the process, at startup.
+
+    A render lives in an `asyncio.create_task` inside this process (see
+    `docs/architecture/boundaries.md`), so a restart — a crash, a deploy, `--reload` picking
+    up an edit — kills it with no chance to unwind. What it leaves behind is
+    `projects.status = 'generating'`, which is not in `IDLE_STATUSES`, and `/cancel`
+    deliberately refuses to clear it because doing so mid-run would let a second render
+    write the same rows. The project is then permanently unrenderable: every start 409s and
+    the editor polls a status that will never change.
+
+    Startup is the one moment where "nothing is running" is known rather than guessed, so
+    this is the only safe place to break that lock. `failed` rather than `idle` because the
+    run genuinely did not finish, and it is in `IDLE_STATUSES` so work can start again.
+
+    Single-process only, like the cancel registry it complements: a second worker booting
+    while the first is mid-render would clear a lock that is legitimately held.
+    """
+    stamp = now()
+    with db() as session:
+        stale = session.execute(
+            update(Project)
+            .where(func.coalesce(Project.status, "idle").notin_(sorted(IDLE_STATUSES)))
+            .values(status="failed", video_status="idle", video_progress=0, updated_at=stamp),
+            execution_options={"synchronize_session": False},
+        )
+        session.execute(
+            update(Episode)
+            .where(Episode.status == "generating")
+            .values(status="failed", error_message="服务重启，本次生成未完成", updated_at=stamp),
+            execution_options={"synchronize_session": False},
+        )
+        # Each media column separately: a shot whose image landed before the restart keeps it.
+        for model, column in (
+            (Episode, "tone_image_status"),
+            (Episode, "video_status"),
+            (Scene, "image_status"),
+            (Scene, "audio_status"),
+            (Scene, "video_status"),
+        ):
+            session.execute(
+                update(model)
+                .where(getattr(model, column) == "generating")
+                .values(updated_at=stamp, **{column: "idle"}),
+                execution_options={"synchronize_session": False},
+            )
+    if stale.rowcount:
+        logger.warning("released %d project run lock(s) left behind by a previous process", stale.rowcount)
+    return stale.rowcount or 0
 
 
 def claim_project_status(session: Session, project_id: str, *, allowed_from: set[str], to: str, **values: Any) -> None:

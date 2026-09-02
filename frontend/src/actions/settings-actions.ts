@@ -13,6 +13,11 @@ export async function listUserConfigsAction() {
   return response.data;
 }
 
+export async function getVideoModelCatalogAction() {
+  const response = await httpClient.get<{ models: { model: string; provider: string; capabilities: import("@/types/auth").VideoCapabilities }[] }>("/api/bff/settings/video-models");
+  return response.data;
+}
+
 export async function discoverModelsAction(payload: { provider: string; baseUrl: string; apiKey: string }) {
   const response = await httpClient.post<ModelListResponse>("/api/bff/settings/models", payload);
   return response.data;

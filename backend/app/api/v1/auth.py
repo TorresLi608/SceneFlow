@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import bcrypt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
@@ -12,27 +12,56 @@ from app.core.database import db
 from app.core.security import token_for
 from app.models import InvitationCode, User
 from app.schemas.serializers import user_json
+from app.services.verification_service import (
+    send_registration_code,
+    validate_email_format,
+    verify_and_consume_code,
+)
 from app.utils.common import now
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+@router.post("/send-verification-code")
+def send_verification_code(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    email = str(payload.get("email", "")).strip()
+    client_ip = request.client.host if request.client else None
+    with db() as session:
+        send_registration_code(session, email, client_ip)
+    return {"success": True, "cooldownSeconds": 60, "expiresInSeconds": 300}
+
+
 @router.post("/register", status_code=201)
 def register(payload: dict[str, Any]) -> dict[str, Any]:
     username = str(payload.get("username", "")).strip()
     nickname = str(payload.get("nickname", "")).strip()
+    email = str(payload.get("email", "")).strip()
+    verification_code = str(payload.get("verificationCode", "")).strip()
     password = str(payload.get("password", ""))
     invitation_code = str(payload.get("invitationCode", "")).strip().upper()
+
+    if email and not verification_code:
+        raise HTTPException(400, "verification code is required when email is provided")
+    if verification_code and not email:
+        raise HTTPException(400, "email is required when verification code is provided")
     if not 3 <= len(username) <= 64 or not 6 <= len(password) <= 128:
         raise HTTPException(400, "invalid username or password length")
     if len(nickname) > 64:
         raise HTTPException(400, "nickname must be at most 64 characters")
     if not invitation_code:
         raise HTTPException(400, "invitation code required")
+
+    cleaned_email = validate_email_format(email) if email else None
     stamp = now()
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
     with db() as session:
+        # 1. 校验并核销验证码
+        if cleaned_email:
+            verify_and_consume_code(session, cleaned_email, verification_code)
+
+        # 2. 校验邀请码
         invitation = session.exec(select(InvitationCode).where(InvitationCode.code == invitation_code)).first()
         if not invitation:
             raise HTTPException(400, "invalid invitation code")
@@ -40,13 +69,20 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(409, "invitation code already used")
         if invitation.expires_at <= stamp:
             raise HTTPException(410, "invitation code expired")
+
+        # 3. 校验用户名与邮箱唯一性
         if session.exec(select(User.id).where(User.username == username, User.deleted_at.is_(None))).first():
             raise HTTPException(409, "username already exists")
+        if cleaned_email and session.exec(select(User.id).where(User.email == cleaned_email, User.deleted_at.is_(None))).first():
+            raise HTTPException(409, "email already exists")
+
+        # 4. 创建用户
         user = User(
             created_at=stamp,
             updated_at=stamp,
             username=username,
             nickname=nickname or None,
+            email=cleaned_email,
             password=hashed,
             role="user",
             is_disabled=False,
@@ -55,8 +91,9 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             session.flush()
         except IntegrityError as exc:
-            raise HTTPException(409, "username already exists") from exc
-        # Conditional so two concurrent registrations cannot both consume the same code.
+            raise HTTPException(409, "username or email already exists") from exc
+
+        # 5. 核销邀请码
         consumed = session.execute(
             update(InvitationCode)
             .where(InvitationCode.id == invitation.id, InvitationCode.used_at.is_(None), InvitationCode.expires_at > stamp)
@@ -65,6 +102,7 @@ def register(payload: dict[str, Any]) -> dict[str, Any]:
         )
         if consumed.rowcount != 1:
             raise HTTPException(409, "invitation code is no longer available")
+
         return {"token": token_for(user.id), "user": user_json(user)}
 
 

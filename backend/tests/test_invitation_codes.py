@@ -6,7 +6,8 @@ from pathlib import Path
 from app.api.v1.admin import create_invitation_code, list_invitation_codes
 from app.api.v1.auth import register
 from app.core import database
-from app.core.database import init_db
+from app.core.database import db, init_db
+from app.services.verification_service import send_registration_code
 
 
 def test_invitation_code_is_required_and_consumed() -> None:
@@ -17,8 +18,12 @@ def test_invitation_code_is_required_and_consumed() -> None:
             init_db()
             invitation = create_invitation_code({"days": 7}, 1)["invitationCode"]
 
+            with db() as session:
+                v = send_registration_code(session, "alice@example.com")
+                code = v.code
+
             try:
-                register({"username": "alice", "password": "password"})
+                register({"username": "alice", "email": "alice@example.com", "verificationCode": code, "password": "password"})
                 raise AssertionError("registration without an invitation code should fail")
             except Exception as exc:
                 assert getattr(exc, "detail", None) == "invitation code required"
@@ -26,6 +31,8 @@ def test_invitation_code_is_required_and_consumed() -> None:
             registered = register({
                 "username": "alice",
                 "nickname": "Alice",
+                "email": "alice@example.com",
+                "verificationCode": code,
                 "password": "password",
                 "invitationCode": invitation["code"],
             })

@@ -317,7 +317,9 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
           title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || t("chat.newSession"),
           ...selectedConfigPayload(selectedConfig),
         });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
+        // Keep the temporary "new-chat" runtime mounted while the first request is in flight.
+        // Invalidating sessions here changes the useChat id before sendAiMessage can publish
+        // its optimistic user message, leaving that message in the discarded runtime.
         await streamToSession(response.session.id, content, attachments);
         setSelectedSessionId(response.session.id);
       } catch (error) {

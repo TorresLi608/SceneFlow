@@ -9,24 +9,25 @@ Tests are plain modules under `backend/tests/`. Each defines test functions and 
 ```bash
 cd backend
 PYTHONPATH=. .venv/bin/python tests/test_episodes_api.py    # one file — the reliable way
-.venv/bin/python tests/run_all.py                            # whole suite — see the caveat
+sh scripts/run_tests.sh test_episodes_api test_characters_api   # several, each isolated
+sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')   # everything
 ```
 
-### `run_all.py` is not isolated
+### Use `scripts/run_tests.sh`, not `run_all.py`
 
-It `runpy`s every file in one process. Two consequences:
+`scripts/run_tests.sh` gives each file its own interpreter and its own throwaway database,
+reports every result, and exits non-zero listing the failures. That is what the pre-commit
+gate needs.
 
-1. **Module-level state leaks between files.** As of 2026-08-17 all 28 files pass individually, but `run_all.py` fails inside `test_characters_api.py`; running `test_artifact_service.py` or `test_admin_usage_logs.py` first in the same process reproduces it deterministically.
-2. **The first failure aborts the run** — there is no error handling, so every later file is skipped and reports nothing.
+`tests/run_all.py` `runpy`s every file in one process instead. Two consequences:
 
-**Treat a `run_all.py` failure as unproven until you rerun that file on its own.** When you need a trustworthy full pass, loop the files in separate processes:
+1. **Module-level state leaks between files.** All test files pass individually and through
+   `run_tests.sh`; `run_all.py` has failed inside `test_characters_api.py`, reproducibly, when
+   `test_artifact_service.py` or `test_admin_usage_logs.py` ran first in the same process.
+2. **The first failure aborts the run** — there is no error handling, so every later file is
+   skipped and reports nothing.
 
-```bash
-cd backend
-for f in tests/test_*.py; do
-  PYTHONPATH=. .venv/bin/python "$f" >/dev/null 2>&1 && echo "PASS $f" || echo "FAIL $f"
-done
-```
+**Treat a `run_all.py` failure as unproven until you rerun that file on its own.**
 
 ### Writing a backend test
 
@@ -37,6 +38,27 @@ Follow `tests/test_episodes_api.py`:
 - Add the function to the `__main__` block at the bottom, or it never runs.
 - Assert on the response body with the text in the message: `assert response.status_code == 200, response.text`.
 - Never let a test reach a real provider or the developer database. Point `SCENEFLOW_DB_PATH` at a temp path; never touch `backend/sceneflow.db`.
+
+### Testing a queued endpoint
+
+Reference images, prompt drafts, voice design, and voice auditions return `202 {job}` and do the work in the job worker (see `../architecture/data-flow.md` §2c). A test that wants to assert on the *result* has to run the job itself:
+
+```python
+from tests.job_queue import drain_one, succeeded
+
+queued = client.post(f"/api/projects/{project_id}/props/{prop_id}/image", json={...}, headers=headers)
+assert queued.status_code == 202, queued.text
+prop = succeeded(drain_one())["prop"]
+```
+
+`drain_jobs`/`drain_one` run the real path — `claim_next_job` → `dispatch` → `finish_job` — just without lease renewal and the poll interval, so the real handler and the real terminal write are still exercised.
+
+Two rules that follow from this:
+
+- **Patch the provider on `app.services.job_handlers`, not on the endpoint module.** The call moved when the endpoint became an enqueue; patching `app.api.v1.voices.synthesize` now patches a name nothing reads.
+- **Keep the stub installed until after the drain.** The provider call happens while the job drains, not during the POST, so a `finally: restore` around only the POST restores it too early.
+
+Importing `tests.job_queue` sets `SCENEFLOW_WORKER_ENABLED=0`, which keeps the in-process worker the app lifespan would otherwise start from racing the test for the same rows. Two claimants make which one runs a job a coin flip.
 
 ### What is covered today
 

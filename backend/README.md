@@ -26,6 +26,7 @@ From the repository root, `npm run docker:build` builds both images and `npm run
 - `app/llms/`: provider routing and model registry.
 - `app/utils/`: small shared helpers such as IDs, timestamps, and attachment parsing.
 - `tests/`: dependency-free executable self-checks.
+- `scripts/`: developer helpers that are not part of the app.
 
 `Pillow` builds the merged reference sheets and `ffmpeg` concatenates audio; `ffprobe`
 measures clip length. Both binaries ship in the Docker image and must be on PATH locally.
@@ -34,7 +35,19 @@ Run all backend checks:
 
 ```bash
 cd backend
-.venv/bin/python tests/run_all.py
+# One process and one throwaway database per file. `tests/run_all.py` runpy's everything in a
+# single process and aborts on the first failure, so state leaks between files and a green run
+# there proves less than it looks.
+sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')
+```
+
+Check a schema change without touching the real development database:
+
+```bash
+cd backend
+SCENEFLOW_DB_PATH=/tmp/sf_check.db .venv/bin/alembic upgrade head
+SCENEFLOW_DB_PATH=/tmp/sf_check.db .venv/bin/alembic check   # must report no new operations
+rm -f /tmp/sf_check.db
 ```
 
 ## Environment
@@ -68,8 +81,8 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 - Chat uses LangChain `create_agent` with image, PDF, and Word generation tools. Generated chat artifacts use signed 30-day links and server-controlled paths.
 - Supported script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, and `custom`.
 - Image generation supports OpenAI, Gemini, and Qwen/Wan; video supports Doubao, Gemini, and Qwen/Wan; standalone voice work supports Qwen Voice Design only. `/api/voices/design` creates an unsaved preview and `/api/voices/:id/save` saves it.
-- Qwen chat defaults to the OpenAI-compatible `https://dashscope.aliyuncs.com/compatible-mode/v1` endpoint. Native image/video calls use DashScope's media APIs; voice design uses the configured Qwen `baseUrl`, with fixed API model `qwen-voice-design` and the user-entered `modelSeries` as `target_model`. Video models include `wan2.7-t2v`, `wan2.7-i2v`, `wan2.7-r2v`, `wan-t2v`, `wan-r2v`, `kling-v3-omni-video-generation`, `kling/kling-v3-omni-video-generation`, and `wan3.0-video`. Configurable video quality is `480p`, `720p`, `1080p`, `2K`, or `4K`.
-- Doubao Seedance video uses the official `volcengine-python-sdk[ark]` `Ark.content_generation.tasks` API, with the configured `baseUrl` passed through unchanged so official and relay endpoints use the same code. Known model IDs include `doubao-seedance-2.0`, `doubao-seedance-2.0-fast`, `doubao-seedance-2.0-mini`, and `doubao-seedance-2.5`.
+- Qwen chat defaults to the OpenAI-compatible `https://dashscope.aliyuncs.com/compatible-mode/v1` endpoint. Native image/video calls use DashScope's media APIs; voice design uses the configured Qwen `baseUrl`, with fixed API model `qwen-voice-design` and the user-entered `modelSeries` as `target_model`. `GET /api/settings/video-models` returns the video models the admin picker suggests — `wan2.7`, `wan2.7-r2v`, `wan3.0-video`, `wan3.0-video-prime`, and the Seedance ids below — with the capabilities each implies; the field stays editable so relay model ids still work. Media type names follow the model family: Wan 3.0 uses `reference_image` / `reference_video` / `reference_audio` plus the `audio` output switch, Wan 2.7 uses `reference_image` / `reference_video` / `reference_voice`, and older models keep `video` / `driving_audio`. Configurable video quality is `480p`, `720p`, `1080p`, `2K`, or `4K`.
+- Doubao Seedance video uses the official `volcengine-python-sdk[ark]` `Ark.content_generation.tasks` API, with the configured `baseUrl` passed through unchanged so official and relay endpoints use the same code. Known model IDs include `doubao-seedance-2.0`, `doubao-seedance-2.0-fast`, `doubao-seedance-2.0-mini`, and `doubao-seedance-2.5`. The catalog follows the provider capability table: 2.5 accepts 30 images + 10 videos + 10 audios and 4–30 second output; the 2.0 variants accept 9 images + 3 videos + 3 audios and 4–15 second output.
 - New model configurations start with an empty `modelSeries`. Model discovery does not filter by purpose: it uses the provider or relay `/models` endpoint when available, while native Qwen media returns its known models. Voice Design leaves `modelSeries` user-editable and does not run discovery. Saving never performs a remote connectivity check; enabled configs still require their local fields and API key.
 - Image configurations store `imageMaxReferenceImages` (default 4, non-negative); image generation rejects reference uploads above the selected model's configured limit.
 - `POST /api/prompts/optimize` uses the active script model to optimize image, video, or voice-generation text with media-specific instructions and returns the result for review without starting generation. Image/video callers may choose automatic, Chinese, or English output; voice text always keeps its source language.
@@ -102,6 +115,7 @@ Production startup rejects the development JWT, AES, and super-admin secrets.
 ### Admin (superAdmin required)
 - `GET /api/admin/users`
 - `GET /api/admin/usage-logs?search=&page=&pageSize=`
+- `GET /api/admin/error-logs?search=&errorCode=&projectId=&requestId=&page=&pageSize=`
 - `PATCH /api/admin/users/:id`
 - `DELETE /api/admin/users/:id`
 - `GET /api/admin/default-models`
@@ -113,23 +127,51 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 `modelSeries`, and `baseUrl` such as `https://www.juaiapi.com/v1`.
 
 ### Prompt optimization (JWT required)
-- `POST /api/prompts/optimize` — optimizes image/video prompts or voice-generation text with the active script model and returns the editable result
+- `POST /api/prompts/optimize` — rewrites a prompt with the active script model and returns the
+  editable result. `kind` picks the wording: `image` / `video` / `voice` / `audio` /
+  `character` / `prop` / `cover`. `context.outputLanguage` (`auto` / `zh` / `en`) chooses the
+  language it answers in
+  - the three setting-sheet kinds (`character`, `prop`, `cover`) deliberately preserve the
+    on-image labelling the reference depends on rather than optimising it away
+- `GET /api/prompts/presets?kind=character|prop|cover` — built-in starting templates, so a
+  blank prompt box is never the only option. Static text; no model call and no balance check
 
 ### Projects (JWT required)
 - `GET /api/projects` — the caller's live series, each with its current episode's shots
-- `POST /api/projects` — `{ "title", "description", "originalScript", "productionSettings" }`
-- `PATCH /api/projects/:id` — title, description, source script, series bible
+- `POST /api/projects` — `{ "title", "description", "coverPrompt", "originalScript", "productionSettings" }`
+- `PATCH /api/projects/:id` — title, description, cover prompt, source script, series bible,
+  and `modelSettings` (below)
 - `DELETE /api/projects/:id` — soft-deletes the series
-- `POST /api/projects/cover/generate` — draws a cover from `{ "title", "description", "stylePrompt" }`
+- `POST /api/projects/cover/generate` — draws a cover from `{ "prompt", "title", "stylePrompt" }`
   and returns it as `{ "imageData": "data:image/png;base64,..." }`
+  - `prompt` is the subject and is required. The cover used to be derived from the title and
+    synopsis, which meant the only way to change the picture was to rewrite the story
   - project-less on purpose: the create dialog runs before a project row exists, and the edit
     dialog runs against unsaved edits. Nothing is written; the caller applies the result below
   - synchronous, and requires an active image configuration (`openai`/`gemini`/`qwen`)
-- `POST /api/projects/description/optimize` — polishes a synopsis and returns it for review;
-  never saved behind the user
 - `PUT /api/projects/:id/cover` — stores an uploaded or generated cover from a base64 data URL
   (png/jpeg/webp, 10MB ceiling); the row keeps a path, and responses mint a signed link
 - `DELETE /api/projects/:id/cover` — drops the cover so the card falls back to the placeholder
+- `POST /api/projects/:id/cancel` — asks whatever this project is rendering to stop
+  - cooperative, not an interrupt: the run checks the flag between shots, so a frame the
+    provider is already drawing finishes and is kept. A stopped run reports `partial` when
+    something landed and `idle` when nothing did — never `failed`
+  - the run releases the busy lock as it unwinds; this endpoint never does, or a second
+    render could start while the first is still writing
+  - `{ "canceled": false }` when nothing was running is a normal answer, not an error
+
+### Project model configuration (JWT required)
+- `GET /api/projects/:id/models` — what each purpose actually resolves to, plus the limits the
+  UI must enforce (`imageMaxReferenceImages`; the video config's declared `videoCapabilities`).
+  Never returns an API key
+- set them through `PATCH /api/projects/:id` under `modelSettings`:
+  `textConfigId` / `imageConfigId` / `videoConfigId` / `audioConfigId`, plus the defaults every
+  render in the series starts from — `imageResolution`, `imageRatio`, `videoQuality`,
+  `videoAspectRatio`, `videoDuration`, `videoFps`, `videoPromptExtend`
+  - **project-first, never project-only.** An unset pick, or one whose config was deleted or
+    disabled, falls through to the account default (`active_model_config`), so a series made
+    before this panel existed keeps working
+  - **`0` clears a pick**; `null` cannot, because in a PATCH it already means "leave alone"
 
 ### Project Parse (JWT required)
 - `POST /api/projects/:id/parse`
@@ -140,6 +182,10 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
     generated image or voice track, the response comes back with `applied: false`,
     `discardsGeneratedScenes: N`, and the parsed shots under `pendingScenes` instead of
     overwriting them. The client confirms, then repeats the call with `replaceAll: true`.
+  - **Legacy.** It produces only `narration` + `visualPrompt`, which is a comic storyboard —
+    silent on how the camera moves, how the cut is made, and how long the shot runs. The
+    episode editor uses `/breakdown` below; this serves the old single-screen editor, whose
+    schema the wider one is not compatible with.
 
 ### Episodes (JWT required)
 - `GET /api/projects/:id/episodes` — summaries (no script, no shots) plus a shot count each
@@ -149,21 +195,48 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 - `PATCH /api/projects/:id/episodes/:episodeId` — title, synopsis, source text, status
 - `DELETE /api/projects/:id/episodes/:episodeId` — soft-deletes the episode and its shots;
   refused with 409 while the project is busy, since a run holds those rows open
-- `POST /api/projects/:id/episodes/:episodeId/storyboard` — renders the episode in two passes
-  - **the tone sheet first**: one image holding thumbnails of every shot, generated in a
-    single sampling. It is never a deliverable — each cell is far too small — but one
-    sampling is what makes lighting, palette, and render style agree across the episode
-  - **then a frame per shot**, full resolution, each carrying the tone sheet, the merged
-    context sheet, and the previous shot's render. Style, cast, and scene continuity each
-    get their own anchor; the list is truncated to `MAX_REFERENCE_IMAGES`
-  - shots render **sequentially**, because each references its predecessor's output
+- `POST /api/projects/:id/episodes/:episodeId/breakdown` — splits the script into shots that a
+  renderer and a video model can both act on
+  - `{ "target", "script", "references", "replaceAll", "model" }`
+  - `target` picks which half is produced. `shots` fills narration, dialogue, speaker, frame
+    prompt, and shot size. `video` fills camera move, transition, duration, and motion prompt.
+    `both` fills everything
+  - **`target: "video"` updates the existing rows in place** rather than replacing them:
+    re-deriving how the camera moves is no reason to discard frames already rendered and paid
+    for. It requires existing shots and 400s without them
+  - `references` — `characterIds` / `propIds` / `voiceProfileIds` plus `useCastSheet` /
+    `usePropSheet` / `useVoiceSheet` — decides what the model defers to. A selected character
+    **with** a drawn sheet is named, so the prompt says "参照《…》三面图" instead of
+    re-describing a face the renderer already pins; one with only written setting is reasoned
+    about from that text; anyone the bible has never heard of is invented from the script.
+    Selecting nothing is a valid fourth case: decide everything from the script
+  - re-splitting is destructive in the same way as `/parse`: `applied: false` plus
+    `discardsGeneratedScenes` first, `replaceAll: true` to confirm
+  - `speaker` is matched back to a character by name and aliases, best-effort — an unmatched
+    speaker is a walk-on working as intended
+- `POST /api/projects/:id/episodes/:episodeId/tone-sheet` — anchors the episode's look, on its own
+  - one image holding thumbnails of every shot in a single sampling. Never a deliverable —
+    each cell is far too small — but one sampling is what makes lighting, palette, and render
+    style agree across the episode
+  - its own step because every frame that follows is matched against it: approving it first is
+    much cheaper than discovering after twenty full-resolution renders that the episode is wrong
+  - `references` selects existing character, character-state, prop, or episode-tone images by `{kind, id}`;
+    selected images are tiled into one reference before the provider call
+- `POST /api/projects/:id/episodes/:episodeId/storyboard` — renders frames against that anchor
+  - `sceneIds` selects a subset — one shot to regenerate, several for a batch. Omitted means
+    every unlocked shot; all-locked is a 400 rather than a silent no-op
+  - generates the tone sheet first when none exists, so a caller that skipped the step above
+    still gets an anchored render rather than twenty unrelated frames
+  - each frame carries the tone sheet, user-selected image references, and the previous
+    shot's render, capped by the active image model's `imageMaxReferenceImages`
+  - shots render **sequentially**, because each references its predecessor's output, and the
+    loop checks the cancel flag between them
   - a failed tone sheet aborts the run rather than rendering unanchored shots the user
     would still be billed for
-  - `mergeReferences` (default true) tiles the cast sheet, prop sheet, and previous anchor
-    into one reference; false sends them separately, which costs more tokens
-  - `regenerate` resamples the tone sheet instead of reusing it, which also restyles shots
-    that were already approved. `previousEpisodeId` carries the look across an episode
-    boundary; it must name a different episode
+  - `references` explicitly selects project-owned images. Requests that omit it retain the
+    legacy cast-sheet / prop-sheet / `previousEpisodeId` behaviour
+  - `regenerate` resamples the tone sheet instead of reusing it; the editor sends it only
+    from the explicit tone-sheet action, not from frame generation
 
 ### Characters (JWT required)
 - `GET /api/projects/:id/characters` — the series bible, each card with its states
@@ -177,8 +250,16 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 - `POST /api/projects/:id/characters/:characterId/states/:stateId/prompt`
   - drafts the turnaround prompt from the character and the state and returns it for review;
     never saved, because the preview step is the point
+  - `preset` names which built-in template to draft against (`GET /api/prompts/presets`). The
+    instruction template itself is **not** overridable: it *is* the system prompt, and offering
+    an editable copy of it beside the prompt that draws gave users two fields where one was
+    meant. `CharacterState.system_prompt` is retained but read by nothing
 - `POST /api/projects/:id/characters/:characterId/states/:stateId/image` — draws the state's
   turnaround sheet from the approved prompt, and freezes the provider/model that produced it
+  - the sheet is a *setting sheet*: it carries the character's name, summary, and setting
+    alongside the drawing, so the reference is self-describing. `shot_prompt` states firmly
+    that the rendered shot must carry no text, or those captions leak into the episode
+  - drawn at the project's `imageRatio` / `imageResolution`
   - synchronous, and refused with 409 on a locked card
 - `PUT /api/projects/:id/characters/:characterId/states/:stateId/image` — upload one instead
 - `POST /api/projects/:id/characters/:characterId/sheet` — tile one character's states into a sheet
@@ -190,9 +271,15 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
 ### Props (JWT required)
 Same shape as characters, one level down: an object the series must draw identically every time.
 - `GET /api/projects/:id/props`, `POST /api/projects/:id/props`, `PATCH .../:propId`, `DELETE .../:propId`
-- `POST /api/projects/:id/props/:propId/prompt` — draft the image prompt for review
+  - `ownerCharacterId` records whose prop it is, and the reference image is labelled with it —
+    an unattributed object is the first thing continuity loses. `""` unbinds; a JSON null reads
+    as an absent field. Responses resolve it to `ownerName` so a card renders without a second
+    request. A plain column, not a foreign key, matching `characters.voice_profile_id`
+- `POST /api/projects/:id/props/:propId/prompt` — draft the image prompt for review; takes the
+  same `preset`, and the same non-overridable instruction template, as characters
 - `POST /api/projects/:id/props/:propId/image` — draw it; `PUT` the same path uploads one instead
-- `POST /api/projects/:id/props/sheet` — tile every prop into one sheet
+- `POST /api/projects/:id/props/sheet` — tile every prop into one sheet, each cell labelled with
+  its owner where it has one
 
 ### Voices (JWT required)
 Per-shot TTS is gone. Voices are managed once per project, and what the pipeline consumes is
@@ -201,6 +288,17 @@ it as a reference can keep speakers apart.
 - `GET /api/projects/:id/voices`, `POST /api/projects/:id/voices`, `PATCH .../:voiceId`, `DELETE .../:voiceId`
   - deleting releases every character bound to the profile; the binding is a plain column
     rather than a foreign key, so the service does what ON DELETE SET NULL would have
+- `POST /api/projects/:id/voices/design` — designs a timbre from a description and binds it to
+  the series in one step: `{ "name", "voicePrompt", "previewText", "note", "sampleText" }`
+  - provider and model come from the project's audio configuration, never from the request.
+    The old form asked the user to type them, which is how a series ended up with profiles no
+    synthesiser here could voice
+  - the result is also saved to the account's voice library: a timbre that cost a paid request
+    should be reusable in the next series for free
+  - the provider call is async, so a client disconnect actually cancels it
+- `POST /api/projects/:id/voices/import` — bind a timbre already in the account library
+  (`{ "userVoiceId", "name", "note", "sampleText" }`). Copies the audition rather than
+  referencing it, so the series survives a library tidy-up
 - `POST /api/projects/:id/voices/:voiceId/preview` — synthesises the sample line with local
   Edge/system TTS so the user can audition it; unsupported providers fall back to built-in Edge
 - `POST /api/projects/:id/voices/merge` — ffmpeg-concatenates every auditioned clip into
@@ -219,15 +317,28 @@ it as a reference can keep speakers apart.
     the project (which holds the busy lock) and the episode that was rendered
 - `PATCH /api/projects/:id/production-settings`
 - `GET /api/projects/:id/jobs`
+- `GET /api/jobs/:id` — one job, for a client waiting on the work it queued. Its own endpoint
+  rather than filtering the project list: a panel waiting on one image should not pull every
+  job in the series on a three-second interval.
 - `POST /api/jobs/:id/cancel`
 - `POST /api/jobs/:id/retry`
 
 - `POST /api/projects/:id/generate-video`
+  - `sceneIds` selects a subset — one shot to regenerate, several for a batch
   - renders one clip per shot; models cap out at a handful of seconds, so an episode is
     assembled from clips rather than generated in one call
-  - `withAudio` passes the project's merged timbre reference as reference audio. A model that
-    does not accept audio is a 400, and so is a project whose voices have not been merged —
-    silently dropping it would bill the user for a render they did not ask for
+  - the prompt is `video_prompt` first, falling back to `visual_prompt`: the latter describes a
+    still, and a clip generated from it tends to hold still. The shot's camera move and
+    transition are appended — they reach the video model or nothing
+  - duration comes from the shot's `duration_ms`, clamped to the model's declared min/max, and
+    falls back to the project default when the breakdown gave no estimate. One fixed length
+    for a six-second beat and a two-second reaction is the pacing problem the estimate fixes
+  - the project's saved video defaults sit under whatever the request sent, so a batch started
+    from the episode editor renders at the settings the model panel shows
+  - `references` selects project-owned images, rendered scene videos, and voice samples by
+    `{kind, id}`. The storyboard frame still occupies the first image slot when supported;
+    every media kind and count is validated against the model's declared capabilities
+  - `withAudio` remains for older callers that pass the merged timbre track
   - options are validated against the model's declared capabilities; unsupported parameters
     are rejected rather than ignored
 
@@ -242,7 +353,9 @@ it as a reference can keep speakers apart.
     which looks like a truncated export rather than an error
 - `GET /api/projects/:id/exports/:exportId` — status, progress, and a signed download link
 
-`generation_jobs` currently provides persistence, idempotency, leases, cancel, and retry services. The worker processor and project job UI are still pending; image and video generation still starts in the API process.
+`generation_jobs` provides persistence, idempotency, leases, cancel, and retry, and `app/services/job_worker.py` drains it in-process (three lanes, started and stopped by the app lifespan; set `SCENEFLOW_WORKER_ENABLED=0` to keep it down, which is what the tests do so they can drive the queue by hand).
+
+Queued today, via handlers in `app/services/job_handlers.py`: character-state and prop reference images, prompt drafts, project voice design, and voice auditions. Those endpoints return **202 with a `job`** rather than the finished row — poll `GET /api/jobs/:id`, or wait for the `PROP_UPDATE`/`CHARACTER_UPDATE`/`VOICE_UPDATE` broadcast the handler emits. Storyboard, tone sheet, project generation, and export still start in the API process via `asyncio.create_task`; the project job UI is still pending.
 
 ## Data model
 
@@ -261,8 +374,19 @@ and `currentEpisodeId`. Anything that renders or reorders resolves a target epis
 Generated media is referenced by a path relative to `SCENEFLOW_PRIVATE_GENERATED_DIR`, never
 by URL. Signed links expire after 30 days, so a URL stored in a row would turn every asset in
 a long-running series into a 404; `schemas/serializers.py` mints a fresh link per response
-instead. The baseline Alembic migration upgrades older rows in place and
-drops references whose token no longer decodes, since those links were already dead.
+instead. The link is **stable for a given file within a day** — `_sign` floors `iat` to the
+start of the UTC day rather than reading the clock, so the same artifact yields the same URL
+across responses. That is what lets a browser cache a frame and a list row stay mounted while
+the editor polls; key list rows on `updatedAt`, never on an asset URL. The baseline Alembic
+migration upgrades older rows in place and drops references whose token no longer decodes,
+since those links were already dead.
+
+A `Scene` carries both halves of a shot. The frame side is `narration`, `dialogue`,
+`speaker_character_id`, `visual_prompt`, and `shot_type`; the motion side is `camera_move`
+(运镜), `transition` (场景过渡, a property of the seam rather than the frame, which is why it
+never reaches the still prompt), `video_prompt`, and `duration_ms`. They are separate because
+one describes a frame and the other describes several seconds — collapsing them produced clips
+that either stood still or ignored the composition the storyboard image had already fixed.
 
 A character card pins a look, an image model, and a voice. A `CharacterState` is one look
 that character can appear in — an age, an outfit, a transformation — and its
@@ -273,7 +397,11 @@ folds the state covering an episode over the card, and a state only overrides th
 actually sets — an empty appearance prompt means "the look did not change". Overlapping ranges
 resolve to the latest change, and an unpinned state never wins that resolution.
 
-`Prop` is the same idea one level down, for objects rather than people.
+`Prop` is the same idea one level down, for objects rather than people. `owner_character_id`
+records whose it is and is drawn onto the reference; it is a plain column rather than a foreign
+key for the same reason as `characters.voice_profile_id` — SQLite cannot add a constrained
+column in place. The four `projects.*_config_id` columns are plain for the same reason, and a
+pick that no longer resolves simply falls back to the account default.
 
 Because providers cap how many reference images one request may carry
 (`MAX_REFERENCE_IMAGES` = 4), a cast or prop list of any size has to reach the renderer as a
@@ -291,7 +419,7 @@ Edge/system TTS and do not consume the standalone Voice Design configuration.
 
 ## Short-drama orchestration
 - LangGraph is reserved for checkpointed LLM decisions and human approval, such as script structure and continuity review.
-- `generation_jobs` plus a worker owns deterministic image, video, and FFmpeg tasks; project voice auditions remain local.
+- `generation_jobs` plus `app/services/job_worker.py` owns deterministic image, video, TTS, and FFmpeg tasks. Reference images, prompt drafts, voice design, and auditions run there now; storyboard, tone sheet, project generation, and export have not moved yet. Project voice auditions remain local Edge/system TTS.
 - Rollback means selecting an earlier asset version and marking downstream results stale, not deleting generated assets.
 - LangGraph is already installed through LangChain; no extra dependency is needed.
 

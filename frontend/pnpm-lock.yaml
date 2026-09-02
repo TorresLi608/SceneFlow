@@ -62,6 +62,9 @@ importers:
       next:
         specifier: 16.2.3
         version: 16.2.3(@babel/core@7.29.7)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      prompt-area:
+        specifier: 0.6.8
+        version: 0.6.8(clsx@2.1.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tailwind-merge@3.6.0)
       react:
         specifier: 19.2.4
         version: 19.2.4
@@ -3502,6 +3505,15 @@ packages:
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
+
+  prompt-area@0.6.8:
+    resolution: {integrity: sha512-bps+ojIK772L505ovrhH2yKD4erHlvValzPSsIWeTFxxo+LmkHcmJU11jFKAS+KKH3PmrLopSRpfCU/Y8ImsEw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      clsx: '>=2'
+      react: '>=18'
+      react-dom: '>=18'
+      tailwind-merge: '>=2'
 
   prop-types@15.8.1:
     resolution: {integrity: sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==}
@@ -8096,6 +8108,13 @@ snapshots:
       source-map-js: 1.2.1
 
   prelude-ls@1.2.1: {}
+
+  prompt-area@0.6.8(clsx@2.1.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tailwind-merge@3.6.0):
+    dependencies:
+      clsx: 2.1.1
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+      tailwind-merge: 3.6.0
 
   prop-types@15.8.1:
     dependencies:

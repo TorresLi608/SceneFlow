@@ -29,6 +29,7 @@ interface ProjectStoreState {
   projects: Project[];
   selectedProjectId: string;
   initialized: boolean;
+  reset: () => void;
   initializeProjects: (projects: Project[]) => void;
   selectProject: (projectId: string) => void;
   createProject: (project: Project) => void;
@@ -160,6 +161,7 @@ function toSummary(episode: EpisodeSummary | Episode): EpisodeSummary {
     durationMs: episode.durationMs,
     sceneCount: episode.sceneCount,
     toneImageStatus: episode.toneImageStatus,
+    toneImageUrl: episode.toneImageUrl,
     errorMessage: episode.errorMessage,
     updatedAt: episode.updatedAt,
   };
@@ -180,6 +182,13 @@ export const useProjectStore = create<ProjectStoreState>()((set) => ({
   projects: [],
   selectedProjectId: "",
   initialized: false,
+
+  reset: () =>
+    set({
+      projects: [],
+      selectedProjectId: "",
+      initialized: false,
+    }),
 
   initializeProjects: (projects) => {
     const normalized = projects.map(normalizeProject);

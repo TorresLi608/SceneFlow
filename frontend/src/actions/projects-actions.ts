@@ -1,5 +1,9 @@
+import { type GenerationJob, runJob } from "@/actions/job-actions";
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
 import type {
+  BreakdownEpisodeInput,
+  BreakdownEpisodeResponse,
+  CancelProjectRunResponse,
   CastSheetResponse,
   CharacterItemResponse,
   CharacterListResponse,
@@ -9,6 +13,7 @@ import type {
   CreateEpisodeInput,
   CreatePropInput,
   CreateSceneInput,
+  DesignVoiceProfileInput,
   DraftPromptInput,
   DraftPromptResponse,
   EpisodeItemResponse,
@@ -22,8 +27,12 @@ import type {
   GenerateReferenceImageInput,
   GenerateStoryboardInput,
   GenerateStoryboardResponse,
+  GenerateToneSheetInput,
+  GenerateToneSheetResponse,
   GenerateVideoInput,
   GenerateVideoResponse,
+  GenerationReferenceKind,
+  ImportVoiceProfileInput,
   OptimizeProjectInput,
   OptimizeProjectResponse,
   ParseProjectInput,
@@ -33,12 +42,12 @@ import type {
   CreateVoiceProfileInput,
   ProjectItemResponse,
   ProjectListResponse,
+  ProjectModelsResponse,
+  PromptPresetListResponse,
   PropItemResponse,
   PropListResponse,
   PropSheetResponse,
   GenerationJobListResponse,
-  OptimizeDescriptionInput,
-  OptimizeDescriptionResponse,
   ReorderScenesInput,
   Scene,
   SetProjectCoverInput,
@@ -56,10 +65,39 @@ import type {
   VoiceProfileItemResponse,
   VoiceProfileListResponse,
   VoiceSheetResponse,
+  AssetListResponse,
+  Asset,
+  CreateAssetInput,
+  UpdateAssetInput,
+  MergeAssetsInput,
 } from "@/types/project";
 
 export async function listProjectsAction() {
   const response = await httpClient.get<ProjectListResponse>("/api/bff/projects");
+  return response.data;
+}
+
+export async function listAssetsAction(projectID: string) {
+  const response = await httpClient.get<AssetListResponse>(`/api/bff/projects/${projectID}/assets`);
+  return response.data;
+}
+
+export async function createAssetAction(projectID: string, payload: CreateAssetInput) {
+  const response = await httpClient.post<{ asset: Asset }>(`/api/bff/projects/${projectID}/assets`, payload);
+  return response.data;
+}
+
+export async function updateAssetAction(projectID: string, assetID: string, payload: UpdateAssetInput) {
+  const response = await httpClient.patch<{ asset: Asset }>(`/api/bff/projects/${projectID}/assets/${assetID}`, payload);
+  return response.data;
+}
+
+export async function deleteAssetAction(projectID: string, assetID: string) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/assets/${assetID}`);
+}
+
+export async function mergeAssetsAction(projectID: string, payload: MergeAssetsInput) {
+  const response = await httpClient.post<{ asset: Asset }>(`/api/bff/projects/${projectID}/assets/merge`, payload);
   return response.data;
 }
 
@@ -100,14 +138,23 @@ export async function deleteProjectSceneAction(projectID: string, sceneID: strin
   await httpClient.delete(`/api/bff/projects/${projectID}/scenes/${sceneID}`);
 }
 
+export async function deleteGenerationReferenceAction(
+  projectID: string,
+  kind: GenerationReferenceKind,
+  assetID: string
+) {
+  await httpClient.delete(`/api/bff/projects/${projectID}/references/${kind}/${assetID}`);
+}
+
 export async function reorderProjectScenesAction(projectID: string, payload: ReorderScenesInput) {
   const response = await httpClient.patch<ProjectItemResponse>(`/api/bff/projects/${projectID}/scenes/reorder`, payload);
   return response.data;
 }
 
-export async function parseProjectAction(projectID: string, payload: ParseProjectInput) {
+export async function parseProjectAction(projectID: string, payload: ParseProjectInput, signal?: AbortSignal) {
   const response = await httpClient.post<ParseProjectResponse>(`/api/bff/projects/${projectID}/parse`, payload, {
     timeout: generationRequestTimeout,
+    signal,
   });
   return response.data;
 }
@@ -120,11 +167,11 @@ export async function generateProjectAction(projectID: string, payload: Generate
   return response.data;
 }
 
-export async function optimizeProjectAction(projectID: string, payload: OptimizeProjectInput) {
+export async function optimizeProjectAction(projectID: string, payload: OptimizeProjectInput, signal?: AbortSignal) {
   const response = await httpClient.post<OptimizeProjectResponse>(
     `/api/bff/projects/${projectID}/optimize`,
     payload,
-    { timeout: generationRequestTimeout }
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -155,20 +202,33 @@ export async function clearProjectCoverAction(projectID: string) {
  * Draws a cover and returns the bytes as a data URL without storing them, so the create
  * dialog can use it before a project exists. Apply it with `setProjectCoverAction`.
  */
-export async function generateCoverAction(payload: GenerateCoverInput) {
+export async function generateCoverAction(payload: GenerateCoverInput, signal?: AbortSignal) {
   const response = await httpClient.post<GenerateCoverResponse>("/api/bff/projects/cover/generate", payload, {
     timeout: generationRequestTimeout,
+    signal,
   });
   return response.data;
 }
 
-/** Returns the polished synopsis without saving it — the caller confirms before writing back. */
-export async function optimizeDescriptionAction(payload: OptimizeDescriptionInput) {
-  const response = await httpClient.post<OptimizeDescriptionResponse>(
-    "/api/bff/projects/description/optimize",
-    payload,
-    { timeout: generationRequestTimeout }
-  );
+/** The four models this series will actually use, plus the limits the UI must enforce. */
+export async function getProjectModelsAction(projectID: string) {
+  const response = await httpClient.get<ProjectModelsResponse>(`/api/bff/projects/${projectID}/models`);
+  return response.data;
+}
+
+/** Built-in starting points for a prompt field, so a blank box is never the only option. */
+export async function listPromptPresetsAction(kind: "character" | "prop" | "cover") {
+  const response = await httpClient.get<PromptPresetListResponse>(`/api/bff/prompts/presets?kind=${kind}`);
+  return response.data;
+}
+
+/**
+ * Asks whatever this project is rendering to stop after the shot already in flight.
+ * Cooperative, so work the provider has been paid for is kept and the run still reports a
+ * terminal status.
+ */
+export async function cancelProjectRunAction(projectID: string) {
+  const response = await httpClient.post<CancelProjectRunResponse>(`/api/bff/projects/${projectID}/cancel`);
   return response.data;
 }
 
@@ -216,6 +276,40 @@ export async function generateStoryboardAction(
   const response = await httpClient.post<GenerateStoryboardResponse>(
     `/api/bff/projects/${projectID}/episodes/${episodeID}/storyboard`,
     payload
+  );
+  return response.data;
+}
+
+/**
+ * Anchors the episode's look without rendering shots against it, so the user can approve
+ * the anchor before paying for a full-resolution frame per shot.
+ */
+export async function generateToneSheetAction(
+  projectID: string,
+  episodeID: string,
+  payload: GenerateToneSheetInput
+) {
+  const response = await httpClient.post<GenerateToneSheetResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}/tone-sheet`,
+    payload
+  );
+  return response.data;
+}
+
+/**
+ * Splits the script into shots, motion directions, or both, leaning on whichever bible
+ * entries the caller selected. Slow enough to need the generation timeout and an abort.
+ */
+export async function breakdownEpisodeAction(
+  projectID: string,
+  episodeID: string,
+  payload: BreakdownEpisodeInput,
+  signal?: AbortSignal
+) {
+  const response = await httpClient.post<BreakdownEpisodeResponse>(
+    `/api/bff/projects/${projectID}/episodes/${episodeID}/breakdown`,
+    payload,
+    { timeout: generationRequestTimeout, signal }
   );
   return response.data;
 }
@@ -284,33 +378,46 @@ export async function deleteCharacterStateAction(projectID: string, characterID:
   await httpClient.delete(`/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}`);
 }
 
-/** Returns the drafted prompt for review; it is not saved until the user applies it. */
+/**
+ * Returns the drafted prompt for review; it is not saved until the user applies it.
+ *
+ * Queued server-side, awaited here, so callers are unchanged — but `signal` now cancels the
+ * job rather than just the request. See `job-actions.ts`.
+ */
 export async function draftCharacterStatePromptAction(
   projectID: string,
   characterID: string,
   stateID: string,
-  payload: DraftPromptInput
+  payload: DraftPromptInput,
+  signal?: AbortSignal
 ) {
-  const response = await httpClient.post<DraftPromptResponse>(
-    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/prompt`,
-    payload,
-    { timeout: generationRequestTimeout }
+  return runJob<DraftPromptResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(
+        `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/prompt`,
+        payload
+      )
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function generateCharacterStateImageAction(
   projectID: string,
   characterID: string,
   stateID: string,
-  payload: GenerateReferenceImageInput
+  payload: GenerateReferenceImageInput,
+  signal?: AbortSignal
 ) {
-  const response = await httpClient.post<CharacterItemResponse>(
-    `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
-    payload,
-    { timeout: generationRequestTimeout }
+  return runJob<CharacterItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(
+        `/api/bff/projects/${projectID}/characters/${characterID}/states/${stateID}/image`,
+        payload
+      )
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function uploadCharacterStateImageAction(
@@ -367,26 +474,32 @@ export async function deletePropAction(projectID: string, propID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/props/${propID}`);
 }
 
-export async function draftPropPromptAction(projectID: string, propID: string, payload: DraftPromptInput) {
-  const response = await httpClient.post<DraftPromptResponse>(
-    `/api/bff/projects/${projectID}/props/${propID}/prompt`,
-    payload,
-    { timeout: generationRequestTimeout }
+export async function draftPropPromptAction(
+  projectID: string,
+  propID: string,
+  payload: DraftPromptInput,
+  signal?: AbortSignal
+) {
+  return runJob<DraftPromptResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/props/${propID}/prompt`, payload)
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function generatePropImageAction(
   projectID: string,
   propID: string,
-  payload: GenerateReferenceImageInput
+  payload: GenerateReferenceImageInput,
+  signal?: AbortSignal
 ) {
-  const response = await httpClient.post<PropItemResponse>(
-    `/api/bff/projects/${projectID}/props/${propID}/image`,
-    payload,
-    { timeout: generationRequestTimeout }
+  return runJob<PropItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/props/${propID}/image`, payload)
+      .then((response) => response.data),
+    signal
   );
-  return response.data;
 }
 
 export async function uploadPropImageAction(projectID: string, propID: string, payload: UploadReferenceImageInput) {
@@ -422,6 +535,11 @@ export async function getExportAction(projectID: string, exportID: string) {
   return response.data;
 }
 
+export async function deleteExportAction(projectID: string, exportID: string) {
+  const response = await httpClient.delete<{ success: boolean }>(`/api/bff/projects/${projectID}/exports/${exportID}`);
+  return response.data;
+}
+
 export async function listVoicesAction(projectID: string) {
   const response = await httpClient.get<VoiceProfileListResponse>(`/api/bff/projects/${projectID}/voices`);
   return response.data;
@@ -444,14 +562,40 @@ export async function deleteVoiceAction(projectID: string, voiceID: string) {
   await httpClient.delete(`/api/bff/projects/${projectID}/voices/${voiceID}`);
 }
 
-/** Synthesises the profile's sample line so the user can hear it before binding it. */
-export async function previewVoiceAction(projectID: string, voiceID: string) {
+/**
+ * Designs a timbre from a description and binds it to this series. Slow — the provider can
+ * take minutes — so it carries the generation timeout and an abort signal.
+ */
+export async function designVoiceProfileAction(
+  projectID: string,
+  payload: DesignVoiceProfileInput,
+  signal?: AbortSignal
+) {
+  return runJob<VoiceProfileItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/voices/design`, payload)
+      .then((response) => response.data),
+    signal
+  );
+}
+
+/** Binds a timbre already saved on the account to this series. */
+export async function importVoiceProfileAction(projectID: string, payload: ImportVoiceProfileInput) {
   const response = await httpClient.post<VoiceProfileItemResponse>(
-    `/api/bff/projects/${projectID}/voices/${voiceID}/preview`,
-    undefined,
-    { timeout: generationRequestTimeout }
+    `/api/bff/projects/${projectID}/voices/import`,
+    payload
   );
   return response.data;
+}
+
+/** Synthesises the profile's sample line so the user can hear it before binding it. */
+export async function previewVoiceAction(projectID: string, voiceID: string, signal?: AbortSignal) {
+  return runJob<VoiceProfileItemResponse>(
+    httpClient
+      .post<{ job: GenerationJob }>(`/api/bff/projects/${projectID}/voices/${voiceID}/preview`)
+      .then((response) => response.data),
+    signal
+  );
 }
 
 /** Concatenates every auditioned voice into the timbre reference the video model hears. */

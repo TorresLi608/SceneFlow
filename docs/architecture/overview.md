@@ -66,7 +66,7 @@ A standing product rule: project and shot CRUD always goes to the backend. Do no
 
 ## Domain shape in one paragraph
 
-A `Project` is a **series** and owns no shots directly. Content hangs off `Episode`, and each `Scene` is one shot inside an episode. `Character` + `CharacterState` form the series bible that keeps a cast member's look, image model, and voice stable across episodes; `Prop` does the same for objects; `SceneCharacter` records who appears in a shot. Shot order restarts at 1 per episode, so a serialized project carries **one** episode's shots. Full detail in `data-flow.md` and the root `CLAUDE.md`.
+ A `Project` is a **series** and owns no shots directly. Content hangs off `Episode`, and each `Scene` is one shot inside an episode. `Character` + `CharacterState` form the series bible that keeps a cast member's look, image model, and voice stable across episodes; `Prop` does the same for objects; `SceneCharacter` records who appears in a shot. Shot order restarts at 1 per episode, so a serialized project carries **one** episode's shots. Video capabilities distinguish first-frame and last-frame support; frame references are separate from additional references and force `adaptive` ratio when supported. System anchors are visible editable mentions, so the prompt and payload share one reference order. Full detail in `data-flow.md` and the root `CLAUDE.md`.
 
 ## Operational facts
 

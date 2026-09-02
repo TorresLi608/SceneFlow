@@ -2,10 +2,10 @@
 
 ## Setup
 
-`app/core/logging.py` installs one stream handler at startup from the `lifespan` hook:
+`app/core/logging.py` installs one stream handler at startup from the `lifespan` hook. Each HTTP request has a server-generated `req_*` ID that is present in the log format and returned as `X-Request-Id`:
 
 ```
-%(asctime)s %(levelname)s %(name)s %(message)s
+%(asctime)s %(levelname)s %(name)s request=%(request_id)s %(message)s
 ```
 
 `force=True` replaces whatever uvicorn installed, so application records and access logs share one format instead of appearing twice. Level comes from `SCENEFLOW_LOG_LEVEL` (default `INFO`).
@@ -52,6 +52,12 @@ A failure that is already returned to the user as a `4xx` does not also need a l
 ## Background work
 
 Generation runs in a background task, so its log lines are the only trace a developer has. Keep the run's start, per-shot failures, and the terminal outcome (`done`/`partial`/`failed`) logged with the project and episode IDs — a `partial` result is otherwise hard to explain after the fact.
+
+## Request failures
+
+The HTTP exception handlers persist every `5xx` in SQLite's `error_logs` table. These are **diagnostic pointers**, not an application event archive: `requestId`, route template, method, status, stable error code, redacted message, and available user/project/episode IDs only. The table never stores request bodies, scripts, chat messages, provider output, keys, or signed URLs.
+
+Super admins can inspect the records at **Admin -> Error logs** or `GET /api/admin/error-logs`. Search by request ID first; otherwise use route, project ID, or error code. The assistant receives the same read-only lookup in a super-admin chat. Match recurring cases against `../reference/known-errors.md` and add a regression sample before changing a shared parser or provider boundary.
 
 ## Frontend
 

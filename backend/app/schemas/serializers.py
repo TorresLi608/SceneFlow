@@ -5,6 +5,7 @@ from typing import Any
 
 from app.models import (
     Character,
+    Asset,
     CharacterState,
     ChatMessage,
     ChatSession,
@@ -19,6 +20,7 @@ from app.models import (
 )
 from app.services.artifact_service import signed_url_for_stored
 from app.services.config_service import video_capabilities
+from app.services.reference_service import stored_generation_references
 
 
 def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int = 0) -> dict[str, Any]:
@@ -26,6 +28,7 @@ def user_json(user: User, *, request_count: int = 0, historical_cost_micros: int
         "id": user.id,
         "username": user.username,
         "nickname": user.nickname or "",
+        "email": user.email or "",
         "role": user.role or "user",
         "isDisabled": bool(user.is_disabled),
         "balanceMicros": str(user.balance_micros),
@@ -100,6 +103,12 @@ def scene_asset_url(stored_path: str | None, download_stem: str) -> str | None:
 
 
 def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str, Any]:
+    def frame_reference(value: str | None) -> dict[str, str] | None:
+        try:
+            item = json.loads(value or "")
+        except (TypeError, ValueError):
+            return None
+        return {"kind": str(item.get("kind")), "id": str(item.get("id"))} if isinstance(item, dict) and item.get("kind") and item.get("id") else None
     stem = f"scene-{scene.order_num or 0}"
     progress = lambda status: 100 if status == "success" else 20 if status == "generating" else 0
     return {
@@ -114,10 +123,34 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
         "visualPrompt": scene.visual_prompt,
         "shotType": scene.shot_type or "",
         "cameraMove": scene.camera_move or "",
-        # 0 means "follow the voice track"; the client shows the audio duration instead.
+        "transition": scene.transition or "",
+        "videoPrompt": scene.video_prompt or "",
+        "imageReferences": [
+            {"kind": kind, "id": asset_id}
+            for kind, asset_id in stored_generation_references(scene.image_references_json)
+        ],
+        "imageReferencesExplicit": bool(scene.image_references_explicit),
+        "videoReferences": [
+            {"kind": kind, "id": asset_id}
+            for kind, asset_id in stored_generation_references(scene.video_references_json)
+        ],
+        "videoReferencesExplicit": bool(scene.video_references_explicit),
+        "videoFirstFrame": frame_reference(scene.video_first_frame_json),
+        "videoLastFrame": frame_reference(scene.video_last_frame_json),
+        # A cleared frame and a frame nobody ever chose are both `videoFirstFrame: null`,
+        # but they mean opposite things to the editor: the first must stay off, the second
+        # may still be filled with the shot's own render. The column tells them apart —
+        # "" is untouched, "null" is the user turning it off.
+        "videoFirstFrameExplicit": bool((scene.video_first_frame_json or "").strip()),
+        "videoLastFrameExplicit": bool((scene.video_last_frame_json or "").strip()),
+        # 0 means undecided; the renderer falls back to the project's default shot length.
         "durationMs": scene.duration_ms or 0,
         "subtitleText": scene.subtitle_text or "",
         "isLocked": bool(scene.is_locked),
+        # Carried so the client can key a row on "the server actually changed this" rather
+        # than on a signed URL, which is freshly minted on every response and would remount
+        # every row on every poll.
+        "updatedAt": scene.updated_at,
         "image": {
             "url": scene_asset_url(scene.image_path, stem),
             "status": scene.image_status,
@@ -135,6 +168,21 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
             "progress": progress(scene.video_status),
         },
         "errorMessage": scene.error_message or "",
+    }
+
+
+def asset_json(asset: Asset) -> dict[str, Any]:
+    media_url = asset.path if str(asset.path).startswith(("http://", "https://")) else scene_asset_url(asset.path, f"asset-{asset.id}")
+    return {
+        "id": asset.id,
+        "projectId": asset.project_id,
+        "name": asset.name,
+        "description": asset.description or "",
+        "kind": asset.kind,
+        "mediaType": asset.media_type,
+        "url": media_url,
+        "createdAt": asset.created_at,
+        "updatedAt": asset.updated_at,
     }
 
 
@@ -157,6 +205,7 @@ def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, An
         "sceneCount": scene_count,
         # Enough for a list row to show whether this episode has been anchored yet.
         "toneImageStatus": episode.tone_image_status or "idle",
+        "toneImageUrl": scene_asset_url(episode.tone_image_path, f"episode-{episode.episode_number}-tone"),
         "errorMessage": episode.error_message or "",
         "updatedAt": episode.updated_at,
     }
@@ -182,7 +231,6 @@ def character_state_json(state: CharacterState) -> dict[str, Any]:
         "name": state.name,
         "description": state.description or "",
         "appearancePrompt": state.appearance_prompt or "",
-        "systemPrompt": state.system_prompt or "",
         "finalPrompt": state.final_prompt or "",
         # The state's turnaround sheet: front, three-quarter, and profile in one image.
         "referenceImageUrl": scene_asset_url(state.reference_image_path, f"state-{state.id}"),
@@ -248,13 +296,15 @@ def user_voice_json(voice: UserVoice) -> dict[str, Any]:
     }
 
 
-def prop_json(prop: Prop) -> dict[str, Any]:
+def prop_json(prop: Prop, owner_name: str = "") -> dict[str, Any]:
     return {
         "id": prop.id,
         "projectId": prop.project_id,
         "name": prop.name,
         "description": prop.description or "",
-        "systemPrompt": prop.system_prompt or "",
+        "ownerCharacterId": prop.owner_character_id,
+        # Resolved by the caller when it has the cast loaded; the id alone cannot render.
+        "ownerName": owner_name,
         "finalPrompt": prop.final_prompt or "",
         "imageUrl": scene_asset_url(prop.image_path, f"prop-{prop.id}"),
         "orderNum": prop.order_num or 0,
@@ -280,6 +330,7 @@ def project_json(
         "id": project.id,
         "title": project.title or "未命名项目",
         "description": project.description or "",
+        "coverPrompt": project.cover_prompt or "",
         # Minted per response like every other asset: the row stores a path, not a URL.
         "coverImageUrl": scene_asset_url(project.cover_image_path, f"cover-{project.id}"),
         "originalScript": project.original_script or "",
@@ -305,6 +356,22 @@ def project_json(
             "negativePrompt": project.negative_prompt,
         },
         "currentStage": project.current_stage,
+        # Which model this series pinned per purpose, and the parameters every render in it
+        # starts from. `null` means the purpose follows the account default.
+        "modelSettings": {
+            "textConfigId": project.text_config_id,
+            "imageConfigId": project.image_config_id,
+            "videoConfigId": project.video_config_id,
+            "audioConfigId": project.audio_config_id,
+            "imageResolution": project.image_resolution or "2K",
+            "imageRatio": project.image_ratio or "auto",
+            "videoQuality": project.video_quality or "720p",
+            "videoAspectRatio": project.video_aspect_ratio or "9:16",
+            "videoDuration": project.video_duration or 5,
+            "videoFps": project.video_fps or 24,
+            "videoPromptExtend": bool(project.video_prompt_extend),
+            "videoAudioEnabled": bool(project.video_audio_enabled),
+        },
         "currentEpisodeId": current_episode_id,
         "episodes": episodes or [],
         "updatedAt": project.updated_at,

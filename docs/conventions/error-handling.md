@@ -45,4 +45,4 @@ Surface errors through the global toast (`src/components/ui/toast.tsx`) rather t
 
 ## Backend logging on error
 
-See `logging.md`. Short version: log the *decision* you made and enough identity to find the row (`scene=%s`, `character=%s`), never the payload.
+See `logging.md`. Short version: log the *decision* you made and enough identity to find the row (`scene=%s`, `character=%s`), never the payload. Every `5xx` also gets a server-generated request ID, exposed as `X-Request-Id`, and a redacted `error_logs` record for super-admin diagnosis.

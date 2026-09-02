@@ -309,6 +309,28 @@ def test_locking_a_shot_is_an_edit_a_patch_can_undo() -> None:
             assert unlocked.json()["scene"]["isLocked"] is False
 
 
+def test_scene_reference_arrays_round_trip_without_server_error() -> None:
+    """The JSON body is dumped to dictionaries before reference validation."""
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _create_project(client, headers)["id"]
+            parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers)
+            scene_id = parsed.json()["scenes"][0]["id"]
+
+            updated = client.patch(
+                f"/api/projects/{project_id}/scenes/{scene_id}",
+                json={"imageReferences": [], "videoReferences": []},
+                headers=headers,
+            )
+
+            assert updated.status_code == 200, updated.text
+            scene = updated.json()["scene"]
+            assert scene["imageReferences"] == []
+            assert scene["videoReferences"] == []
+            assert scene["imageReferencesExplicit"] is True
+            assert scene["videoReferencesExplicit"] is True
+
+
 if __name__ == "__main__":
     test_a_new_series_starts_with_episode_one()
     test_added_episodes_number_upwards()
@@ -320,3 +342,4 @@ if __name__ == "__main__":
     test_reorder_is_scoped_to_one_episode()
     test_storyboard_fields_survive_a_round_trip()
     test_locking_a_shot_is_an_edit_a_patch_can_undo()
+    test_scene_reference_arrays_round_trip_without_server_error()

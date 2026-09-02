@@ -4,10 +4,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { isCancel } from "axios";
 import {
+  ArrowLeft,
   Clapperboard,
+  FileText,
   Film,
   Image as ImageIcon,
+  Layers,
   LayoutDashboard,
   LogOut,
   Plus,
@@ -15,7 +19,9 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Trash2,
+  Users,
   WandSparkles,
 } from "lucide-react";
 import {
@@ -71,11 +77,10 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { resolveRequestError } from "@/lib/http/errors";
-import { configsByPurpose, providerLabel } from "@/lib/model-providers";
+import { configsByPurpose } from "@/lib/model-providers";
 import { cn } from "@/lib/utils";
 import { useProjectStore, type SceneEdit } from "@/store/project-store";
 import { useUserStore } from "@/store/user-store";
-import type { UserConfig } from "@/types/auth";
 import type {
   EpisodeSummary,
   ProductionSettings,
@@ -87,8 +92,6 @@ import type {
 import { ProductionSettingsForm } from "./production-settings";
 import { SceneCard } from "./scene-card";
 
-type Translate = (key: string, params?: Record<string, string | number>) => string;
-
 const wsBaseURL =
   (process.env.NEXT_PUBLIC_WS_BASE_URL?.trim() || "ws://127.0.0.1:8080").replace(/\/$/, "");
 
@@ -96,20 +99,6 @@ function isTaskStatus(value: unknown): value is SceneTaskStatus | "idle" {
   return (
     value === "idle" || value === "generating" || value === "success" || value === "error"
   );
-}
-
-function summarizeActiveConfig(
-  config: UserConfig | undefined,
-  unconfiguredLabel: string,
-  officialLabel: string,
-  customLabel: string,
-  t: Translate
-) {
-  if (!config) {
-    return unconfiguredLabel;
-  }
-
-  return `${config.source === "official" ? officialLabel : customLabel} · ${providerLabel(config.provider, t)} · ${config.modelSeries}`;
 }
 
 interface WorkbenchEditorProps {
@@ -227,9 +216,45 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const activeScriptConfig = activeConfigByPurpose.script;
   const activeImageConfig = activeConfigByPurpose.image;
   const activeVideoConfig = activeConfigByPurpose.video;
-  const activeAudioConfig = activeConfigByPurpose.audio;
   const hasUsableScriptConfig = Boolean(activeScriptConfig);
   const hasUsableImageConfig = Boolean(activeImageConfig);
+  const parseController = useRef<AbortController | null>(null);
+  const optimizeController = useRef<AbortController | null>(null);
+
+  const stopParse = (projectId?: string) => {
+    parseController.current?.abort();
+    parseController.current = null;
+    if (projectId) {
+      setProjectStatus(projectId, "idle");
+    }
+    parseProjectMutation.reset();
+  };
+
+  const startParse = (params: {
+    projectId: string;
+    script: string;
+    model?: string;
+    episodeId?: string;
+    replaceAll?: boolean;
+  }) => {
+    parseController.current = new AbortController();
+    parseProjectMutation.mutate(params);
+  };
+
+  const stopOptimize = () => {
+    optimizeController.current?.abort();
+    optimizeController.current = null;
+    optimizeProjectMutation.reset();
+  };
+
+  const startOptimize = (params: {
+    projectId: string;
+    script: string;
+    model?: string;
+  }) => {
+    optimizeController.current = new AbortController();
+    optimizeProjectMutation.mutate(params);
+  };
 
   const parseProjectMutation = useMutation({
     mutationFn: (params: {
@@ -239,12 +264,16 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       episodeId?: string;
       replaceAll?: boolean;
     }) =>
-      parseProjectAction(params.projectId, {
-        script: params.script,
-        model: params.model,
-        episodeId: params.episodeId,
-        replaceAll: params.replaceAll,
-      }),
+      parseProjectAction(
+        params.projectId,
+        {
+          script: params.script,
+          model: params.model,
+          episodeId: params.episodeId,
+          replaceAll: params.replaceAll,
+        },
+        parseController.current?.signal
+      ),
     onMutate: ({ projectId }) => {
       setStatusMessage(null);
       setProjectStatus(projectId, "parsing");
@@ -278,7 +307,11 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     },
     onError: (error, variables) => {
       setProjectStatus(variables.projectId, "idle");
+      if (isCancel(error)) return;
       setStatusMessage(resolveRequestError(error, t("home.status.parseFailed")));
+    },
+    onSettled: () => {
+      parseController.current = null;
     },
   });
 
@@ -349,7 +382,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     },
   });
 
-  const openEpisodeMutation = useMutation({    mutationFn: (params: { projectId: string; episodeId: string }) =>
+  const openEpisodeMutation = useMutation({
+    mutationFn: (params: { projectId: string; episodeId: string }) =>
       getEpisodeAction(params.projectId, params.episodeId),
     onSuccess: (response, variables) => {
       openEpisode(variables.projectId, response.episode.id, response.episode.scenes);
@@ -418,10 +452,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   const optimizeProjectMutation = useMutation({
     mutationFn: (params: { projectId: string; script: string; model?: string }) =>
-      optimizeProjectAction(params.projectId, {
-        script: params.script,
-        model: params.model,
-      }),
+      optimizeProjectAction(
+        params.projectId,
+        {
+          script: params.script,
+          model: params.model,
+        },
+        optimizeController.current?.signal
+      ),
     onMutate: () => {
       setStatusMessage(null);
     },
@@ -444,7 +482,11 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
       }
     },
     onError: (error) => {
+      if (isCancel(error)) return;
       setStatusMessage(resolveRequestError(error, t("home.status.optimizeFailed")));
+    },
+    onSettled: () => {
+      optimizeController.current = null;
     },
   });
 
@@ -825,11 +867,25 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   };
 
   if (!hydrated) {
-    return <main className="flex min-h-screen items-center justify-center">{t("common.initializing")}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-muted-foreground">{t("common.initializing")}</span>
+        </div>
+      </main>
+    );
   }
 
   if (!token) {
-    return <main className="flex min-h-screen items-center justify-center">{t("common.redirectingToLogin")}</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
+          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-muted-foreground">{t("common.redirectingToLogin")}</span>
+        </div>
+      </main>
+    );
   }
 
   if (!currentProject && !projectsQuery.isLoading) {
@@ -843,58 +899,59 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   }
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="flex min-h-screen flex-col md:flex-row">
-        <aside className="flex w-full shrink-0 flex-col border-b border-border/70 bg-card/60 md:w-[300px] md:border-b-0 md:border-r">
+    <main className="h-screen overflow-hidden bg-background">
+      <div className="flex h-full flex-col md:flex-row overflow-hidden">
+        {/* 左侧工作台导航侧栏 */}
+        <aside className="flex w-full shrink-0 flex-col border-b border-border/70 bg-card/60 md:w-[280px] md:border-b-0 md:border-r backdrop-blur-md overflow-hidden">
           <div className="space-y-3 p-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-primary/20 p-2 text-primary">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-inner">
                 <Clapperboard className="size-4" />
               </div>
               <div>
-                <p className="text-sm font-semibold">SceneFlow</p>
-                <p className="text-xs text-muted-foreground">{t("home.brandSubtitle")}</p>
+                <p className="text-sm font-bold text-foreground">SceneFlow</p>
+                <p className="text-[10px] text-muted-foreground">{t("home.brandSubtitle")}</p>
               </div>
             </div>
 
             <Button
-              className="w-full justify-start"
+              className="w-full justify-start gap-1.5 h-9 rounded-xl font-semibold shadow-xs cursor-pointer"
               onClick={() => createProjectMutation.mutate()}
               disabled={createProjectMutation.isPending}
             >
-              <Plus className="mr-2 size-4" />
+              <Plus className="size-4" />
               {t("home.newProject")}
             </Button>
           </div>
 
           <div className="space-y-1 px-3 pb-3">
-            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.businessCenter")}</p>
+            <p className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.businessCenter")}</p>
             <button
               type="button"
-              onClick={() => router.push("/")}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
+              onClick={() => router.push("/ai-script")}
+              className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
             >
-              <LayoutDashboard className="size-4" />
+              <LayoutDashboard className="size-3.5" />
               {t("home.backToProjectList")}
             </button>
 
-            <div className="pt-3">
-              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.adminCenter")}</p>
+            <div className="pt-2">
+              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.adminCenter")}</p>
               <button
                 type="button"
                 onClick={() => router.push("/admin/models")}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
+                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
               >
-                <SlidersHorizontal className="size-4" />
+                <SlidersHorizontal className="size-3.5" />
                 {t("home.modelManagement")}
               </button>
               {user?.role === "superAdmin" ? (
                 <button
                   type="button"
                   onClick={() => router.push("/admin/users")}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/60"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
                 >
-                  <Shield className="size-4" />
+                  <Shield className="size-3.5" />
                   {t("home.userManagement")}
                 </button>
               ) : null}
@@ -903,14 +960,14 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
           <Separator />
 
-          <div className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
-            <p className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("home.projectList")}</p>
+          <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.projectList")}</p>
 
             {projectsQuery.isLoading && projects.length === 0 ? (
               <div className="space-y-2 px-1">
-                <Skeleton className="h-14 w-full" />
-                <Skeleton className="h-14 w-full" />
-                <Skeleton className="h-14 w-4/5" />
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-14 w-4/5 rounded-xl" />
               </div>
             ) : null}
 
@@ -926,15 +983,17 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                     router.push(`/projects/${project.id}`);
                   }}
                   className={cn(
-                    "animate-in fade-in-0 slide-in-from-left-1 w-full rounded-lg border border-transparent px-3 py-2 text-left transition duration-300",
+                    "animate-in fade-in-0 slide-in-from-left-1 w-full rounded-xl border px-3 py-2 text-left transition duration-200 cursor-pointer",
                     isActive
-                      ? "border-primary/30 bg-primary/10"
-                      : "bg-background/50 hover:border-border/80 hover:bg-background"
+                      ? "border-primary/40 bg-primary/10 shadow-xs"
+                      : "border-transparent bg-background/40 hover:border-border/80 hover:bg-background/80"
                   )}
-                  style={{ animationDelay: `${index * 40}ms` }}
+                  style={{ animationDelay: `${index * 30}ms` }}
                 >
-                  <p className="truncate text-sm font-medium">{project.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className={cn("truncate text-xs font-semibold", isActive ? "text-primary" : "text-foreground")}>
+                    {project.title}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
                     {t("home.scenesCount", {
                       count: project.scenes.length,
                       time: formatDateTime(project.updatedAt),
@@ -946,348 +1005,411 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
           </div>
         </aside>
 
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="border-b border-border/70 bg-card/60">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-              <div>
-                <p className="text-base font-semibold">{currentProject?.title ?? t("home.projectTitleLoading")}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t("common.currentUser", {
-                    username: meQuery.isLoading ? t("common.loading") : user?.nickname || user?.username || t("common.unknownUser"),
-                  })}
-                </p>
+        {/* 主编辑区 */}
+        <section className="flex min-w-0 flex-1 flex-col overflow-y-auto chat-message-list-scrollbar">
+          {/* 工作台顶部工具栏 */}
+          <header className="sticky top-0 z-20 border-b border-border/70 bg-card/80 backdrop-blur-md">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 md:px-6">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="h-8 rounded-lg gap-1 px-2 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+                  onClick={() => router.push("/ai-script")}
+                >
+                  <ArrowLeft className="size-3.5" />
+                  <span className="hidden sm:inline">{t("home.aiScript")}</span>
+                </Button>
+                <div className="h-4 w-px bg-border/80" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-foreground">
+                      {currentProject?.title ?? t("home.projectTitleLoading")}
+                    </p>
+                    {currentProject ? (
+                      <Badge variant="outline" className="text-[10px] rounded-md px-1.5 py-0">
+                        {currentProject.status}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {t("common.currentUser", {
+                      username: meQuery.isLoading ? t("common.loading") : user?.nickname || user?.username || t("common.unknownUser"),
+                    })}
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
+                {currentProject ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl text-xs gap-1.5 cursor-pointer font-medium"
+                    render={<Link href={`/projects/${currentProject.id}/characters`} />}
+                  >
+                    <Users className="size-3.5 text-primary" />
+                    {t("workbench.characters")}
+                  </Button>
+                ) : null}
+
                 <PreferencesSwitcher />
 
                 <Button
                   variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-xl text-xs gap-1.5 cursor-pointer"
                   onClick={() => {
                     logout();
                     router.replace("/login");
                   }}
                 >
-                  <LogOut className="mr-2 size-4" />
+                  <LogOut className="size-3.5" />
                   {t("common.logout")}
                 </Button>
               </div>
             </div>
           </header>
 
-          <div className="grid flex-1 gap-6 p-4 md:p-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <Card className="h-fit border-border/80">
-              <CardHeader>
-                <CardTitle className="text-base">{t("home.scriptInput")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {currentProject ? (
-                  <ProductionSettingsForm
-                    key={currentProject.id}
-                    settings={currentProject.productionSettings}
-                    disabled={updateProductionSettingsMutation.isPending}
-                    onSave={(settings) =>
-                      updateProductionSettingsMutation.mutate({
-                        projectId: currentProject.id,
-                        settings,
-                      })
-                    }
-                  />
-                ) : null}
-
-                <div className="grid gap-2 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground sm:grid-cols-2">
-                  <p>
-                    {t("home.scriptConfigSummary", {
-                      value: summarizeActiveConfig(
-                        activeScriptConfig,
-                        t("settings.unconfigured"),
-                        t("settings.officialConfig"),
-                        t("settings.customConfig"),
-                        t
-                      ),
-                    })}
-                  </p>
-                  <p>
-                    {t("home.imageConfigSummary", {
-                      value: summarizeActiveConfig(
-                        activeImageConfig,
-                        t("settings.unconfigured"),
-                        t("settings.officialConfig"),
-                        t("settings.customConfig"),
-                        t
-                      ),
-                    })}
-                  </p>
-                  <p>
-                    {t("home.videoConfigSummary", {
-                      value: summarizeActiveConfig(
-                        activeVideoConfig,
-                        t("settings.unconfigured"),
-                        t("settings.officialConfig"),
-                        t("settings.customConfig"),
-                        t
-                      ),
-                    })}
-                  </p>
-                  <p>
-                    {t("home.audioConfigSummary", {
-                      value: activeAudioConfig
-                        ? summarizeActiveConfig(
-                            activeAudioConfig,
-                            t("settings.unconfigured"),
-                            t("settings.officialConfig"),
-                            t("settings.customConfig"),
-                            t
-                          )
-                        : t("settings.builtinSystemTts"),
-                    })}
-                  </p>
-                </div>
-
-                <Textarea
-                  value={currentProject?.originalScript ?? ""}
-                  onChange={(event) => saveCurrentScript(event.target.value)}
-                  placeholder={t("home.storyPlaceholder")}
-                  className="min-h-[300px]"
-                  disabled={!currentProject}
-                />
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge variant="secondary">
-                    {t("home.status", { status: currentProject?.status ?? "loading" })}
-                  </Badge>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (!currentProject) {
-                          return;
-                        }
-
-                        optimizeProjectMutation.mutate({
-                          projectId: currentProject.id,
-                          script: currentProject.originalScript,
-                          model: activeScriptConfig?.modelSeries,
-                        });
-                      }}
-                      disabled={
-                        !currentProject ||
-                        !hasUsableScriptConfig ||
-                        optimizeProjectMutation.isPending ||
-                        currentProject.originalScript.trim().length === 0
-                      }
-                    >
-                      <Sparkles className="mr-2 size-4" />
-                      {optimizeProjectMutation.isPending ? t("home.optimizingScript") : t("home.optimizeScript")}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (!currentProject) {
-                          return;
-                        }
-
-                        parseProjectMutation.mutate({
-                          projectId: currentProject.id,
-                          script: currentProject.originalScript,
-                          model: activeScriptConfig?.modelSeries,
-                          episodeId: currentProject.currentEpisodeId ?? undefined,
-                        });
-                      }}
-                      disabled={!currentProject || !hasUsableScriptConfig || currentProject.status === "parsing"}
-                    >
-                      <WandSparkles className="mr-2 size-4" />
-                      {currentProject?.status === "parsing" ? t("home.parsingScenes") : t("home.generateStoryboard")}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (!currentProject || deleteProjectMutation.isPending) {
-                          return;
-                        }
-                        setDeleteProjectOpen(true);
-                      }}
-                      disabled={!currentProject || deleteProjectMutation.isPending}
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      {deleteProjectMutation.isPending ? t("home.deletingProject") : t("home.deleteProject")}
-                    </Button>
+          <div className="grid flex-1 gap-6 p-4 md:p-6 xl:grid-cols-[400px_minmax(0,1fr)]">
+            {/* 左侧：剧本与生产设置 */}
+            <div className="space-y-5">
+              {/* 剧本输入与处理卡片 */}
+              <Card className="rounded-2xl border-border/70 bg-card/75 shadow-sm backdrop-blur-md">
+                <CardHeader className="border-b border-border/50 bg-muted/20 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="size-4 text-primary" />
+                      <CardTitle className="text-sm font-bold text-foreground">{t("home.scriptInput")}</CardTitle>
+                    </div>
+                    <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0">
+                      {currentProject?.originalScript.trim().length ?? 0} 字
+                    </Badge>
                   </div>
-                </div>
+                </CardHeader>
+                <CardContent className="space-y-4 p-4">
+                  <Textarea
+                    value={currentProject?.originalScript ?? ""}
+                    onChange={(event) => saveCurrentScript(event.target.value)}
+                    placeholder={t("home.storyPlaceholder")}
+                    className="min-h-[260px] resize-none rounded-xl text-xs bg-muted/20 focus-visible:bg-background leading-relaxed"
+                    disabled={!currentProject}
+                  />
 
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    {t("home.videoStatus", { status: currentProject?.videoStatus ?? "idle" })}
-                  </Badge>
-                  <Badge variant="outline">
-                    {t("home.videoProgress", { progress: currentProject?.videoProgress ?? 0 })}
-                  </Badge>
-                </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Badge variant="outline" className="text-[10px]">
+                      {t("home.status", { status: currentProject?.status ?? "loading" })}
+                    </Badge>
 
-                {currentProject?.videoUrl ? (
-                  <a
-                    href={currentProject.videoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center text-xs text-primary underline-offset-4 hover:underline"
-                  >
-                    {t("home.openVideoLink")}
-                  </a>
-                ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant={optimizeProjectMutation.isPending ? "destructive" : "outline"}
+                        onClick={() => {
+                          if (!currentProject) {
+                            return;
+                          }
+                          if (optimizeProjectMutation.isPending) {
+                            stopOptimize();
+                            return;
+                          }
+                          startOptimize({
+                            projectId: currentProject.id,
+                            script: currentProject.originalScript,
+                            model: activeScriptConfig?.modelSeries,
+                          });
+                        }}
+                        disabled={
+                          !currentProject ||
+                          !hasUsableScriptConfig ||
+                          (currentProject.originalScript.trim().length === 0 && !optimizeProjectMutation.isPending)
+                        }
+                        className={cn("h-8 rounded-xl text-xs cursor-pointer", optimizeProjectMutation.isPending && "animate-pulse font-medium")}
+                      >
+                        {optimizeProjectMutation.isPending ? (
+                          <Square className="mr-1.5 size-3.5 fill-current" />
+                        ) : (
+                          <Sparkles className="mr-1.5 size-3.5 text-primary" />
+                        )}
+                        {optimizeProjectMutation.isPending
+                          ? t("home.stopOptimizingScript")
+                          : t("home.optimizeScript")}
+                      </Button>
 
-                {!hasUsableScriptConfig ? (
-                  <p className="text-xs text-amber-600">
-                    {t("home.scriptRequiredHint")}
-                  </p>
-                ) : null}
+                      <Button
+                        size="sm"
+                        variant={
+                          currentProject?.status === "parsing" || parseProjectMutation.isPending
+                            ? "destructive"
+                            : "outline"
+                        }
+                        onClick={() => {
+                          if (!currentProject) {
+                            return;
+                          }
+                          if (currentProject.status === "parsing" || parseProjectMutation.isPending) {
+                            stopParse(currentProject.id);
+                            return;
+                          }
+                          startParse({
+                            projectId: currentProject.id,
+                            script: currentProject.originalScript,
+                            model: activeScriptConfig?.modelSeries,
+                            episodeId: currentProject.currentEpisodeId ?? undefined,
+                          });
+                        }}
+                        disabled={!currentProject || !hasUsableScriptConfig}
+                        className={cn(
+                          "h-8 rounded-xl text-xs cursor-pointer",
+                          (currentProject?.status === "parsing" || parseProjectMutation.isPending) &&
+                          "animate-pulse font-medium"
+                        )}
+                      >
+                        {currentProject?.status === "parsing" || parseProjectMutation.isPending ? (
+                          <Square className="mr-1.5 size-3.5 fill-current" />
+                        ) : (
+                          <WandSparkles className="mr-1.5 size-3.5 text-primary" />
+                        )}
+                        {currentProject?.status === "parsing" || parseProjectMutation.isPending
+                          ? t("home.stopParsingScenes")
+                          : t("home.generateStoryboard")}
+                      </Button>
 
-                {statusMessage ? <p className="text-xs text-muted-foreground">{statusMessage}</p> : null}
-              </CardContent>
-            </Card>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          if (!currentProject || deleteProjectMutation.isPending) {
+                            return;
+                          }
+                          setDeleteProjectOpen(true);
+                        }}
+                        disabled={!currentProject || deleteProjectMutation.isPending}
+                        className="h-8 rounded-xl text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive cursor-pointer px-2.5"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
 
-            {currentProject ? (
-              <Card className="border-border/80">
-                <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-                  <p className="text-xs text-muted-foreground">{t("home.castMovedHint")}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    render={<Link href={`/projects/${currentProject.id}/characters`} />}
-                  >
-                    {t("workbench.characters")}
-                  </Button>
+                  {currentProject?.videoUrl || currentProject?.videoStatus !== "idle" ? (
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Badge variant="outline" className="text-[10px]">
+                          {t("home.videoStatus", { status: currentProject?.videoStatus ?? "idle" })}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">
+                          {t("home.videoProgress", { progress: currentProject?.videoProgress ?? 0 })}
+                        </span>
+                      </div>
+                      {currentProject?.videoUrl ? (
+                        <a
+                          href={currentProject.videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center text-xs text-primary font-medium underline-offset-4 hover:underline"
+                        >
+                          {t("home.openVideoLink")}
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {!hasUsableScriptConfig ? (
+                    <p className="text-xs text-amber-600">
+                      {t("home.scriptRequiredHint")}
+                    </p>
+                  ) : null}
+
+                  {statusMessage ? <p className="text-xs text-muted-foreground">{statusMessage}</p> : null}
                 </CardContent>
               </Card>
-            ) : null}
 
-            <Card className="min-h-[500px] border-border/80">
-              <CardHeader className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle className="text-base">{t("home.sceneFlowTitle")}</CardTitle>
-                  {currentEpisode ? (
-                    <span className="text-xs text-muted-foreground">
-                      {t("home.episodeShotCount", { count: currentProject?.scenes.length ?? 0 })}
-                    </span>
-                  ) : null}
-                </div>
+              {/* 生产约束设置 */}
+              {currentProject ? (
+                <ProductionSettingsForm
+                  key={currentProject.id}
+                  settings={currentProject.productionSettings}
+                  disabled={updateProductionSettingsMutation.isPending}
+                  onSave={(settings) =>
+                    updateProductionSettingsMutation.mutate({
+                      projectId: currentProject.id,
+                      settings,
+                    })
+                  }
+                />
+              ) : null}
+            </div>
 
-                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(currentProject?.scenes.length) && selectedScenes.length === currentProject?.scenes.length}
-                      onChange={(event) =>
-                        setSelectedSceneIds(
-                          event.target.checked
-                            ? new Set(currentProject?.scenes.map((scene) => scene.id) ?? [])
-                            : new Set()
-                        )
-                      }
-                      className="size-4 accent-primary"
-                    />
-                    {t("scene.selectAll")}
-                  </label>
-                  <Badge variant="outline">{t("scene.selectedCount", { count: selectedScenes.length })}</Badge>
-                  <Button size="sm" onClick={() => generateScenes(selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !hasUsableImageConfig || selectedScenes.length === 0}>
-                    <ImageIcon />
-                    {t("scene.generateSelectedImages")}
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => openVideoDialog(selectedScenes.map((scene) => scene.id))} disabled={generationBusy || !activeVideoConfig?.videoCapabilities || selectedScenes.length === 0}>
-                    <Film />
-                    {t("scene.generateSelectedVideo")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => generateScenes(failedSceneIds("image"))} disabled={generationBusy || !hasUsableImageConfig || failedSceneIds("image").length === 0}>
-                    <RefreshCw />
-                    {t("scene.retryFailedImages")}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => openVideoDialog(failedSceneIds("video"))} disabled={generationBusy || !activeVideoConfig?.videoCapabilities || failedSceneIds("video").length === 0}>
-                    <RefreshCw />
-                    {t("scene.retryFailedVideo")}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => currentProject && createSceneMutation.mutate({ projectId: currentProject.id, episodeId: currentProject.currentEpisodeId ?? undefined })} disabled={!currentProject || generationBusy || createSceneMutation.isPending}>
-                    <Plus />
-                    {t("scene.add")}
-                  </Button>
-                </div>
+            {/* 右侧：分镜时间线与分镜卡片流 */}
+            <div className="space-y-4">
+              {/* 顶部分镜总览与批量操作卡片 */}
+              <Card className="rounded-2xl border-border/70 bg-card/75 shadow-sm backdrop-blur-md">
+                <CardHeader className="space-y-3 p-4">
+                  {/* 剧集选择与剧集增删 */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/50 pb-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {episodes.map((episode) => (
+                        <Button
+                          key={episode.id}
+                          size="xs"
+                          variant={episode.id === currentEpisodeId ? "default" : "outline"}
+                          onClick={() => {
+                            if (!currentProject || episode.id === currentEpisodeId) {
+                              return;
+                            }
+                            openEpisodeMutation.mutate({ projectId: currentProject.id, episodeId: episode.id });
+                          }}
+                          disabled={openEpisodeMutation.isPending}
+                          className="h-7 rounded-lg text-xs gap-1.5 cursor-pointer"
+                        >
+                          {episode.title}
+                          <Badge variant="secondary" className="h-4 rounded-sm px-1 text-[9px]">
+                            {episode.sceneCount}
+                          </Badge>
+                        </Button>
+                      ))}
 
-                {/* Shots below belong to the selected episode only, so the switcher sits with them. */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {episodes.map((episode) => (
-                    <Button
-                      key={episode.id}
-                      size="sm"
-                      variant={episode.id === currentEpisodeId ? "default" : "outline"}
-                      onClick={() => {
-                        if (!currentProject || episode.id === currentEpisodeId) {
-                          return;
-                        }
-                        openEpisodeMutation.mutate({ projectId: currentProject.id, episodeId: episode.id });
-                      }}
-                      disabled={openEpisodeMutation.isPending}
-                    >
-                      {episode.title}
-                      <Badge variant="secondary" className="ml-2">
-                        {episode.sceneCount}
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => {
+                          if (currentProject) {
+                            addEpisodeMutation.mutate(currentProject.id);
+                          }
+                        }}
+                        disabled={!currentProject || addEpisodeMutation.isPending}
+                        className="h-7 rounded-lg text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+                      >
+                        <Plus className="mr-1 size-3" />
+                        {t("home.addEpisode")}
+                      </Button>
+                    </div>
+
+                    {currentEpisode ? (
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="h-7 rounded-lg text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                        onClick={() => setEpisodeToDelete(currentEpisode)}
+                        disabled={deleteEpisodeMutation.isPending}
+                      >
+                        <Trash2 className="mr-1 size-3" />
+                        {t("home.deleteEpisode")}
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  {/* 批量操作工具条 */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(currentProject?.scenes.length) && selectedScenes.length === currentProject?.scenes.length}
+                          onChange={(event) =>
+                            setSelectedSceneIds(
+                              event.target.checked
+                                ? new Set(currentProject?.scenes.map((scene) => scene.id) ?? [])
+                                : new Set()
+                            )
+                          }
+                          className="size-4 rounded accent-primary cursor-pointer"
+                        />
+                        {t("scene.selectAll")}
+                      </label>
+                      <Badge variant="secondary" className="rounded-md text-[10px] px-1.5 py-0">
+                        {t("scene.selectedCount", { count: selectedScenes.length })}
                       </Badge>
-                    </Button>
-                  ))}
+                    </div>
 
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      if (currentProject) {
-                        addEpisodeMutation.mutate(currentProject.id);
-                      }
-                    }}
-                    disabled={!currentProject || addEpisodeMutation.isPending}
-                  >
-                    <Plus className="mr-1 size-4" />
-                    {t("home.addEpisode")}
-                  </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="xs"
+                        className="h-7 rounded-lg text-xs gap-1 cursor-pointer font-medium"
+                        onClick={() => generateScenes(selectedScenes.map((scene) => scene.id))}
+                        disabled={generationBusy || !hasUsableImageConfig || selectedScenes.length === 0}
+                      >
+                        <ImageIcon className="size-3" />
+                        {t("scene.generateSelectedImages")}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        className="h-7 rounded-lg text-xs gap-1 cursor-pointer"
+                        onClick={() => openVideoDialog(selectedScenes.map((scene) => scene.id))}
+                        disabled={generationBusy || !activeVideoConfig?.videoCapabilities || selectedScenes.length === 0}
+                      >
+                        <Film className="size-3" />
+                        {t("scene.generateSelectedVideo")}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className="h-7 rounded-lg text-xs gap-1 cursor-pointer"
+                        onClick={() => generateScenes(failedSceneIds("image"))}
+                        disabled={generationBusy || !hasUsableImageConfig || failedSceneIds("image").length === 0}
+                      >
+                        <RefreshCw className="size-3" />
+                        {t("scene.retryFailedImages")}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className="h-7 rounded-lg text-xs gap-1 cursor-pointer"
+                        onClick={() => openVideoDialog(failedSceneIds("video"))}
+                        disabled={generationBusy || !activeVideoConfig?.videoCapabilities || failedSceneIds("video").length === 0}
+                      >
+                        <RefreshCw className="size-3" />
+                        {t("scene.retryFailedVideo")}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className="h-7 rounded-lg text-xs gap-1 cursor-pointer"
+                        onClick={() => currentProject && createSceneMutation.mutate({ projectId: currentProject.id, episodeId: currentProject.currentEpisodeId ?? undefined })}
+                        disabled={!currentProject || generationBusy || createSceneMutation.isPending}
+                      >
+                        <Plus className="size-3" />
+                        {t("scene.add")}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+              </Card>
 
-                  {currentEpisode ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-muted-foreground"
-                      onClick={() => setEpisodeToDelete(currentEpisode)}
-                      disabled={deleteEpisodeMutation.isPending}
-                    >
-                      <Trash2 className="mr-1 size-4" />
-                      {t("home.deleteEpisode")}
-                    </Button>
-                  ) : null}
-                </div>
-              </CardHeader>
-              <CardContent>
+              {/* 分镜卡片列表 */}
+              <div className="space-y-4">
                 {!currentProject ? (
                   <div className="space-y-3">
-                    <Skeleton className="h-40 w-full" />
-                    <Skeleton className="h-40 w-full" />
+                    <Skeleton className="h-44 w-full rounded-2xl" />
+                    <Skeleton className="h-44 w-full rounded-2xl" />
                   </div>
                 ) : openEpisodeMutation.isPending ? (
                   <div className="space-y-3">
-                    <Skeleton className="h-40 w-full" />
-                    <Skeleton className="h-40 w-full" />
+                    <Skeleton className="h-44 w-full rounded-2xl" />
+                    <Skeleton className="h-44 w-full rounded-2xl" />
                   </div>
                 ) : currentProject.scenes.length === 0 ? (
-                  <p className="py-14 text-center text-sm text-muted-foreground">{t("home.noScenes")}</p>
+                  <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-border/80 bg-card/30 p-8 text-center backdrop-blur-sm">
+                    <Layers className="size-8 text-muted-foreground/50" />
+                    <p className="mt-3 text-sm font-semibold text-foreground">{t("home.noScenes")}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      在左侧输入剧情并点击「一键生成分镜」，AI 将自动切分出镜头画面
+                    </p>
+                  </div>
                 ) : (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                     <SortableContext
                       items={currentProject.scenes.map((scene) => scene.id)}
                       strategy={verticalListSortingStrategy}
                     >
-                      <div className="space-y-3">
+                      <div className="space-y-4">
                         {currentProject.scenes.map((scene, index) => (
                           <div
                             key={scene.id}
                             className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300"
-                            style={{ animationDelay: `${index * 45}ms` }}
+                            style={{ animationDelay: `${index * 30}ms` }}
                           >
                             <SceneCard
                               scene={scene}
@@ -1320,13 +1442,11 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                               }
                               onFieldChange={(patch) => saveScenePatch(scene.id, patch)}
                               onCastChange={(characterIds) => {
-                                const previous = scene.characterIds;
-                                setSceneCast(scene.id, characterIds);
                                 setSceneCastMutation.mutate({
                                   projectId: currentProject.id,
                                   sceneId: scene.id,
                                   characterIds,
-                                  previous,
+                                  previous: scene.characterIds,
                                 });
                               }}
                             />
@@ -1336,8 +1456,8 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                     </SortableContext>
                   </DndContext>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
         </section>
       </div>

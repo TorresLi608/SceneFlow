@@ -1,5 +1,10 @@
 import { httpClient } from "@/lib/http/client";
-import type { AuthResponse, RegisterInput } from "@/types/auth";
+import type {
+  AuthResponse,
+  RegisterInput,
+  SendVerificationCodeInput,
+  SendVerificationCodeResponse,
+} from "@/types/auth";
 
 interface AuthPayload {
   username: string;
@@ -8,6 +13,14 @@ interface AuthPayload {
 
 export async function loginAction(payload: AuthPayload) {
   const response = await httpClient.post<AuthResponse>("/api/bff/auth/login", payload);
+  return response.data;
+}
+
+export async function sendVerificationCodeAction(payload: SendVerificationCodeInput) {
+  const response = await httpClient.post<SendVerificationCodeResponse>(
+    "/api/bff/auth/send-verification-code",
+    payload
+  );
   return response.data;
 }
 

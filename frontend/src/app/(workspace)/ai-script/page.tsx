@@ -151,11 +151,11 @@ export default function AiScriptPage() {
       {/* 顶部标题与过滤器 */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               {t("home.aiScript")}
             </h1>
-            <Badge variant="secondary" className="text-xs">
+            <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-xs font-semibold">
               {t("home.projectsCount", {
                 filtered: filteredProjects.length,
                 total: projects.length,
@@ -168,13 +168,13 @@ export default function AiScriptPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative min-w-[200px] flex-1 sm:w-60 sm:flex-none">
+          <div className="relative min-w-[200px] flex-1 sm:w-64 sm:flex-none">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("home.searchProjects")}
-              className="h-9 pl-8 text-xs"
+              className="h-9 rounded-xl pl-8 text-xs bg-muted/30 focus-visible:bg-background"
             />
           </div>
           <Select
@@ -182,7 +182,7 @@ export default function AiScriptPage() {
             value={statusFilter}
             onValueChange={(value) => setStatusFilter((value ?? "all") as "all" | ProjectStatus)}
           >
-            <SelectTrigger className="h-9 w-36 text-xs">
+            <SelectTrigger className="h-9 w-36 rounded-xl text-xs bg-muted/30">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -200,7 +200,7 @@ export default function AiScriptPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-9 text-xs cursor-pointer"
+              className="h-9 rounded-xl text-xs cursor-pointer gap-1"
               onClick={() => {
                 setQuery("");
                 setStatusFilter("all");
@@ -213,7 +213,7 @@ export default function AiScriptPage() {
 
           <Button
             size="sm"
-            className="h-9 gap-1.5 font-semibold shadow-xs cursor-pointer"
+            className="h-9 gap-1.5 rounded-xl font-semibold shadow-xs cursor-pointer"
             onClick={() => {
               setEditing(null);
               setFormOpen(true);
@@ -226,25 +226,25 @@ export default function AiScriptPage() {
       </div>
 
       {/* 项目网格 */}
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {projectsQuery.isLoading && projects.length === 0
           ? Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-64 rounded-2xl" />
+              <Skeleton key={index} className="h-72 rounded-2xl" />
             ))
           : null}
 
         {!projectsQuery.isLoading && filteredProjects.length === 0 ? (
-          <div className="col-span-full flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/30 p-8 text-center backdrop-blur-sm">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <Clapperboard className="size-6" />
+          <div className="col-span-full flex min-h-72 flex-col items-center justify-center rounded-3xl border border-dashed border-border/80 bg-card/40 p-8 text-center backdrop-blur-sm">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner">
+              <Clapperboard className="size-7" />
             </div>
-            <p className="mt-3 text-sm font-semibold text-foreground">{t("home.emptyProjects")}</p>
-            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+            <p className="mt-4 text-base font-semibold text-foreground">{t("home.emptyProjects")}</p>
+            <p className="mt-1.5 max-w-sm text-xs text-muted-foreground">
               输入剧情大纲或剧本台词，AI 将自动拆解镜头与生成角色设定
             </p>
             <Button
               size="sm"
-              className="mt-4 gap-1.5 cursor-pointer font-semibold shadow-xs"
+              className="mt-5 gap-1.5 rounded-xl cursor-pointer font-semibold shadow-sm"
               onClick={() => {
                 setEditing(null);
                 setFormOpen(true);
@@ -266,66 +266,70 @@ export default function AiScriptPage() {
             <article
               key={project.id}
               className={cn(
-                "group relative flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs backdrop-blur-md transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-xl dark:border-white/10 dark:hover:border-primary/50",
+                "group relative flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/70 shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-xl dark:border-white/10 dark:hover:border-primary/50 dark:hover:shadow-primary/5",
                 "animate-in fade-in-0 slide-in-from-bottom-2"
               )}
               style={{ animationDelay: `${index * 30}ms` }}
             >
               {/* 封面图片区 */}
-              <div className="relative aspect-video w-full overflow-hidden bg-muted/60">
+              <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted/60">
                 <Image
                   src={project.coverImageUrl ?? FALLBACK_COVER}
                   alt=""
                   fill
                   unoptimized
                   sizes="(min-width: 1280px) 25vw, (min-width: 768px) 50vw, 100vw"
-                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+                  className="object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-60 transition-opacity group-hover:opacity-40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-70 transition-opacity group-hover:opacity-50" />
 
                 {/* 状态徽章 */}
                 <div className="absolute top-2.5 left-2.5 z-10">
                   <Badge
                     variant={statusBadgeVariant(project.status)}
                     className={cn(
-                      "text-[10px] backdrop-blur-md shadow-xs",
-                      isBusy && "animate-pulse"
+                      "rounded-lg px-2 py-0.5 text-[10px] font-medium backdrop-blur-md shadow-xs",
+                      isBusy && "animate-pulse font-semibold"
                     )}
                   >
                     {isBusy ? <Sparkles className="size-3 mr-1 inline animate-spin" /> : null}
                     {statusLabels[project.status]}
                   </Badge>
                 </div>
+
+                {/* 镜头数快捷标签 */}
+                <div className="absolute bottom-2.5 right-2.5 z-10">
+                  <Badge variant="secondary" className="rounded-md bg-black/60 text-white backdrop-blur-md text-[10px] px-1.5 py-0.5 gap-1 border border-white/10">
+                    <Layers className="size-3 text-primary" />
+                    {project.scenes.length} 镜头
+                  </Badge>
+                </div>
               </div>
 
               {/* 内容信息区 */}
-              <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-4">
+              <div className="flex min-h-0 flex-1 flex-col p-4">
                 <button
                   type="button"
                   onClick={() => openProject(project)}
-                  className="text-left text-sm font-bold tracking-tight text-foreground transition-colors hover:text-primary cursor-pointer after:absolute after:inset-0 after:content-['']"
+                  className="text-left text-sm font-bold tracking-tight text-foreground transition-colors hover:text-primary cursor-pointer line-clamp-1 after:absolute after:inset-0 after:content-['']"
                 >
                   {project.title}
                 </button>
-                <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                   {project.description || t("home.emptyProjectDescription")}
                 </p>
 
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-3 text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Layers className="size-3 text-primary" />
-                    {t("home.sceneCount", { count: project.scenes.length })}
-                  </span>
-                  <span>{formatDateTime(project.updatedAt)}</span>
+                <div className="mt-auto flex items-center justify-between pt-3 text-[11px] text-muted-foreground border-t border-border/40">
+                  <span className="truncate">{formatDateTime(project.updatedAt)}</span>
                 </div>
               </div>
 
               {/* 底部操作条 */}
-              <div className="relative z-10 flex justify-end gap-1 border-t border-border/60 bg-muted/20 px-3 py-1.5">
+              <div className="relative z-10 flex items-center justify-end gap-1 border-t border-border/60 bg-muted/30 px-3 py-2">
                 <Button
                   variant="ghost"
                   size="xs"
-                  className="rounded-md text-xs hover:bg-muted/80 cursor-pointer"
+                  className="h-7 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-pointer"
                   aria-label={t("home.editProject")}
                   onClick={() => {
                     setEditing(project);
@@ -338,7 +342,7 @@ export default function AiScriptPage() {
                 <Button
                   variant="ghost"
                   size="xs"
-                  className="rounded-md text-xs text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                  className="h-7 rounded-lg px-2.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive cursor-pointer"
                   aria-label={t("home.deleteProject")}
                   onClick={() => setPendingDelete(project)}
                 >

@@ -335,6 +335,39 @@ def test_second_generate_is_refused_while_the_first_is_running() -> None:
             assert "busy" in second.json()["error"]
 
 
+def test_clearing_the_video_first_frame_sticks() -> None:
+    """`""` clears the slot; an absent key still means "leave it alone".
+
+    Both halves matter together. A JSON null cannot carry "clear" here — after
+    `exclude_unset` it is indistinguishable from a field the client never sent — so the
+    editor sends "" instead, and dropping it made "不使用首帧" impossible to save.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            project_id = _create_project(client, headers)
+            parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers).json()
+            scene_id = parsed["scenes"][0]["id"]
+
+            def patch(body: dict) -> dict:
+                response = client.patch(f"/api/projects/{project_id}/scenes/{scene_id}", json=body, headers=headers)
+                assert response.status_code == 200, response.text
+                return response.json()["scene"]
+
+            chosen = patch({"videoFirstFrame": {"kind": "sceneImage", "id": scene_id}})
+            assert chosen["videoFirstFrame"] == {"kind": "sceneImage", "id": scene_id}
+            assert chosen["videoFirstFrameExplicit"] is True
+
+            # An unrelated edit must not disturb the slot.
+            assert patch({"narration": "改台词"})["videoFirstFrame"] == {"kind": "sceneImage", "id": scene_id}
+
+            cleared = patch({"videoFirstFrame": ""})
+            assert cleared["videoFirstFrame"] is None
+            # Still explicit: the editor tells "off, deliberately" from "nobody chose" by
+            # this flag, and refills only the latter with the shot's own render.
+            assert cleared["videoFirstFrameExplicit"] is True
+            assert patch({"narration": "再改一次"})["videoFirstFrame"] is None
+
+
 if __name__ == "__main__":
     test_rejected_body_uses_the_same_error_shape_as_everything_else()
     test_production_settings_round_trip()
@@ -347,3 +380,4 @@ if __name__ == "__main__":
     test_a_project_with_no_house_style_renders_a_clean_prompt()
     test_retry_status_keeps_other_failed_scenes_visible()
     test_second_generate_is_refused_while_the_first_is_running()
+    test_clearing_the_video_first_frame_sticks()

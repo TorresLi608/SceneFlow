@@ -14,6 +14,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  TriangleAlert,
   Video,
 } from "lucide-react";
 import Link from "next/link";
@@ -169,6 +170,13 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
                     {t("home.allUsageRecords")}
                   </SidebarLink>
                   <SidebarLink
+                    href="/admin/error-logs"
+                    active={isActive("/admin/error-logs")}
+                    icon={TriangleAlert}
+                  >
+                    {t("home.errorLogs")}
+                  </SidebarLink>
+                  <SidebarLink
                     href="/admin/invitation-codes"
                     active={isActive("/admin/invitation-codes")}
                     icon={KeyRound}
@@ -194,8 +202,8 @@ export function AppSidebar({ showUserManagement }: { showUserManagement: boolean
         <div className="flex items-center gap-2 rounded-xl bg-card/60 p-2.5 ring-1 ring-border/70 backdrop-blur-md">
           <Compass className="size-4 text-primary" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium text-foreground">Multi-Modal AI Engine</p>
-            <p className="truncate text-[10px] text-muted-foreground">Ready to Create</p>
+            <p className="truncate text-xs font-medium text-foreground">{t("home.aiEngineTitle")}</p>
+            <p className="truncate text-[10px] text-muted-foreground">{t("home.aiEngineSubtitle")}</p>
           </div>
         </div>
       </div>

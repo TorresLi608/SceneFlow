@@ -8,6 +8,7 @@ import binascii
 import hashlib
 from pathlib import Path, PurePosixPath
 import json
+import logging
 import re
 from typing import Literal
 
@@ -27,6 +28,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from app.core.config import CJK_FONT_NAME, CJK_FONT_PATH, JWT_SECRET, PRIVATE_GENERATED_DIR, PUBLIC_BASE_URL
 from app.utils.common import new_id
+
+
+logger = logging.getLogger(__name__)
 
 
 MAX_DOCUMENT_CHARS = 100_000
@@ -316,7 +320,21 @@ def _signed_url(path: Path, filename: str, media_type: str, inline: bool) -> str
 
 
 def _sign(relative: str, filename: str, media_type: str, inline: bool) -> str:
-    issued = datetime.now(timezone.utc)
+    """Mint a signed link for one artifact.
+
+    `iat` is floored to the start of the UTC day rather than taken from the clock, which
+    makes the token — and therefore the URL — **stable for everyone who asks for the same
+    file on the same day**. That is not a cosmetic detail:
+
+    - `<img src>` only caches when the URL stops changing. A per-response token meant the
+      episode editor re-downloaded every storyboard frame on every three-second poll.
+    - A row keyed on its asset URL remounts whenever that URL changes, so shot rows were
+      being torn down and rebuilt on each poll, discarding whatever the user was typing.
+
+    Together those two read to a user as "it keeps generating over and over". The TTL is
+    unchanged in length; it now runs from the start of the day the link was minted.
+    """
+    issued = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     token = jwt.encode(
         {
             "scope": "artifact",
@@ -381,6 +399,15 @@ def store_artifact(category: str, scope: str, filename: str, data: bytes) -> str
     path.write_bytes(data)
     path.chmod(0o600)
     return artifact_relative_path(path)
+
+
+def remove_stored_artifacts(values: list[str]) -> None:
+    """Remove database-detached generated files without allowing paths outside the private root."""
+    for value in set(values):
+        try:
+            artifact_absolute_path(value).unlink(missing_ok=True)
+        except (OSError, ValueError) as exc:
+            logger.warning("failed to remove stored artifact path=%s: %s", value, exc)
 
 
 def artifact_from_token(token: str) -> tuple[Path, str, str, bool]:

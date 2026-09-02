@@ -52,3 +52,21 @@ def delete_prop(session: Session, prop: Prop) -> None:
     prop.updated_at = stamp
     session.add(prop)
     session.flush()
+
+
+def owner_names(session: Session, project_id: str) -> dict[str, str]:
+    """Character id to name, so a prop card can show whose it is without a second request."""
+    from app.services.character_service import characters_for
+
+    return {character.id: character.name for character in characters_for(session, project_id)}
+
+
+def prop_payload(session: Session, project_id: str, prop: Prop) -> dict[str, object]:
+    """One prop as the wire sees it.
+
+    Lives here rather than in the endpoint because the generation-job handler has to produce
+    the identical shape when it finishes a draw — `api/v1` may not be imported by a service.
+    """
+    from app.schemas.serializers import prop_json
+
+    return prop_json(prop, owner_names(session, project_id).get(prop.owner_character_id or "", ""))

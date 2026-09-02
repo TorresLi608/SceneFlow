@@ -6,19 +6,58 @@ from typing import Any, Sequence
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from app.core.security import decrypt, encrypt
 from app.llms.router import pick_model
-from app.models import ModelConfig, UserOfficialConfigDefault
+from app.models import ModelConfig, Project, UserOfficialConfigDefault
 
 
 VIDEO_QUALITIES = ("480p", "720p", "1080p", "2K", "4K")
 VIDEO_FPS = (24, 30, 60)
 VIDEO_ASPECT_RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive")
 
+# How a model is asked for sound. `with_audio` / `audio` make the model generate a track;
+# `reference_voice` only feeds it a timbre to imitate, which is why that one needs the
+# project's merged voice sheet and the other two do not.
+AUDIO_PARAMS = ("with_audio", "audio", "reference_voice")
+
+# Kept in code: these are provider contract facts, not user data. Admins may still
+# override the normalized capability JSON for relay/model revisions. `catalog` marks the
+# entries the admin picker offers — superseded revisions stay here so an existing config
+# pinned to one still resolves its capabilities.
+VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
+    "doubao-seedance-2.0": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p", "1080p", "4K"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0-fast": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.0-mini": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
+    "doubao-seedance-2.5": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 30, "maxReferenceImages": 30, "maxReferenceVideos": 10, "maxReferenceAudios": 10, "audioParam": "with_audio", "audioDefault": True},
+    "wan2.7": {"provider": "qwen", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
+    "wan2.7-r2v": {"provider": "qwen", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
+    "wan2.7-r2v-2026-06-12": {"provider": "qwen", "catalog": False, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
+    "wan3.0-video": {"provider": "qwen", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"], "minDuration": 2, "maxDuration": 30, "maxReferenceImages": 10, "maxReferenceVideos": 5, "maxReferenceAudios": 5, "audioParam": "audio", "audioDefault": True},
+    "wan3.0-video-prime": {"provider": "qwen", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"], "minDuration": 2, "maxDuration": 30, "maxReferenceImages": 10, "maxReferenceVideos": 5, "maxReferenceAudios": 5, "audioParam": "audio", "audioDefault": True},
+}
+
 
 def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]:
+    known = VIDEO_MODEL_CAPABILITIES.get(model.strip().lower())
+    normalized_model = model.strip().lower()
+    supports_first_frame = normalized_model.startswith(("wan2.7", "wan3.0", "doubao-seedance"))
+    supports_last_frame = normalized_model.startswith(("wan3.0", "doubao-seedance"))
+    if known:
+        return {
+            "qualities": list(known["qualities"]), "fps": [], "aspectRatios": list(known["aspectRatios"]),
+            "promptExtend": known.get("promptExtend", True), "minDuration": known["minDuration"], "maxDuration": known["maxDuration"],
+            "referenceImages": known.get("maxReferenceImages", 0) > 0, "referenceImagesRequired": False,
+            "maxReferenceImages": known.get("maxReferenceImages", 0), "referenceVideo": known.get("maxReferenceVideos", 0) > 0,
+            "maxReferenceVideos": known.get("maxReferenceVideos", 0), "referenceVideosRequired": False,
+            "referenceAudio": known.get("maxReferenceAudios", 0) > 0, "maxReferenceAudios": known.get("maxReferenceAudios", 0),
+            "referenceAudiosRequired": False, "audioParam": known.get("audioParam"), "audioDefault": known.get("audioDefault", True),
+            "supportsStartEndFrames": known.get("supportsStartEndFrames", supports_first_frame or supports_last_frame),
+            "supportsFirstFrame": known.get("supportsFirstFrame", supports_first_frame),
+            "supportsLastFrame": known.get("supportsLastFrame", supports_last_frame),
+        }
     if normalize_provider(provider) == "qwen":
         is_i2v = "-i2v" in model.lower()
         is_r2v = "-r2v" in model.lower()
@@ -39,6 +78,11 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
             "referenceAudio": is_i2v,
             "maxReferenceAudios": 1 if is_i2v else 0,
             "referenceAudiosRequired": False,
+            # Legacy i2v took a driving track but never generated one, so the switch stays
+            # off unless the user asks: defaulting it on would demand a voice sheet from
+            # every series that predates the audio panel.
+            "audioParam": "reference_voice" if is_i2v else None,
+            "audioDefault": False,
         }
     return {
         "qualities": list(VIDEO_QUALITIES),
@@ -56,6 +100,11 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
         "referenceAudio": False,
         "maxReferenceAudios": 0,
         "referenceAudiosRequired": False,
+        "audioParam": None,
+        "audioDefault": False,
+        "supportsStartEndFrames": False,
+        "supportsFirstFrame": False,
+        "supportsLastFrame": False,
     }
 
 
@@ -81,7 +130,7 @@ def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> 
     prompt_extend = value.get("promptExtend", False)
     if not isinstance(prompt_extend, bool):
         raise HTTPException(400, "videoCapabilities.promptExtend must be boolean")
-    def limit(name: str, supported: bool, maximum: int | None = 9) -> int:
+    def limit(name: str, supported: bool, maximum: int | None = 10) -> int:
         try:
             result = int(value.get(name, 0))
         except (TypeError, ValueError) as exc:
@@ -142,6 +191,13 @@ def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> 
         raise HTTPException(400, "videoCapabilities.aspectRatios contains an unsupported value")
     else:
         normalized_aspect_ratios = [item for item in VIDEO_ASPECT_RATIOS if item in raw_aspect_ratios]
+    # Audio defaults come from the model catalog rather than the stored JSON: configs saved
+    # before the audio switch existed have no such keys, and falling back to the catalog is
+    # what lets an existing seedance config pick up `with_audio` without being re-saved.
+    catalog = default_video_capabilities(provider, model)
+    audio_param = catalog.get("audioParam")
+    if "audioParam" in value:
+        audio_param = value["audioParam"] if value["audioParam"] in AUDIO_PARAMS else None
     return {
         "qualities": choices("qualities", VIDEO_QUALITIES),
         "fps": choices("fps", VIDEO_FPS),
@@ -158,6 +214,11 @@ def normalize_video_capabilities(value: Any, provider: str, model: str = "") -> 
         "referenceAudio": reference_audio,
         "maxReferenceAudios": max_reference_audios,
         "referenceAudiosRequired": reference_audios_required,
+        "audioParam": audio_param,
+        "audioDefault": flag("audioDefault", bool(catalog.get("audioDefault"))) if audio_param else False,
+        "supportsStartEndFrames": flag("supportsStartEndFrames", bool(catalog.get("supportsStartEndFrames"))),
+        "supportsFirstFrame": flag("supportsFirstFrame", bool(catalog.get("supportsFirstFrame"))),
+        "supportsLastFrame": flag("supportsLastFrame", bool(catalog.get("supportsLastFrame"))),
     }
 
 
@@ -487,3 +548,61 @@ def active_model_config(session: Session, user_id: int, purpose: str, stage: str
         .limit(1)
     ).first()
     return _model_config(config, purpose, stage, "official")
+
+
+# Which column on `projects` holds the pick for each kind of work. The keys are the
+# `purpose` values the rest of the codebase already speaks, so callers never translate.
+PROJECT_CONFIG_COLUMNS = {
+    "script": "text_config_id",
+    "image": "image_config_id",
+    "video": "video_config_id",
+    "audio": "audio_config_id",
+}
+
+
+def project_config_id(project: Project | None, purpose: str) -> int | None:
+    """The config this project pinned for `purpose`, or None when it follows the account."""
+    column = PROJECT_CONFIG_COLUMNS.get(purpose)
+    if not column or project is None:
+        return None
+    # 0 is how a client clears the pick — `null` in a PATCH means "leave alone", so the
+    # clear has to be a real value. Treat it the same as never having been set.
+    return getattr(project, column, None) or None
+
+
+def project_model_config(
+    session: Session,
+    user_id: int,
+    project: Project | None,
+    purpose: str,
+    stage: str,
+) -> dict[str, Any]:
+    """The model this project uses for `purpose`, falling back to the account's default.
+
+    Project-first rather than project-only: a series created before the model panel
+    existed has every pick unset, and demanding one before it can render would strand it.
+    A pick that no longer resolves — the config was deleted, disabled, or belongs to
+    someone else — falls back the same way, so losing a config degrades to the account
+    default instead of failing the render.
+    """
+    config_id = project_config_id(project, purpose)
+    if config_id:
+        config = session.exec(
+            select(ModelConfig).where(
+                ModelConfig.id == config_id,
+                ModelConfig.purpose == purpose,
+                ModelConfig.is_enabled.is_(True),
+                ModelConfig.deleted_at.is_(None),
+                or_(
+                    ModelConfig.source == "official",
+                    and_(ModelConfig.source == "user", ModelConfig.user_id == user_id),
+                ),
+            )
+        ).first()
+        if config:
+            resolved = _model_config(config, purpose, stage, config.source or "user")
+            resolved["isProjectPick"] = True
+            return resolved
+    resolved = active_model_config(session, user_id, purpose, stage)
+    resolved["isProjectPick"] = False
+    return resolved

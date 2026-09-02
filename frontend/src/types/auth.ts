@@ -17,6 +17,11 @@ export interface VideoCapabilities {
   referenceAudio: boolean;
   maxReferenceAudios: number;
   referenceAudiosRequired: boolean;
+  audioParam?: "with_audio" | "audio" | "reference_voice" | null;
+  audioDefault?: boolean;
+  supportsStartEndFrames?: boolean;
+  supportsFirstFrame?: boolean;
+  supportsLastFrame?: boolean;
 }
 
 export interface ModelPricing {
@@ -33,6 +38,7 @@ export interface AuthUser {
   id: number;
   username: string;
   nickname: string;
+  email?: string;
   role: "user" | "superAdmin";
   isDisabled: boolean;
   balanceMicros: string;
@@ -49,9 +55,21 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+export interface SendVerificationCodeInput {
+  email: string;
+}
+
+export interface SendVerificationCodeResponse {
+  success: boolean;
+  cooldownSeconds: number;
+  expiresInSeconds: number;
+}
+
 export interface RegisterInput {
   username: string;
   nickname?: string;
+  email?: string;
+  verificationCode?: string;
   password: string;
   invitationCode: string;
 }
