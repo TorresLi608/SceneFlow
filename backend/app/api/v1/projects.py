@@ -36,6 +36,7 @@ from app.schemas.requests import (
 )
 from app.schemas.serializers import episode_summary_json, project_json, scene_json
 from app.services.artifact_service import decode_image_data_url, remove_stored_artifacts, store_artifact
+from app.services import breakdown_service
 from app.services.config_service import (
     PROJECT_CONFIG_COLUMNS,
     active_model_config,
@@ -597,8 +598,15 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
         ("image_prompt_prefixes", "image_prompt_prefixes_json"),
         ("video_prompt_prefixes", "video_prompt_prefixes_json"),
     ):
-        if field in sent and sent[field] is not None:
-            updates[column] = dump_prompt_prefixes(sent[field])
+        if field in sent:
+            # An empty list is a real edit (user deleted all prefixes), not "leave alone"
+            value = sent[field]
+            logger.info(f"Processing {field}: value={value}, type={type(value)}")
+            if value is not None:
+                dumped = dump_prompt_prefixes(value)
+                logger.info(f"Dumped {field} to: {dumped}")
+                updates[column] = dumped
+            # If value is None, skip it (leave the field alone)
     for field, column in (("video_first_frame", "video_first_frame_json"), ("video_last_frame", "video_last_frame_json")):
         if field in sent and sent[field] is not None:
             # `""` is the client saying "no frame". It has to reach the column as a stored
@@ -660,11 +668,14 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
                     pass
             elif field == "video_references":
                 # Video has per-media caps; reuse the render path's validator.
-                from app.services.generation_service import validate_video_reference_counts
-
                 try:
                     caps = models.video_capabilities(models.active_video_config(session, user_id))
-                    validate_video_reference_counts(resolved, caps)
+                    validate_video_reference_counts(
+                        caps,
+                        len(resolved["images"]),
+                        len(resolved["videos"]),
+                        len(resolved["audios"])
+                    )
                 except HTTPException:
                     raise
                 except Exception:

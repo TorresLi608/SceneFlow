@@ -15,6 +15,7 @@ import {
   Sparkles,
   Square,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -53,6 +54,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useUnsavedSettingsStore } from "@/store/unsaved-settings-store";
 import type { BreakdownDetailLevel, BreakdownTarget, Episode, GenerationReferenceInput, Scene } from "@/types/project";
 
 import { BreakdownPanel, EMPTY_SELECTION, type BreakdownSelection } from "./_components/breakdown-panel";
@@ -92,8 +94,12 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const [message, setMessage] = useState<string | null>(null);
   const [activeBatch, setActiveBatch] = useState<"image" | "video" | null>(null);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+  const [pendingGeneration, setPendingGeneration] = useState<{ type: "image" | "video"; target: BatchTarget } | null>(null);
   const activeBatchWasBusy = useRef(false);
   const breakdownController = useRef<AbortController | null>(null);
+
+  const { hasUnsaved } = useUnsavedSettingsStore();
 
   const isInfoDirty =
     title !== episode.title || synopsis !== episode.synopsis || script !== episode.sourceText;
@@ -304,6 +310,39 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     setSelectedShots((current) =>
       current.includes(sceneId) ? current.filter((item) => item !== sceneId) : [...current, sceneId]
     );
+
+  // Check for unsaved settings before generation
+  const checkAndGenerate = (type: "image" | "video", target: BatchTarget) => {
+    if (hasUnsaved(projectId)) {
+      setPendingGeneration({ type, target });
+      setShowUnsavedWarning(true);
+    } else {
+      proceedWithGeneration(type, target);
+    }
+  };
+
+  const proceedWithGeneration = (type: "image" | "video", target: BatchTarget) => {
+    setShowUnsavedWarning(false);
+    setPendingGeneration(null);
+    if (type === "image") {
+      setActiveBatch("image");
+      renderMutation.mutate(target);
+    } else {
+      setActiveBatch("video");
+      videoMutation.mutate(target);
+    }
+  };
+
+  const handleUnsavedConfirm = () => {
+    if (pendingGeneration) {
+      proceedWithGeneration(pendingGeneration.type, pendingGeneration.target);
+    }
+  };
+
+  const handleUnsavedCancel = () => {
+    setShowUnsavedWarning(false);
+    setPendingGeneration(null);
+  };
 
   const characterAssets: ReferenceAssetOption[] = (charactersQuery.data?.characters ?? []).flatMap((character) => [
     ...(character.sheetImageUrl || character.referenceImageUrl
@@ -671,10 +710,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 size="sm"
                 disabled={busy || shots.length === 0 || !toneReady}
                 title={toneReady ? undefined : t("episode.needsToneSheetFirst")}
-                onClick={() => {
-                  setActiveBatch("image");
-                  renderMutation.mutate(targetShots());
-                }}
+                onClick={() => checkAndGenerate("image", targetShots())}
                 className="cursor-pointer shadow-xs"
               >
                 {imageBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
@@ -684,10 +720,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 size="sm"
                 variant="outline"
                 disabled={busy || !toneReady || pendingShots("image").length === 0}
-                onClick={() => {
-                  setActiveBatch("image");
-                  renderMutation.mutate({ pendingOnly: true });
-                }}
+                onClick={() => checkAndGenerate("image", { pendingOnly: true })}
                 className="cursor-pointer shadow-xs text-xs"
               >
                 <RefreshCw data-icon="inline-start" />
@@ -702,10 +735,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 variant="secondary"
                 disabled={busy || !toneReady || videoBatchCandidates.length === 0}
                 title={toneReady ? (videoBatchCandidates.length > 0 ? undefined : t("episode.needsImageFirst")) : t("episode.needsToneSheetFirst")}
-                onClick={() => {
-                  setActiveBatch("video");
-                  videoMutation.mutate(targetVideoShots());
-                }}
+                onClick={() => checkAndGenerate("video", targetVideoShots())}
                 className="cursor-pointer shadow-xs"
               >
                 {videoBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Film data-icon="inline-start" />}
@@ -716,10 +746,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 variant="outline"
                 disabled={busy || !toneReady || pendingShots("video").length === 0}
                 title={toneReady ? (pendingShots("video").length > 0 ? undefined : t("episode.needsImageFirst")) : t("episode.needsToneSheetFirst")}
-                onClick={() => {
-                  setActiveBatch("video");
-                  videoMutation.mutate({ sceneIds: pendingShots("video").map((shot) => shot.id), pendingOnly: true });
-                }}
+                onClick={() => checkAndGenerate("video", { sceneIds: pendingShots("video").map((shot) => shot.id), pendingOnly: true })}
                 className="cursor-pointer shadow-xs text-xs"
               >
                 <RefreshCw data-icon="inline-start" />
@@ -775,11 +802,11 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   busy={busy}
                   onGenerateImage={() => {
                     setActiveBatch(null);
-                    renderMutation.mutate({ sceneIds: [scene.id] });
+                    checkAndGenerate("image", { sceneIds: [scene.id] });
                   }}
                   onGenerateVideo={() => {
                     setActiveBatch(null);
-                    videoMutation.mutate({ sceneIds: [scene.id] });
+                    checkAndGenerate("video", { sceneIds: [scene.id] });
                   }}
                   imageGenerating={
                     scene.image.status === "generating" ||
@@ -871,6 +898,37 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 <Sparkles data-icon="inline-start" />
               )}
               {t("common.confirm")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unsaved Settings Warning Dialog */}
+      <Dialog open={showUnsavedWarning} onOpenChange={setShowUnsavedWarning}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-amber-500" />
+              {t("episode.unsavedSettingsTitle")}
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed pt-2">
+              {t("episode.unsavedSettingsMessage")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-3 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleUnsavedCancel}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              onClick={handleUnsavedConfirm}
+            >
+              {t("episode.generateWithoutSaving")}
             </Button>
           </div>
         </DialogContent>
