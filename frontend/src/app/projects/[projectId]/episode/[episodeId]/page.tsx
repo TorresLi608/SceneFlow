@@ -374,15 +374,15 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     breakdownMutation.reset();
   };
 
-  const breakdownBlocked =
-    !script.trim() ||
-    (target === "video" && shots.length === 0) ||
-    (!toneReady && shots.length > 0);
+  // Re-splitting an episode that already has shots is a supported edit, not an error state.
+  // What protects rendered work is the discard confirmation below — the backend reports
+  // `applied: false` with a count first, and only destroys anything once the user agrees.
+  // Gating on the tone sheet instead made re-splitting impossible in the ordinary case:
+  // shots exist, no anchor has been drawn yet, and the user wants a different breakdown.
+  const breakdownBlocked = !script.trim() || (target === "video" && shots.length === 0);
   const breakdownBlockedReason = !script.trim()
     ? t("episode.splitNeedsScript")
-    : target === "video" && shots.length === 0
-      ? t("episode.breakdownNeedsShots")
-      : t("episode.needsToneSheetFirst");
+    : t("episode.breakdownNeedsShots");
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -542,7 +542,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
           onDetailPromptChange={setDetailPrompt}
           running={breakdownMutation.isPending}
           disabled={busy || breakdownBlocked}
-          targetDisabled={busy || (!toneReady && shots.length > 0)}
+          targetDisabled={busy}
           disabledReason={breakdownBlocked ? breakdownBlockedReason : undefined}
           onStart={startBreakdown}
           onStop={stopBreakdown}

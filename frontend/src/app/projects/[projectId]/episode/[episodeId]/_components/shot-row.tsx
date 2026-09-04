@@ -23,7 +23,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
 import { deleteProjectSceneAction, updateProjectSceneAction } from "@/actions/projects-actions";
-import { compilePromptAction } from "@/actions/prompt-actions";
+import { compilePromptAction, listPromptPrefixPresetsAction } from "@/actions/prompt-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,14 +34,37 @@ import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
+import { remainingBudget, type MediaLimits } from "@/lib/reference-budget";
 import { cn } from "@/lib/utils";
 import type { Scene } from "@/types/project";
-import type { GenerationReferenceInput } from "@/types/project";
+import type { GenerationReferenceInput, PromptPrefix } from "@/types/project";
 import type { ReferenceAssetOption } from "./reference-picker";
 import { MentionTextarea } from "./mention-textarea";
+import { PromptPrefixList } from "./prompt-prefix-list";
 import { MediaPreviewDialog } from "./media-preview-dialog";
 
+
 const referenceKey = (item: GenerationReferenceInput) => `${item.kind}:${item.id}`;
+
+/**
+ * Per-media budget left for one editor once its siblings in the prompt group are deducted.
+ *
+ * A shot's prefixes and its own prompt share one pool of provider reference slots, so each
+ * editor is offered what is still free rather than the full cap — see `lib/reference-budget`
+ * for why an asset held by both sides is one slot, not two.
+ */
+const budgetFor = (
+  own: GenerationReferenceInput[],
+  siblings: GenerationReferenceInput[][],
+  assets: ReferenceAssetOption[],
+  limits: MediaLimits,
+) =>
+  remainingBudget(
+    own,
+    siblings,
+    (key) => assets.find((asset) => referenceKey(asset) === key)?.media,
+    limits,
+  );
 /**
  * A frame slot is not a reference: the render passes it as `first_frame`/`last_frame` and
  * strips it back out of the reference list, so it is never one of the numbered `图N` the
@@ -146,6 +169,8 @@ export function ShotRow({
   const [videoReferences, setVideoReferences] = useState<GenerationReferenceInput[]>(
     effectiveReferences(scene.videoReferences, scene.videoReferencesExplicit ? [] : defaultVideoReferences)
   );
+  const [imagePrefixes, setImagePrefixes] = useState<PromptPrefix[]>(scene.imagePromptPrefixes ?? []);
+  const [videoPrefixes, setVideoPrefixes] = useState<PromptPrefix[]>(scene.videoPromptPrefixes ?? []);
   // Just the stored value. The "use this shot's own render" suggestion lives in
   // `effectiveFirstFrame` alone, so there is one place that decides it.
   const [videoFirstFrame, setVideoFirstFrame] = useState<GenerationReferenceInput | null>(scene.videoFirstFrame ?? null);
@@ -223,6 +248,10 @@ export function ShotRow({
       setVideoPrompt(scene.videoPrompt);
       setImageReferences(scene.imageReferences ?? []);
       setVideoReferences(scene.videoReferences ?? []);
+      // Re-seeded with everything else: a tone-sheet run rewrites these server-side, so a
+      // row holding the pre-anchor list would silently save the old preamble back.
+      setImagePrefixes(scene.imagePromptPrefixes ?? []);
+      setVideoPrefixes(scene.videoPromptPrefixes ?? []);
       // Re-seed the frame slots too, or a saved "不使用首帧" reads back as the old value
       // and the row keeps showing what the user just cleared.
       setVideoFirstFrame(scene.videoFirstFrame ?? null);
@@ -240,6 +269,8 @@ export function ShotRow({
     scene.videoPrompt,
     scene.imageReferences,
     scene.videoReferences,
+    scene.imagePromptPrefixes,
+    scene.videoPromptPrefixes,
     scene.videoFirstFrame,
     scene.videoLastFrame,
     scene.durationMs,
@@ -257,6 +288,8 @@ export function ShotRow({
     videoPrompt !== scene.videoPrompt ||
     JSON.stringify(imageReferences) !== JSON.stringify(scene.imageReferences ?? []) ||
     JSON.stringify(videoReferences) !== JSON.stringify(scene.videoReferences ?? []) ||
+    JSON.stringify(imagePrefixes) !== JSON.stringify(scene.imagePromptPrefixes ?? []) ||
+    JSON.stringify(videoPrefixes) !== JSON.stringify(scene.videoPromptPrefixes ?? []) ||
     JSON.stringify(effectiveFirstFrame) !== JSON.stringify(scene.videoFirstFrame ?? null) ||
     JSON.stringify(videoLastFrame) !== JSON.stringify(scene.videoLastFrame ?? null) ||
     (seconds.trim() ? Number(seconds) * 1000 : 0) !== scene.durationMs;
@@ -272,6 +305,8 @@ export function ShotRow({
         videoPrompt,
         imageReferences,
         videoReferences,
+        imagePromptPrefixes: imagePrefixes,
+        videoPromptPrefixes: videoPrefixes,
         // "" rather than null: the backend reads an absent key and a null alike as
         // "leave alone", so null could never clear a frame the user turned off.
         videoFirstFrame: effectiveFirstFrame ?? "",
@@ -300,6 +335,7 @@ export function ShotRow({
         prompt: kind === "image" ? visualPrompt : videoPrompt,
         dialogue: kind === "video" ? scene.dialogue : "",
         references: kind === "image" ? imageReferences : videoReferences,
+        prefixes: kind === "image" ? imagePrefixes : videoPrefixes,
       }),
     onSuccess: (result) => setCompiledPrompt(result.prompt),
     onError: (error) => {
@@ -320,17 +356,32 @@ export function ShotRow({
     saveMutation.mutate(undefined, { onSuccess: action });
   };
 
+  // What the shot actually spends, prefixes included: the pills report the number the
+  // backend enforces, not just the references picked beside the main prompt.
+  const imageGroup = [...imagePrefixes.map((item) => item.references), imageReferences];
+  const videoGroup = [...videoPrefixes.map((item) => item.references), videoReferences];
+  const imageSpend = new Set(imageGroup.flat().map(referenceKey)).size;
+  const videoSpendByMedia = (media: ReferenceAssetOption["media"]) =>
+    new Set(
+      videoGroup
+        .flat()
+        .filter(
+          (item) =>
+            videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === media
+        )
+        .map(referenceKey)
+    ).size;
+
   const videoRefCounts = {
-    image: videoReferences.filter(
-      (item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "image"
-    ).length,
-    video: videoReferences.filter(
-      (item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "video"
-    ).length,
-    audio: videoReferences.filter(
-      (item) => videoReferenceAssets.find((asset) => asset.kind === item.kind && asset.id === item.id)?.media === "audio"
-    ).length,
+    image: videoSpendByMedia("image"),
+    video: videoSpendByMedia("video"),
+    audio: videoSpendByMedia("audio"),
   };
+
+  // The quick-fill bar is always shown, disabled with a reason until an anchor exists —
+  // a button that simply is not there reads as a missing feature rather than a prerequisite.
+  const prefixPreset = () =>
+    listPromptPrefixPresetsAction(projectId, scene.id).then((result) => result.presets[0] ?? null);
 
   // Frame slots take a still, whatever its source.
   const frameOptions = videoReferenceAssets.filter((asset) => asset.media === "image");
@@ -463,7 +514,7 @@ export function ShotRow({
             {imageReferenceLimit > 0 ? (
               <span className="inline-flex items-center gap-1 rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
                 <ImageIcon className="size-3 text-muted-foreground/70" />
-                {t("episode.shotImageReferences", { count: imageReferences.length, limit: imageReferenceLimit })}
+                {t("episode.shotImageReferences", { count: imageSpend, limit: imageReferenceLimit })}
               </span>
             ) : null}
             {videoReferenceLimits.image > 0 ? (
@@ -677,6 +728,29 @@ export function ShotRow({
             </div>
 
             <Field>
+              <FieldLabel className="text-xs text-muted-foreground">
+                {t("episode.imagePromptPrefixes")}
+              </FieldLabel>
+              <PromptPrefixList
+                prefixes={imagePrefixes}
+                onChange={setImagePrefixes}
+                assets={imageReferenceAssets}
+                limitsFor={(index) =>
+                  budgetFor(
+                    imagePrefixes[index]?.references ?? [],
+                    imageGroup.filter((_, position) => position !== index),
+                    imageReferenceAssets,
+                    { image: imageReferenceLimit }
+                  )
+                }
+                preset={prefixPreset}
+                presetDisabled={!toneReady}
+                presetDisabledReason={t("episode.needsToneSheetFirst")}
+                disabled={busy}
+              />
+            </Field>
+
+            <Field>
               <FieldLabel htmlFor={`visual-${scene.id}`} className="text-xs text-muted-foreground">
                 {t("episode.visualPrompt")}
               </FieldLabel>
@@ -687,9 +761,11 @@ export function ShotRow({
                 rows={2}
                 onChange={(event) => setVisualPrompt(event.target.value)}
                 references={imageReferences}
-                onReferencesChange={setImageReferences}
+                onReferencesChange={(refs) => setImageReferences(refs)}
                 assets={imageReferenceAssets}
-                limits={{ image: imageReferenceLimit }}
+                limits={budgetFor(imageReferences, imageGroup.slice(0, -1), imageReferenceAssets, {
+                  image: imageReferenceLimit,
+                })}
                 className="field-sizing-fixed min-h-16 resize-y bg-background/80 text-xs"
               />
             </Field>
@@ -771,6 +847,29 @@ export function ShotRow({
             </div>
 
             <Field>
+              <FieldLabel className="text-[11px] text-muted-foreground">
+                {t("episode.videoPromptPrefixes")}
+              </FieldLabel>
+              <PromptPrefixList
+                prefixes={videoPrefixes}
+                onChange={setVideoPrefixes}
+                assets={videoReferenceAssets}
+                limitsFor={(index) =>
+                  budgetFor(
+                    videoPrefixes[index]?.references ?? [],
+                    videoGroup.filter((_, position) => position !== index),
+                    videoReferenceAssets,
+                    videoReferenceLimits
+                  )
+                }
+                preset={prefixPreset}
+                presetDisabled={!toneReady}
+                presetDisabledReason={t("episode.needsToneSheetFirst")}
+                disabled={busy}
+              />
+            </Field>
+
+            <Field>
               <FieldLabel htmlFor={`videoPrompt-${scene.id}`} className="text-[11px] text-muted-foreground">
                 {t("episode.videoPrompt")}
               </FieldLabel>
@@ -784,9 +883,9 @@ export function ShotRow({
                 references={videoReferences}
                 // Just the chips. Removing one must not clear a frame slot: the frame is not
                 // in this list, so "the chip is gone" says nothing about the frame choice.
-                onReferencesChange={setVideoReferences}
+                onReferencesChange={(refs) => setVideoReferences(refs)}
                 assets={videoReferenceAssets}
-                limits={videoReferenceLimits}
+                limits={budgetFor(videoReferences, videoGroup.slice(0, -1), videoReferenceAssets, videoReferenceLimits)}
                 className="field-sizing-fixed min-h-16 resize-y bg-background/80 text-xs"
               />
               {supportsFirstFrame || supportsLastFrame ? (

@@ -23,6 +23,10 @@ export interface Scene {
   imageReferencesExplicit?: boolean;
   videoReferences: GenerationReferenceInput[];
   videoReferencesExplicit?: boolean;
+  /** Preambles concatenated ahead of `visualPrompt` at compile time. */
+  imagePromptPrefixes: PromptPrefix[];
+  /** Preambles concatenated ahead of `videoPrompt` at compile time. */
+  videoPromptPrefixes: PromptPrefix[];
   videoFirstFrame: GenerationReferenceInput | null;
   videoLastFrame: GenerationReferenceInput | null;
   /**
@@ -370,6 +374,22 @@ export interface GenerationReferenceInput {
   id: string;
 }
 
+/**
+ * One preamble stored above a shot's prompt, concatenated ahead of it at compile time.
+ *
+ * Its `references` are not decoration: they resolve through the same path as the prompt's
+ * own mentions and spend the same provider reference slots, prefix-first — which is also
+ * the order they are numbered `图1`, `图2`… in.
+ */
+export interface PromptPrefix {
+  id: string;
+  name: string;
+  prompt: string;
+  references: GenerationReferenceInput[];
+  /** `"tone"` for the item the tone sheet writes; empty for anything hand-written. */
+  source?: string;
+}
+
 export interface Asset {
   id: string;
   projectId: string;
@@ -690,6 +710,9 @@ export interface UpdateSceneInput {
   videoPrompt?: string;
   imageReferences?: GenerationReferenceInput[];
   videoReferences?: GenerationReferenceInput[];
+  /** An empty array is a real edit — the last preamble was deleted — not "leave alone". */
+  imagePromptPrefixes?: PromptPrefix[];
+  videoPromptPrefixes?: PromptPrefix[];
   /** `""` clears the slot; omitting the key leaves it alone. `null` would mean "leave alone". */
   videoFirstFrame?: GenerationReferenceInput | "" | null;
   videoLastFrame?: GenerationReferenceInput | "" | null;

@@ -45,6 +45,7 @@ from app.services.project_service import (
     selected_scenes,
 )
 from app.services.prompt_service import with_shot_label
+from app.services.prompt_prefix_service import combined_prompt, combined_references, stored_prompt_prefixes
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
 from app.services.usage_service import record_usage, require_model_balance
@@ -399,6 +400,7 @@ def _plan(
     max_reference_images: int,
     scene_reference_sources: dict[str, list[tuple[str, str]]] | None = None,
     scene_reference_items: dict[str, list[dict[str, Any]]] | None = None,
+    scene_prefix_text: dict[str, str] | None = None,
 ) -> StoryboardPlan:
     """Everything a background render needs, resolved before the session closes."""
     return StoryboardPlan(
@@ -419,6 +421,7 @@ def _plan(
         max_reference_images=max_reference_images,
         scene_reference_sources=scene_reference_sources or {},
         scene_reference_items=scene_reference_items or {},
+        scene_prefix_text=scene_prefix_text or {},
     )
 
 
@@ -514,9 +517,14 @@ async def generate_storyboard(
             raise HTTPException(400, f"selected image model accepts at most {selected_limit} additional references")
         scene_sources: dict[str, list[tuple[str, str]]] = {}
         scene_reference_items: dict[str, list[dict[str, Any]]] = {}
+        scene_prefix_text: dict[str, str] = {}
         if body.references is None:
             for scene in pending:
-                pairs = stored_generation_references(scene.image_references_json)
+                prefixes = stored_prompt_prefixes(scene.image_prompt_prefixes_json)
+                scene_prefix_text[scene.id] = combined_prompt(prefixes, "")
+                # One budget, one numbering: the preamble's mentions and the shot's own are
+                # resolved as a single prefix-first list.
+                pairs = combined_references(prefixes, stored_generation_references(scene.image_references_json))
                 if scene.image_references_explicit and not pairs:
                     continue
                 if not pairs:
@@ -545,6 +553,7 @@ async def generate_storyboard(
             max_reference_images=maximum,
             scene_reference_sources=scene_sources,
             scene_reference_items=scene_reference_items,
+            scene_prefix_text=scene_prefix_text,
         )
 
     await broadcast(

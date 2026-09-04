@@ -1968,6 +1968,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/prompts/prefix-presets:
+    get:
+      tags:
+      - prompts
+      summary: List Prompt Prefix Presets
+      description: 'Ready-to-insert preambles for one shot, for the editor''s quick-fill bar.
+
+
+        Served rather than templated in the browser because the wording is an instruction to a
+
+        model, and the one the tone sheet writes on a successful anchor has to stay identical to
+
+        the one this hands back — a user who deleted the automatic item is asking for that item,
+
+        not for a copy of it that drifted.
+
+
+        Only the tone preset exists today, and only once the episode has an anchor to point at:
+
+        the text is entirely about locating this shot''s cell in the grid, which is meaningless
+
+        without a grid.'
+      operationId: list_prompt_prefix_presets_api_prompts_prefix_presets_get
+      parameters:
+      - name: projectId
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+          title: Projectid
+      - name: sceneId
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+          title: Sceneid
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Prompt Prefix Presets Api Prompts Prefix Presets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/prompts/optimize:
     post:
       tags:
@@ -5089,6 +5150,12 @@ components:
           type: array
           maxItems: 64
           title: References
+        prefixes:
+          items:
+            $ref: '#/components/schemas/PromptPrefixRequest'
+          type: array
+          maxItems: 8
+          title: Prefixes
       additionalProperties: false
       type: object
       required:
@@ -5401,6 +5468,22 @@ components:
             maxItems: 64
           - type: 'null'
           title: Videoreferences
+        imagePromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Imagepromptprefixes
+        videoPromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Videopromptprefixes
         videoFirstFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'
@@ -6196,6 +6279,47 @@ components:
       additionalProperties: false
       type: object
       title: PromptOptimizationContext
+    PromptPrefixRequest:
+      properties:
+        id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Id
+        name:
+          type: string
+          maxLength: 80
+          title: Name
+          default: ''
+        prompt:
+          type: string
+          maxLength: 4000
+          title: Prompt
+          default: ''
+        references:
+          items:
+            $ref: '#/components/schemas/GenerationReferenceRequest'
+          type: array
+          maxItems: 64
+          title: References
+        source:
+          type: string
+          maxLength: 32
+          title: Source
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      title: PromptPrefixRequest
+      description: 'One preamble item stored above a shot''s own prompt.
+
+
+        `source` is how the tone-sheet item is recognised on a regenerate; anything the user
+
+        wrote by hand leaves it empty. Its `references` are real reference slots, not decoration
+
+        — see `app/services/prompt_prefix_service.py`.'
     ReorderScenesRequest:
       properties:
         sceneIds:
@@ -6557,6 +6681,22 @@ components:
             maxItems: 64
           - type: 'null'
           title: Videoreferences
+        imagePromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Imagepromptprefixes
+        videoPromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Videopromptprefixes
         videoFirstFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'

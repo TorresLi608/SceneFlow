@@ -64,6 +64,12 @@ from app.services.project_service import (
     scenes_with_assets,
     selected_scenes,
 )
+from app.services.prompt_prefix_service import (
+    combined_prompt,
+    combined_references,
+    dump_prompt_prefixes,
+    stored_prompt_prefixes,
+)
 from app.services.reference_service import clear_generation_reference, resolve_generation_references, stored_generation_references
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import resolve_video_options, supported_video_defaults, validate_video_reference_counts
@@ -587,6 +593,12 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
                 [{"kind": item["kind"], "id": item["id"]} for item in sent[field]], separators=(",", ":")
             )
             updates[f"{field}_explicit"] = True
+    for field, column in (
+        ("image_prompt_prefixes", "image_prompt_prefixes_json"),
+        ("video_prompt_prefixes", "video_prompt_prefixes_json"),
+    ):
+        if field in sent and sent[field] is not None:
+            updates[column] = dump_prompt_prefixes(sent[field])
     for field, column in (("video_first_frame", "video_first_frame_json"), ("video_last_frame", "video_last_frame_json")):
         if field in sent and sent[field] is not None:
             # `""` is the client saying "no frame". It has to reach the column as a stored
@@ -610,14 +622,53 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
         ).first()
         if not scene:
             raise HTTPException(404, "scene not found")
-        for field in ("image_references", "video_references"):
-            if field not in sent or sent[field] is None:
+        for field, prefix_field in (
+            ("image_references", "image_prompt_prefixes"),
+            ("video_references", "video_prompt_prefixes"),
+        ):
+            # A prefix's mentions ship as real references, so they are validated on the same
+            # terms as the prompt's own — and against the same image-only rule, because a
+            # preamble able to smuggle a video into a still render would fail at the provider.
+            pairs = [
+                (reference["kind"], reference["id"])
+                for prefix in (sent.get(prefix_field) or [])
+                for reference in prefix.get("references") or []
+            ] if prefix_field in sent and sent[prefix_field] is not None else []
+            if field in sent and sent[field] is not None:
+                pairs += [(item["kind"], item["id"]) for item in sent[field]]
+            if not pairs:
                 continue
-            resolved = resolve_generation_references(
-                session, project_id, [(item["kind"], item["id"]) for item in sent[field]]
-            )
+            resolved = resolve_generation_references(session, project_id, pairs)
             if field == "image_references" and (resolved["videos"] or resolved["audios"]):
                 raise HTTPException(400, "image prompts only accept image references")
+            # Enforce the count cap so over-budget saves fail fast with a clear message,
+            # rather than silently succeeding and only failing at render time. This mirrors
+            # what the frontend's budgetFor already prevents, but the backend is authoritative.
+            if field == "image_references":
+                total = len(resolved["images"])
+                try:
+                    config = models.active_image_config(session, user_id)
+                    limit = config.max_reference_images if config else 0
+                    if total > limit:
+                        raise HTTPException(
+                            400, f"image prompt references: {total} selected, model supports {limit}"
+                        )
+                except Exception:
+                    # Config lookup failures (no active model, lookup timeout) must not block
+                    # the save — the render step will catch violations later. Only enforced
+                    # violations that we can confirm right now are hard errors.
+                    pass
+            elif field == "video_references":
+                # Video has per-media caps; reuse the render path's validator.
+                from app.services.generation_service import validate_video_reference_counts
+
+                try:
+                    caps = models.video_capabilities(models.active_video_config(session, user_id))
+                    validate_video_reference_counts(resolved, caps)
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass
         speaker_id = updates.get("speaker_character_id")
         if speaker_id:
             # A speaker from another show would silently resolve to no voice at render time.
@@ -680,6 +731,12 @@ async def create_project_scene(
             ),
             image_references_explicit=body.image_references is not None,
             video_references_explicit=body.video_references is not None,
+            image_prompt_prefixes_json=dump_prompt_prefixes(
+                [item.model_dump() for item in body.image_prompt_prefixes or []]
+            ),
+            video_prompt_prefixes_json=dump_prompt_prefixes(
+                [item.model_dump() for item in body.video_prompt_prefixes or []]
+            ),
             duration_ms=body.duration_ms or 0,
             subtitle_text=body.subtitle_text or "",
             is_locked=bool(body.is_locked),
@@ -963,7 +1020,11 @@ async def generate_project(project_id: str, body: GenerateProjectRequest, user_i
         scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
         maximum = max(0, int(config.get("imageMaxReferenceImages", 4)))
         for payload in scene_payloads:
-            pairs = stored_generation_references(payload.get("image_references_json"))
+            prefixes = stored_prompt_prefixes(payload.get("image_prompt_prefixes_json"))
+            # Prefix mentions and the shot's own share one budget and one numbering, so they
+            # resolve together — see `prompt_prefix_service.combined_references`.
+            pairs = combined_references(prefixes, stored_generation_references(payload.get("image_references_json")))
+            payload["imagePromptPrefixText"] = combined_prompt(prefixes, "")
             if not pairs:
                 continue
             resolved = resolve_generation_references(session, project_id, pairs)
@@ -1079,7 +1140,11 @@ async def generate_video(project_id: str, body: GenerateVideoRequest, user_id: i
         scene_payloads = _scene_payloads(session, project, episode.episode_number, pending)
         if body.references is None:
             for payload in scene_payloads:
-                pairs = stored_generation_references(payload.get("video_references_json"))
+                prefixes = stored_prompt_prefixes(payload.get("video_prompt_prefixes_json"))
+                payload["videoPromptPrefixText"] = combined_prompt(prefixes, "")
+                pairs = combined_references(
+                    prefixes, stored_generation_references(payload.get("video_references_json"))
+                )
                 if not pairs:
                     continue
                 resolved = resolve_generation_references(session, project_id, pairs)

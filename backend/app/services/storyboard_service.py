@@ -23,8 +23,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlmodel import select
+
 from app.core.database import db
-from app.models import Scene
+from app.models import Episode, Scene
 from app.core.realtime import broadcast
 from app.core import runs
 from app.llms.registry import models
@@ -43,8 +45,10 @@ from app.services.generation_service import (
 )
 from app.services.media_service import SheetCell, merge_images
 from app.services.prompt_compiler import compile_prompt
+from app.services.prompt_prefix_service import with_tone_prefix
 from app.services.prompt_service import shot_prompt, tone_sheet_prompt
 from app.services.usage_service import record_usage, require_model_balance
+from app.utils.common import now
 
 
 logger = logging.getLogger(__name__)
@@ -73,6 +77,8 @@ class StoryboardPlan:
     reference_sources: list[tuple[str, str]] = field(default_factory=list)
     scene_reference_sources: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     scene_reference_items: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # The concatenated prefix bodies per shot, resolved while the session was open.
+    scene_prefix_text: dict[str, str] = field(default_factory=dict)
     merge_references: bool = True
     regenerate: bool = False
     existing_tone_path: str | None = None
@@ -192,6 +198,11 @@ async def _generate_shot(
             raise ValueError("该分镜没有内容，先填写分镜描述")
         if narration and visual_prompt and narration != visual_prompt:
             text = f"{narration}\n画面提示词：{visual_prompt}"
+        # The preamble reads first and compiles in the same pass, so its `@素材` take the low
+        # `图N` — matching the prefix-first order their references were resolved in.
+        prefix_text = str(scene.get("promptPrefixText") or "").strip()
+        if prefix_text:
+            text = f"{prefix_text}\n{text}"
         text = compile_prompt(
             text,
             provider=config["provider"],
@@ -284,6 +295,7 @@ async def _anchor(plan: StoryboardPlan, config: dict[str, Any], user_id: int, co
         return None
 
     update_episode_row(plan.episode_id, tone_image_path=tone_path, tone_image_status="success", error_message=None)
+    _write_tone_prefixes(plan)
     await broadcast(
         plan.project_id,
         {
@@ -303,6 +315,54 @@ def _stored_image_path(scene_id: str) -> str | None:
     with db() as session:
         scene = session.get(Scene, scene_id)
         return scene.image_path if scene else None
+
+
+def _write_tone_prefixes(plan: StoryboardPlan) -> None:
+    """Give every shot in the episode a preamble pointing at the anchor that was just drawn.
+
+    Written here rather than left to the editor because the sheet is what the shot is
+    matched against, and the text describing that relationship depends on the shot's own
+    position in the grid — which only exists once the grid does. Applied to the whole
+    episode even when the run rendered a subset: the anchor is episode-wide, so a shot
+    excluded from this batch would otherwise be the only one without the context.
+
+    Best-effort. A shot without its preamble still renders; failing the run over it would
+    throw away a tone sheet the user has already paid for.
+    """
+    try:
+        with db() as session:
+            episode = session.get(Episode, plan.episode_id)
+            # The mention has to spell the label `resolve_generation_references` gives a
+            # `tone` reference — the episode's own title — or `compile_prompt` leaves a bare
+            # `@…` in the prompt instead of a numbered `图N`.
+            tone_label = str((episode.title if episode else "") or plan.episode_title).strip()
+            scenes = session.exec(
+                select(Scene)
+                .where(Scene.episode_id == plan.episode_id, Scene.deleted_at.is_(None))
+                .order_by(Scene.order_num)
+            ).all()
+            total = len(scenes)
+            stamp = now()
+            for index, scene in enumerate(scenes, start=1):
+                order = scene.order_num or index
+                for column in ("image_prompt_prefixes_json", "video_prompt_prefixes_json"):
+                    setattr(
+                        scene,
+                        column,
+                        with_tone_prefix(
+                            getattr(scene, column),
+                            episode_id=plan.episode_id,
+                            tone_label=tone_label,
+                            order=order,
+                            total=total,
+                        ),
+                    )
+                scene.updated_at = stamp
+                session.add(scene)
+    except Exception as exc:
+        logger.warning(
+            "tone prefix write failed project=%s episode=%s: %s", plan.project_id, plan.episode_id, exc
+        )
 
 
 async def run_tone_sheet(
@@ -421,6 +481,7 @@ async def run_storyboard(
             scene = {
                 **scene,
                 "compiledImageReferenceItems": plan.scene_reference_items.get(scene["id"], []),
+                "promptPrefixText": plan.scene_prefix_text.get(scene["id"], ""),
             }
             succeeded = await _generate_shot(plan, scene, index, config, user_id, references)
             results.append(succeeded)

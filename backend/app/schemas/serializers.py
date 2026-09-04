@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.services.artifact_service import signed_url_for_stored
 from app.services.config_service import video_capabilities
+from app.services.prompt_prefix_service import stored_prompt_prefixes
 from app.services.reference_service import stored_generation_references
 
 
@@ -135,6 +136,11 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
             for kind, asset_id in stored_generation_references(scene.video_references_json)
         ],
         "videoReferencesExplicit": bool(scene.video_references_explicit),
+        # Ordered preambles concatenated ahead of each prompt at compile time. Their `@`
+        # mentions spend the same reference slots as the prompt's own, so the editor needs
+        # them to size its limits.
+        "imagePromptPrefixes": stored_prompt_prefixes(scene.image_prompt_prefixes_json),
+        "videoPromptPrefixes": stored_prompt_prefixes(scene.video_prompt_prefixes_json),
         "videoFirstFrame": frame_reference(scene.video_first_frame_json),
         "videoLastFrame": frame_reference(scene.video_last_frame_json),
         # A cleared frame and a frame nobody ever chose are both `videoFirstFrame: null`,

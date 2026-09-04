@@ -100,9 +100,9 @@ export function MentionTextarea({
   id?: string;
   rows?: number;
   value: string;
-  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   references: GenerationReferenceInput[];
-  onReferencesChange: (next: GenerationReferenceInput[]) => void;
+  onReferencesChange: (next: GenerationReferenceInput[], prompt: string) => void;
   assets: ReferenceAssetOption[];
   limits: Partial<Record<ReferenceAssetOption["media"], number>>;
 }) {
@@ -111,9 +111,13 @@ export function MentionTextarea({
   const chips = getChips(effectiveSegments);
 
   const emit = (next: Segment[]) => {
+    const nextPrompt = segmentsToPlainText(next);
+    const nextRefs = refsFromSegments(next);
     setSegments(next);
-    onReferencesChange(refsFromSegments(next));
-    onChange({ target: { value: segmentsToPlainText(next) } } as React.ChangeEvent<HTMLTextAreaElement>);
+    onReferencesChange(nextRefs, nextPrompt);
+    // Call onChange only if provided — prefix editors pass references+prompt atomically
+    // via onReferencesChange and skip onChange to avoid a second state update.
+    onChange?.({ target: { value: nextPrompt } } as React.ChangeEvent<HTMLTextAreaElement>);
   };
 
   const selected = useMemo(() => new Set(refsFromSegments(effectiveSegments).map(keyOf)), [effectiveSegments]);
@@ -129,7 +133,27 @@ export function MentionTextarea({
       .map((asset) => ({ value: keyOf(asset), label: asset.label, description: asset.media, data: asset }));
   };
 
-  const removeChip = (target: ChipSegment) => emit(effectiveSegments.filter((item) => item !== target));
+  const removeChip = (target: ChipSegment) => {
+    let removed = false;
+    const next = effectiveSegments.filter((seg) => {
+      if (removed) return true;
+      if (seg === target) {
+        removed = true;
+        return false;
+      }
+      if (
+        seg.type === "chip" &&
+        seg.value === target.value &&
+        (!target.displayText || seg.displayText === target.displayText) &&
+        (!target.trigger || seg.trigger === target.trigger)
+      ) {
+        removed = true;
+        return false;
+      }
+      return true;
+    });
+    emit(next);
+  };
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -140,13 +164,21 @@ export function MentionTextarea({
         minHeight={rows ? rows * 24 : undefined}
         value={effectiveSegments}
         onChange={emit}
+        onChipClick={removeChip}
         triggers={[mentionTrigger({ onSearch: search, onSelect: (suggestion) => suggestion.label, chipStyle: "pill", accessibilityLabel: "素材", emptyMessage: "没有可用素材" })]}
         submitOnEnter={false}
       />
       {chips.length ? (
         <div className="flex flex-wrap gap-1">
           {chips.map((item, index) => (
-            <Button key={`${item.value}:${item.displayText}:${index}`} type="button" size="xs" variant="ghost" className="h-6 rounded-full bg-primary/10 px-2 text-[11px] text-primary hover:bg-destructive/10 hover:text-destructive" onClick={() => removeChip(item)}>
+            <Button
+              key={`${item.value}:${item.displayText}:${index}`}
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="h-6 rounded-full bg-primary/10 px-2 text-[11px] text-primary hover:bg-destructive/10 hover:text-destructive cursor-pointer transition-colors"
+              onClick={() => removeChip(item)}
+            >
               @{item.displayText} ×
             </Button>
           ))}

@@ -6,7 +6,7 @@ import re
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select
 
 from app.api.deps import current_user_id
@@ -17,6 +17,7 @@ from app.schemas.requests import CompilePromptRequest, OptimizePromptRequest
 from app.services.config_service import active_model_config, project_model_config
 from app.services.project_service import owned_project
 from app.services.prompt_compiler import compile_prompt
+from app.services.prompt_prefix_service import combined_prompt, combined_references, tone_prefix_item
 from app.services.prompt_service import PRESETS
 from app.services.reference_service import resolve_generation_references
 from app.services.usage_service import record_usage, require_model_balance
@@ -86,8 +87,13 @@ def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(c
     with db() as session:
         project = owned_project(session, body.project_id, user_id)
         config = project_model_config(session, user_id, project, body.kind, "最终提示词预览")
+        prefixes = [item.model_dump() for item in body.prefixes]
+        # Prefix-first, deduplicated — the same order the render resolves them in, so the
+        # `图N` the user reads here is the `图N` the provider is asked for.
         resolved = resolve_generation_references(
-            session, body.project_id, [(item.kind, item.id) for item in body.references]
+            session,
+            body.project_id,
+            combined_references(prefixes, [(item.kind, item.id) for item in body.references]),
         )
         image_offset = 0
         speaker_name = ""
@@ -111,7 +117,7 @@ def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(c
                 speaker = cast_for_episode(session, body.project_id, episode.episode_number if episode else 0).get(speaker_name)
                 speaker_name = speaker.name if speaker else speaker_name
     return compile_prompt(
-        body.prompt,
+        combined_prompt(prefixes, body.prompt),
         provider=config["provider"],
         model=config["model"],
         references=resolved["items"],
@@ -132,6 +138,49 @@ def list_prompt_presets(kind: str = "character") -> dict[str, Any]:
     if presets is None:
         raise HTTPException(400, f"unknown preset kind: {kind[:40]}")
     return {"kind": kind.strip().lower(), "presets": [dict(preset) for preset in presets]}
+
+
+@router.get("/prefix-presets")
+def list_prompt_prefix_presets(
+    # Aliased so the query string is camelCase like every request body, rather than this one
+    # endpoint being the exception a client has to remember.
+    project_id: str = Query(alias="projectId", max_length=64),
+    scene_id: str = Query(alias="sceneId", max_length=64),
+    user_id: int = Depends(current_user_id),
+) -> dict[str, Any]:
+    """Ready-to-insert preambles for one shot, for the editor's quick-fill bar.
+
+    Served rather than templated in the browser because the wording is an instruction to a
+    model, and the one the tone sheet writes on a successful anchor has to stay identical to
+    the one this hands back — a user who deleted the automatic item is asking for that item,
+    not for a copy of it that drifted.
+
+    Only the tone preset exists today, and only once the episode has an anchor to point at:
+    the text is entirely about locating this shot's cell in the grid, which is meaningless
+    without a grid.
+    """
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        scene = session.exec(
+            select(Scene).where(
+                Scene.id == scene_id, Scene.project_id == project_id, Scene.deleted_at.is_(None)
+            )
+        ).first()
+        if not scene:
+            raise HTTPException(404, "scene not found")
+        episode = session.get(Episode, scene.episode_id) if scene.episode_id else None
+        if not episode or not episode.tone_image_path:
+            return {"presets": []}
+        scenes = session.exec(
+            select(Scene)
+            .where(Scene.episode_id == episode.id, Scene.deleted_at.is_(None))
+            .order_by(Scene.order_num)
+        ).all()
+        order = scene.order_num or 1
+        # The label has to be the one `resolve_generation_references` gives a `tone`
+        # reference, or the `@` in the preset never compiles to a numbered `图N`.
+        item = tone_prefix_item(episode.id, str(episode.title or ""), order, len(scenes))
+    return {"presets": [item]}
 
 
 @router.post("/optimize")

@@ -158,7 +158,17 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         scene = {
             **scene,
             "visual_prompt": compile_prompt(
-                str(scene.get("visual_prompt") or ""),
+                # The preamble goes in ahead of the shot's own text and *before* compiling, so
+                # its `@素材` are numbered in the same pass — and first, matching the order
+                # `combined_references` resolved them in.
+                "\n".join(
+                    part
+                    for part in (
+                        str(scene.get("imagePromptPrefixText") or "").strip(),
+                        str(scene.get("visual_prompt") or "").strip(),
+                    )
+                    if part
+                ),
                 provider=config["provider"],
                 model=config["model"],
                 references=scene.get("compiledImageReferenceItems") or [],
@@ -457,6 +467,11 @@ async def _generate_scene_video(
         )
         if direction:
             prompt = f"{prompt}\n{direction}"
+        # Ahead of the motion prompt and before compiling, for the same reason as the still:
+        # the preamble's mentions were resolved first, so they must read first too.
+        prefix_text = str(scene.get("videoPromptPrefixText") or options.get("videoPromptPrefixText") or "").strip()
+        if prefix_text:
+            prompt = f"{prefix_text}\n{prompt}"
         prompt = compile_prompt(
             prompt,
             provider=config["provider"],

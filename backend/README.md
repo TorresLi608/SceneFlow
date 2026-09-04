@@ -135,6 +135,15 @@ Official script configs support OpenAI-compatible relays by setting `provider: "
     on-image labelling the reference depends on rather than optimising it away
 - `GET /api/prompts/presets?kind=character|prop|cover` — built-in starting templates, so a
   blank prompt box is never the only option. Static text; no model call and no balance check
+- `GET /api/prompts/prefix-presets?projectId=&sceneId=` — ready-to-insert prefix prompts
+  (前置提示词) for one shot's quick-fill bar. Only the tone-sheet preamble exists today, and the
+  list comes back empty until the episode has an anchor: the wording is about locating this
+  shot's cell in the grid. Served rather than templated in the browser so it stays identical
+  to what a successful tone sheet writes
+- `POST /api/prompts/compile` — `{ projectId, kind, sceneId?, prompt, dialogue?, references[],
+  prefixes[] }` → the editor's `@素材` rewritten to the provider's positional `图N` / `视频N` /
+  `音频N`. `prefixes` are combined server-side, prefix-first, so the previewed numbering is
+  the numbering the render sends
 
 ### Projects (JWT required)
 - `GET /api/projects` — the caller's live series, each with its current episode's shots
@@ -387,6 +396,18 @@ A `Scene` carries both halves of a shot. The frame side is `narration`, `dialogu
 never reaches the still prompt), `video_prompt`, and `duration_ms`. They are separate because
 one describes a frame and the other describes several seconds — collapsing them produced clips
 that either stood still or ignored the composition the storyboard image had already fixed.
+
+Each of those two prompts also carries an ordered list of **prefix prompts** (前置提示词) in
+`image_prompt_prefixes_json` / `video_prompt_prefixes_json`: `{id, name, prompt, references,
+source}` items concatenated ahead of the prompt at compile time. Stored beside the prompt
+rather than inside it, so re-running the breakdown — which rewrites `visual_prompt` and
+`video_prompt` wholesale — cannot take the episode-level context with it. Their `@素材`
+mentions are real reference slots: `prompt_prefix_service.combined_references` folds them and
+the shot's own into one deduplicated, prefix-first list, which is also the order
+`compile_prompt` numbers `图1`, `图2`… in. A successful tone sheet writes one item with
+`source: "tone"` into every shot of the episode, pointing each at its own cell in the grid;
+regenerating rewrites that item in place rather than stacking a second copy, and the editor's
+quick-fill preset (`GET /api/prompts/prefix-presets`) reproduces it after a user deletes one.
 
 A character card pins a look, an image model, and a voice. A `CharacterState` is one look
 that character can appear in — an age, an outfit, a transformation — and its

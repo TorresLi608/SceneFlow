@@ -1,5 +1,5 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
-import type { GenerationReferenceInput } from "@/types/project";
+import type { GenerationReferenceInput, PromptPrefix } from "@/types/project";
 
 export type PromptKind = "image" | "video" | "voice" | "audio" | "character" | "prop" | "cover";
 
@@ -46,6 +46,9 @@ export async function optimizePromptAction(payload: OptimizePromptInput, signal?
  * `sceneId` is what lets the backend account for the storyboard frame a video render
  * prepends — without it the preview numbers the references one lower than the model
  * will see them.
+ *
+ * `prefixes` are sent raw rather than pre-concatenated, so the server combines them the
+ * one way the render does and the previewed `图N` is the `图N` the provider gets.
  */
 export async function compilePromptAction(
   payload: {
@@ -55,9 +58,30 @@ export async function compilePromptAction(
     prompt: string;
     dialogue?: string;
     references?: GenerationReferenceInput[];
+    prefixes?: PromptPrefix[];
   },
   signal?: AbortSignal,
 ) {
   const response = await httpClient.post<CompiledPromptResponse>("/api/bff/prompts/compile", payload, { signal });
+  return response.data;
+}
+
+/**
+ * Ready-to-insert preambles for one shot's quick-fill bar.
+ *
+ * Fetched rather than templated here: the text is an instruction to a model, and it has to
+ * stay byte-identical to the one the tone sheet writes on a successful anchor. Comes back
+ * empty when the episode has no tone sheet — the wording is about locating this shot's cell
+ * in the grid, which needs a grid.
+ */
+export async function listPromptPrefixPresetsAction(
+  projectId: string,
+  sceneId: string,
+  signal?: AbortSignal,
+) {
+  const response = await httpClient.get<{ presets: PromptPrefix[] }>("/api/bff/prompts/prefix-presets", {
+    params: { projectId, sceneId },
+    signal,
+  });
   return response.data;
 }

@@ -174,6 +174,21 @@ class GenerationReferenceRequest(CamelModel):
     id: str = Field(min_length=1, max_length=64)
 
 
+class PromptPrefixRequest(CamelModel):
+    """One preamble item stored above a shot's own prompt.
+
+    `source` is how the tone-sheet item is recognised on a regenerate; anything the user
+    wrote by hand leaves it empty. Its `references` are real reference slots, not decoration
+    — see `app/services/prompt_prefix_service.py`.
+    """
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(default="", max_length=80)
+    prompt: str = Field(default="", max_length=4000)
+    references: list[GenerationReferenceRequest] = Field(default_factory=list, max_length=64)
+    source: str = Field(default="", max_length=32)
+
+
 class CompilePromptRequest(CamelModel):
     project_id: str = Field(min_length=1, max_length=64)
     kind: Literal["image", "video"]
@@ -183,6 +198,9 @@ class CompilePromptRequest(CamelModel):
     prompt: str = Field(default="", max_length=10_000)
     dialogue: str = Field(default="", max_length=4000)
     references: list[GenerationReferenceRequest] = Field(default_factory=list, max_length=64)
+    # Combined here rather than by the client, so the preview numbers `图N` exactly the way
+    # the render will. Prefix text comes first and its mentions take the low numbers.
+    prefixes: list[PromptPrefixRequest] = Field(default_factory=list, max_length=8)
 
 
 class GenerateToneSheetRequest(CamelModel):
@@ -283,6 +301,10 @@ class UpdateSceneRequest(CamelModel):
     video_prompt: str | None = Field(default=None, max_length=4000)
     image_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
     video_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
+    # An empty list is a real edit — the user deleted the last preamble — so these follow the
+    # same absent-means-leave-alone rule as everything else rather than treating `[]` as unset.
+    image_prompt_prefixes: list[PromptPrefixRequest] | None = Field(default=None, max_length=8)
+    video_prompt_prefixes: list[PromptPrefixRequest] | None = Field(default=None, max_length=8)
     # `""` clears the slot. A JSON null cannot mean "clear" here: after `exclude_unset` it
     # is indistinguishable from a field the client left alone, and absent has to keep
     # meaning "leave alone". Same reason `speaker_character_id` takes "" rather than null.
