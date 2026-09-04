@@ -160,7 +160,7 @@ export function BreakdownPanel({
                   </Badge>
                   {totalRefsSelected > 0 ? (
                     <Badge variant="secondary" className="h-5 px-1.5 font-normal bg-primary/10 text-primary">
-                      {totalRefsSelected} 素材
+                      {t("episode.selectedAssetsCount", { count: totalRefsSelected })}
                     </Badge>
                   ) : null}
                 </div>
@@ -193,7 +193,7 @@ export function BreakdownPanel({
             onClick={() => setCollapsed(!collapsed)}
             className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
           >
-            <span>{isExpanded ? t("common.collapse") || "收起设置" : "展开设置"}</span>
+            <span>{isExpanded ? t("common.collapseSettings") : t("common.expandSettings")}</span>
             {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
           </Button>
         </div>

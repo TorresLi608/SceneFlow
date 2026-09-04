@@ -342,7 +342,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     .map((scene) => ({
       kind: "sceneImage",
       id: scene.id,
-      label: `分镜 ${scene.order}`,
+      label: t("episode.shotNumber", { order: scene.order }),
       media: "image",
       url: artifactBffUrl(scene.image.url!),
     }));
@@ -351,7 +351,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     .map((scene) => ({
       kind: "sceneVideo",
       id: scene.id,
-      label: `分镜 ${scene.order}`,
+      label: t("episode.shotNumber", { order: scene.order }),
       media: "video",
       url: artifactBffUrl(scene.video.url!),
     }));
@@ -411,11 +411,11 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
               <Sparkles className="size-3" />
-              {readyImagesCount}/{shots.length} 图
+              {t("episode.imagesBadge", { ready: readyImagesCount, total: shots.length })}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 font-mono text-[11px] text-blue-600 dark:text-blue-400 border border-blue-500/25">
               <Film className="size-3" />
-              {readyVideosCount}/{shots.length} 视频
+              {t("episode.videosBadge", { ready: readyVideosCount, total: shots.length })}
             </span>
           </div>
         </div>
@@ -837,7 +837,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
           ...characterAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
           ...propAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
           ...toneAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...shots.filter((shot) => shot.image.url).map((shot) => ({ id: `scene:${shot.id}`, name: `分镜 ${shot.order}`, url: artifactBffUrl(shot.image.url!) })),
+          ...shots.filter((shot) => shot.image.url).map((shot) => ({ id: `scene:${shot.id}`, name: t("episode.shotNumber", { order: shot.order }), url: artifactBffUrl(shot.image.url!) })),
         ]}
         onChanged={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.assets(projectId) });

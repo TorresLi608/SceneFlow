@@ -12,6 +12,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { GenerationReferenceInput, GenerationReferenceKind } from "@/types/project";
 
@@ -106,6 +107,7 @@ export function MentionTextarea({
   assets: ReferenceAssetOption[];
   limits: Partial<Record<ReferenceAssetOption["media"], number>>;
 }) {
+  const { t } = useI18n();
   const [segments, setSegments] = useState<Segment[]>(() => initialSegments(value, references, assets));
   const effectiveSegments = segmentsToPlainText(segments) === value ? segments : initialSegments(value, references, assets);
   const chips = getChips(effectiveSegments);
@@ -165,7 +167,7 @@ export function MentionTextarea({
         value={effectiveSegments}
         onChange={emit}
         onChipClick={removeChip}
-        triggers={[mentionTrigger({ onSearch: search, onSelect: (suggestion) => suggestion.label, chipStyle: "pill", accessibilityLabel: "素材", emptyMessage: "没有可用素材" })]}
+        triggers={[mentionTrigger({ onSearch: search, onSelect: (suggestion) => suggestion.label, chipStyle: "pill", accessibilityLabel: t("episode.mentionAssetsAccessibility"), emptyMessage: t("episode.mentionAssetsEmpty") })]}
         submitOnEnter={false}
       />
       {chips.length ? (

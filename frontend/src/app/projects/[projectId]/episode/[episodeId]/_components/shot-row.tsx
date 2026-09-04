@@ -467,7 +467,7 @@ export function ShotRow({
                 )}
               />
               <ImageIcon className="size-3" />
-              {scene.image.status === "success" ? "图就绪" : scene.image.status === "error" ? "图失败" : scene.image.status}
+              {scene.image.status === "success" ? t("episode.imageStatusReady") : scene.image.status === "error" ? t("episode.imageStatusError") : scene.image.status}
             </span>
 
             <span
@@ -491,7 +491,7 @@ export function ShotRow({
                 )}
               />
               <Film className="size-3" />
-              {scene.video.status === "success" ? "视频就绪" : scene.video.status === "error" ? "视频失败" : scene.video.status}
+              {scene.video.status === "success" ? t("episode.videoStatusReady") : scene.video.status === "error" ? t("episode.videoStatusError") : scene.video.status}
             </span>
           </div>
 
@@ -1044,7 +1044,7 @@ export function ShotRow({
               className="gap-1.5 cursor-pointer"
             >
               {promptCopied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
-              <span>{promptCopied ? (t("episode.copiedPrompt") || "已复制到剪贴板") : (t("episode.copyPrompt") || "复制提示词")}</span>
+              <span>{promptCopied ? t("episode.copiedPrompt") : t("episode.copyPrompt")}</span>
             </Button>
             <Button size="sm" className="cursor-pointer" onClick={() => setCompiledPrompt(null)}>
               {t("common.close")}

@@ -242,7 +242,7 @@ export function AssetLibraryDialog({
                 className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 <X className="mr-1 size-3" />
-                取消编辑
+                {t("episode.assetCancelEdit")}
               </Button>
             ) : null}
           </div>
@@ -252,15 +252,15 @@ export function AssetLibraryDialog({
             {/* Left: Asset List Grid */}
             <div className="flex flex-col min-h-0 rounded-xl border border-border/60 bg-muted/10 p-3.5 overflow-hidden">
               <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-border/40 text-xs font-medium text-muted-foreground">
-                <span>素材列表 ({visible.length})</span>
-                <span className="text-[11px] opacity-70">点击可预览大图</span>
+                <span>{t("episode.assetListHeader", { count: visible.length })}</span>
+                <span className="text-[11px] opacity-70">{t("episode.assetPreviewHint")}</span>
               </div>
 
               {visible.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
                   <FolderOpen className="size-10 opacity-30" />
                   <p className="text-xs">{t("episode.assetEmpty")}</p>
-                  <p className="text-[11px] opacity-70">在右侧面板添加新素材或上传本地文件</p>
+                  <p className="text-[11px] opacity-70">{t("episode.assetEmptyHint")}</p>
                 </div>
               ) : (
                 <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 overflow-y-auto pr-1 content-start auto-rows-max chat-message-list-scrollbar">
@@ -303,8 +303,8 @@ export function AssetLibraryDialog({
                         ) : (
                           <Volume2 className="size-6 text-muted-foreground opacity-60" />
                         )}
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[11px]">
-                          点击预览
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/opacity-100 transition-opacity flex items-center justify-center text-white text-[11px]">
+                          {t("episode.assetClickPreview")}
                         </div>
                       </div>
 
@@ -326,7 +326,7 @@ export function AssetLibraryDialog({
                             size="icon-xs"
                             variant="ghost"
                             onClick={() => startEdit(asset)}
-                            title="编辑"
+                            title={t("common.edit")}
                             className="text-muted-foreground hover:text-foreground cursor-pointer"
                           >
                             <Pencil className="size-3.5" />
@@ -335,7 +335,7 @@ export function AssetLibraryDialog({
                             size="icon-xs"
                             variant="ghost"
                             onClick={() => setPendingDelete(asset)}
-                            title="删除"
+                            title={t("common.delete")}
                             className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive cursor-pointer"
                           >
                             <Trash2 className="size-3.5" />
@@ -359,7 +359,7 @@ export function AssetLibraryDialog({
                   </span>
                   {editing ? (
                     <Badge variant="outline" className="text-[10px] text-primary border-primary/40">
-                      编辑中
+                      {t("episode.assetEditing")}
                     </Badge>
                   ) : null}
                 </div>
@@ -397,7 +397,7 @@ export function AssetLibraryDialog({
                 {tab === "image" ? (
                   <Field>
                     <FieldLabel className="text-xs text-muted-foreground">
-                      图片资源 (URL 或 本地上传)
+                      {t("episode.assetImageResource")}
                     </FieldLabel>
                     <div className="flex flex-col gap-2">
                       <Input
@@ -406,12 +406,12 @@ export function AssetLibraryDialog({
                           setData(e.target.value);
                           setFileName("");
                         }}
-                        placeholder={fileName ? `已选择: ${fileName}` : t("episode.assetUrl")}
+                        placeholder={fileName ? t("episode.assetSelectedFile", { fileName }) : t("episode.assetUrl")}
                         className="text-xs h-8 bg-background/80 font-mono"
                       />
                       <label className="flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/80 bg-muted/30 px-3 text-xs font-medium text-muted-foreground hover:border-primary/60 hover:bg-muted/50 hover:text-foreground transition-colors">
                         <Upload className="size-3.5" />
-                        <span>{fileName ? `重新选择 (${fileName})` : t("episode.assetUpload")}</span>
+                        <span>{fileName ? t("episode.assetReselectFile", { fileName }) : t("episode.assetUpload")}</span>
                         <input
                           type="file"
                           accept="image/png,image/jpeg,image/webp"
@@ -467,7 +467,7 @@ export function AssetLibraryDialog({
                   </Button>
                   {editing ? (
                     <Button size="sm" variant="outline" onClick={reset} className="cursor-pointer">
-                      取消
+                      {t("common.cancel")}
                     </Button>
                   ) : null}
                 </div>
@@ -482,7 +482,7 @@ export function AssetLibraryDialog({
                       {t("episode.assetMerge")}
                     </span>
                     <Badge variant="outline" className="text-[10px] font-mono">
-                      已选 {selected.length} 张
+                      {t("episode.assetSelectedCount", { count: selected.length })}
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -519,11 +519,11 @@ export function AssetLibraryDialog({
                   </div>
 
                   <Field>
-                    <FieldLabel className="text-xs text-muted-foreground">合并后素材名称</FieldLabel>
+                    <FieldLabel className="text-xs text-muted-foreground">{t("episode.assetMergedName")}</FieldLabel>
                     <Input
                       value={selected.length ? name : ""}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="如：主要场景组合总图"
+                      placeholder={t("episode.assetMergedNamePlaceholder")}
                       className="text-xs h-8 bg-background/80"
                     />
                   </Field>
