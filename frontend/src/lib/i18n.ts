@@ -1123,6 +1123,8 @@ const translations: Record<AppLocale, TranslationDict> = {
     "episode.dialogue": "台词",
     "episode.finalPromptPreview": "最终提示词预览",
     "episode.finalPromptPreviewFailed": "提示词预览失败，请稍后重试",
+    "episode.copyPrompt": "复制提示词",
+    "episode.copiedPrompt": "已复制到剪贴板",
     "episode.dialoguePlaceholder": "这一镜谁说了什么",
     "episode.speaker": "说话角色",
     "episode.speakerNone": "无（旁白）",
@@ -2323,6 +2325,8 @@ const translations: Record<AppLocale, TranslationDict> = {
     "episode.dialogue": "Dialogue",
     "episode.finalPromptPreview": "Final prompt preview",
     "episode.finalPromptPreviewFailed": "Prompt preview failed, try again",
+    "episode.copyPrompt": "Copy prompt",
+    "episode.copiedPrompt": "Copied to clipboard",
     "episode.dialoguePlaceholder": "Who says what in this shot",
     "episode.speaker": "Speaker",
     "episode.speakerNone": "None (narration)",
@@ -2423,6 +2427,9 @@ if (!i18next.isInitialized) {
       zh: { translation: translations.zh },
     },
   });
+} else {
+  i18next.addResourceBundle("en", "translation", translations.en, true, true);
+  i18next.addResourceBundle("zh", "translation", translations.zh, true, true);
 }
 
 export function useI18n() {

@@ -273,6 +273,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const deleteReference = (asset: ReferenceAssetOption) => deleteReferenceMutation.mutateAsync(asset);
 
   const shots = episode.scenes;
+  const readyImagesCount = shots.filter((s) => s.image.status === "success").length;
+  const readyVideosCount = shots.filter((s) => s.video.status === "success").length;
   const toneReady = episode.toneImageStatus === "success" && Boolean(episode.toneImageUrl);
   const toneGenerating = toneMutation.isPending || episode.toneImageStatus === "generating";
   const targetShots = (): BatchTarget => ({
@@ -396,10 +398,26 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
             <ArrowLeft className="size-4" />
             {t("episode.backToEpisodes")}
           </Link>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="max-w-[200px] truncate text-sm font-medium text-muted-foreground">{project?.title}</span>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="max-w-[240px] truncate text-sm font-semibold text-foreground">{episode.title}</span>
+          <span className="text-muted-foreground/40">/</span>
+          <span className="max-w-[160px] truncate text-sm font-medium text-muted-foreground">{project?.title}</span>
+          <span className="text-muted-foreground/40">/</span>
+          <span className="max-w-[200px] truncate text-sm font-semibold text-foreground">{episode.title}</span>
+
+          {/* 剧集制作进度概览徽章 */}
+          <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-3 border-l border-border/50 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground border border-border/40">
+              <Layers className="size-3 text-primary" />
+              {shots.length} {t("episode.shots")}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+              <Sparkles className="size-3" />
+              {readyImagesCount}/{shots.length} 图
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 font-mono text-[11px] text-blue-600 dark:text-blue-400 border border-blue-500/25">
+              <Film className="size-3" />
+              {readyVideosCount}/{shots.length} 视频
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -544,6 +562,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
           disabled={busy || breakdownBlocked}
           targetDisabled={busy}
           disabledReason={breakdownBlocked ? breakdownBlockedReason : undefined}
+          defaultCollapsed={shots.length > 0}
           onStart={startBreakdown}
           onStop={stopBreakdown}
         />
@@ -622,15 +641,15 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         <MediaPreviewDialog item={tonePreview} onOpenChange={(open) => !open && setTonePreview(null)} />
 
         {/* Section 4: Shots & Videos List */}
-        <section className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/40 p-4 shadow-sm">
-          {/* Sticky-like Batch Actions Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-3">
+        <section className="flex flex-col gap-3.5 rounded-xl border border-border/70 bg-card/40 p-4 shadow-sm relative">
+          {/* Smart Sticky Batch Actions Toolbar */}
+          <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-0.5 flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-border/60 bg-background/90 px-4 py-3 shadow-xs backdrop-blur-md transition-all">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
                 <Layers className="size-4" />
               </div>
               <h2 className="text-sm font-semibold">{t("episode.imagesSection")}</h2>
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="text-xs font-mono font-medium">
                 {t("episode.selectedCount", { count: selectedShots.length })}
               </Badge>
               <Button
@@ -638,7 +657,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 variant="ghost"
                 disabled={shots.length === 0}
                 onClick={() => setSelectedShots(allSelected ? [] : shots.map((shot) => shot.id))}
-                className="cursor-pointer text-muted-foreground hover:text-foreground"
+                className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
               >
                 {allSelected ? <X className="mr-1 size-3" /> : null}
                 {allSelected ? t("episode.clearSelection") : t("episode.selectAll")}
@@ -656,7 +675,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   setActiveBatch("image");
                   renderMutation.mutate(targetShots());
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer shadow-xs"
               >
                 {imageBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
                 {t("episode.batchImages")}
@@ -669,7 +688,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   setActiveBatch("image");
                   renderMutation.mutate({ pendingOnly: true });
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer shadow-xs text-xs"
               >
                 <RefreshCw data-icon="inline-start" />
                 {t("episode.retryPendingImages", { count: pendingShots("image").length })}
@@ -687,7 +706,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   setActiveBatch("video");
                   videoMutation.mutate(targetVideoShots());
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer shadow-xs"
               >
                 {videoBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Film data-icon="inline-start" />}
                 {t("episode.batchVideos")}
@@ -701,7 +720,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   setActiveBatch("video");
                   videoMutation.mutate({ sceneIds: pendingShots("video").map((shot) => shot.id), pendingOnly: true });
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer shadow-xs text-xs"
               >
                 <RefreshCw data-icon="inline-start" />
                 {t("episode.retryPendingVideos", { count: pendingShots("video").length })}
@@ -710,8 +729,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               <div className="h-4 w-px bg-border/60 mx-0.5" />
 
               {/* Add Shot Button */}
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => addShotMutation.mutate()} className="cursor-pointer">
-                <Plus data-icon="inline-start" />
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => addShotMutation.mutate()} className="cursor-pointer shadow-xs text-xs">
+                <Plus data-icon="inline-start" className="text-primary" />
                 {t("episode.newShot")}
               </Button>
             </div>
