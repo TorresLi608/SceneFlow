@@ -90,7 +90,7 @@ export function InvitationCodeManager() {
           <h2 className="text-base font-semibold">{t("admin.invitationCodes")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("admin.invitationCodesDescription")}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="cursor-pointer">
+        <Button onClick={() => setCreateOpen(true)} className="gap-1.5 rounded-lg font-semibold shadow-xs cursor-pointer">
           <Plus className="size-4" />
           {t("admin.createInvitationCode")}
         </Button>
@@ -121,73 +121,71 @@ export function InvitationCodeManager() {
         ) : null}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-xs backdrop-blur-md">
-        <Table className="min-w-[1080px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("admin.invitationCode")}</TableHead>
-              <TableHead>{t("admin.status")}</TableHead>
-              <TableHead>{t("admin.tableCreatedAt")}</TableHead>
-              <TableHead>{t("admin.expiresAt")}</TableHead>
-              <TableHead>{t("admin.usedBy")}</TableHead>
-              <TableHead>{t("admin.usedAt")}</TableHead>
-              <TableHead>{t("admin.createdBy")}</TableHead>
-              <TableHead className="text-right">{t("admin.tableActions")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {codesQuery.data?.invitationCodes.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-mono font-semibold tracking-wide">
-                  <div className="flex items-center gap-2">
-                    <span>{item.code}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCode(item.code)}
-                      className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground cursor-pointer"
-                      title={t("admin.copyInvitationCode")}
-                    >
-                      <Copy className="size-3.5" />
-                    </button>
-                  </div>
-                </TableCell>
-                <TableCell><Badge variant={statusVariant[item.status]}>{t(`admin.invitationStatus.${item.status}`)}</Badge></TableCell>
-                <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
-                <TableCell className="text-muted-foreground">{formatDateTime(item.expiresAt)}</TableCell>
-                <TableCell>{item.usedBy?.username ?? "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{item.usedAt ? formatDateTime(item.usedAt) : "—"}</TableCell>
-                <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 gap-1.5 text-xs font-medium cursor-pointer"
-                    onClick={() => handleCopyInviteLink(item.code)}
-                    title={t("admin.copyInvitationLink")}
+      <Table className="min-w-[1080px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("admin.invitationCode")}</TableHead>
+            <TableHead>{t("admin.status")}</TableHead>
+            <TableHead>{t("admin.tableCreatedAt")}</TableHead>
+            <TableHead>{t("admin.expiresAt")}</TableHead>
+            <TableHead>{t("admin.usedBy")}</TableHead>
+            <TableHead>{t("admin.usedAt")}</TableHead>
+            <TableHead>{t("admin.createdBy")}</TableHead>
+            <TableHead className="text-right">{t("admin.tableActions")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {codesQuery.data?.invitationCodes.map((item) => (
+            <TableRow key={item.id}>
+              <TableCell className="font-mono font-semibold tracking-wide">
+                <div className="flex items-center gap-2">
+                  <span>{item.code}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCode(item.code)}
+                    className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground cursor-pointer"
+                    title={t("admin.copyInvitationCode")}
                   >
-                    <Link2 className="size-3.5 text-primary" />
-                    {t("admin.copyInvitationLink")}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {codesQuery.isLoading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                  {t("common.loading")}
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {!codesQuery.isLoading && !codesQuery.data?.invitationCodes.length ? (
-              <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                  {t("admin.noInvitationCodes")}
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
-      </div>
+                    <Copy className="size-3.5" />
+                  </button>
+                </div>
+              </TableCell>
+              <TableCell><Badge variant={statusVariant[item.status]}>{t(`admin.invitationStatus.${item.status}`)}</Badge></TableCell>
+              <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
+              <TableCell className="text-muted-foreground">{formatDateTime(item.expiresAt)}</TableCell>
+              <TableCell>{item.usedBy?.username ?? "—"}</TableCell>
+              <TableCell className="text-muted-foreground">{item.usedAt ? formatDateTime(item.usedAt) : "—"}</TableCell>
+              <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
+              <TableCell className="text-right">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-xs font-medium cursor-pointer"
+                  onClick={() => handleCopyInviteLink(item.code)}
+                  title={t("admin.copyInvitationLink")}
+                >
+                  <Link2 className="size-3.5 text-primary" />
+                  {t("admin.copyInvitationLink")}
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {codesQuery.isLoading ? (
+            <TableRow>
+              <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                {t("common.loading")}
+              </TableCell>
+            </TableRow>
+          ) : null}
+          {!codesQuery.isLoading && !codesQuery.data?.invitationCodes.length ? (
+            <TableRow>
+              <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                {t("admin.noInvitationCodes")}
+              </TableCell>
+            </TableRow>
+          ) : null}
+        </TableBody>
+      </Table>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>{t("admin.pagination", { total: pagination.total, page: pagination.page, pageCount: pagination.pageCount })}</span>

@@ -70,7 +70,7 @@ A `Project` is a series; `Episode` is an installment; `Scene` is one shot. Shot 
 
 - Backend **8080**, frontend development **4000**. `GET /healthz` returns `{"status":"ok"}` without probing storage or the worker.
 - Development login: `superAdmin` / `superAdmin@123`. Production rejects the default JWT, AES, and super-admin secrets.
-- `DATABASE_URL` overrides legacy `SCENEFLOW_DB_PATH`; local fallback is repository-root `data/app.db`. Docker defaults to `/app/data/app.db`, with Compose binding the host data directory at `/app/data`. [Local setup](../reference/local-setup.md#docker-deployment) covers permissions, backups, and migrating old storage.
+- `DATABASE_URL` is the only database setting; local fallback is repository-root `data/app.db`. Docker defaults to `/app/data/app.db`, with Compose binding the host data directory at `/app/data`. [Local setup](../reference/local-setup.md#docker-deployment) covers permissions, backups, and migrating old storage.
 - `SCENEFLOW_SUPER_ADMIN_USERNAME` customizes the login; the legacy default account is renamed in place. [Authentication](../design/feature-auth.md#super-admin) documents collision handling and subsequent changes.
 - The development launcher can kill processes occupying `PORT`; use the [local runbook](../reference/local-setup.md) before starting another server.
 - [Backend reference](../../backend/README.md) lists environment variables/providers/endpoints. [Backlog](../plans/backlog.md) separates current gaps from field reports.

@@ -257,13 +257,12 @@ Visit [http://localhost:4000](http://localhost:4000) in your browser.
 | `SCENEFLOW_ENV` | `development` | Set to `production` to enable the checks above. |
 | `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | Backend address baked into signed media links — must be reachable by the browser. |
 | `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | Allowed frontend origins, comma-separated. |
-| `DATABASE_URL` | Repository-root `data/app.db`; Docker `sqlite:////app/data/app.db` | SQLite URL; parent directories are created before engine initialization. Takes precedence over `SCENEFLOW_DB_PATH`. |
-| `SCENEFLOW_DB_PATH` | Unset | Legacy SQLite file override when `DATABASE_URL` is unset. Relative paths resolve from the working directory, normally `backend/`. |
+| `DATABASE_URL` | Repository-root `data/app.db`; Docker `sqlite:////app/data/app.db` | The only database setting, for local development and deployment. SQLite parent directories are created before engine initialization. |
 | `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | Generated media directory. Back this up together with the database. |
 
 The full list — port, log level, context budget, and CJK font overrides — is in [`backend/README.md`](backend/README.md#environment).
 
-For local development, set `DATABASE_URL` in `backend/.env` if needed; with neither database variable set, the default is always `<repository>/data/app.db`, regardless of the working directory. Existing `SCENEFLOW_DB_PATH=./sceneflow.db` settings continue to use the old development database. Compose sets its container URL separately; override `DATABASE_URL` through the shell or repository-root `.env`, and keep the SQLite file under `/app/data` so it is persisted. `SCENEFLOW_DATA_DIR` selects the host directory and is also a Compose setting.
+For local development, set `DATABASE_URL` in `backend/.env` if needed; when unset or empty, the default is always `<repository>/data/app.db`, regardless of the working directory. Explicit relative SQLite URLs resolve from the working directory, normally `backend/`. Compose sets its container URL separately; override `DATABASE_URL` through the shell or repository-root `.env`, and keep the SQLite file under `/app/data` so it is persisted. `SCENEFLOW_DATA_DIR` selects the host directory and is also a Compose setting.
 
 ### Frontend (`frontend/.env.local`)
 

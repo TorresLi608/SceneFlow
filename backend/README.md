@@ -24,19 +24,18 @@ FFmpeg and ffprobe must be on PATH for auditions, timbre sheets, and exports. Pi
 cd backend
 check_dir=$(mktemp -d)
 SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh $(rg --files tests -g 'test_*.py' | sed 's#^tests/##; s#\.py$##')
-DATABASE_URL= SCENEFLOW_DB_PATH="$check_dir/schema.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" .venv/bin/alembic upgrade head
-DATABASE_URL= SCENEFLOW_DB_PATH="$check_dir/schema.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" .venv/bin/alembic check
+DATABASE_URL="sqlite:///$check_dir/schema.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" .venv/bin/alembic upgrade head
+DATABASE_URL="sqlite:///$check_dir/schema.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" .venv/bin/alembic check
 ```
 
-The test runner requires module names, overrides both database variables with a temporary database, runs each module in a separate interpreter, and reports all failures. `tests/run_all.py` is not isolated. See [testing](../docs/conventions/testing.md) for targeted checks and [OpenAPI regeneration](../docs/conventions/README.md#keeping-generated-docs-current) for the existing script. Do not test against `data/app.db`, legacy `backend/sceneflow.db`, or `backend/private_generated/`.
+The test runner requires module names, overrides `DATABASE_URL` with a temporary database, runs each module in a separate interpreter, and reports all failures. `tests/run_all.py` is not isolated. See [testing](../docs/conventions/testing.md) for targeted checks and [OpenAPI regeneration](../docs/conventions/README.md#keeping-generated-docs-current) for the existing script. Do not test against `data/app.db` or `backend/private_generated/`.
 
 ## Environment
 
 | Variable | Default / effect |
 |---|---|
 | `PORT` | `8080`; read by the development launcher (direct uvicorn uses its CLI `--port`) |
-| `DATABASE_URL` | SQLite URL; defaults to repository-root `data/app.db`, or `sqlite:////app/data/app.db` in the Docker image. Takes precedence over `SCENEFLOW_DB_PATH`. |
-| `SCENEFLOW_DB_PATH` | Unset; legacy SQLite file path used only when `DATABASE_URL` is unset/empty. Relative paths follow the working directory. |
+| `DATABASE_URL` | The only database setting for local development and deployment. SQLite URL; defaults to repository-root `data/app.db` when unset/empty, or `sqlite:////app/data/app.db` in the Docker image. Explicit relative URLs follow the working directory. |
 | `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated`; created/chmodded at app import |
 | `SCENEFLOW_ENV` | `development`; production rejects development security secrets |
 | `SCENEFLOW_JWT_SECRET` | Development default; signs sessions and derives the artifact-signing key |
@@ -59,7 +58,7 @@ The test runner requires module names, overrides both database variables with a 
 
 When SMTP host/user are absent, `email_service` logs the registration code instead of sending email; this fallback currently has no production guard. Email is optional at registration; if supplied it requires a verification code. Codes expire after 300 seconds, with a 60-second sending cooldown.
 
-The engine creates the database parent directory before opening SQLite; both startup and Alembic use the same configuration. `sqlite://` and `sqlite:///:memory:` retain a shared in-memory database for tests. SQLite URI filenames (`uri=true`) and non-SQLite backends are not supported. Existing development `.env` files can keep `SCENEFLOW_DB_PATH=./sceneflow.db`; see [migration instructions](../docs/reference/local-setup.md#migrating-existing-data) before switching storage.
+The engine creates the database parent directory before opening SQLite; both startup and Alembic use the same configuration. `sqlite://` and `sqlite:///:memory:` retain a shared in-memory database for tests. SQLite URI filenames (`uri=true`) and non-SQLite backends are not supported. Local development reads `DATABASE_URL` from `backend/.env`; leave it unset to use the repository-root default. See [migration instructions](../docs/reference/local-setup.md#migrating-existing-data) for moving an existing database.
 
 Compose binds `${SCENEFLOW_DATA_DIR:-./data}` to `/app/data`, with the default database at `/app/data/app.db`. `SCENEFLOW_DATA_DIR` and Compose URL overrides belong in the shell or repository-root `.env`; `backend/.env` holds backend settings such as the admin name/password. The image entrypoint fixes `/app/data` ownership and then drops to UID 10001. Media remains in `sceneflow_media`; database and media backups are both still needed.
 

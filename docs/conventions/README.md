@@ -53,7 +53,7 @@ Name an index `idx_*`, matching the rest of the schema, and declare it in `__tab
 ```bash
 cd backend
 spec_dir=$(mktemp -d)
-PYTHONPATH=. DATABASE_URL= SCENEFLOW_DB_PATH="$spec_dir/spec.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$spec_dir/media" SCENEFLOW_WORKER_ENABLED=0 .venv/bin/python scripts/regen_api_spec.py
+PYTHONPATH=. DATABASE_URL="sqlite:///$spec_dir/spec.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$spec_dir/media" SCENEFLOW_WORKER_ENABLED=0 .venv/bin/python scripts/regen_api_spec.py
 ```
 
 `PYTHONPATH=.` is required when running the file under `scripts/`. The temporary directory contains no application data. OpenAPI covers HTTP routes and typed schemas; legacy dict payloads and manually serialized responses are less specific, and WebSocket/NDJSON event contracts live in [data flow](../architecture/data-flow.md).

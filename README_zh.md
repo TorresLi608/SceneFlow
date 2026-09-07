@@ -257,13 +257,12 @@ pnpm run dev:frontend
 | `SCENEFLOW_ENV` | `development` | 设为 `production` 后才会启用上述校验。 |
 | `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | 写进媒体签名链接的后端地址，必须是浏览器能访问到的。 |
 | `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | 允许跨域的前端 Origin，英文逗号分隔。 |
-| `DATABASE_URL` | 项目根目录 `data/app.db`；Docker 为 `sqlite:////app/data/app.db` | SQLite 连接 URL；初始化引擎前自动创建父目录，优先于 `SCENEFLOW_DB_PATH`。 |
-| `SCENEFLOW_DB_PATH` | 未设置 | 兼容旧 SQLite 文件路径，仅在未设置 `DATABASE_URL` 时生效。相对路径以工作目录为基准，通常为 `backend/`。 |
+| `DATABASE_URL` | 项目根目录 `data/app.db`；Docker 为 `sqlite:////app/data/app.db` | 本地开发和部署共用的唯一数据库配置；初始化引擎前自动创建 SQLite 父目录。 |
 | `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | 生成媒体目录，备份时需与数据库一起备份。 |
 
 端口、日志级别、上下文 Token 上限与中文字体覆盖等完整清单见 [`backend/README.md`](backend/README.md#environment)。
 
-本地开发可按需在 `backend/.env` 中设置 `DATABASE_URL`；两个数据库变量均未设置时，无论从哪个工作目录启动，都默认使用 `<项目根目录>/data/app.db`。已有的 `SCENEFLOW_DB_PATH=./sceneflow.db` 仍可继续使用旧开发库。Compose 单独设置容器连接 URL；如需覆盖 `DATABASE_URL`，请通过宿主机 shell 或仓库根目录 `.env` 设置，并将数据库文件保留在 `/app/data` 内。选择宿主机目录的 `SCENEFLOW_DATA_DIR` 同样属于 Compose 配置。
+本地开发可按需在 `backend/.env` 中设置 `DATABASE_URL`；未设置或为空时，无论从哪个工作目录启动，都默认使用 `<项目根目录>/data/app.db`。显式配置的相对 SQLite URL 以工作目录为基准，通常为 `backend/`。Compose 单独设置容器连接 URL；如需覆盖 `DATABASE_URL`，请通过宿主机 shell 或仓库根目录 `.env` 设置，并将数据库文件保留在 `/app/data` 内。选择宿主机目录的 `SCENEFLOW_DATA_DIR` 同样属于 Compose 配置。
 
 ### 前端（`frontend/.env.local`）
 

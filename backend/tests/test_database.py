@@ -65,19 +65,20 @@ def test_seed_super_admin_keeps_existing_password() -> None:
 def test_database_and_admin_environment_configuration() -> None:
     config_file = Path(config.__file__).resolve()
     with tempfile.TemporaryDirectory() as directory, chdir(directory), patch("dotenv.load_dotenv"):
-        with patch.dict(os.environ, {}, clear=True):
-            defaults = runpy.run_path(str(config_file))
-        assert defaults["DB_PATH"] == str(config_file.parents[3] / "data" / "app.db")
-        assert defaults["SUPER_ADMIN_USERNAME"] == "superAdmin"
+        for environment in ({}, {"DATABASE_URL": ""}):
+            with patch.dict(os.environ, environment, clear=True):
+                defaults = runpy.run_path(str(config_file))
+            assert defaults["DB_PATH"] == str(config_file.parents[3] / "data" / "app.db")
+            assert defaults["SUPER_ADMIN_USERNAME"] == "superAdmin"
 
         for url in ("sqlite://", "sqlite:///:memory:", "sqlite:////app/data/app.db"):
-            with patch.dict(os.environ, {"DATABASE_URL": url, "SCENEFLOW_DB_PATH": "ignored.db"}, clear=True):
+            with patch.dict(os.environ, {"DATABASE_URL": url}, clear=True):
                 values = runpy.run_path(str(config_file))
             assert values["DB_PATH"] == ("/app/data/app.db" if "app.db" in url else ":memory:")
 
-        with patch.dict(os.environ, {"SCENEFLOW_DB_PATH": "legacy.db", "SCENEFLOW_SUPER_ADMIN_USERNAME": "  site-owner  "}, clear=True):
+        with patch.dict(os.environ, {"DATABASE_URL": "sqlite:///custom/app.db", "SCENEFLOW_SUPER_ADMIN_USERNAME": "  site-owner  "}, clear=True):
             values = runpy.run_path(str(config_file))
-        assert values["DB_PATH"] == "legacy.db"
+        assert values["DB_PATH"] == "custom/app.db"
         assert values["SUPER_ADMIN_USERNAME"] == "site-owner"
 
         for environment in (
@@ -137,7 +138,6 @@ else:
         environment = {
             **os.environ,
             "DATABASE_URL": f"sqlite:///{path}",
-            "SCENEFLOW_DB_PATH": str(Path(directory) / "unused.db"),
             "SCENEFLOW_PRIVATE_GENERATED_DIR": str(Path(directory) / "media"),
             "SCENEFLOW_ENV": "development",
             "SCENEFLOW_SUPER_ADMIN_PASSWORD": "initial-test-password",
@@ -154,7 +154,6 @@ else:
             assert result.returncode == 0, result.stderr
         assert path.is_file()
         assert path.stat().st_mode & 0o777 == 0o600
-        assert not Path(environment["SCENEFLOW_DB_PATH"]).exists()
 
 
 def test_seed_custom_admin_and_reject_username_collisions() -> None:

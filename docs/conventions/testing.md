@@ -18,7 +18,7 @@ For the whole suite, replace the last line with:
 SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh $(rg --files tests -g 'test_*.py' | sed 's#^tests/##; s#\.py$##')
 ```
 
-The runner takes **module basenames without `.py`**; no arguments runs no checks. It gives each file a separate interpreter and overrides both `DATABASE_URL` and `SCENEFLOW_DB_PATH` with the same temporary database, reports every result, writes `/tmp/<name>.log`, and exits nonzero if any file fails. It does not supply a separate media root, so the command above supplies one before app import. `main.py` creates/chmods that directory at import time. For direct checks using only the legacy path override, set `DATABASE_URL=` explicitly so a URL from `.env` cannot select a real database.
+The runner takes **module basenames without `.py`**; no arguments runs no checks. It gives each file a separate interpreter and overrides `DATABASE_URL` with a temporary database, reports every result, writes `/tmp/<name>.log`, and exits nonzero if any file fails. It does not supply a separate media root, so the command above supplies one before app import. `main.py` creates/chmods that directory at import time. For direct checks, explicitly set `DATABASE_URL` to a temporary SQLite URL so the default or a URL from `.env` cannot select a real database.
 
 `tests/run_all.py` instead `runpy`s files in one interpreter and aborts on the first failure. Module state can leak between files. A failure there is not isolated evidence: rerun the file through `run_tests.sh`. Conversely, do not call the suite green unless every selected file actually ran and passed.
 
@@ -66,8 +66,8 @@ After changing SQLModel, review the Alembic revision and check a disposable data
 ```bash
 cd backend
 schema_dir=$(mktemp -d)
-DATABASE_URL= SCENEFLOW_DB_PATH="$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
-DATABASE_URL= SCENEFLOW_DB_PATH="$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic check
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic check
 ```
 
 Regenerate OpenAPI using [the existing script and isolated command](README.md#keeping-generated-docs-current). Importing `app.openapi()` does not run lifespan or test handlers; it verifies schema generation, not business behavior.

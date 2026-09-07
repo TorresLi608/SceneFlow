@@ -16,7 +16,7 @@ DATABASE_URL = make_url(
     os.getenv("DATABASE_URL")
     or URL.create(
         "sqlite",
-        database=os.getenv("SCENEFLOW_DB_PATH") or str(Path(__file__).resolve().parents[3] / "data" / "app.db"),
+        database=str(Path(__file__).resolve().parents[3] / "data" / "app.db"),
     )
 )
 if DATABASE_URL.get_backend_name() != "sqlite" or DATABASE_URL.query.get("uri", "").lower() in {"true", "1"}:

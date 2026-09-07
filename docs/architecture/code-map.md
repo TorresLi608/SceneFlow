@@ -38,7 +38,7 @@ SceneFlow/
     └── src/types/                 Frontend wire/domain types
 ```
 
-Development data at `data/app.db`, legacy `backend/sceneflow.db`, and `backend/private_generated/` is not a fixture. Use temporary database and media paths for checks that start the backend. Configuration/seed/persistence regressions live in `backend/tests/test_database.py`.
+Development data at `data/app.db` and `backend/private_generated/` is not a fixture. Use a temporary `DATABASE_URL` and media path for checks that start the backend. Configuration/seed/persistence regressions live in `backend/tests/test_database.py`.
 
 ## Frontend routes
 

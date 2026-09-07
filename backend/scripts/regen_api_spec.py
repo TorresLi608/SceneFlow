@@ -3,7 +3,9 @@
 The spec is a generated artefact — see `docs/conventions/README.md`. Run after changing any
 endpoint or request/response model:
 
-    cd backend && SCENEFLOW_DB_PATH=/tmp/sf_spec.db .venv/bin/python scripts/regen_api_spec.py
+    cd backend
+    spec_dir=$(mktemp -d)
+    PYTHONPATH=. DATABASE_URL="sqlite:///$spec_dir/spec.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$spec_dir/media" .venv/bin/python scripts/regen_api_spec.py
 """
 
 from __future__ import annotations

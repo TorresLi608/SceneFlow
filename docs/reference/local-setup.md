@@ -47,7 +47,7 @@ Startup upgrades Alembic, creates/enables the configured super admin, clears orp
 
 Development login defaults to **`superAdmin` / `superAdmin@123`**. Set `SCENEFLOW_SUPER_ADMIN_USERNAME` and `SCENEFLOW_SUPER_ADMIN_PASSWORD` in `backend/.env`. The username is trimmed and must contain 3–64 characters. Startup only uses the configured password when creating the account; it does not reset an existing password. Changing the legacy default name renames the same admin row, preserving its ID and owned data. Occupied names fail startup; [authentication](../design/feature-auth.md#super-admin) covers subsequent name changes. Production rejects the default JWT, AES, and super-admin secrets.
 
-SQLite resolves `DATABASE_URL` first, then legacy `SCENEFLOW_DB_PATH`, then `<repository>/data/app.db`. The fallback is absolute and independent of the launch directory. Explicit relative paths retain SQLite's working-directory semantics, normally relative to `backend/`. Parent directories are created before engine initialization. Both startup and Alembic use this configuration; no schema migration is needed just to change a database location.
+SQLite uses `DATABASE_URL` for both local development and deployment. When unset or empty, it defaults to `<repository>/data/app.db`, an absolute path independent of the launch directory. Explicit relative SQLite URLs retain working-directory semantics, normally relative to `backend/`. Parent directories are created before engine initialization. Both startup and Alembic use this configuration; no schema migration is needed just to change a database location.
 
 Registration requires an invitation code. Email is optional; supplying it requires a verification code. SMTP settings are listed in [the backend reference](../../backend/README.md#environment). With SMTP host/user absent, the current implementation logs the code instead of sending it, without checking the environment; configure SMTP for deployed email registration.
 
@@ -84,11 +84,11 @@ For migration development, use a disposable database:
 ```bash
 cd backend
 schema_dir=$(mktemp -d)
-DATABASE_URL= SCENEFLOW_DB_PATH="$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
 # After changing SQLModel, generate and review a revision before applying it.
-DATABASE_URL= SCENEFLOW_DB_PATH="$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic revision --autogenerate -m "description"
-DATABASE_URL= SCENEFLOW_DB_PATH="$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
-DATABASE_URL= SCENEFLOW_DB_PATH="$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic check
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic revision --autogenerate -m "description"
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic check
 ```
 
 Only generate a revision when intentionally changing schema. Reuse [regen_api_spec.py](../../backend/scripts/regen_api_spec.py) with the [isolated command](../conventions/README.md#keeping-generated-docs-current) for HTTP schema updates.
@@ -124,7 +124,7 @@ Configure `SCENEFLOW_ENV=production`, a chosen admin username, non-development s
 
 ### Migrating existing data
 
-Do this before the first startup with the new mount. Keep the source database/volume and a backup until login, projects, and media have been verified. The following examples use the new default filename `app.db` and refuse to overwrite an existing destination.
+Do this before the first startup with the new mount, after stopping every process that uses the source database. The following examples use the new default filename `app.db` and refuse to overwrite an existing destination. Keep the old Docker volume and a backup until login, projects, and media have been verified. The local procedure removes the old database files after checking the migrated database's integrity.
 
 **Old Compose named volume (`sceneflow_db`).** Build the new backend image, then stop the old backend. The old configuration already used a persistent named volume, so ordinary image rebuilds should retain it; a missing deployment's volume still needs investigation, not an assumed recovery.
 
@@ -156,7 +156,7 @@ docker compose up -d --build
 
 The source volume is read-only and remains intact. The media volume name is unchanged. If the old database was stored in a container's writable layer instead, export its actual database directory (including sidecars) from that old container before replacing it, then use a SQLite backup from the exported copy. Data from an already-deleted writable layer cannot be recovered by a path change.
 
-**Old local development database (`backend/sceneflow.db`).** Existing `.env` files with `SCENEFLOW_DB_PATH=./sceneflow.db` keep using it. To adopt the new local default, stop the local backend and run from the repository root:
+**Old local development database (`backend/sceneflow.db`).** Move it to the shared local default, `data/app.db`. Stop the local backend and run from the repository root:
 
 ```bash
 backend/.venv/bin/python - <<'PY'
@@ -172,20 +172,24 @@ destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 with closing(sqlite3.connect(source_path.as_uri() + "?mode=ro", uri=True)) as source:
     with closing(sqlite3.connect(destination)) as target:
         source.backup(target)
+        if target.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+            raise SystemExit("Target integrity check failed; source retained")
 destination.chmod(0o600)
+for suffix in ("", "-wal", "-shm", "-journal"):
+    Path(str(source_path) + suffix).unlink(missing_ok=True)
 PY
 ```
 
-Then remove the old database overrides from `backend/.env` and restart. This uses SQLite's backup API so committed WAL content is included, and keeps the original file. Local media stays at `backend/private_generated/`; if also switching from local development to Docker, transfer that media into the container's media volume as well.
+Remove obsolete database settings from `backend/.env`; leave `DATABASE_URL` unset to use the default, or set it to the desired SQLite URL, then restart. This uses SQLite's backup API so committed WAL content is included, checks integrity, and removes the original database and its sidecars. Local media stays at `backend/private_generated/`; if also switching from local development to Docker, transfer that media into the container's media volume as well.
 
 ## Local data and troubleshooting
 
-`data/app.db`, legacy `backend/sceneflow.db`, and `backend/private_generated/` are real gitignored development data. Do not delete/reset them as a routine troubleshooting step. For an isolated scratch server:
+`data/app.db` and `backend/private_generated/` are real gitignored development data. Do not delete/reset them as a routine troubleshooting step. For an isolated scratch server:
 
 ```bash
 cd backend
 scratch_dir=$(mktemp -d)
-DATABASE_URL= SCENEFLOW_DB_PATH="$scratch_dir/sceneflow.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$scratch_dir/media" .venv/bin/python -m uvicorn app.main:app --port 8099
+DATABASE_URL="sqlite:///$scratch_dir/app.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$scratch_dir/media" .venv/bin/python -m uvicorn app.main:app --port 8099
 ```
 
 - **Requests fail:** verify backend port and frontend rewrite origin, then restart the frontend after env edits.
