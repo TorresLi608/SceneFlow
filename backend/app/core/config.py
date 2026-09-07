@@ -5,16 +5,29 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from sqlalchemy.engine import URL, make_url
 
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 PORT = os.getenv("PORT", "8080")
-DB_PATH = os.getenv("SCENEFLOW_DB_PATH", "./sceneflow.db")
+DATABASE_URL = make_url(
+    os.getenv("DATABASE_URL")
+    or URL.create(
+        "sqlite",
+        database=os.getenv("SCENEFLOW_DB_PATH") or str(Path(__file__).resolve().parents[3] / "data" / "app.db"),
+    )
+)
+if DATABASE_URL.get_backend_name() != "sqlite" or DATABASE_URL.query.get("uri", "").lower() in {"true", "1"}:
+    raise RuntimeError("DATABASE_URL must use a SQLite file URL (sqlite:///...) or sqlite:///:memory:")
+DB_PATH = DATABASE_URL.database or ":memory:"
 ENVIRONMENT = os.getenv("SCENEFLOW_ENV", "development").strip().lower()
 JWT_SECRET = os.getenv("SCENEFLOW_JWT_SECRET", "dev-jwt-secret-change-me-at-least-32-bytes")
 AES_SECRET = os.getenv("SCENEFLOW_AES_KEY", "dev-aes-key-change-me")
+SUPER_ADMIN_USERNAME = os.getenv("SCENEFLOW_SUPER_ADMIN_USERNAME", "superAdmin").strip()
+if not 3 <= len(SUPER_ADMIN_USERNAME) <= 64:
+    raise RuntimeError("SCENEFLOW_SUPER_ADMIN_USERNAME must be between 3 and 64 characters")
 SUPER_ADMIN_PASSWORD = os.getenv("SCENEFLOW_SUPER_ADMIN_PASSWORD", "superAdmin@123")
 if ENVIRONMENT == "production" and (
     JWT_SECRET == "dev-jwt-secret-change-me-at-least-32-bytes"

@@ -22,8 +22,8 @@ if [ -n "$was_running" ]; then
   docker compose stop backend >/dev/null
 fi
 
-docker compose cp backend:/app/backend/data/sceneflow.db "$work_dir/sceneflow.db"
+docker compose cp backend:/app/data "$work_dir/data"
 docker compose cp backend:/app/backend/private_generated "$work_dir/private_generated"
-tar -czf "$archive" -C "$work_dir" sceneflow.db private_generated
+tar -czf "$archive" -C "$work_dir" data private_generated
 
 echo "Backup created: $archive"

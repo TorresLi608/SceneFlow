@@ -12,12 +12,11 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, create_engine, select
 
 import app.models  # noqa: F401 -- register every table before Alembic loads metadata
-from app.core.config import DB_PATH, SUPER_ADMIN_PASSWORD
+from app.core.config import DATABASE_URL, DB_PATH, SUPER_ADMIN_PASSWORD, SUPER_ADMIN_USERNAME
 from app.models import User
 from app.utils.common import now
 
 
-SUPER_ADMIN_USERNAME = "superAdmin"
 ALEMBIC_CONFIG = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 _engines: dict[str, Engine] = {}
@@ -31,11 +30,13 @@ def _apply_pragmas(dbapi_connection: Any, _record: Any) -> None:
 
 
 def _build_engine(path: str) -> Engine:
+    url = DATABASE_URL.set(database=path)
     if path == ":memory:":
         # A pooled in-memory database would hand out a different empty database per connection.
-        built = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        built = create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     else:
-        built = create_engine(f"sqlite:///{path}", connect_args={"timeout": 30, "check_same_thread": False})
+        Path(path).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        built = create_engine(url, connect_args={"timeout": 30, "check_same_thread": False})
     event.listen(built, "connect", _apply_pragmas)
     return built
 
@@ -73,13 +74,24 @@ def init_db() -> None:
 def seed_super_admin(session: Session) -> None:
     stamp = now()
     user = session.exec(select(User).where(User.username == SUPER_ADMIN_USERNAME)).first()
+    if SUPER_ADMIN_USERNAME != "superAdmin":
+        legacy = session.exec(select(User).where(User.username == "superAdmin", User.role == "superAdmin")).first()
+        if legacy:
+            if user:
+                raise RuntimeError("SCENEFLOW_SUPER_ADMIN_USERNAME is already in use; choose an unused username")
+            # Keep the original ID, password, and ownership; do not leave the default login enabled.
+            user = legacy
+            user.username = SUPER_ADMIN_USERNAME
     if user:
-        user.role = "superAdmin"
+        if user.role != "superAdmin":
+            raise RuntimeError("SCENEFLOW_SUPER_ADMIN_USERNAME belongs to a non-admin user")
         user.is_disabled = False
         user.deleted_at = None
         user.updated_at = stamp
         session.add(user)
         return
+    if session.exec(select(User.id).where(User.role == "superAdmin")).first() is not None:
+        raise RuntimeError("SCENEFLOW_SUPER_ADMIN_USERNAME does not match an existing admin; rename that account explicitly")
     password = bcrypt.hashpw(SUPER_ADMIN_PASSWORD.encode(), bcrypt.gensalt()).decode()
     session.add(
         User(

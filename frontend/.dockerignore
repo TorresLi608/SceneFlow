@@ -6,3 +6,9 @@ node_modules
 out
 coverage
 *.log
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
+**/*.db.bak*
+**/data

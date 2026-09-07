@@ -146,6 +146,24 @@ pnpm run docker:up       # Build & start in background
 pnpm run docker:backup   # Backup database & media snapshot
 ```
 
+Both commands remain useful: `docker:up` builds and starts the services; `docker:backup` creates a recoverable snapshot. Persistence does not replace backups.
+
+### Persistent data and upgrades
+
+Compose mounts the entire host directory `./data` at `/app/data`; SQLite writes `/app/data/app.db`, including any `app.db-wal` and `app.db-shm` files alongside it. Rebuilding/recreating containers or running `docker compose down` retains this host data. Generated media remains in the `sceneflow_media` named volume; **`docker compose down -v` deletes that media volume**.
+
+For a server, keep data outside disposable release directories. Set `SCENEFLOW_DATA_DIR=/srv/sceneflow/data` in the repository-root `.env` (used by Compose), or pass it when starting:
+
+```bash
+SCENEFLOW_DATA_DIR=/srv/sceneflow/data docker compose up -d --build
+```
+
+The backend entrypoint gives the mounted data directory to the existing `app` user (UID 10001), restricts directory access, then runs the backend as that user. Database files and data directories are excluded from Git and both Docker build contexts.
+
+`docker:backup` briefly stops a running backend, archives the whole database directory and generated media under `backups/`, then restores its prior running state. New archives contain `data/` and `private_generated/`.
+
+**Before upgrading an existing installation**, migrate the old `sceneflow_db` volume or `backend/sceneflow.db` using the [migration instructions](docs/reference/local-setup.md#migrating-existing-data). The new location is not automatically populated from old storage; an empty location creates an empty database. Keep the existing encryption/signing secrets with the deployment.
+
 ### Access URLs
 
 | Service | URL | Note |
@@ -155,8 +173,20 @@ pnpm run docker:backup   # Backup database & media snapshot
 | **OpenAPI Docs** | [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs) | Swagger UI |
 
 Default Super Administrator (Development only):
+
 * **Username**: `superAdmin`
 * **Password**: `superAdmin@123`
+
+Configure the login name and initial password in `backend/.env`:
+
+```dotenv
+SCENEFLOW_SUPER_ADMIN_USERNAME=site-owner
+SCENEFLOW_SUPER_ADMIN_PASSWORD=replace-with-a-strong-password
+```
+
+The username accepts 3–64 characters after trimming. On an existing database, changing the default `superAdmin` login renames that admin in place, preserving its ID, password, and owned data; the old login stops working. An occupied target name fails startup instead of granting another user admin access. Existing passwords are never reset by this setting; change them in the account profile. See [account behavior](docs/design/feature-auth.md#super-admin) for subsequent name changes.
+
+Before public deployment, set `SCENEFLOW_ENV=production` and replace the development JWT secret, AES key, and admin password.
 
 ---
 
@@ -222,14 +252,18 @@ Visit [http://localhost:4000](http://localhost:4000) in your browser.
 |---|---|---|
 | `SCENEFLOW_JWT_SECRET` | *(dev default)* | JWT signing secret. **Production startup refuses to boot on the dev value.** |
 | `SCENEFLOW_AES_KEY` | *(dev default)* | Master key encrypting stored provider API keys. **Same refusal applies.** |
+| `SCENEFLOW_SUPER_ADMIN_USERNAME` | `superAdmin` | Super-admin login name, 3–64 characters. Renames the legacy default admin without changing its ID or password. |
 | `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | Initial super-admin password. **Same refusal applies.** |
 | `SCENEFLOW_ENV` | `development` | Set to `production` to enable the checks above. |
 | `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | Backend address baked into signed media links — must be reachable by the browser. |
 | `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | Allowed frontend origins, comma-separated. |
-| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite file; relative paths resolve from `backend/`. |
+| `DATABASE_URL` | Repository-root `data/app.db`; Docker `sqlite:////app/data/app.db` | SQLite URL; parent directories are created before engine initialization. Takes precedence over `SCENEFLOW_DB_PATH`. |
+| `SCENEFLOW_DB_PATH` | Unset | Legacy SQLite file override when `DATABASE_URL` is unset. Relative paths resolve from the working directory, normally `backend/`. |
 | `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | Generated media directory. Back this up together with the database. |
 
 The full list — port, log level, context budget, and CJK font overrides — is in [`backend/README.md`](backend/README.md#environment).
+
+For local development, set `DATABASE_URL` in `backend/.env` if needed; with neither database variable set, the default is always `<repository>/data/app.db`, regardless of the working directory. Existing `SCENEFLOW_DB_PATH=./sceneflow.db` settings continue to use the old development database. Compose sets its container URL separately; override `DATABASE_URL` through the shell or repository-root `.env`, and keep the SQLite file under `/app/data` so it is persisted. `SCENEFLOW_DATA_DIR` selects the host directory and is also a Compose setting.
 
 ### Frontend (`frontend/.env.local`)
 
@@ -246,7 +280,8 @@ The full list — port, log level, context budget, and CJK font overrides — is
 ```bash
 # Backend — one process and one throwaway database per file
 cd backend
-sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')
+check_dir=$(mktemp -d)
+SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh $(rg --files tests -g 'test_*.py' | sed 's#^tests/##; s#\.py$##')
 
 # Frontend
 cd ../frontend
@@ -265,6 +300,7 @@ There is no pytest here: backend tests are plain modules that call their own tes
 SceneFlow/
 ├── backend/                 # FastAPI app, SQLModel schemas, services, migrations, tests
 ├── frontend/                # Next.js 16 app, BFF routes, zustand stores, UI primitives
+├── data/                    # Local/Compose SQLite data (gitignored; created on first use)
 ├── docs/                    # Architecture, conventions, feature designs, and generated reference
 ├── scripts/                 # Cross-platform install & dev runners (macOS / Windows / Linux)
 └── docker-compose.yml       # Container orchestration

@@ -146,6 +146,24 @@ pnpm run docker:up       # 自动构建并在后台运行
 pnpm run docker:backup   # 导出数据库与生成媒体备份快照
 ```
 
+这两个命令仍然有用：`docker:up` 负责构建并启动服务，`docker:backup` 生成可恢复的快照。数据持久化不能替代备份，因此予以保留。
+
+### 数据持久化与升级
+
+Compose 将宿主机整个 `./data` 目录挂载到 `/app/data`，SQLite 写入 `/app/data/app.db`，`app.db-wal`、`app.db-shm` 等文件也保存在同一目录。重新构建、重建容器或执行 `docker compose down` 都会保留这些宿主机数据。生成媒体仍存放在 `sceneflow_media` 命名卷中；**`docker compose down -v` 会删除该媒体卷**。
+
+服务器部署时，建议将数据放在不会随发布目录替换的位置。在仓库根目录的 `.env`（Compose 使用）中设置 `SCENEFLOW_DATA_DIR=/srv/sceneflow/data`，或启动时传入：
+
+```bash
+SCENEFLOW_DATA_DIR=/srv/sceneflow/data docker compose up -d --build
+```
+
+后端入口脚本会将挂载的数据目录交给现有 `app` 用户（UID 10001）、收紧目录权限，再以该普通用户运行后端。数据库文件与数据目录已从 Git 和两个 Docker 构建上下文中排除。
+
+`docker:backup` 会短暂停止正在运行的后端，将整个数据库目录和生成媒体归档到 `backups/`，然后恢复原先的运行状态。新备份包包含 `data/` 与 `private_generated/`。
+
+**已有部署升级前**，请按[旧数据迁移步骤](docs/reference/local-setup.md#migrating-existing-data)迁移原 `sceneflow_db` 卷或 `backend/sceneflow.db`。新路径不会自动导入旧存储；挂载空目录会初始化空库。请同时保留部署原有的加密和签名密钥。
+
 ### 访问地址
 
 | 服务 | 访问地址 | 说明 |
@@ -155,8 +173,20 @@ pnpm run docker:backup   # 导出数据库与生成媒体备份快照
 | **OpenAPI 接口文档** | [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs) | Swagger UI |
 
 默认超级管理员账号（仅限开发环境）：
+
 * **用户名**：`superAdmin`
 * **密码**：`superAdmin@123`
+
+在 `backend/.env` 中配置登录名和初始密码：
+
+```dotenv
+SCENEFLOW_SUPER_ADMIN_USERNAME=site-owner
+SCENEFLOW_SUPER_ADMIN_PASSWORD=replace-with-a-strong-password
+```
+
+用户名去除首尾空格后需为 3–64 个字符。已有数据库中的默认 `superAdmin` 管理员会原地改名，保留账号 ID、密码和名下数据，旧登录名随之失效。若目标用户名已被占用，启动会报错，不会将其他用户提升为管理员。环境变量不会重置已有密码，请在个人资料中修改密码；后续再次改名的行为见[管理员说明](docs/design/feature-auth.md#super-admin)。
+
+上线前请设置 `SCENEFLOW_ENV=production`，并替换开发用的 JWT 密钥、AES 密钥和管理员密码。
 
 ---
 
@@ -222,14 +252,18 @@ pnpm run dev:frontend
 |---|---|---|
 | `SCENEFLOW_JWT_SECRET` | *(开发默认值)* | JWT 签名密钥。**生产环境使用开发默认值会直接拒绝启动。** |
 | `SCENEFLOW_AES_KEY` | *(开发默认值)* | 加密已保存的模型 API Key 的主密钥。**同样会拒绝启动。** |
+| `SCENEFLOW_SUPER_ADMIN_USERNAME` | `superAdmin` | 超级管理员登录名，3–64 个字符；可原地重命名旧默认管理员，保留 ID 和密码。 |
 | `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | 初始超级管理员密码。**同样会拒绝启动。** |
 | `SCENEFLOW_ENV` | `development` | 设为 `production` 后才会启用上述校验。 |
 | `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | 写进媒体签名链接的后端地址，必须是浏览器能访问到的。 |
 | `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | 允许跨域的前端 Origin，英文逗号分隔。 |
-| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite 文件；相对路径以 `backend/` 为基准。 |
+| `DATABASE_URL` | 项目根目录 `data/app.db`；Docker 为 `sqlite:////app/data/app.db` | SQLite 连接 URL；初始化引擎前自动创建父目录，优先于 `SCENEFLOW_DB_PATH`。 |
+| `SCENEFLOW_DB_PATH` | 未设置 | 兼容旧 SQLite 文件路径，仅在未设置 `DATABASE_URL` 时生效。相对路径以工作目录为基准，通常为 `backend/`。 |
 | `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | 生成媒体目录，备份时需与数据库一起备份。 |
 
 端口、日志级别、上下文 Token 上限与中文字体覆盖等完整清单见 [`backend/README.md`](backend/README.md#environment)。
+
+本地开发可按需在 `backend/.env` 中设置 `DATABASE_URL`；两个数据库变量均未设置时，无论从哪个工作目录启动，都默认使用 `<项目根目录>/data/app.db`。已有的 `SCENEFLOW_DB_PATH=./sceneflow.db` 仍可继续使用旧开发库。Compose 单独设置容器连接 URL；如需覆盖 `DATABASE_URL`，请通过宿主机 shell 或仓库根目录 `.env` 设置，并将数据库文件保留在 `/app/data` 内。选择宿主机目录的 `SCENEFLOW_DATA_DIR` 同样属于 Compose 配置。
 
 ### 前端（`frontend/.env.local`）
 
@@ -246,7 +280,8 @@ pnpm run dev:frontend
 ```bash
 # 后端——每个测试文件一个独立进程与一份临时数据库
 cd backend
-sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')
+check_dir=$(mktemp -d)
+SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh $(rg --files tests -g 'test_*.py' | sed 's#^tests/##; s#\.py$##')
 
 # 前端
 cd ../frontend
@@ -265,6 +300,7 @@ node --no-warnings --experimental-strip-types --test src/lib/money.test.mts
 SceneFlow/
 ├── backend/                 # FastAPI 应用、SQLModel 数据模型、业务服务、迁移、测试
 ├── frontend/                # Next.js 16 页面、BFF 路由、状态仓库、UI 组件
+├── data/                    # 本地/Compose 的 SQLite 数据（首次使用时创建，Git 忽略）
 ├── docs/                    # 系统架构、工程约定、功能设计与生成的参考手册
 ├── scripts/                 # 跨平台安装与开发启动脚本（macOS / Windows / Linux）
 └── docker-compose.yml       # 容器化部署编排配置

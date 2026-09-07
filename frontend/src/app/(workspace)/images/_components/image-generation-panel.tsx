@@ -137,7 +137,12 @@ interface ImageGenerationPanelProps {
   officialConfigs: UserConfig[];
 }
 
-export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerationPanelProps) {
+export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
+  const [editorKey, setEditorKey] = useState(0);
+  return <ImageGenerationEditor key={editorKey} {...props} onReset={() => setEditorKey((key) => key + 1)} />;
+}
+
+function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGenerationPanelProps & { onReset: () => void }) {
   const { t, formatDateTime } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
@@ -692,14 +697,25 @@ export function ImageGenerationPanel({ configs, officialConfigs }: ImageGenerati
         </div>
 
         {/* 立即生成主按钮 */}
-        <div className="mt-3 border-t border-border/70 pt-3">
+        <div className="mt-3 flex gap-2 border-t border-border/70 pt-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10"
+            onClick={onReset}
+            disabled={generateMutation.isPending || optimizeMutation.isPending}
+            title={t("common.resetGenerationHint")}
+          >
+            <RotateCcw data-icon="inline-start" />
+            {t("common.resetGeneration")}
+          </Button>
           {generateMutation.isPending ? (
-            <Button variant="destructive" className="h-10 w-full gap-2 rounded-xl font-bold" onClick={stopGeneration}>
+            <Button variant="destructive" className="h-10 min-w-0 flex-1 gap-2 rounded-xl font-bold" onClick={stopGeneration}>
               <Square className="size-3.5 fill-current" />
               {t("common.stopGeneration")}
             </Button>
           ) : <Button
-            className="h-10 w-full gap-2 rounded-xl font-bold shadow-md cursor-pointer transition-all active:scale-[0.99]"
+            className="h-10 min-w-0 flex-1 gap-2 rounded-xl font-bold shadow-md cursor-pointer transition-all active:scale-[0.99]"
             onClick={generate}
             disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}
           >

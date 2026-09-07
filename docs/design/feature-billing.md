@@ -1,6 +1,6 @@
 # Feature: billing and metering
 
-Every model call is priced, logged, and — when it runs on an **official** configuration — deducted from the user's balance. Personal configurations are metered but never charged, because the user is paying the provider directly.
+Provider-backed features use `require_model_balance` / `record_usage` to gate and meter calls. Successful calls on an **official** configuration deduct from the user's balance. Personal configurations are metered but never charged, because the user is paying the provider directly.
 
 ## Units
 
@@ -70,5 +70,6 @@ Add both hooks whenever you introduce a new provider-backed feature. The `featur
 ## Known gaps
 
 - No invoicing, no currency field, no tax handling — `micros` are unit-less by design.
+- Canceling a local task cannot prove whether an already-submitted provider request was billed. Queue jobs therefore do not automatically retry paid work; the usage ledger is not a provider-side reconciliation system.
 - No spend alerts or budget caps; the only control is the `402` at zero balance.
 - Balance is floored at zero rather than blocking mid-run, so a long generation run can end up costing more than the remaining balance.

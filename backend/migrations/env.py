@@ -7,6 +7,7 @@ from sqlalchemy import Connection
 from sqlmodel import SQLModel
 
 import app.models  # noqa: F401 -- register every SQLModel table for autogenerate
+from app.core.config import DATABASE_URL
 from app.core.database import engine
 
 
@@ -41,7 +42,7 @@ def configure(connection: Connection) -> None:
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

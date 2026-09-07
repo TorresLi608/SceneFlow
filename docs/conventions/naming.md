@@ -18,16 +18,16 @@
 
 Two ID styles coexist, on purpose:
 
-- **Business rows use prefixed random string IDs** from `new_id(prefix)` → `"<prefix>_<16 hex chars>"`. Prefixes in use: `att`, `char`, `chat`, `cvar`, `ep`, `job`, `msg`, `proj`, `scene`, `usage`. A new entity picks a short prefix and keeps it forever — IDs are stored in existing databases.
+- **Business rows use prefixed random string IDs** from `new_id(prefix)` → `"<prefix>_<16 hex chars>"`. Examples include `att`, `char`, `chat`, `ep`, `job`, `msg`, `proj`, `scene`, `usage`, and newer `asset`/`error`/`req` identities. Check the owning `new_id(...)` call; legacy prefixes can outlive renamed entities. A new entity picks a short prefix and keeps it forever — IDs are stored in existing databases.
 - **Account and configuration rows use integer autoincrement PKs**: `users`, `model_configs`, `invitation_codes`, `redemption_codes`, `usage` foreign keys to them. Do not "unify" these; existing data depends on both.
 
 Timestamps: `created_at`, `updated_at`, `deleted_at` (soft delete), all ISO-8601 strings via `now()`.
 
 ## API surface
 
-- **Fields are camelCase on the wire**, snake_case in Python. `CamelModel`'s alias generator does this — never hand-translate.
+- **Fields are camelCase on the wire**, snake_case in Python. `CamelModel` aliases typed request fields; response serializers explicitly build camelCase dictionaries. Legacy dict-body endpoints read wire keys themselves.
 - **Paths are plural and nested by ownership**: `/api/projects/:id/episodes/:episodeId`, `/api/projects/:id/characters/:characterId/states`.
-- **Path params are camelCase too**: `episodeId`, `characterId`, `stateId`, `sceneId`.
+- **Backend path parameter identifiers are snake_case**: `{project_id}`, `{episode_id}`, `{scene_id}` in FastAPI/OpenAPI. Frontend folders use `[projectId]` / `[episodeId]`. Placeholder names in explanatory URLs do not change the actual URL. Query parameters need an explicit alias, such as `Query(alias="pageSize")`.
 - Suffix money fields with the unit: `costMicros`, `amountMicros`, `balanceMicros`. Prices per million tokens spell it out: `inputPricePerMillion`.
 - Booleans read as predicates: `isLocked`, `isDisabled`, `isDefault`, `replaceAll`.
 

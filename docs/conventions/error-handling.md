@@ -1,48 +1,60 @@
 # Error handling
 
-## The envelope
+Verified on **2026-09-07**. The [error inventory](../reference/error-codes.md) lists common messages; [Bug history index](../bugs/README.md) is the first stop for a bug: match its summary, then read the linked root cause and regression record.
 
-Every error response from this backend is `{"error": "<message>"}`. Two exception handlers in `app/main.py` guarantee it:
+## HTTP envelope
 
-- `HTTPException` → `{"error": exc.detail}` at the raised status.
-- `RequestValidationError` → **422** with pydantic's error list flattened into one readable sentence. Without this handler, rejected bodies would come back as `{"detail": [...]}` while every other error is `{"error": "..."}`, leaving the client two shapes to parse. The flattener drops the `body`/`query`/`path` prefix from `loc` because it tells the user nothing.
+`app/main.py` registers three handlers:
 
-Raise `HTTPException(status, "lowercase message")` from endpoints and services alike. Messages are short, lowercase, and describe the condition, not the fix: `"episode not found"`, `"project is busy, cannot delete an episode right now"`.
+| Exception | HTTP result |
+|---|---|
+| `HTTPException` | Raised status, `{"error": exc.detail}` |
+| `RequestValidationError` | 422, `{"error": "field: message; ..."}` |
+| Unhandled `Exception` | 500, `{"error": "internal server error"}` |
+
+The validation formatter removes `body`/`query`/`path` from field locations. Use short condition-based messages for new HTTP exceptions, and do not let a provider payload or secret leak into them. Legacy dict-body routes validate manually; only typed request models provide `extra="forbid"` and schema-derived constraints.
 
 ## Choosing a status
 
-| Code | Use for | Example in this codebase |
-|---|---|---|
-| `400` | The request is well-formed but the values are wrong or the state does not allow it | `"no fields to update"`, `"no scenes available, parse script first"` |
-| `401` | Missing, invalid, or unresolvable credentials | `"missing token"`, `"invalid token"` |
-| `402` | Out of balance on an official model | `"当前余额不足，请先兑换额度后再使用官方模型。"` |
-| `403` | Authenticated but not permitted, including cross-user access | `"project does not belong to current user"`, `"superAdmin required"` |
-| `404` | The row does not exist, or is soft-deleted, or belongs to someone else and we do not want to confirm it exists | `"scene not found"` |
-| `409` | A conflict with current state that the client can resolve by retrying differently | `"username already exists"`, `"character is locked, unlock it before regenerating the portrait"` |
-| `410` | Existed, expired | `"invitation code expired"` |
-| `422` | Body/query failed schema validation — raised by the framework, not by hand | unknown field, wrong type |
-| `502` | A provider call failed; the message carries the provider's text | `"failed to parse script: …"` |
-
-The full inventory is in `../reference/error-codes.md`.
+| Code | Current use |
+|---|---|
+| 400 | Invalid values/state, missing script/model/reference, unknown invitation code |
+| 401 | Missing/invalid JWT, missing user, bad login credentials |
+| 402 | Non-admin official-model call with no balance |
+| 403 | Disabled user, wrong owner, super-admin-only action |
+| 404 | Missing or inaccessible row/artifact |
+| 409 | Busy project, duplicate account, used code, invalid job transition |
+| 410 | Expired invitation/redemption code |
+| 422 | Typed body/query validation failure |
+| 429 | Email verification-code cooldown |
+| 500 | Unhandled request error or local infrastructure failure |
+| 502 | Request-scoped provider failure |
 
 ## Rules
 
-1. **Validate at the edge, decide in the service.** Range checks live on the Pydantic request model so they appear in the OpenAPI schema; cross-field consistency and defaults resolve in one service function (`project_service.production_settings` is the reference example).
-2. **`extra="forbid"` is load-bearing.** A misspelled field must fail rather than no-op. Do not relax it per-model to make a client easier to write.
-3. **Ownership checks are not optional.** Every project-scoped endpoint resolves the row for the current user; returning `404` rather than `403` is acceptable when confirming existence would leak.
-4. **Provider failures become `502`, never `500`.** Wrap the call, keep the provider's message, truncate it (`ERROR_DETAIL_CHARS`) before it reaches a row or a log.
-5. **Partial success is a state, not an error.** A generation run that renders some shots ends `partial` with per-shot errors recorded — do not collapse it to `failed`.
-6. **Degrade where the user keeps more by continuing.** A missing reference portrait is skipped so the shot still renders; an unreadable stored artifact is dropped rather than 500-ing the whole response. Log it at `info`, do not swallow it silently.
-7. **Never leak a secret in a message.** No API keys, no decrypted values, no full base URLs with credentials.
+1. Validate shape/ranges at the edge and shared domain rules in services. Do not relax typed request validation to hide a misspelled field.
+2. Prove ownership for every project-scoped operation. A 404 instead of 403 is appropriate when confirming existence would leak data.
+3. Wrap request-scoped provider failures as 502 with bounded detail. Truncation is not redaction; never return raw model output, keys, signed URLs, or user content just because it is short.
+4. Keep partial success as state. A batch with some successful shots is not equivalent to a fully failed batch; do not discard finished media.
+5. Distinguish reference identity failure from a missing file: an unavailable explicitly selected reference is a 400; render helpers may skip an unreadable already-resolved local image and log the degraded decision.
+6. Preserve the original failure if diagnostic persistence fails. `record_http_error` is best-effort and must not replace a provider/validation response.
+
+## Streaming and background work
+
+A 202 only means the work started/enqueued. Generation jobs fail through `status`, `errorCode`, and `errorMessage`; frame/clip runs write per-shot errors and terminal project/episode state; export jobs have their own status/error. Do not interpret those as a new HTTP 502 from the original request.
+
+Chat may already have returned HTTP 200 when a provider fails. The backend then emits an NDJSON `error`, and the BFF translates it to an AI SDK stream error. Neither this nor a later background failure automatically becomes an HTTP error-log row.
+
+Cancellation is separate from failure. The frontend recognizes both axios cancellation and `JobCanceledError` with `job-actions.isCanceled`; registered project task cleanup is described in [data flow](../architecture/data-flow.md#9-stop-and-restart-behavior).
 
 ## Frontend surfacing
 
-`src/lib/http/errors.ts` → `resolveRequestError(error, fallback)` is the single place that turns an axios failure into a string. It reads `data.error`, tolerates a raw FastAPI `detail` array (a proxy or a route without the handler can still produce one), falls back to `error.message`, then to the caller's localized fallback. **Always pass a localized fallback from `useI18n()`** — never a hardcoded English string.
+`src/lib/http/errors.ts::resolveRequestError(error, fallback)` reads `data.error`, tolerates a raw FastAPI `detail` array, then falls back to the error message/localized fallback. Pass a fallback from `useI18n()`.
 
-A `401` anywhere triggers `useUserStore.getState().logout()` in the shared axios response interceptor. Do not add per-call 401 handling.
+The shared axios response interceptor logs out on 401. Chat streaming has its own transport/error path; preserve both boundaries. Admin mutations generally use the global toast; the workbench/episode surfaces also keep local message state. Follow the existing surface and avoid duplicate error displays.
 
-Surface errors through the global toast (`src/components/ui/toast.tsx`) rather than inline status text; inline messages were deliberately replaced by toasts across the admin surfaces.
+## Diagnosis
 
-## Backend logging on error
+Request middleware creates a `req_*` ID and attaches `X-Request-Id` to responses passing through it. HTTP exception handlers attempt to store 5xx diagnosis in `error_logs`: route template, method, status/code, sanitized message, and available user/project/episode IDs. The table is not a general application-event archive. Only super admins can query it through `/api/admin/error-logs` or the chat diagnostic tool.
 
-See `logging.md`. Short version: log the *decision* you made and enough identity to find the row (`scene=%s`, `character=%s`), never the payload. Every `5xx` also gets a server-generated request ID, exposed as `X-Request-Id`, and a redacted `error_logs` record for super-admin diagnosis.
+Start a bug investigation with the [history index](../bugs/README.md), then matching details and current incident evidence. After a fix, update its detail and index row. See [logging](logging.md) for permitted content and [backlog](../plans/backlog.md) for known places that still violate those rules.

@@ -1,115 +1,69 @@
-# Error codes
+# Error codes and outcomes
 
-Every error response is `{"error": "<message>"}` — see `../conventions/error-handling.md` for the two handlers that guarantee it. This page is the inventory; the wire contract for each endpoint is in `api-spec.yaml`.
+Verified on **2026-09-07**. HTTP errors use `{"error": "<message>"}`; see [error handling](../conventions/error-handling.md). This is a curated navigation aid for common failures, not an exhaustive generated list of every provider message. [OpenAPI](api-spec.yaml) records HTTP paths and typed input constraints.
 
-## By status
+## HTTP failures
 
-### 400 — well-formed request, unusable values or state
+| Status | Representative message / condition | Owner |
+|---|---|---|
+| 400 | `script is required`; `detailPrompt is required when detailLevel is custom`; `no shots to annotate, split the script into shots first` | `api/v1/episodes.py` |
+| 400 | `sceneIds must belong to the selected episode`; `unlock selected shots before generating them`; `every selected shot is already rendered, nothing to retry` | `services/project_service.py::selected_scenes` |
+| 400 | `generate the storyboard image before generating its video` | Project `/generate-video` endpoint, including text-to-video-capable models |
+| 400 | `selected reference is unavailable`; `image prompts only accept image references` | `reference_service.py`, project/episode endpoints |
+| 400 | `selected video model does not accept audio, turn withAudio off`; `merge the project's voices before rendering with audio` | Explicit video audio request |
+| 400 | `invalid invitation code`; email/code missing counterpart; invalid username/password length | `api/v1/auth.py` |
+| 400 | `baseUrl must not target a private network`; `stored API key cannot be decrypted`; unsupported model/capability options | `config_service.py`, settings/media validation |
+| 400 | `no fields to update` | PATCH endpoints where no applicable field was sent |
+| 401 | `missing token`; `invalid token`; `user not found`; `invalid credentials` | `api/deps.py`, auth |
+| 402 | `当前余额不足，请先兑换额度后再使用官方模型。` | `usage_service.require_model_balance`, official config and non-super-admin |
+| 403 | `user is disabled`; `superAdmin required`; `project does not belong to current user` | Auth/ownership dependencies and services |
+| 404 | `project not found`; `episode not found`; `scene not found`; `config not found`; `export not found` | Owning endpoint/service |
+| 409 | `username already exists`; invitation/redemption already used; project busy; illegal job transition; `job has reached its retry limit` | Auth, admin, project/job services |
+| 410 | `invitation code expired`; `redemption code expired` | Registration/redemption |
+| 422 | Unknown typed field, wrong type, range violation → `field: message; ...` | `CamelModel` / FastAPI / `validation_message` |
+| 429 | `验证码发送过于频繁，请等待 60 秒后再试` | `verification_service.send_registration_code` |
+| 500 | `internal server error`; `邮件发送失败，请稍后重试` | Unhandled exceptions / SMTP failure |
+| 502 | `failed to parse script: …`; `failed to break down script: …`; `failed to optimize prompt: …`; request-scoped media failure | Provider boundary |
 
-| Message | Raised by |
+Body validation is not uniform across the whole API: typed workbench requests forbid extra fields, while older auth/settings/chat/standalone-media dict payloads validate manually. Check the endpoint before interpreting a missing 422 as success.
+
+## Diagnostic codes
+
+HTTP 5xx handlers call `error_log_service.error_code_for` and attempt to persist a redacted record. Search by request ID, project, route, or error code at `/api/admin/error-logs`.
+
+| Code | Current classification |
 |---|---|
-| `no fields to update` | every PATCH with an empty body (10 sites) |
-| `script is required` | project parse |
-| `prompt is required` | image / video generation |
-| `no scenes available, parse script first` | generate, export |
-| `sceneIds must match the episode's current scenes` | scene reorder |
-| `toEpisode must not be earlier than fromEpisode` | character variant range |
-| `targetDurationMs must be between 10000 and 600000` | production settings |
-| `width and height do not match aspectRatio` | production settings |
-| `unsupported aspect ratio` | production settings |
-| `<field> must be an integer` / `<field> must be between 256 and 4096` | production settings dimensions |
-| `level must be 1, 2, or 3` | script optimize |
-| `validity must be 1, 7, or 30 days` | invitation / redemption code creation |
-| `username length must be between 3 and 64` | register, admin user create |
-| `invalid username or password length` | register, password change |
-| `apiKey length must be between 8 and 512` | model config write |
-| `custom provider requires baseUrl` | model config write |
-| `baseUrl must not target a private network` | model config write — SSRF guard |
-| `invalid purpose` | model config write |
-| `audio purpose only supports provider qwen` | model config write |
-| `video purpose only supports provider doubao/gemini/qwen` | model config write |
-| `video purpose requires modelSeries` | model config write |
-| `imageMaxReferenceImages must be an integer` / `imageMaxReferenceImages must be 0 or greater` | image model config write |
-| `image generation currently only supports provider openai/gemini/qwen` | image router |
-| `disabled config cannot be default` | model config activate |
-| `stored API key cannot be decrypted` | any config read whose ciphertext no longer decodes |
-| `model validation failed: …` / `failed to fetch model list: …` | provider validation, provider text truncated to 180 chars |
-| `unknown character for this project: …` | scene casting |
-| `最多只能上传 N 个附件` | chat attachments |
-| `<stage>未配置可用的默认模型。…` / `…缺少 API Key。` / `…当前默认模型尚未通过校验。` | stage has no usable model configuration |
+| `BREAKDOWN_INVALID_JSON` | 502 breakdown failure whose detail includes `json object` |
+| `BREAKDOWN_FAILED` | Other 502 breakdown failure |
+| `PROVIDER_FAILURE` | Other HTTP 502 |
+| `INTERNAL_ERROR` | Other HTTP 5xx / unhandled exception |
 
-### 401 — credentials
+These are log classifications, not extra fields added to every HTTP error body. Middleware supplies `X-Request-Id` on responses passing through it. Start with the [Bug history index](../bugs/README.md) to find the JSON parser record. See [logging](../conventions/logging.md) for privacy rules.
 
-| Message | Meaning |
-|---|---|
-| `missing token` | no `Authorization` header |
-| `invalid token` | undecodable or expired JWT |
-| `user not found` | token decoded, user is gone or soft-deleted |
-| `invalid credentials` | login failure — deliberately does not say which half was wrong |
+## Background and stream failures
 
-### 402 — payment required
+- A generation job settles as `failed` with `errorCode`/`errorMessage`; paid work whose worker lease expires uses `WORKER_LOST` and is not automatically retried. `JobFailedError` exposes the terminal row on the frontend.
+- A canceled job settles as `canceled` and becomes `JobCanceledError`, not a failed provider request.
+- Image/video run failures are stored on the shot and summarized by project/episode status; export failures are stored in `export_jobs`.
+- Chat errors after the stream begins are NDJSON/UI-stream events. They do not change the already-sent HTTP status or automatically create HTTP error-log rows.
 
-| Message | Meaning |
-|---|---|
-| `当前余额不足，请先兑换额度后再使用官方模型。` | official configuration, non-superAdmin, `balance_micros <= 0` |
-
-### 403 — authenticated, not permitted
-
-`user is disabled` · `superAdmin required` · `project does not belong to current user` · `chat session does not belong to current user` · `job does not belong to current user`
-
-### 404 — absent, soft-deleted, or not yours
-
-`user not found` · `project not found` · `episode not found` · `scene not found` · `character not found` · `character variant not found` · `chat session not found` · `config not found` · `official config not found` · `job not found` · `redemption code not found`
-
-### 409 — conflict with current state
-
-| Message | Resolution the client can take |
-|---|---|
-| `username already exists` | pick another name |
-| `project is busy and cannot start <stage> right now` | wait for the run to finish |
-| `project is busy, cannot delete an episode right now` | wait — a run holds those rows open |
-| `character is locked, unlock it before regenerating the portrait` | unlock the card |
-| `invitation code already used` / `is no longer available` | request another code |
-| `redemption code already redeemed` / `is no longer available` | request another code |
-| `only queued or running jobs can be canceled` | nothing to cancel |
-| `only failed or canceled jobs can be retried` | nothing to retry |
-| `job has reached its retry limit` | investigate the failure |
-
-### 410 — existed, expired
-
-`invitation code expired` · `redemption code expired`
-
-### 422 — schema validation
-
-Raised by FastAPI, never by hand. Produced by an unknown field (`extra="forbid"`), a wrong type, or a range violation on the request model. The handler in `app/main.py` flattens pydantic's list into `field: message; field: message`.
-
-### 502 — provider failure
-
-`failed to parse script: …` · `failed to break down script: …` · `failed to optimize script: …` · `failed to optimize prompt: …` · `failed to chat: …` · `failed to generate portrait: …` · `AI 图片生成失败：…` · `AI 视频生成失败：…`
-
-Provider text is truncated (180–220 chars) before it reaches the client or a log line.
-
-Every 5xx has an `X-Request-Id` response header and a redacted super-admin-only error record. `BREAKDOWN_INVALID_JSON` is the stable code for malformed breakdown response shapes; see `known-errors.md` for its compatibility rules and regression samples.
-
-## Application-level outcomes that are *not* errors
-
-These come back `200`/`202` and must not be normalised into failures:
+## Non-error outcomes
 
 | Signal | Meaning |
 |---|---|
-| `applied: false` + `discardsGeneratedScenes: N` + `pendingScenes` | Re-parsing would destroy generated media. The client confirms, then repeats with `replaceAll: true`. |
-| project/episode status `partial` | Some shots rendered, some failed. Per-shot errors are on the rows. |
-| project/episode status `failed` | Nothing rendered. |
+| Breakdown `applied: false`, `discardsScenes`, `discardsGeneratedScenes`, existing `scenes` | Replacing existing shots needs confirmation, even without generated media. Repeat with `replaceAll: true` after consent. |
+| Legacy parse `applied: false`, `discardsGeneratedScenes`, `pendingScenes` | The older parser has a different replacement-confirmation payload. |
+| HTTP 202 with `{job}` | Work is queued, not complete; inspect the terminal job. |
+| HTTP 202 with project/episode status or `{export}` | An in-process background task was started; this is not a generation-worker job. |
+| Project/episode `partial` | Some eligible media succeeded; inspect individual shots for the remainder. |
+| Project/episode `failed` | The run did not complete successfully; startup also uses this for abandoned runs while preserving earlier media. |
+| Project cancel `{canceled: false}` | No registered task was found; normal idempotent stop result. |
 
-## Language
-
-Messages are mostly lowercase English. A handful are Chinese, and they are the ones written to be read by an end user rather than a developer: the balance message, the missing-model-configuration messages, the attachment cap, and the two `AI …失败` provider errors. Keep that split — a new developer-facing message goes in English, a new end-user-facing one gets a localized string on the client where possible.
-
-## Verifying this page
+## Verify after changing behavior
 
 ```bash
 cd backend
-grep -rhoE 'HTTPException\([0-9]{3}, f?"[^"]*"' app/ | sort -u
+rg -n 'raise HTTPException\(' app/api app/services
 ```
 
-Regenerate `api-spec.yaml` with the command in `../conventions/README.md`.
+Update the matching [Bug history record and index](../bugs/README.md) for every fix. Check the owning tests and [regenerate OpenAPI](../conventions/README.md#keeping-generated-docs-current). Keep provider text bounded, but do not confuse truncation with redaction.
