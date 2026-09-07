@@ -10,7 +10,7 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
-| BUG-20260907-sqlite-persistence | SQLite、Docker、DATABASE_URL、数据丢失、WAL、挂载权限 | 统一数据库路径、宿主机目录挂载与备份；进程重启回归通过，真实容器待验证 | 已修改，容器待验证 | 2026-09-07 | [SQLite 部署持久化](2026-09-07-sqlite-persistence.md) |
+| BUG-20260907-sqlite-persistence | SQLite、Docker、DATABASE_URL、数据丢失、WAL、挂载权限 | 统一数据库路径、宿主机目录挂载与备份；六项后端回归与 WAL 备份检查通过，真实容器待验证 | 已修改，容器待验证 | 2026-09-07 | [SQLite 部署持久化](2026-09-07-sqlite-persistence.md) |
 | BUG-20260907-video-unsupported-fps | Seedance 2.0、fps=24、videos/generate | 模型不支持 FPS 时表单仍发送 24；已移除硬编码回退 | 已修复，验证范围见详情 | 2026-09-07 | [不支持的 FPS 参数](2026-09-07-video-unsupported-fps.md) |
 | BUG-20260907-generation-editor-reset | 重置、历史记录、图片、视频、音色 | 历史回填后缺少新建编辑入口；三个面板支持重置并保留历史 | 已修复，验证范围见详情 | 2026-09-07 | [生成编辑器重置](2026-09-07-generation-editor-reset.md) |
 | BUG-20260904-video-reference-save | 视频提示词、@素材、videoReferences、validate_video_reference_counts | 保存视频引用时调用参数不匹配；历史修复后仍有配置解析和校验缺口 | 部分修复，待验证 | 2026-09-07 | [视频参考素材保存](2026-09-04-video-reference-save.md) |

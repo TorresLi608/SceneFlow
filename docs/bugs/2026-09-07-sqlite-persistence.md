@@ -48,6 +48,8 @@ SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_
 - `docker compose config --quiet`：通过。另以 `docker compose config --format json` 检查默认和自定义 `SCENEFLOW_DATA_DIR` / `DATABASE_URL`，确认 `/app/data` 为 bind mount、解析路径正确、媒体卷仍在。
 - 临时 Python 自检模拟 Docker CLI，使用真实含已提交 WAL 内容的 SQLite 文件运行 `backup.sh`：运行中、已停止、复制失败三种场景通过；归档含主库/WAL/SHM/媒体，解包后可读取 WAL 中的数据，复制失败后仍请求恢复后端。此项不是 Docker 引擎集成验证。
 - `sh -n backup.sh backend/docker-entrypoint.sh backend/scripts/run_tests.sh`：通过。
+- 文档校验：192 个本地链接目标、37 个 shell 代码块语法通过；两段迁移 Python 在临时 WAL 数据库上验证数据保留和禁止覆盖已有目标，其中 Docker 片段仅将容器路径映射到临时路径来检查 Python 逻辑，没有实际执行 Docker 命令。
+- `git check-ignore --no-index -v` 检查根目录/后端/前端的数据库、sidecar 和数据目录样例：均被忽略；`git ls-files` 未发现仍在索引中的 SQLite 数据文件。
 - `pnpm exec tsc --noEmit`：通过。
 - `pnpm lint`：0 errors，1 个既有 warning（`use-unsaved-settings-check.ts` 中未使用的 `Project`）。
 
@@ -59,4 +61,4 @@ SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_
 
 ## 历史与关联
 
-- 2026-09-07：本次修复与新增管理员配置；上述验证均为当日实际运行。无本次提交/PR 可引用。
+- 2026-09-07：本次修复与新增管理员配置；上述验证均为当日实际运行。代码已包含在本地提交 `dc3de00`，文档和忽略规则的最后验证记录随后补充。
