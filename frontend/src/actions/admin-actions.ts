@@ -1,4 +1,5 @@
 import { httpClient } from "@/lib/http/client";
+import type { TimeRangeParams } from "@/lib/date-time-range";
 import type {
   AdminDefaultModelItemResponse,
   AdminDefaultModelListResponse,
@@ -24,12 +25,12 @@ export async function listAdminUsersAction() {
   return response.data;
 }
 
-export async function listAdminUsageLogsAction(params: { search?: string; page?: number; pageSize?: number } = {}) {
+export async function listAdminUsageLogsAction(params: TimeRangeParams & { search?: string; page?: number; pageSize?: number }) {
   const response = await httpClient.get<AdminUsageLogListResponse>("/api/bff/admin/usage-logs", { params });
   return response.data;
 }
 
-export async function listAdminErrorLogsAction(params: { search?: string; page?: number; pageSize?: number } = {}) {
+export async function listAdminErrorLogsAction(params: TimeRangeParams & { search?: string; page?: number; pageSize?: number }) {
   const response = await httpClient.get<AdminErrorLogListResponse>("/api/bff/admin/error-logs", { params });
   return response.data;
 }

@@ -7,6 +7,7 @@
     "node": ">=22",
     "pnpm": ">=10"
   },
+  "packageManager": "pnpm@10.28.1",
   "scripts": {
     "dev": "next dev -p 4000",
     "build": "next build",
@@ -28,12 +29,14 @@
     "axios": "^1.15.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dayjs": "^1.11.23",
     "decimal.js": "^10.6.0",
     "i18next": "^26.3.5",
     "lucide-react": "^1.8.0",
     "next": "16.2.3",
     "prompt-area": "0.6.8",
     "react": "19.2.4",
+    "react-day-picker": "^10.0.1",
     "react-dom": "19.2.4",
     "react-i18next": "^17.0.8",
     "streamdown": "^2.5.0",
@@ -52,5 +55,12 @@
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "node-pty",
+      "sharp",
+      "unrs-resolver"
+    ]
   }
 }

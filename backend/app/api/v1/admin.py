@@ -7,6 +7,7 @@ from typing import Annotated, Any
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import AwareDatetime
 from sqlalchemy import delete, func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
@@ -20,6 +21,7 @@ from app.services.config_service import config_api_key, config_create_fields, co
 from app.services.error_log_service import error_log_json, find_error_logs
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates, usage_log_json
 from app.utils.common import now
+from app.utils.time_range import utc_time_bounds
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -126,8 +128,15 @@ def list_all_usage_logs(
     search: Annotated[str, Query(max_length=64)] = "",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+    start_time: Annotated[AwareDatetime | None, Query(alias="startTime")] = None,
+    end_time: Annotated[AwareDatetime | None, Query(alias="endTime")] = None,
 ) -> dict[str, Any]:
+    start_at, end_before = utc_time_bounds(start_time, end_time)
     conditions = []
+    if start_at is not None:
+        conditions.append(UsageLog.created_at >= start_at)
+    if end_before is not None:
+        conditions.append(UsageLog.created_at < end_before)
     if search.strip():
         conditions.append(User.username.like(f"%{search.strip()}%"))
     offset = (page - 1) * page_size
@@ -166,7 +175,10 @@ def list_error_logs(
     request_id: Annotated[str, Query(alias="requestId", max_length=80)] = "",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+    start_time: Annotated[AwareDatetime | None, Query(alias="startTime")] = None,
+    end_time: Annotated[AwareDatetime | None, Query(alias="endTime")] = None,
 ) -> dict[str, Any]:
+    start_at, end_before = utc_time_bounds(start_time, end_time)
     with db() as session:
         total, logs = find_error_logs(
             session,
@@ -176,6 +188,8 @@ def list_error_logs(
             request_id=request_id,
             page=page,
             page_size=page_size,
+            start_at=start_at,
+            end_before=end_before,
         )
     return {"errorLogs": [error_log_json(item) for item in logs], "pagination": pagination(total, page, page_size)}
 

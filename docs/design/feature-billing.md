@@ -55,8 +55,8 @@ Add both hooks whenever you introduce a new provider-backed feature. The `featur
 
 ## Reporting
 
-- Per-user: `GET /api/usage/logs` with `feature`/`days`/`source` filters, returning a `summary` (calls, input tokens, output tokens, `costMicros`) plus up to 500 rows. Config names are joined in with an outer join so a deleted configuration still shows its logs.
-- Admin: `GET /api/admin/usage-logs` with username search and pagination.
+- Per-user: `GET /api/usage/logs` with `feature`/`source` and `startTime`/`endTime` filters, returning a `summary` (calls, input tokens, output tokens, `costMicros`) plus up to 500 rows. The summary and rows share the time range. Config names are joined in with an outer join so a deleted configuration still shows its logs. Legacy callers without a range retain the `days` filter.
+- Admin: `GET /api/admin/usage-logs` with username search, the same time range, and pagination. Both usage pages default to the current local day; see [time-range semantics](feature-search.md#log-time-ranges).
 
 ## Rules when extending
 

@@ -131,6 +131,8 @@ Except for auth, health, static prompt presets, and token-signed artifact downlo
 | PATCH | `/api/admin/model-configs/{config_id}` |
 | PATCH, DELETE | `/api/admin/default-models/{config_id}` |
 
+Both log-list endpoints accept paired `startTime`/`endTime` ISO timestamps with a time zone. Bounds are inclusive to the second and normalized to UTC; missing partners, invalid/naive timestamps, and reversed ranges return 422. The range filters both total counts and paginated rows. Omit both to search all history. See [log time ranges](../docs/design/feature-search.md#log-time-ranges).
+
 ### projects — app/api/v1/projects.py
 
 | Methods | Path |
@@ -265,6 +267,8 @@ Except for auth, health, static prompt presets, and token-signed artifact downlo
 | Methods | Path |
 |---|---|
 | GET | `/api/usage/logs` |
+
+Accepts `feature`, `source`, and paired `startTime`/`endTime` with the same second-inclusive semantics as admin logs. Explicit ranges apply to both the summary and the latest 500 rows, overriding the legacy `days` cutoff. With no range, `days` defaults to 30 (1–365). The three log pages send the browser's local day, `00:00:00`–`23:59:59`, by default.
 
 ## Execution contracts
 

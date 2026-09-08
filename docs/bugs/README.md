@@ -10,6 +10,7 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20260908-docker-pnpm-ignored-builds | ERR_PNPM_IGNORED_BUILDS、docker:build、Dockerfile、pnpm-workspace.yaml、allowBuilds、onlyBuiltDependencies、Corepack、pnpm 10 | Docker 构建前端镜像时因缺少 pnpm-workspace.yaml 拷贝及 packageManager 锁定导致 ERR_PNPM_IGNORED_BUILDS；已补充拷贝与版本锁定 | 已验证 | 2026-09-08 | [Docker 前端构建 pnpm 报错](2026-09-08-docker-pnpm-ignored-builds.md) |
 | BUG-20260907-admin-tables-double-border | 管理后台、Table、border、border-radius、admin/users、admin/usage-logs、admin/error-logs、admin/invitation-codes、admin/redemption-codes、双边框 | 管理后台 5 个页面外层冗余包装 div 导致与 Table 组件内置容器叠加产生双重边框与圆角不一致；已移除冗余包装 | 已验证 | 2026-09-07 | [后台表格双边框](2026-09-07-admin-tables-double-border.md) |
 | BUG-20260907-sqlite-persistence | SQLite、Docker、DATABASE_URL、SCENEFLOW_DB_PATH、本地迁移、数据丢失、WAL、挂载权限 | 移除旧变量，统一 DATABASE_URL；本地旧库已迁至 data/app.db，逐表/哈希校验和三项后端回归通过 | 本地已验证，容器待验证 | 2026-09-07 | [SQLite 部署持久化](2026-09-07-sqlite-persistence.md) |
 | BUG-20260907-video-unsupported-fps | Seedance 2.0、fps=24、videos/generate | 模型不支持 FPS 时表单仍发送 24；已移除硬编码回退 | 已修复，验证范围见详情 | 2026-09-07 | [不支持的 FPS 参数](2026-09-07-video-unsupported-fps.md) |

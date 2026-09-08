@@ -8,12 +8,11 @@ services:
     environment:
       PORT: "8080"
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
-      SCENEFLOW_PRIVATE_GENERATED_DIR: /app/backend/private_generated
+      SCENEFLOW_PRIVATE_GENERATED_DIR: /app/data/private_generated
     ports:
       - "8080:8080"
     volumes:
       - ${SCENEFLOW_DATA_DIR:-./data}:/app/data
-      - sceneflow_media:/app/backend/private_generated
     restart: unless-stopped
 
   frontend:
@@ -32,7 +31,3 @@ services:
     ports:
       - "4000:4000"
     restart: unless-stopped
-
-volumes:
-  sceneflow_media:
-    name: sceneflow_media

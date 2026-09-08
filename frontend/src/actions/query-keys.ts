@@ -1,3 +1,5 @@
+import type { TimeRangeParams } from "@/lib/date-time-range";
+
 export const queryKeys = {
   me: ["me"] as const,
   userConfigs: ["user-configs"] as const,
@@ -13,12 +15,12 @@ export const queryKeys = {
   assets: (projectId: string) => ["assets", projectId] as const,
   exports: (projectId: string) => ["exports", projectId] as const,
   adminUsers: ["admin-users"] as const,
-  adminUsageLogs: (search: string, page: number) => ["admin-usage-logs", search, page] as const,
-  adminErrorLogs: (search: string, page: number) => ["admin-error-logs", search, page] as const,
+  adminUsageLogs: (search: string, page: number, range: TimeRangeParams) => ["admin-usage-logs", search, page, range] as const,
+  adminErrorLogs: (search: string, page: number, range: TimeRangeParams) => ["admin-error-logs", search, page, range] as const,
   invitationCodes: (status: string, search: string, page: number) => ["invitation-codes", status, search, page] as const,
   redemptionCodes: (status: string, page: number) => ["redemption-codes", status, page] as const,
   officialConfigs: ["official-configs"] as const,
-  usageLogs: ["usage-logs"] as const,
+  usageLogs: (feature: string, range: TimeRangeParams, source: string) => ["usage-logs", feature, range, source] as const,
   userVoices: ["user-voices"] as const,
   chatSessions: ["chat-sessions"] as const,
   chatMessages: (sessionId: string | null) => ["chat-messages", sessionId] as const,

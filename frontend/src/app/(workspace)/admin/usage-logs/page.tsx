@@ -8,9 +8,11 @@ import { listAdminUsageLogsAction } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateTimeRangePicker } from "@/components/ui/date-time-range-picker";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n";
+import { formatDateTime, isTodayTimeRange, timeRangeParams, todayTimeRange } from "@/lib/date-time-range";
 import { formatMoney } from "@/lib/money";
 import { providerLabel } from "@/lib/model-providers";
 import { useUserStore } from "@/store/user-store";
@@ -18,13 +20,15 @@ import { useUserStore } from "@/store/user-store";
 const pageSize = 20;
 
 export default function AdminUsageLogsPage() {
-  const { t, formatDateTime } = useI18n();
+  const { t } = useI18n();
   const user = useUserStore((state) => state.user);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [range, setRange] = useState(todayTimeRange);
+  const timeParams = timeRangeParams(range);
   const query = useQuery({
-    queryKey: queryKeys.adminUsageLogs(search.trim(), page),
-    queryFn: () => listAdminUsageLogsAction({ search: search.trim(), page, pageSize }),
+    queryKey: queryKeys.adminUsageLogs(search.trim(), page, timeParams),
+    queryFn: () => listAdminUsageLogsAction({ search: search.trim(), page, pageSize, ...timeParams }),
     enabled: user?.role === "superAdmin",
   });
   const pagination = query.data?.pagination ?? { total: 0, page, pageSize, pageCount: 1 };
@@ -47,15 +51,16 @@ export default function AdminUsageLogsPage() {
           <p className="mt-1 text-sm text-muted-foreground">{t("admin.allUsageRecordsDescription")}</p>
         </div>
 
-        <div className="flex gap-2 rounded-lg border bg-muted/20 p-3">
+        <div className="flex flex-wrap gap-2 rounded-lg border bg-muted/20 p-3">
           <Input
             value={search}
             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
             placeholder={t("admin.searchUsageUser")}
-            className="max-w-sm"
+            className="w-full sm:w-64"
           />
-          {search ? (
-            <Button variant="outline" onClick={() => { setSearch(""); setPage(1); }}>
+          <DateTimeRangePicker value={range} onChange={(value) => { setRange(value); setPage(1); }} />
+          {search || !isTodayTimeRange(range) ? (
+            <Button variant="outline" onClick={() => { setSearch(""); setRange(todayTimeRange()); setPage(1); }}>
               <RotateCcw data-icon="inline-start" />
               {t("common.clearFilters")}
             </Button>

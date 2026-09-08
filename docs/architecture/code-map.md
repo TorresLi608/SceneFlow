@@ -102,8 +102,8 @@ Actions below are in [frontend/src/actions](../../frontend/src/actions/); endpoi
 | Queued generation / cancel / retry | `job-actions.ts` (`runJob`, `awaitJob`) | `jobs.py`, `job_service.py`, `job_worker.py`, `job_handlers.py` | `test_job_service.py`; `tests/job_queue.py` drains handlers for API tests |
 | Standalone images / videos | `image-generation-actions.ts`, `video-generation-actions.ts` | `images.py` → `llms/router.py`; `videos.py` → `video_service.py` | `test_images.py`, `test_video_service.py` |
 | Chat / generated documents | `chat-actions.ts`, `use-chat-controller.ts`, composer and message list | `chat.py`, `chat_service.py`, `graph/graphs/context_graph.py`, `agent_service.py`, `artifact_service.py`, `utils/attachment_parser.py` | `test_agent_service.py`, `test_chat_balance.py`, `test_artifact_service.py` |
-| Billing / redemption / admin logs | `usage-actions.ts`, `user-actions.ts`, `admin-actions.ts` | `usage.py`, `users.py`, `admin.py`, `usage_service.py` | `test_usage_service.py`, `test_redemption_codes.py`, `test_admin_usage_logs.py`; frontend `money.test.mts`, `user-list.test.mts` |
-| Request diagnosis | `admin-actions.ts`, admin error-log page | `main.py`, `core/logging.py`, `error_log_service.py`, `agent_service.py::search_error_logs` (admin-only tool) | `test_breakdown_api.py`; [Bug history index](../bugs/README.md) |
+| Billing / redemption / admin logs | `usage-actions.ts`, `user-actions.ts`, `admin-actions.ts`, `ui/date-time-range-picker.tsx` | `usage.py`, `users.py`, `admin.py`, `usage_service.py`, `utils/time_range.py` | `test_usage_service.py`, `test_redemption_codes.py`, `test_admin_usage_logs.py`, `test_log_time_ranges.py`; frontend `money.test.mts`, `date-time-range.test.mts`, `user-list.test.mts` |
+| Request diagnosis | `admin-actions.ts`, admin error-log page, `ui/date-time-range-picker.tsx` | `main.py`, `core/logging.py`, `error_log_service.py`, `utils/time_range.py`, `agent_service.py::search_error_logs` (admin-only tool) | `test_breakdown_api.py`, `test_log_time_ranges.py`; [Bug history index](../bugs/README.md) |
 
 ### Cross-cutting owners
 
@@ -121,6 +121,7 @@ The standalone image/video/voice panels each wrap an internal editor with a rese
 | [chat stream route.ts](../../frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts) | Sole real BFF route: backend NDJSON → AI SDK UI stream |
 | [frontend/src/lib/http/client.ts](../../frontend/src/lib/http/client.ts) | Axios auth injection, 90-second default timeout, 15-minute generation timeout, logout on 401 |
 | [frontend/src/actions/query-keys.ts](../../frontend/src/actions/query-keys.ts) | Shared React Query identities; busy polling must update the same project key |
+| [frontend/src/components/ui/date-time-range-picker.tsx](../../frontend/src/components/ui/date-time-range-picker.tsx), [date-time-range.ts](../../frontend/src/lib/date-time-range.ts) | Shared log-range picker, local day defaults, second-precision display/parsing, UTC request parameters |
 | [frontend/src/store](../../frontend/src/store/) | Persisted user/preferences; ephemeral legacy project copy and unsaved model-settings flags |
 | [frontend/src/lib/i18n.ts](../../frontend/src/lib/i18n.ts) | Both `zh` and `en` dictionaries and `useI18n()` |
 

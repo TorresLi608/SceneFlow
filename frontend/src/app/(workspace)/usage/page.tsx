@@ -7,8 +7,10 @@ import { useState } from "react";
 import { listUsageLogsAction } from "@/actions/usage-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Button } from "@/components/ui/button";
+import { DateTimeRangePicker } from "@/components/ui/date-time-range-picker";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
+import { formatDateTime, isTodayTimeRange, timeRangeParams, todayTimeRange } from "@/lib/date-time-range";
 import { formatMoney, isZeroDecimal } from "@/lib/money";
 import { providerLabel } from "@/lib/model-providers";
 import type { UsageLogItem } from "@/types/usage";
@@ -36,7 +38,6 @@ const featureValues = [
   "video_prompt_optimize",
   "prompt_optimize",
 ];
-const dayValues = ["7", "30", "90"];
 const pageSize = 10;
 type UsageSource = "all" | "official" | "user";
 
@@ -45,14 +46,15 @@ function number(value: number) {
 }
 
 export default function UsagePage() {
-  const { t, formatDateTime } = useI18n();
+  const { t } = useI18n();
   const [feature, setFeature] = useState("all");
-  const [days, setDays] = useState(30);
+  const [range, setRange] = useState(todayTimeRange);
   const [source, setSource] = useState<UsageSource>("all");
   const [page, setPage] = useState(1);
+  const timeParams = timeRangeParams(range);
   const query = useQuery({
-    queryKey: [...queryKeys.usageLogs, feature, days, source],
-    queryFn: () => listUsageLogsAction(feature, days, source),
+    queryKey: queryKeys.usageLogs(feature, timeParams, source),
+    queryFn: () => listUsageLogsAction(feature, timeParams, source),
   });
   const summary = query.data?.summary ?? { calls: 0, inputTokens: 0, outputTokens: 0, costMicros: "0" };
   const logs = query.data?.logs ?? [];
@@ -65,13 +67,12 @@ export default function UsagePage() {
     return label === key ? value : label;
   };
   const featureItems = featureValues.map((value) => ({ value, label: featureLabel(value) }));
-  const dayItems = dayValues.map((value) => ({ value, label: t("usage.days", { days: Number(value) }) }));
   const sourceItems = [
     { value: "all", label: t("common.all") },
     { value: "official", label: t("config.source.official") },
     { value: "user", label: t("config.source.user") },
   ];
-  const filtersActive = feature !== "all" || days !== 30 || source !== "all";
+  const filtersActive = feature !== "all" || !isTodayTimeRange(range) || source !== "all";
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
@@ -80,7 +81,7 @@ export default function UsagePage() {
           <h2 className="text-base font-semibold">{t("usage.title")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("usage.description")}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           <Select items={featureItems} value={feature} onValueChange={(value) => { setFeature(value ?? "all"); setPage(1); }}>
             <SelectTrigger className="w-40"><SelectValue>{featureLabel(feature)}</SelectValue></SelectTrigger>
             <SelectContent>
@@ -93,14 +94,9 @@ export default function UsagePage() {
               <SelectGroup>{sourceItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
             </SelectContent>
           </Select>
-          <Select items={dayItems} value={String(days)} onValueChange={(value) => { setDays(Number(value)); setPage(1); }}>
-            <SelectTrigger className="w-28"><SelectValue>{t("usage.days", { days })}</SelectValue></SelectTrigger>
-            <SelectContent>
-              <SelectGroup>{dayItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
-            </SelectContent>
-          </Select>
+          <DateTimeRangePicker value={range} onChange={(value) => { setRange(value); setPage(1); }} />
           {filtersActive ? (
-            <Button variant="outline" size="sm" onClick={() => { setFeature("all"); setSource("all"); setDays(30); setPage(1); }}>
+            <Button variant="outline" size="sm" onClick={() => { setFeature("all"); setSource("all"); setRange(todayTimeRange()); setPage(1); }}>
               <RotateCcw data-icon="inline-start" />
               {t("common.clearFilters")}
             </Button>

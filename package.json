@@ -12,8 +12,8 @@
     "install:backend": "node scripts/install-backend.mjs",
     "dev:frontend": "pnpm --dir frontend dev",
     "dev:backend": "node scripts/dev-backend.mjs",
-    "docker:backup": "./backup.sh",
     "docker:build": "docker compose build",
-    "docker:up": "docker compose up -d --build"
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   }
 }

@@ -1,6 +1,6 @@
 # Testing
 
-Verified on **2026-09-07**. The tree contains **35 backend `test_*.py` files** and **4 frontend `*.test.mts` files**. These are inventory counts, not passing results. There is no pytest or frontend DOM/component test framework.
+Verified on **2026-09-08**. The tree contains **36 backend `test_*.py` files** and **5 frontend `*.test.mts` files**. These are inventory counts, not passing results. There is no pytest or frontend DOM/component test framework.
 
 ## Backend: one file per process
 
@@ -57,7 +57,7 @@ pnpm exec tsc --noEmit
 pnpm lint
 ```
 
-The four pure-module suites cover money, artifact URLs, shared reference budgets, and admin user filtering. Tests use `node:test` and `node:assert/strict`, with explicit `.ts` extensions in imports because Node type stripping does no TypeScript path resolution. There is no DOM; extract nontrivial pure logic when a regression needs it, rather than introducing a component framework for one check.
+The five pure-module suites cover money, artifact URLs, shared reference budgets, admin user filtering, and local date/time ranges (including daylight-saving boundaries). Tests use `node:test` and `node:assert/strict`, with explicit `.ts` extensions in imports because Node type stripping does no TypeScript path resolution. There is no DOM; extract nontrivial pure logic when a regression needs it, rather than introducing a component framework for one check.
 
 ## Schema and contract checks
 

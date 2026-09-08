@@ -319,6 +319,24 @@ paths:
           minimum: 1
           default: 20
           title: Pagesize
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starttime
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Endtime
       - name: authorization
         in: header
         required: false
@@ -398,6 +416,24 @@ paths:
           minimum: 1
           default: 20
           title: Pagesize
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starttime
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Endtime
       - name: authorization
         in: header
         required: false
@@ -1866,6 +1902,24 @@ paths:
           pattern: ^(all|official|user)$
           default: all
           title: Source
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starttime
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Endtime
       - name: authorization
         in: header
         required: false

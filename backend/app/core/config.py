@@ -42,7 +42,12 @@ CORS_ORIGINS = [
     for origin in os.getenv("SCENEFLOW_CORS_ORIGINS", "http://localhost:4000,http://127.0.0.1:4000").split(",")
     if origin.strip()
 ]
-PRIVATE_GENERATED_DIR = Path(os.getenv("SCENEFLOW_PRIVATE_GENERATED_DIR", "./private_generated"))
+PRIVATE_GENERATED_DIR = Path(
+    os.getenv(
+        "SCENEFLOW_PRIVATE_GENERATED_DIR",
+        str(Path(__file__).resolve().parents[3] / "data" / "private_generated"),
+    )
+)
 CJK_FONT_PATH = os.getenv("SCENEFLOW_CJK_FONT_PATH", "").strip()
 CJK_FONT_NAME = os.getenv("SCENEFLOW_CJK_FONT_NAME", "Arial Unicode MS").strip() or "Arial Unicode MS"
 MAX_CONTEXT_TOKENS = max(10_000, int(os.getenv("SCENEFLOW_MAX_CONTEXT_TOKENS", "100000")))
