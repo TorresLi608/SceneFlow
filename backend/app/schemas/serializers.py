@@ -144,8 +144,7 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
         "videoFirstFrame": frame_reference(scene.video_first_frame_json),
         "videoLastFrame": frame_reference(scene.video_last_frame_json),
         # A cleared frame and a frame nobody ever chose are both `videoFirstFrame: null`,
-        # but they mean opposite things to the editor: the first must stay off, the second
-        # may still be filled with the shot's own render. The column tells them apart —
+        # and both stay empty in the editor. Preserve the explicit-choice metadata —
         # "" is untouched, "null" is the user turning it off.
         "videoFirstFrameExplicit": bool((scene.video_first_frame_json or "").strip()),
         "videoLastFrameExplicit": bool((scene.video_last_frame_json or "").strip()),

@@ -34,11 +34,9 @@ import {
   getEpisodeAction,
   getProjectModelsAction,
   listCharactersAction,
-  listAssetsAction,
-  listEpisodesAction,
   listProjectsAction,
-  listPropsAction,
   listVoicesAction,
+  listPropsAction,
   updateEpisodeAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
@@ -53,6 +51,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
+import { useProjectResources } from "@/hooks/use-project-resources";
 import { cn } from "@/lib/utils";
 import { useUnsavedSettingsStore } from "@/store/unsaved-settings-store";
 import type { BreakdownDetailLevel, BreakdownTarget, Episode, GenerationReferenceInput, Scene } from "@/types/project";
@@ -129,10 +128,6 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     staleTime: 300_000,
   });
 
-  const episodesQuery = useQuery({
-    queryKey: queryKeys.episodes(projectId),
-    queryFn: () => listEpisodesAction(projectId),
-  });
   const charactersQuery = useQuery({
     queryKey: queryKeys.characters(projectId),
     queryFn: () => listCharactersAction(projectId),
@@ -145,7 +140,10 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     queryKey: queryKeys.voices(projectId),
     queryFn: () => listVoicesAction(projectId),
   });
-  const assetsQuery = useQuery({ queryKey: queryKeys.assets(projectId), queryFn: () => listAssetsAction(projectId) });
+  const resourcesQuery = useProjectResources(projectId, busy);
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projectResources(projectId) });
+  }, [projectId, queryClient, episode.updatedAt, busy]);
 
   const refreshEpisode = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.episode(projectId, episode.id) });
@@ -268,6 +266,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         queryClient.invalidateQueries({ queryKey: queryKeys.props(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.assets(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projectResources(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.episodes(projectId) }),
         refreshEpisode(),
         refreshProject(),
@@ -344,63 +343,9 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     setPendingGeneration(null);
   };
 
-  const characterAssets: ReferenceAssetOption[] = (charactersQuery.data?.characters ?? []).flatMap((character) => [
-    ...(character.sheetImageUrl || character.referenceImageUrl
-      ? [{
-        kind: "character" as const,
-        id: character.id,
-        label: character.name,
-        media: "image" as const,
-        url: artifactBffUrl((character.sheetImageUrl || character.referenceImageUrl)!),
-      }]
-      : []),
-    ...character.states
-      .filter((state) => state.referenceImageUrl)
-      .map((state) => ({
-        kind: "characterState" as const,
-        id: state.id,
-        label: `${character.name} · ${state.name}`,
-        media: "image" as const,
-        url: artifactBffUrl(state.referenceImageUrl!),
-      })),
-  ]);
-  const propAssets: ReferenceAssetOption[] = (propsQuery.data?.props ?? [])
-    .filter((prop) => prop.imageUrl)
-    .map((prop) => ({ kind: "prop", id: prop.id, label: prop.name, media: "image", url: artifactBffUrl(prop.imageUrl!) }));
-  const toneAssets: ReferenceAssetOption[] = [episode, ...(episodesQuery.data?.episodes ?? []).filter((item) => item.id !== episode.id)]
-    .filter((item) => item.toneImageUrl)
-    .map((item) => ({
-      kind: "tone",
-      id: item.id,
-      label: item.title,
-      media: "image",
-      url: artifactBffUrl(item.toneImageUrl!),
-    }));
-  const sceneImageAssets: ReferenceAssetOption[] = shots
-    .filter((scene) => scene.image.url)
-    .map((scene) => ({
-      kind: "sceneImage",
-      id: scene.id,
-      label: t("episode.shotNumber", { order: scene.order }),
-      media: "image",
-      url: artifactBffUrl(scene.image.url!),
-    }));
-  const sceneVideoAssets: ReferenceAssetOption[] = shots
-    .filter((scene) => scene.video.url)
-    .map((scene) => ({
-      kind: "sceneVideo",
-      id: scene.id,
-      label: t("episode.shotNumber", { order: scene.order }),
-      media: "video",
-      url: artifactBffUrl(scene.video.url!),
-    }));
-  const voiceAssets: ReferenceAssetOption[] = (voicesQuery.data?.voices ?? [])
-    .filter((voice) => voice.audioUrl)
-    .map((voice) => ({ kind: "voice", id: voice.id, label: voice.name, media: "audio", url: artifactBffUrl(voice.audioUrl!) }));
+  const characterAssets = resourcesQuery.resources.filter((item) => item.kind === "character" || item.kind === "characterState");
+  const imageReferenceAssets = resourcesQuery.resources.filter((item) => item.media === "image");
   const imageModelLimit = modelsQuery.data?.models.image?.capabilities?.maxReferenceImages ?? 0;
-  const customAssets: ReferenceAssetOption[] = (assetsQuery.data?.assets ?? [])
-    .filter((asset) => asset.url)
-    .map((asset) => ({ kind: "asset", id: asset.id, label: asset.name, media: asset.kind, url: artifactBffUrl(asset.url!) }));
   const imageReferenceLimit = imageModelLimit;
   const videoCapabilities = modelsQuery.data?.models.video?.capabilities;
 
@@ -651,7 +596,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               <ReferencePicker
                 title={t("episode.toneReferences")}
                 hint={t("episode.toneReferencesHint")}
-                assets={[...characterAssets, ...propAssets, ...toneAssets, ...customAssets.filter((item) => item.media === "image")]}
+                assets={imageReferenceAssets}
                 selected={toneReferences}
                 limits={{ image: imageModelLimit }}
                 onChange={setToneReferences}
@@ -782,8 +727,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                       return asset ? [{ kind: asset.kind, id: asset.id }] : [];
                     }).slice(0, imageReferenceLimit)
                   }
-                  // The shot's own frame is deliberately absent: it is the first-frame
-                  // slot's job, and the render prepends it anyway (`defaultVideoReferencePaths`).
+                  // The shot's own frame is deliberately absent: users can select it
+                  // manually as a reference or first frame.
                   // Listing it here too spent a second reference slot on the same image and
                   // wrote `@分镜 N` into the motion prompt on every reload.
                   defaultVideoReferences={
@@ -820,16 +765,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                     (activeBatch === null && project?.status === "video_generating" &&
                       batchIncludes(scene, "video", videoMutation.variables))
                   }
-                  imageReferenceAssets={[...characterAssets, ...propAssets, ...toneAssets, ...sceneImageAssets, ...customAssets.filter((item) => item.media === "image")]}
-                  videoReferenceAssets={[
-                    ...characterAssets,
-                    ...propAssets,
-                    ...toneAssets,
-                    ...sceneImageAssets,
-                    ...customAssets,
-                    ...sceneVideoAssets.filter((asset) => asset.id !== scene.id),
-                    ...voiceAssets,
-                  ]}
+                  imageReferenceAssets={imageReferenceAssets}
+                  videoReferenceAssets={resourcesQuery.resources.filter((asset) => asset.kind !== "sceneVideo" || asset.id !== scene.id)}
                   imageReferenceLimit={imageReferenceLimit}
                   videoReferenceLimits={{
                     image: videoCapabilities?.referenceImages ? videoCapabilities.maxReferenceImages : 0,
@@ -859,13 +796,6 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         projectId={projectId}
         open={assetLibraryOpen}
         onOpenChange={setAssetLibraryOpen}
-        assets={assetsQuery.data?.assets ?? []}
-        generatedImages={[
-          ...characterAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...propAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...toneAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...shots.filter((shot) => shot.image.url).map((shot) => ({ id: `scene:${shot.id}`, name: t("episode.shotNumber", { order: shot.order }), url: artifactBffUrl(shot.image.url!) })),
-        ]}
         onChanged={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.assets(projectId) });
           void refreshEpisode();

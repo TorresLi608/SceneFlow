@@ -31,6 +31,17 @@ IMAGE_PROVIDERS = {"openai", "gemini", "qwen"}
 REFERENCE_KINDS = {"character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice", "asset"}
 
 
+def episode_reference_labels(kind: str, episode: Episode | None, order: int = 0) -> list[str]:
+    """Qualified labels plus old editor aliases, so saved prompts still compile."""
+    if kind == "tone":
+        return [f"第{episode.episode_number}集 · 基调图", f"Episode {episode.episode_number} · Tone sheet", episode.title] if episode else []
+    legacy = [f"分镜 {order}", f"Shot {order}"]
+    if not episode:
+        return legacy
+    media_zh, media_en = ("图片", "Image") if kind == "sceneImage" else ("视频", "Video")
+    return [f"第{episode.episode_number}集 · 分镜{order} · {media_zh}", f"Episode {episode.episode_number} · Shot {order} · {media_en}", *legacy]
+
+
 def stored_generation_references(value: str | None) -> list[tuple[str, str]]:
     try:
         items = json.loads(value or "[]")
@@ -61,6 +72,7 @@ def resolve_generation_references(
         seen.add(key)
         stored: str | None = None
         label = ""
+        aliases: list[str] = []
         bucket = "images"
         if kind == "character":
             character = session.exec(
@@ -99,13 +111,20 @@ def resolve_generation_references(
                 )
             ).first()
             stored = episode.tone_image_path if episode else None
-            label = episode.title if episode else ""
+            aliases = episode_reference_labels(kind, episode)
+            label = aliases[0] if aliases else ""
         elif kind in {"sceneImage", "sceneVideo"}:
             scene = session.exec(
                 select(Scene).where(Scene.id == asset_id, Scene.project_id == project_id, Scene.deleted_at.is_(None))
             ).first()
             stored = (scene.image_path if kind == "sceneImage" else scene.video_path) if scene else None
             label = f"分镜 {scene.order_num}" if scene else ""
+            episode = session.get(Episode, scene.episode_id) if scene and scene.episode_id else None
+            if episode and (episode.deleted_at or episode.project_id != project_id):
+                stored = None
+            if scene:
+                aliases = episode_reference_labels(kind, episode, scene.order_num)
+                label = aliases[0]
             bucket = "images" if kind == "sceneImage" else "videos"
         elif kind == "voice":
             voice = session.exec(
@@ -135,7 +154,7 @@ def resolve_generation_references(
             raise HTTPException(400, "selected reference is unavailable")
         resolved[bucket].append((stored, label) if bucket == "images" else stored)
         resolved["labels"].append(label)
-        resolved["items"].append({"kind": kind, "id": asset_id, "label": label, "media": bucket[:-1]})
+        resolved["items"].append({"kind": kind, "id": asset_id, "label": label, "media": bucket[:-1], "aliases": aliases})
     return resolved
 
 

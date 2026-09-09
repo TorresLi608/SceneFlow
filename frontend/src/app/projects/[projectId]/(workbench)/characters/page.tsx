@@ -318,6 +318,7 @@ function StateEditor({
 
       <ReferenceImage
         url={state.referenceImageUrl}
+        title={`${character.name} - ${name || state.name}`}
         generateLabel={t("character.generateSheet")}
         generatingLabel={t("character.generatingSheet")}
         uploadLabel={t("character.uploadSheet")}
@@ -469,7 +470,11 @@ function CharacterCard({
 
         {character.sheetImageUrl ? (
           <div className="max-w-sm">
-            <SheetPreview url={character.sheetImageUrl} emptyLabel={t("character.noCastSheet")} />
+            <SheetPreview
+              url={character.sheetImageUrl}
+              emptyLabel={t("character.noCastSheet")}
+              title={`${character.name} - ${t("character.mergeCharacter")}`}
+            />
           </div>
         ) : null}
       </div>
@@ -559,7 +564,11 @@ export default function CharactersPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {t("character.castSheet")}
           </p>
-          <SheetPreview url={project?.characterSheetUrl ?? null} emptyLabel={t("character.noCastSheet")} />
+          <SheetPreview
+            url={project?.characterSheetUrl ?? null}
+            emptyLabel={t("character.noCastSheet")}
+            title={t("character.castSheet")}
+          />
         </div>
         <div className="flex items-start">
           <MergeButton

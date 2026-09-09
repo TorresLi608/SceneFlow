@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { isCancel } from "axios";
-import { Loader2, Save, Sparkles, Square, Trash2 } from "lucide-react";
+import { Eye, Loader2, Maximize2, Save, Sparkles, Square, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState } from "react";
 
@@ -13,6 +13,7 @@ import {
   updateProjectAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { MediaPreviewDialog } from "@/components/media-preview-dialog";
 import { PromptField } from "@/components/prompt-field";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -166,15 +167,71 @@ export function ProjectCoverField({ project }: { project: Project }) {
 }
 
 /** Re-exported so the cast/prop sheet previews and this field share one look. */
-export function SheetPreview({ url, emptyLabel }: { url: string | null; emptyLabel: string }) {
+export function SheetPreview({
+  url,
+  emptyLabel,
+  title,
+}: {
+  url: string | null;
+  emptyLabel: string;
+  title?: string;
+}) {
+  const { t } = useI18n();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewTitle = title || emptyLabel;
+
   return (
-    <span className="relative flex aspect-[3/2] w-full items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted">
-      {url ? (
-        <Image src={url} alt="" fill unoptimized sizes="(min-width: 768px) 50vw, 100vw" className="object-contain" />
-      ) : (
-        <span className="px-4 text-center text-xs text-muted-foreground">{emptyLabel}</span>
-      )}
-    </span>
+    <>
+      <div
+        role={url ? "button" : undefined}
+        tabIndex={url ? 0 : undefined}
+        title={url ? t("common.clickToPreview") : undefined}
+        onClick={() => {
+          if (url) setPreviewOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (url && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            setPreviewOpen(true);
+          }
+        }}
+        className={cn(
+          "relative flex aspect-[3/2] w-full items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted transition-all select-none",
+          url && "cursor-pointer group hover:border-primary/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        )}
+      >
+        {url ? (
+          <>
+            <Image
+              src={url}
+              alt={previewTitle}
+              fill
+              unoptimized
+              sizes="(min-width: 768px) 50vw, 100vw"
+              className="object-contain transition-transform duration-200 group-hover:scale-[1.02]"
+            />
+            <div
+              className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-md bg-black/65 text-white/90 shadow-sm backdrop-blur-xs transition-transform duration-150 group-hover:scale-105 hover:!bg-black/85 hover:!text-white"
+              title={t("common.clickToPreview")}
+            >
+              <Maximize2 className="size-3.5" />
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[1px]">
+              <span className="flex items-center gap-1.5 rounded-md bg-black/75 px-2.5 py-1 text-xs font-medium text-white shadow-md border border-white/10">
+                <Eye className="size-3.5" />
+                {t("common.clickToPreview")}
+              </span>
+            </div>
+          </>
+        ) : (
+          <span className="px-4 text-center text-xs text-muted-foreground">{emptyLabel}</span>
+        )}
+      </div>
+      <MediaPreviewDialog
+        item={previewOpen && url ? { kind: "image", url, title: previewTitle } : null}
+        onOpenChange={setPreviewOpen}
+      />
+    </>
   );
 }
 

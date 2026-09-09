@@ -13,6 +13,7 @@ export const queryKeys = {
   props: (projectId: string) => ["props", projectId] as const,
   voices: (projectId: string) => ["voices", projectId] as const,
   assets: (projectId: string) => ["assets", projectId] as const,
+  projectResources: (projectId: string) => ["project-resources", projectId] as const,
   exports: (projectId: string) => ["exports", projectId] as const,
   adminUsers: ["admin-users"] as const,
   adminUsageLogs: (search: string, page: number, range: TimeRangeParams) => ["admin-usage-logs", search, page, range] as const,

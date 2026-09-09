@@ -2,6 +2,8 @@
 
 Reviewed on **2026-09-07** against application code at `afa10d8`. These are implementation gaps and separately identified field reports, not scheduled commitments. Source/test entry points are in the [code map](../architecture/code-map.md). Update or remove an item after it is implemented and verified.
 
+Voice-design and export-audio gaps below were checked against the working tree on **2026-09-08**.
+
 ## Generation and references: source-verified gaps
 
 - **Remaining work is not durably executed.** Tone/storyboard, legacy generation, video batches, and exports still use API-process asyncio tasks. `release_orphaned_runs` now marks abandoned project/episode runs failed and clears media busy flags, so the old permanent-lock description is obsolete; it does not resume work. Export rows are not covered by that cleanup. Move execution only with a defined lock, cancel, billing, and recovery contract.
@@ -12,6 +14,9 @@ Reviewed on **2026-09-07** against application code at `afa10d8`. These are impl
 - **Save-time reference-budget enforcement is incomplete.** `projects.update_project_scene` calls `models.active_image_config` / `active_video_config`, which are not ModelRouter methods, and catches lookup exceptions. The image branch also catches its own limit error. Render-time checks exist, but the save path cannot be treated as equivalent; use `test_prompt_prefixes.py` and the shared config/reference owners when fixing it. The related [video-reference save history](../bugs/2026-09-04-video-reference-save.md) records the earlier partial fix.
 - **Paid-job retry does not bypass the attempt cap.** `retry_job` rejects `attempt >= max_attempts`, including a failed/lost paid job after its first attempt. A fresh enqueue is the current way to request another paid attempt; comments promising one-click `/retry` after `WORKER_LOST` are stale.
 - **Generation-job history is not surfaced.** Per-operation controls can cancel their awaited job, but there is no project job-history/retry screen despite list/detail/cancel/retry endpoints.
+- **Project voice design still has frontend contract/i18n gaps.** `DesignVoiceProfileInput.previewText` remains required although the project API permits omission; the create form limits `voicePrompt` to 1000 while the API/edit form allows 4000. Name-based sample defaults and placeholders in the project voices page contain literal Chinese text outside `i18n.ts`. Current callers supply both text fields, so the type mismatch does not fail the current typecheck. The separate standalone voice API still requires preview text and has a 1000-character prompt limit.
+- **Qwen fallback target metadata is not normalized.** `qwen_voice_service.create_voice` now substitutes a valid synthesis target for an empty/task-model configuration, but both `user_voices.py` and `job_handlers.design_voice` still save `UserVoice.target_model` from the original config. The library's `targetModel` can therefore differ from the actual request. See the [target-model fix and remaining limits](../bugs/2026-09-08-qwen-voice-design-target-model.md).
+- **Export audio depends on a successful probe.** `media_service._probe_video_audio_and_duration` returns `(False, 0.0)` when ffprobe is unavailable or probing fails, so `concat_videos` can silently discard source audio. For mixed clips, an unprobed silent segment receives a fixed 5-second audio pad. The [export-audio record](../bugs/2026-09-08-export-video-audio-missing.md) covers the passing normal path; missing-tool/probe failures and precise synchronization remain unverified.
 
 ## Reliability and developer experience
 
@@ -19,7 +24,7 @@ Reviewed on **2026-09-07** against application code at `afa10d8`. These are impl
 - **The old aggregate test runner is not isolated.** `tests/run_all.py` shares imports/globals via `runpy` and aborts on the first failure. `scripts/run_tests.sh` is the current isolated runner, but requires explicit test names. Do not preserve old claims that all files passed without a fresh run.
 - **Legacy editor remains.** `/projects/:id/workbench`, `/parse`, the old image `/generate`, `project-store`, and the browser WebSocket path are still present. Remove only after checking callers and compatibility requirements.
 - **Unsaved settings are flags, not retained drafts.** Only the model panel uses `unsaved-settings-store`; a page reload loses the flag and draft. `use-unsaved-settings-check.ts` is unused and always returns false. Avoid routing new behavior through it.
-- **Frontend component interactions lack automated coverage.** Four Node suites cover pure modules; no DOM harness covers shot draft reconciliation, dialogs, mention editing, or stream scrolling. Add checks appropriate to a real regression, not a framework without a use case.
+- **Frontend component interactions lack automated coverage.** Existing [Node suites](../conventions/testing.md#frontend) cover pure modules; no DOM harness covers shot draft reconciliation, dialogs, mention editing, or stream scrolling. Add checks appropriate to a real regression, not a framework without a use case.
 - **Production-build history is not a current green gate.** Turbopack has hung; use typecheck/lint for the normal loop and record completed build results when deployment validation is needed.
 
 ## Privacy, security, and operations

@@ -1,6 +1,6 @@
 # SceneFlow Backend
 
-Verified on **2026-09-07**. Start with the [documentation index](../docs/README.md), [code map](../docs/architecture/code-map.md), and [data flow](../docs/architecture/data-flow.md). This file owns environment variables, provider notes, and the endpoint inventory.
+Verified on **2026-09-07**, with voice-design contracts and export-audio behavior rechecked on **2026-09-08**. Start with the [documentation index](../docs/README.md), [code map](../docs/architecture/code-map.md), and [data flow](../docs/architecture/data-flow.md). This file owns environment variables, provider notes, and the endpoint inventory.
 
 ## Run and check
 
@@ -73,8 +73,9 @@ Startup keeps the configured admin enabled. A legacy `superAdmin` row is renamed
 - An empty FPS capability list means callers omit `fps`; it is not an instruction to send 24. Explicit unsupported FPS values remain validation errors. The standalone form follows this contract; see the [FPS fix record](../docs/bugs/2026-09-07-video-unsupported-fps.md).
 - Doubao uses `volcengine-python-sdk[ark]` and the configured `baseUrl`. The current catalog declares Seedance 2.0 variants and 2.5; its capability defaults are application declarations, with provider discrepancies still recorded as field reports in the backlog.
 - Qwen chat defaults to `https://dashscope.aliyuncs.com/compatible-mode/v1`; image/video use DashScope media APIs. Wan media keys and audio switches differ by family (`reference_audio` / `audio` versus `reference_voice`, and older `video` / `driving_audio`). The model catalog is served by `/api/settings/video-models` and allows custom relay IDs.
-- Standalone audio is Qwen Voice Design. The fixed design model is `qwen-voice-design`; configured `modelSeries` becomes `target_model`. `/api/voices/design` creates a draft preview and `/api/voices/:id/save` promotes it to the saved account library. Project design/import creates a project profile; project auditions use local Edge/system TTS.
-- New model configs have an empty `modelSeries`. Discovery uses the submitted provider/base URL/key when supported; saving validates fields without a remote connectivity test. Official and personal configs share `model_configs`, with account official defaults in `user_official_config_defaults`.
+- Qwen Voice Design uses the fixed task model `qwen-voice-design`. The configured `modelSeries` supplies the separate synthesis `target_model`; if empty or equal to the task model, the shared adapter uses `qwen3-tts-vd-realtime-2025-12-16`. Other explicit target models are preserved. This applies to standalone and queued project design; see the [target-model fix record](../docs/bugs/2026-09-08-qwen-voice-design-target-model.md) for verification and remaining metadata limits.
+- Standalone `/api/voices/design` creates a draft preview and `/api/voices/:id/save` promotes it to the saved account library. Project design creates or replaces a project profile's timbre and saves a new account library entry; import copies an existing account audition. Project preview jobs use local Edge/system TTS.
+- Most frontend provider presets leave `modelSeries` empty; the Qwen audio preset supplies `qwen3-tts-vd-realtime-2025-12-16` and the same input hint. Discovery uses the submitted provider/base URL/key when supported; saving validates fields without a remote connectivity test. Official and personal configs share `model_configs`, with account official defaults in `user_official_config_defaults`.
 - Generation resolves the project's model pick first, then account/system fallback. Four project config IDs and generation defaults are updated through `modelSettings`; `0` clears a pick and `null` means leave alone. Unsupported saved defaults can be omitted for a changed model; explicit unsupported options fail validation.
 - Prompt optimization uses the configured text model and returns editable text. Prefix presets and compilation do not start generation. See [prompt/reference flow](../docs/architecture/data-flow.md#4-references-prefix-prompts-and-asset-library).
 
@@ -199,6 +200,12 @@ Both log-list endpoints accept paired `startTime`/`endTime` ISO timestamps with 
 | POST | `/api/projects/{project_id}/voices/{voice_id}/preview` |
 | POST | `/api/projects/{project_id}/voices/merge` |
 
+`POST .../voices/design` returns `202 {job}`. `name` is 1–80 characters and `voicePrompt` is 1–4000. Optional `voiceId` (up to 64 characters) identifies an existing live profile in this project; an unknown/foreign ID is 404. Omitting it, passing `null`, or passing `""` creates a profile. A redesign preserves the profile ID and order, updates its metadata/audio, and also saves a new account library entry.
+
+`previewText` and `sampleText` are optional strings up to 1000 characters, defaulting to `""`. The effective sample is trimmed `sampleText`, then trimmed `previewText`, then `我是{name}。需要{name}配音的时候，请使用我这种声音。` with the trimmed name. The effective preview is trimmed `previewText` or that sample. `note` is up to 4000 characters and defaults to `voicePrompt` when empty. Unfinished design jobs deduplicate by `voiceId`, or by trimmed name when creating, within the project.
+
+Saving with PATCH does not regenerate audio; redesign and local preview are separate jobs. Rebuild the merged voice sheet explicitly after changing audio. See [project voice editing](../docs/architecture/data-flow.md#project-voice-design-and-editing) for the UI branches and cancellation behavior.
+
 ### user_voices — app/api/v1/user_voices.py
 
 | Methods | Path |
@@ -208,13 +215,18 @@ Both log-list endpoints accept paired `startTime`/`endTime` ISO timestamps with 
 | POST | `/api/voices/{voice_id}/save` |
 | DELETE | `/api/voices/{voice_id}` |
 
+Standalone `/api/voices/design` remains request-scoped and requires nonempty `voicePrompt` and `previewText`, each up to 1000 characters. The optional preview/default sample and `voiceId` replacement contract above apply only to project voice design.
+
 ### assets — app/api/v1/assets.py
 
 | Methods | Path |
 |---|---|
 | GET, POST | `/api/projects/{project_id}/assets` |
+| GET | `/api/projects/{project_id}/assets/catalog` |
 | PATCH, DELETE | `/api/projects/{project_id}/assets/{asset_id}` |
 | POST | `/api/projects/{project_id}/assets/merge` |
+
+The catalogue returns `{resources: [...]}` across all live episodes and project-shared imports/character/state/prop/voice references. Each entry has stable `kind`/`id`, media, label/aliases, description, source episode ID/number/title, shot order, updated timestamp and a signed URL (external imports retain their URL). It excludes soft-deleted episodes and their shots and enforces project ownership. Search/filtering currently happens in the frontend; catalogue metadata is not paginated. Generated media stays on its source row. Image merge supports canonical reference IDs and legacy `scene:` IDs, with episode-qualified labels.
 
 ### prompts — app/api/v1/prompts.py
 
@@ -291,7 +303,7 @@ Project cancellation sets an event **and cancels the attached task**. Task clean
 - `CharacterState` represents parallel or episode-ranged looks; `Prop` records objects/ownership; project `VoiceProfile` and account `UserVoice` have different lifetimes. There is no per-shot TTS pipeline. Setting sheets intentionally contain labels; rendered shot prompts forbid those labels in the finished frame.
 - `Asset` is project-owned imported image/video/audio media. Its path may intentionally be an external HTTP(S) URL. Generated/uploaded artifacts use relative local paths and 30-day signed URLs, stable within a UTC day. JWT rotation invalidates old links, not the stored paths.
 - Image/video prompt prefixes are ordered, separate columns with a shared deduplicated reference budget. First/last video frames are separate from additional references. Newly generated tone sheets write prefixes to every shot; frames use saved per-shot references, not hidden automatic anchors. Remaining preview/budget/snapshot inconsistencies are explicit in the backlog.
-- Render selection skips locked shots by default; explicitly selected locked shots are rejected. `pendingOnly` excludes successes. One run claims the project across episodes; exports read finished clips without this lock. Export selection order is output order, with a 60-clip cap and FFmpeg normalization to the project canvas/FPS.
+- Render selection skips locked shots by default; explicitly selected locked shots are rejected. `pendingOnly` excludes successes. One run claims the project across episodes; exports read finished clips without this lock. Export selection order is output order, with a 60-clip cap and FFmpeg normalization to the project canvas/FPS. Exports retain detected source audio and fill silent segments; see [export audio and probe limits](../docs/architecture/data-flow.md#7-clips--export).
 - SQLModel is the schema source; Alembic owns history/backfills. Some ID columns are deliberately plain, requiring service cleanup/fallback. Typed workbench requests extend `CamelModel`; older dict-body endpoints still perform manual validation. Responses use camelCase, storage/Python snake_case, and timestamps remain ISO strings.
 - Money is integer micros internally and strings on the wire, with Decimal arithmetic and immutable pricing snapshots. Personal configs are metered but not charged to account balance; super admins are exempt from official balance gates/deductions.
 

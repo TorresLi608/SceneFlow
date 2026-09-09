@@ -268,6 +268,7 @@ function PropCard({
 
       <ReferenceImage
         url={prop.imageUrl}
+        title={prop.name}
         generateLabel={t("prop.generateImage")}
         generatingLabel={t("character.generatingSheet")}
         uploadLabel={t("prop.uploadImage")}
@@ -368,7 +369,11 @@ export default function PropsPage() {
       <section className="grid gap-4 rounded-lg border border-border/70 bg-card/40 p-4 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
         <div className="flex flex-col gap-2">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("prop.propSheet")}</p>
-          <SheetPreview url={project?.propSheetUrl ?? null} emptyLabel={t("prop.noPropSheet")} />
+          <SheetPreview
+            url={project?.propSheetUrl ?? null}
+            emptyLabel={t("prop.noPropSheet")}
+            title={t("prop.propSheet")}
+          />
         </div>
         <div className="flex items-start">
           <MergeButton

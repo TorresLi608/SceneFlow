@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import shutil
 import subprocess
 import tempfile
@@ -43,16 +44,20 @@ def _app(directory: str) -> Iterator[tuple[TestClient, dict[str, str]]]:
         database._engines.pop(str(database.DB_PATH), None)
 
 
-def _clip(seconds: float = 0.5, width: int = 320, height: int = 240) -> bytes:
+def _clip(seconds: float = 0.5, width: int = 320, height: int = 240, *, with_audio: bool = False) -> bytes:
     """A real MP4, so the concat path is exercised rather than mocked."""
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "clip.mp4"
+        cmd = [
+            "ffmpeg", "-nostdin", "-y", "-f", "lavfi",
+            "-i", f"testsrc=size={width}x{height}:rate=12:duration={seconds}",
+        ]
+        if with_audio:
+            cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}"]
+            cmd += ["-c:v", "libx264", "-c:a", "aac"]
+        cmd += ["-pix_fmt", "yuv420p", str(path)]
         subprocess.run(
-            [
-                "ffmpeg", "-nostdin", "-y", "-f", "lavfi",
-                "-i", f"testsrc=size={width}x{height}:rate=12:duration={seconds}",
-                "-pix_fmt", "yuv420p", str(path),
-            ],
+            cmd,
             check=True,
             capture_output=True,
         )
@@ -245,6 +250,51 @@ def test_deleting_an_export_record_removes_it() -> None:
             assert len(listed) == 0
 
 
+def test_merging_clips_with_audio_preserves_audio_stream() -> None:
+    if not HAS_FFMPEG:
+        print("skipping export test: ffmpeg is not installed")
+        return
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            clip1 = _clip(seconds=0.5, with_audio=True)
+            clip2 = _clip(seconds=0.5, with_audio=False)
+            project_id, scene_ids = _project_with_clips(client, headers, [clip1, clip2])
+
+            started = client.post(
+                f"/api/projects/{project_id}/exports",
+                json={"sceneIds": scene_ids, "rangeLabel": "有音频合并"},
+                headers=headers,
+            )
+            assert started.status_code == 202, started.text
+            finished = _wait_for(client, headers, project_id, started.json()["export"]["id"])
+            assert finished["status"] == "succeeded"
+
+            with database.db() as session:
+                from app.models import ExportJob
+                job_row = session.get(ExportJob, started.json()["export"]["id"])
+                assert job_row is not None and job_row.output_path is not None
+                output_file = artifact_service.artifact_absolute_path(job_row.output_path)
+            assert output_file.is_file()
+
+            ffprobe = shutil.which("ffprobe")
+            if ffprobe:
+                probe_res = subprocess.run(
+                    [
+                        ffprobe, "-v", "error",
+                        "-select_streams", "a",
+                        "-show_entries", "stream=index,codec_name",
+                        "-of", "json",
+                        str(output_file),
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
+                info = json.loads(probe_res.stdout)
+                streams = info.get("streams") or []
+                assert len(streams) >= 1
+                assert streams[0]["codec_name"] == "aac"
+
+
 if __name__ == "__main__":
     test_merging_clips_produces_one_downloadable_file()
     test_clips_of_different_sizes_still_merge()
@@ -254,4 +304,5 @@ if __name__ == "__main__":
     test_an_empty_selection_is_refused()
     test_history_lists_newest_first_with_the_label_that_was_asked_for()
     test_deleting_an_export_record_removes_it()
+    test_merging_clips_with_audio_preserves_audio_stream()
     print("test_exports_api ok")

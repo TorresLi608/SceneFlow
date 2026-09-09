@@ -10,6 +10,9 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20260909-video-first-frame-default | 首帧、分镜图、视频提示词、videoFirstFrame、shot-row | 生成分镜图后视频编辑器自动填充首帧；已移除自动推导，手动选择仍保留 | 类型检查和现有回归通过，浏览器未验证 | 2026-09-09 | [视频首帧默认填充](2026-09-09-video-first-frame-default.md) |
+| BUG-20260908-qwen-voice-design-target-model | Qwen、DashScope、qwen-voice-design、target_model、音色设计、qwen_voice_service | 任务模型被误作合成目标；共享适配器增加目标模型回退，账号音色 targetModel 元数据仍待对齐 | 本地回归通过，实网待验证 | 2026-09-08 | [Qwen 音色目标模型](2026-09-08-qwen-voice-design-target-model.md) |
+| BUG-20260908-export-video-audio-missing | 视频导出、合并导出、音频丢失、concat_videos、export_service、无声音、FFmpeg、a=0 | concat 的 a=0 丢弃音轨；已增加探测、补齐与映射，但探测失败仍按无音频处理 | 正常路径已验证，探测失败待完善 | 2026-09-08 | [合并导出视频丢失音频](2026-09-08-export-video-audio-missing.md) |
 | BUG-20260908-docker-pnpm-ignored-builds | ERR_PNPM_IGNORED_BUILDS、docker:build、Dockerfile、pnpm-workspace.yaml、allowBuilds、onlyBuiltDependencies、Corepack、pnpm 10 | Docker 构建前端镜像时因缺少 pnpm-workspace.yaml 拷贝及 packageManager 锁定导致 ERR_PNPM_IGNORED_BUILDS；已补充拷贝与版本锁定 | 已验证 | 2026-09-08 | [Docker 前端构建 pnpm 报错](2026-09-08-docker-pnpm-ignored-builds.md) |
 | BUG-20260907-admin-tables-double-border | 管理后台、Table、border、border-radius、admin/users、admin/usage-logs、admin/error-logs、admin/invitation-codes、admin/redemption-codes、双边框 | 管理后台 5 个页面外层冗余包装 div 导致与 Table 组件内置容器叠加产生双重边框与圆角不一致；已移除冗余包装 | 已验证 | 2026-09-07 | [后台表格双边框](2026-09-07-admin-tables-double-border.md) |
 | BUG-20260907-sqlite-persistence | SQLite、Docker、DATABASE_URL、SCENEFLOW_DB_PATH、本地迁移、数据丢失、WAL、挂载权限 | 移除旧变量，统一 DATABASE_URL；本地旧库已迁至 data/app.db，逐表/哈希校验和三项后端回归通过 | 本地已验证，容器待验证 | 2026-09-07 | [SQLite 部署持久化](2026-09-07-sqlite-persistence.md) |

@@ -1,6 +1,6 @@
 # Code map
 
-Checked on **2026-09-07** against the working tree based on `afa10d8`. For a bug, first search the [Bug history index](../bugs/README.md) and open matching details. This is a navigation map, not a claim that every listed test currently passes. Read [overview](overview.md) for runtime/state, [data flow](data-flow.md) for behavior, and [boundaries](boundaries.md) before moving responsibilities.
+Base inventory checked on **2026-09-07**; media-preview, voice-design, and export-audio entries checked on **2026-09-08** against the working tree. For a bug, first search the [Bug history index](../bugs/README.md) and open matching details. This is a navigation map, not a claim that every listed test currently passes. Read [overview](overview.md) for runtime/state, [data flow](data-flow.md) for behavior, and [boundaries](boundaries.md) before moving responsibilities.
 
 ## Repository entry points
 
@@ -57,12 +57,13 @@ Route groups in parentheses do not appear in URLs. Paths below are relative to [
 | `/projects/:projectId` | [projects/[projectId]/page.tsx](../../frontend/src/app/projects/[projectId]/page.tsx) | Redirects to the project's `/info` |
 | `/projects/:projectId/info` | [(workbench)/info](../../frontend/src/app/projects/[projectId]/(workbench)/info/page.tsx) | Synopsis, cover, production settings, four model picks and generation defaults |
 | `/projects/:projectId/{characters,props,voices}` | [(workbench) subtree](../../frontend/src/app/projects/[projectId]/(workbench)/) | Series bible, setting sheets, voice profiles, account voice import |
+| `/projects/:projectId/assets` | [(workbench)/assets](../../frontend/src/app/projects/[projectId]/(workbench)/assets/page.tsx) | Shared series asset management, search, source/episode filters, imports and image merging |
 | `/projects/:projectId/episodes` | [(workbench)/episodes](../../frontend/src/app/projects/[projectId]/(workbench)/episodes/page.tsx) | Episode CRUD and navigation into the editor |
 | `/projects/:projectId/episode/:episodeId` | [episode/[episodeId]](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/page.tsx) | Script breakdown, tone sheet, shot editing, references, image/video batches |
 | `/projects/:projectId/videos` | [(workbench)/videos](../../frontend/src/app/projects/[projectId]/(workbench)/videos/page.tsx) | Select finished clips, order and merge them, inspect/download exports |
 | `/projects/:projectId/workbench` | [workbench/page.tsx](../../frontend/src/app/projects/[projectId]/workbench/page.tsx) | Legacy single-screen editor; still reachable directly |
 
-The [workspace shell](../../frontend/src/app/(workspace)/_components/workspace-shell.tsx) handles the general workspace session/navigation. The [project layout](../../frontend/src/app/projects/[projectId]/(workbench)/layout.tsx) supplies six project sections. The episode editor and legacy editor sit outside that route group and supply their own full-screen layout. Layouts are not backend authorization boundaries.
+The [workspace shell](../../frontend/src/app/(workspace)/_components/workspace-shell.tsx) handles the general workspace session/navigation. The [project layout](../../frontend/src/app/projects/[projectId]/(workbench)/layout.tsx) supplies seven project sections. The episode editor and legacy editor sit outside that route group and supply their own full-screen layout. Layouts are not backend authorization boundaries.
 
 ### Episode editor: where to change what
 
@@ -76,8 +77,8 @@ All components in this table live beside the [episode page](../../frontend/src/a
 | [mention-textarea.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/mention-textarea.tsx) | `prompt-area` adapter for typed mentions and reference chips |
 | [reference-picker.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/reference-picker.tsx) | Available reference identities and media selection |
 | [prompt-prefix-list.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/prompt-prefix-list.tsx) | Ordered preambles and server-provided tone presets |
-| [asset-library-dialog.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/asset-library-dialog.tsx) | Upload/link assets, rename/delete, merge selected images |
-| [media-preview-dialog.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/media-preview-dialog.tsx) | Image/video/audio previews |
+| [asset-library-dialog.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/asset-library-dialog.tsx) | Re-export of shared [project-asset-manager.tsx](../../frontend/src/app/projects/[projectId]/_components/project-asset-manager.tsx); same catalogue and operations as the project assets page |
+| [media-preview-dialog.tsx](../../frontend/src/app/projects/[projectId]/episode/[episodeId]/_components/media-preview-dialog.tsx) | Compatibility re-export of the shared image/video preview dialog; no audio support |
 
 Shared support: [reference-budget.ts](../../frontend/src/lib/reference-budget.ts) counts distinct assets across sibling editors; [artifact-url.ts](../../frontend/src/lib/artifact-url.ts) handles artifact URLs; [prompt-field.tsx](../../frontend/src/components/prompt-field.tsx) supplies preset/language/optimize controls elsewhere in the workbench.
 
@@ -94,11 +95,11 @@ Actions below are in [frontend/src/actions](../../frontend/src/actions/); endpoi
 | Script breakdown | `projects-actions.ts` → `breakdownEpisodeAction` | `episodes.py` → `breakdown_service.py` → `llms/router.py::breakdown_script` | `test_breakdown_api.py`, `test_agent_service.py` |
 | Tone sheet / storyboard | `projects-actions.ts` → tone/storyboard actions | `episodes.py` → `storyboard_service.py` | `test_storyboard_api.py`, `test_prompt_prefixes.py`, `test_project_guards.py` |
 | Character states / props | `projects-actions.ts` | `characters.py`, `props.py`, corresponding services, `reference_service.py`, `media_service.py`, `job_handlers.py` | `test_characters_api.py`, `test_props_api.py`, `test_media_service.py` |
-| Project voices / account library | `projects-actions.ts`, `voice-generation-actions.ts` | `voices.py`, `user_voices.py`, `voice_service.py`, `qwen_voice_service.py`, `tts_service.py`, `job_handlers.py` | `test_voices_api.py`, `test_voice_design_api.py`, `test_qwen_voice_service.py`, `test_tts_service.py` |
-| Asset library / explicit references | `projects-actions.ts`, episode reference components | `assets.py`, `projects.py`, `reference_service.py` | `test_storyboard_api.py`, `test_projects_api.py` |
+| Project voice design/redesign / account library | [(workbench)/voices/page.tsx](../../frontend/src/app/projects/[projectId]/(workbench)/voices/page.tsx), `projects-actions.ts`, `voice-generation-actions.ts` | `voices.py`, `user_voices.py`, `voice_service.py`, `qwen_voice_service.py`, `tts_service.py`, `job_handlers.py::design_voice` | `test_voices_api.py`, `test_voice_design_api.py`, `test_qwen_voice_service.py`, `test_tts_service.py` |
+| Asset management / explicit references | `project-asset-manager.tsx`, `use-project-resources.ts`, `project-resources.ts`, episode reference components | `assets.py`, `asset_catalog_service.py`, `projects.py`, `reference_service.py` | `test_storyboard_api.py` (cross-episode catalogue and aliases), `test_projects_api.py`; frontend `project-resources.test.mts` |
 | Prompt presets / optimization / compilation | `prompt-actions.ts`, `reference-budget.ts` | `prompts.py`, `prompt_service.py`, `prompt_prefix_service.py`, `prompt_compiler.py` | `test_prompt_optimization.py`, `test_prompt_prefixes.py`, `test_prompt_compiler.py`; frontend `reference-budget.test.mts` |
 | Per-shot video | `projects-actions.ts` → `generateVideoAction` | `projects.py` → `generation_service.py::run_video_generation` → `video_service.py` | `test_project_production.py`, `test_video_service.py`, `test_prompt_compiler.py` |
-| Merge/export | `projects-actions.ts`, project videos page | `exports.py` → `export_service.py` → `media_service.py` | `test_exports_api.py`, `test_media_service.py` |
+| Merge/export with source audio | `projects-actions.ts`, project videos page | `exports.py` → `export_service.py::run_export` → `media_service.py::concat_videos` / `_probe_video_audio_and_duration` | `test_exports_api.py` (including mixed audio/silent clips), `test_media_service.py` |
 | Queued generation / cancel / retry | `job-actions.ts` (`runJob`, `awaitJob`) | `jobs.py`, `job_service.py`, `job_worker.py`, `job_handlers.py` | `test_job_service.py`; `tests/job_queue.py` drains handlers for API tests |
 | Standalone images / videos | `image-generation-actions.ts`, `video-generation-actions.ts` | `images.py` → `llms/router.py`; `videos.py` → `video_service.py` | `test_images.py`, `test_video_service.py` |
 | Chat / generated documents | `chat-actions.ts`, `use-chat-controller.ts`, composer and message list | `chat.py`, `chat_service.py`, `graph/graphs/context_graph.py`, `agent_service.py`, `artifact_service.py`, `utils/attachment_parser.py` | `test_agent_service.py`, `test_chat_balance.py`, `test_artifact_service.py` |
@@ -121,6 +122,9 @@ The standalone image/video/voice panels each wrap an internal editor with a rese
 | [chat stream route.ts](../../frontend/src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts) | Sole real BFF route: backend NDJSON → AI SDK UI stream |
 | [frontend/src/lib/http/client.ts](../../frontend/src/lib/http/client.ts) | Axios auth injection, 90-second default timeout, 15-minute generation timeout, logout on 401 |
 | [frontend/src/actions/query-keys.ts](../../frontend/src/actions/query-keys.ts) | Shared React Query identities; busy polling must update the same project key |
+| [frontend/src/components/media-preview-dialog.tsx](../../frontend/src/components/media-preview-dialog.tsx) | Shared image/video preview and open-in-new-tab link. Episode tone/shot/reference/asset previews and project videos use the route-local re-export; workbench `ReferenceImage` and `SheetPreview` import it directly |
+| [reference-image.tsx](../../frontend/src/app/projects/[projectId]/(workbench)/_components/reference-image.tsx), [project-cover-field.tsx](../../frontend/src/app/projects/[projectId]/(workbench)/_components/project-cover-field.tsx) | `ReferenceImage` handles cover/state/prop image upload, generation, and preview; `SheetPreview` previews character and merged cast/prop sheets |
+| [frontend/src/lib/model-providers.ts](../../frontend/src/lib/model-providers.ts) | Frontend provider presets, connection defaults, and Qwen audio target-model hint; runtime target-model fallback belongs to `qwen_voice_service.py` |
 | [frontend/src/components/ui/date-time-range-picker.tsx](../../frontend/src/components/ui/date-time-range-picker.tsx), [date-time-range.ts](../../frontend/src/lib/date-time-range.ts) | Shared log-range picker, local day defaults, second-precision display/parsing, UTC request parameters |
 | [frontend/src/store](../../frontend/src/store/) | Persisted user/preferences; ephemeral legacy project copy and unsaved model-settings flags |
 | [frontend/src/lib/i18n.ts](../../frontend/src/lib/i18n.ts) | Both `zh` and `en` dictionaries and `useI18n()` |

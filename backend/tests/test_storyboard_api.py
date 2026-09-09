@@ -479,6 +479,77 @@ def test_context_references_merge_into_one_slot() -> None:
     assert missing == []
 
 
+
+def test_asset_catalog_shares_episode_media_and_compiles_qualified_mentions() -> None:
+    from app.models import Asset
+    from app.services.reference_service import resolve_generation_references
+    from app.services.prompt_compiler import compile_prompt
+
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory, Recorder()) as (client, headers):
+            project_id, episode_id = _project_with_shots(client, headers, shots=1)
+            second = client.post(f"/api/projects/{project_id}/episodes", headers=headers, json={"title": "第二章"})
+            assert second.status_code == 201, second.text
+            second_id = second.json()["episode"]["id"]
+            other = client.post("/api/projects", headers=headers, json={"title": "另一个剧作"}).json()["project"]
+            with database.db() as session:
+                first = session.get(Scene, "scene_0")
+                first.image_path = _sheet(project_id)
+                session.add(first)
+                second_episode = session.get(Episode, second_id)
+                second_episode.tone_image_path = _sheet(project_id)
+                session.add(second_episode)
+                session.add(Scene(id="second_shot", project_id=project_id, episode_id=second_id, order_num=1,
+                                  image_path=_sheet(project_id), video_path=_sheet(project_id)))
+                session.add(Asset(id="shared_asset", project_id=project_id, name="共享图片", kind="image", path=_sheet(project_id)))
+                session.add(Scene(id="foreign_shot", project_id=other["id"], episode_id=other["currentEpisodeId"], order_num=1, image_path=_sheet(other["id"])))
+                session.add(Scene(id="deleted_shot", project_id=project_id, episode_id=episode_id, order_num=2, image_path=_sheet(project_id), deleted_at=now()))
+            response = client.get(f"/api/projects/{project_id}/assets/catalog", headers=headers)
+            assert response.status_code == 200, response.text
+            resources = response.json()["resources"]
+            assert not {"foreign_shot", "deleted_shot"}.intersection(item["id"] for item in resources)
+            media = {(item["kind"], item["id"]): item for item in resources}
+            first = media[("sceneImage", "scene_0")]
+            second = media[("sceneImage", "second_shot")]
+            video = media[("sceneVideo", "second_shot")]
+            assert first["episodeId"] == episode_id and second["episodeId"] == second_id
+            assert first["sceneOrder"] == second["sceneOrder"] == 1
+            assert len({first["label"], second["label"], video["label"]}) == 3
+            assert second["episodeTitle"] == "第二章"
+            assert media[("asset", "shared_asset")]["episodeId"] is None
+            with database.db() as session:
+                resolved = resolve_generation_references(session, project_id, [("sceneImage", "scene_0"), ("sceneImage", "second_shot"), ("sceneVideo", "second_shot")])
+                compiled = compile_prompt(" ".join("@" + item["label"] for item in (first, second, video)), provider="openai", model="test", references=resolved["items"])
+                assert compiled["prompt"] == "图1 图2 视频1", compiled
+                legacy = compile_prompt("@分镜 1", provider="openai", model="test", references=resolved["items"][:1])
+                assert legacy["prompt"] == "图1"
+                english = compile_prompt("@" + second["aliases"][1], provider="openai", model="test", references=resolved["items"][1:2])
+                assert english["prompt"] == "图1"
+            imported = client.post(f"/api/projects/{project_id}/assets", headers=headers,
+                json={"name": "待重命名", "kind": "image", "data": "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode()})
+            assert imported.status_code == 201, imported.text
+            imported_id = imported.json()["asset"]["id"]
+            renamed = client.patch(f"/api/projects/{project_id}/assets/{imported_id}", headers=headers,
+                json={"name": "已重命名", "description": "跨集共享"})
+            assert renamed.status_code == 200, renamed.text
+            assert renamed.json()["asset"]["name"] == "已重命名"
+            merged = client.post(f"/api/projects/{project_id}/assets/merge", headers=headers,
+                json={"name": "跨集合并", "kind": "image", "assetIds": ["scene:scene_0", "sceneImage:second_shot"]})
+            assert merged.status_code == 201, merged.text
+            deleted = client.delete(f"/api/projects/{project_id}/assets/{imported_id}", headers=headers)
+            assert deleted.status_code == 204, deleted.text
+            assert all(item["id"] != imported_id for item in client.get(f"/api/projects/{project_id}/assets/catalog", headers=headers).json()["resources"])
+            stranger = client.get(f"/api/projects/{project_id}/assets/catalog", headers={"Authorization": f"Bearer {token_for(999999)}"})
+            assert stranger.status_code in {401, 403, 404}, stranger.text
+            denied = client.get(f"/api/projects/{project_id}/assets/catalog")
+            assert denied.status_code == 401
+            with database.db() as session:
+                episode = session.get(Episode, second_id)
+                episode.deleted_at = now()
+                session.add(episode)
+            remaining = client.get(f"/api/projects/{project_id}/assets/catalog", headers=headers).json()["resources"]
+            assert all(item["episodeId"] != second_id for item in remaining)
+
 if __name__ == "__main__":
     test_the_tone_sheet_is_rendered_before_any_shot()
     test_each_shot_carries_the_anchor_and_its_predecessor()
@@ -492,4 +563,5 @@ if __name__ == "__main__":
     test_an_episode_cannot_reference_itself()
     test_rendering_an_empty_episode_says_so()
     test_context_references_merge_into_one_slot()
+    test_asset_catalog_shares_episode_media_and_compiles_qualified_mentions()
     print("test_storyboard_api ok")

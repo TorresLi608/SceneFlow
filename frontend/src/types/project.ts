@@ -31,8 +31,7 @@ export interface Scene {
   videoLastFrame: GenerationReferenceInput | null;
   /**
    * True once the user has decided about the slot at all. A null frame with this set is
-   * "off, deliberately"; a null frame without it is "nobody chose", which the editor may
-   * still fill with the shot's own render.
+   * "off, deliberately"; a null frame without it is "nobody chose". Both stay empty.
    */
   videoFirstFrameExplicit?: boolean;
   videoLastFrameExplicit?: boolean;
@@ -403,6 +402,18 @@ export interface Asset {
 }
 
 export interface AssetListResponse { assets: Asset[] }
+export interface ProjectResource extends GenerationReferenceInput {
+  label: string;
+  media: Asset["kind"];
+  url: string;
+  description: string;
+  aliases: string[];
+  episodeId: string | null;
+  episodeNumber: number | null;
+  episodeTitle: string;
+  sceneOrder: number | null;
+  updatedAt: string | null;
+}
 export interface CreateAssetInput { name: string; description?: string; kind: Asset["kind"]; data: string }
 export interface UpdateAssetInput { name?: string; description?: string; data?: string }
 export interface MergeAssetsInput { name: string; description?: string; kind: "image"; assetIds: string[] }
@@ -595,6 +606,7 @@ export type UpdateVoiceProfileInput = Partial<CreateVoiceProfileInput>;
  * model come from the project's audio configuration, never from the client.
  */
 export interface DesignVoiceProfileInput {
+  voiceId?: string;
   name: string;
   voicePrompt: string;
   /** What the audition says. Distinct from `sampleText`, the line in the merged track. */

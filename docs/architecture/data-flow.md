@@ -1,6 +1,6 @@
 # Data flow
 
-Verified on **2026-09-07**. The primary production path is **series settings/bible → episode script → shots → tone sheet → frames → clips → export**. Use the [code map](code-map.md) for files and [boundaries](boundaries.md) for ownership rules.
+Verified on **2026-09-07**, with project voice design/editing and export audio rechecked on **2026-09-08**. The primary production path is **series settings/bible → episode script → shots → tone sheet → frames → clips → export**. Use the [code map](code-map.md) for files and [boundaries](boundaries.md) for ownership rules.
 
 ## 1. Model resolution and settings
 
@@ -26,6 +26,20 @@ The project info page edits a local model-settings draft and marks `unsaved-sett
 - Voices are auditioned and FFmpeg-concatenated into `projects.voice_sheet_path`, a timbre reference. No current production stage synthesizes one TTS file per shot. Local Edge/system TTS remains for project auditions.
 
 Project model IDs, character voice-profile bindings, and prop owner IDs include plain columns rather than FK-enforced links. Preserve the fallback/manual cleanup their services implement.
+
+### Project voice design and editing
+
+The project voices page uses `projects-actions.designVoiceProfileAction` → `POST /api/projects/:id/voices/design` → `voice_design` job → `job_handlers.design_voice`. Without a nonempty `voiceId`, success creates a project profile; with one, the API checks project ownership and the handler updates that existing profile. Its ID and order remain unchanged, preserving character bindings. Every successful design also creates a new saved `UserVoice` entry, including a redesign.
+
+The create form uses one sample line for both the audition and merged-track reference. The API still accepts separate `previewText` and `sampleText`, with defaults when omitted; `note` defaults to the design description. Field limits and fallback order are in the [voice endpoint contract](../../backend/README.md#voices--appapiv1voicespy).
+
+| Edit action | Execution |
+|---|---|
+| Save | PATCH the profile's name, note, and sample text; keep the existing audio |
+| Save and generate, Edge/system profile | PATCH first, then queue `/voices/:voiceId/preview` with local TTS |
+| Save and generate, other profile | Use the edited note as `voicePrompt` and pass `voiceId` to `/voices/design`, resolving the project's current audio configuration |
+
+Closing the editing dialog aborts the awaited generation job through `job-actions`; a completed PATCH is not rolled back. Redesigning a profile does not rebuild `projects.voice_sheet_path`: merge again to use the new audio in that reference track. The ordinary preview endpoint still uses local TTS; it does not recreate a Qwen timbre. Provider task/target-model selection is documented in [backend provider notes](../../backend/README.md#providers-and-model-configuration).
 
 ## 3. Script → shots
 
@@ -66,6 +80,10 @@ shot-row / prompt-prefix-list / mention-textarea (prompt-area)
 ```
 
 Reference kinds are `character`, `characterState`, `prop`, `tone`, `sceneImage`, `sceneVideo`, `voice`, and `asset`. The frontend sends identities, not trusted file paths. `assets.py` owns project imports, metadata, deletion, and image merging; `Asset.path` may be a local stored path or an explicitly imported HTTP(S) URL.
+
+The project `/assets` page and episode “资产管理” dialog share `project-asset-manager.tsx`. `GET /api/projects/:id/assets/catalog` reads live project imports, character/state/prop images, voices, and every live episode's tone/shot images and shot videos. It returns stable `{kind, id}` identities plus `episodeId`, `episodeNumber`, `episodeTitle`, `sceneOrder`, bilingual labels/aliases, media type, description and signed URL; no duplicate Asset rows or migration is needed. Generated assets can be previewed, used as references, merged (images), or removed with the existing generated-reference endpoint; custom imports retain rename/update/delete. Removal affects the series, with explicit confirmation in both surfaces.
+
+The manager and reference pickers search names, descriptions, episode titles and label aliases locally; management also filters media, source kind and episode/shared scope. Cards initially render 36 results with “load more”. Metadata is still fetched in full; this is not server pagination. Generated shot labels include episode, shot order and image/video kind. The resolver/compiler accept both these labels and old `@分镜 N` / episode-title labels; ambiguous old duplicate labels cannot reconstruct intent and retain first-reference precedence. Current-shot video self-reference remains excluded. First-frame defaults remain off.
 
 Each prompt has up to eight `{id, name, prompt, references, source}` prefixes stored separately in `image_prompt_prefixes_json` / `video_prompt_prefixes_json`. They share the same per-media budget as that prompt's references. One asset mentioned in multiple prefix/body editors occupies one slot; `frontend/src/lib/reference-budget.ts` calculates the remaining budget.
 
@@ -112,7 +130,7 @@ The standalone video form must omit FPS when `videoCapabilities.fps` is empty, r
 
 Standalone image/video/audio panels offer Reset: a new editor key restores initial local state and native inputs, while image/video localStorage history and backend saved voices remain intact. Audio starts with no selected saved voice. See the [reset record](../bugs/2026-09-07-generation-editor-reset.md) for behavior and verification limits.
 
-First/last frame choices resolve from saved `video_first_frame_json` / `video_last_frame_json`. The renderer passes them separately as `first_frame` / `last_frame`, removes matching media from additional images, and uses `adaptive` ratio when available. The editor may suggest the current storyboard as a first frame; saving `""` explicitly turns a slot off and prevents re-suggestion. Untouched legacy rows can still use `defaultVideoReferencePaths`, including the shot's own image, as additional references.
+First/last frame choices resolve from saved `video_first_frame_json` / `video_last_frame_json`. The renderer passes them separately as `first_frame` / `last_frame`, removes matching media from additional images, and uses `adaptive` ratio when available. The editor leaves an unselected first frame empty, including after storyboard generation; only a saved or manual choice fills it. Saving `""` explicitly turns a slot off. Existing saved choices are retained. Untouched legacy rows can still use `defaultVideoReferencePaths`, including the shot's own image, as additional references. See the [first-frame default fix](../bugs/2026-09-09-video-first-frame-default.md).
 
 Motion text is preferred over frame text, then narration/dialogue. Prefix text precedes it; camera move, transition, dialogue/speaker, and previous-shot continuity instructions are appended before the provider call. Duration comes from `duration_ms` (clamped to capabilities), falling back to the project's default when undecided.
 
@@ -121,6 +139,8 @@ Saved defaults unsupported by a changed model are omitted; explicit unsupported 
 ## 7. Clips → export
 
 `POST /api/projects/:id/exports` resolves up to **60** finished clip paths in the caller's selected order, creates an `ExportJob`, and starts `export_service.run_export` with `asyncio.create_task`. FFmpeg normalizes/letterboxes to project width, height, and FPS, then concatenates into a signed downloadable artifact.
+
+`media_service.concat_videos` probes each input with ffprobe. If any clip has audio, it normalizes audio to stereo 44.1 kHz, pads/trims to the probed duration, supplies silence for silent clips, and exports AAC alongside video. All-silent inputs keep a video-only output. Probe failures currently count as no audio; unknown-duration silent clips in a mixed sequence receive a 5-second fallback. These limits and the mixed-clip regression are recorded in the [export-audio issue](../bugs/2026-09-08-export-video-audio-missing.md).
 
 Exports take **no project render lock** because they read finished media and write their own row. The videos section polls export status. `export_jobs` is separate from `generation_jobs`; it has no worker lease/resume mechanism, and project cancel does not cancel it. The API supports history/detail/deletion, not a generation-job-style retry/cancel workflow.
 

@@ -1,6 +1,6 @@
 # Feature: search and filtering
 
-Verified on **2026-09-08**. SceneFlow has list filters, not a unified full-text or cross-entity search engine. The [code map](../architecture/code-map.md) locates the pages/actions that own each surface.
+Verified on **2026-09-08**, with shared asset search added and checked on **2026-09-09**. SceneFlow has list filters, not a unified full-text or cross-entity search engine. The [code map](../architecture/code-map.md) locates the pages/actions that own each surface.
 
 ## Server-side lists
 
@@ -31,7 +31,8 @@ For existing API/tool callers, omitting both values preserves the personal endpo
 
 - The project list at `/ai-script` fetches the user's projects and filters title/status in memory.
 - Admin user filtering combines username, role, and status in `admin/users/_components/user-list.ts`; its `.test.mts` exercises the pure function.
-- Model pickers and the episode reference/asset selectors filter already-loaded options locally.
+- Model pickers filter already-loaded options locally.
+- Project/episode asset management and @reference pickers share the project catalogue and `lib/project-resources.ts`: case-insensitive, whitespace-separated terms must all match across name, description, episode title or bilingual/legacy label aliases. Asset management adds source-kind and source-episode/shared filters; media cards initially render 36 entries with load-more. @ suggestions and the explicit reference search preserve media budgets. The catalogue is project-scoped but not paginated; no script/prompt content is returned for search.
 
 Use local filtering for small lists already loaded for editing. Move growing tables to server-side filtering/paging when the full response becomes unsuitable.
 

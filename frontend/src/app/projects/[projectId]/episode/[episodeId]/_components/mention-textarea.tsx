@@ -12,6 +12,8 @@ import {
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { matchesResource } from "@/lib/project-resources";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { GenerationReferenceInput, GenerationReferenceKind } from "@/types/project";
@@ -49,7 +51,7 @@ function initialSegments(value: string, references: GenerationReferenceInput[], 
       if (!asset) return null;
       const index = (mediaIndexes.get(asset.media) ?? 0) + 1;
       mediaIndexes.set(asset.media, index);
-      const marker = markerAliases(asset.label, index, asset.media)
+      const marker = [...markerAliases(asset.label, index, asset.media), ...(asset.aliases ?? []).map((alias) => `@${alias}`)]
         .map((alias) => ({ alias, index: value.indexOf(alias) }))
         .filter((item) => item.index >= 0)
         .sort((a, b) => a.index - b.index || b.alias.length - a.alias.length)[0];
@@ -59,9 +61,11 @@ function initialSegments(value: string, references: GenerationReferenceInput[], 
     .sort((a, b) => a.index - b.index);
 
   const segments: Segment[] = [];
+  const matched = new Set<string>();
   let cursor = 0;
   for (const match of matches) {
     if (match.index < cursor) continue;
+    matched.add(keyOf(match.reference));
     if (match.index > cursor) segments.push({ type: "text", text: value.slice(cursor, match.index) });
     segments.push(chip({
       trigger: "@",
@@ -74,7 +78,7 @@ function initialSegments(value: string, references: GenerationReferenceInput[], 
   if (cursor < value.length) segments.push({ type: "text", text: value.slice(cursor) });
   for (const reference of references) {
     const asset = assets.find((item) => keyOf(item) === keyOf(reference));
-    if (!asset || value.includes(`@${asset.label}`)) continue;
+    if (!asset || matched.has(keyOf(reference))) continue;
     segments.push({ type: "text", text: segments.length ? " " : "" });
     segments.push(chip({
       trigger: "@",
@@ -108,6 +112,8 @@ export function MentionTextarea({
   limits: Partial<Record<ReferenceAssetOption["media"], number>>;
 }) {
   const { t } = useI18n();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [referenceSearch, setReferenceSearch] = useState("");
   const [segments, setSegments] = useState<Segment[]>(() => initialSegments(value, references, assets));
   const effectiveSegments = segmentsToPlainText(segments) === value ? segments : initialSegments(value, references, assets);
   const chips = getChips(effectiveSegments);
@@ -124,15 +130,14 @@ export function MentionTextarea({
 
   const selected = useMemo(() => new Set(refsFromSegments(effectiveSegments).map(keyOf)), [effectiveSegments]);
   const search = async (query: string) => {
-    const normalized = query.trim().toLowerCase();
     const counts = new Map<ReferenceAssetOption["media"], number>();
     for (const asset of assets) {
       if (selected.has(keyOf(asset))) counts.set(asset.media, (counts.get(asset.media) ?? 0) + 1);
     }
     return assets
-      .filter((asset) => asset.label.toLowerCase().includes(normalized))
+      .filter((asset) => matchesResource(asset, query))
       .filter((asset) => selected.has(keyOf(asset)) || (counts.get(asset.media) ?? 0) < (limits[asset.media] ?? 0))
-      .map((asset) => ({ value: keyOf(asset), label: asset.label, description: asset.media, data: asset }));
+      .map((asset) => ({ value: keyOf(asset), label: asset.label, description: `${t(`assets.kind.${asset.kind}`)} · ${asset.episodeTitle || t("assets.shared")}`, data: asset }));
   };
 
   const removeChip = (target: ChipSegment) => {
@@ -159,6 +164,22 @@ export function MentionTextarea({
 
   return (
     <div className="flex flex-col gap-1.5">
+      <Button type="button" size="xs" variant="ghost" className="self-start" aria-expanded={pickerOpen} onClick={() => setPickerOpen((current) => !current)} disabled={props.disabled}>@ {t("assets.chooseReference")}</Button>
+      {pickerOpen ? <div className="rounded-md border bg-background p-2">
+        <Input type="search" autoFocus aria-label={t("assets.searchReferences")} placeholder={t("assets.searchReferences")} value={referenceSearch} onChange={(event) => setReferenceSearch(event.target.value)} />
+        <div className="mt-2 flex max-h-48 flex-col gap-1 overflow-y-auto">
+          {assets.filter((asset) => matchesResource(asset, referenceSearch) && (limits[asset.media] ?? 0) > 0).map((asset) => {
+            const count = assets.filter((item) => item.media === asset.media && selected.has(keyOf(item))).length;
+            return <Button key={keyOf(asset)} type="button" size="sm" variant="ghost" className="h-auto justify-start whitespace-normal text-left" disabled={selected.has(keyOf(asset)) || count >= (limits[asset.media] ?? 0)} onClick={() => {
+              emit([...effectiveSegments, { type: "text", text: " " }, chip({ trigger: "@", value: keyOf(asset), displayText: asset.label, data: { kind: asset.kind, id: asset.id } })]);
+              setPickerOpen(false);
+            }}>
+              <span>{asset.label}<span className="block text-[10px] text-muted-foreground">{t(`assets.kind.${asset.kind}`)} · {asset.episodeTitle || t("assets.shared")}</span></span>
+            </Button>;
+          })}
+          {!assets.some((asset) => matchesResource(asset, referenceSearch) && (limits[asset.media] ?? 0) > 0) ? <p className="p-2 text-xs text-muted-foreground">{t("assets.noMatches")}</p> : null}
+        </div>
+      </div> : null}
       <PromptArea
         {...props}
         data-test-id={id}

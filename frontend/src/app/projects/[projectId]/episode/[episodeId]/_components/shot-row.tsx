@@ -86,7 +86,7 @@ const withDefaultMentions = (
 ) =>
   references.reduce((value, reference) => {
     const asset = assets.find((item) => referenceKey(item) === referenceKey(reference));
-    return asset && !value.includes(`@${asset.label}`) ? `${value.trim()} @${asset.label}`.trim() : value;
+    return asset && ![asset.label, ...(asset.aliases ?? [])].some((label) => value.includes(`@${label}`)) ? `${value.trim()} @${asset.label}`.trim() : value;
   }, prompt.trim());
 
 const effectiveReferences = (
@@ -172,10 +172,8 @@ export function ShotRow({
   );
   const [imagePrefixes, setImagePrefixes] = useState<PromptPrefix[]>(scene.imagePromptPrefixes ?? []);
   const [videoPrefixes, setVideoPrefixes] = useState<PromptPrefix[]>(scene.videoPromptPrefixes ?? []);
-  // Just the stored value. The "use this shot's own render" suggestion lives in
-  // `effectiveFirstFrame` alone, so there is one place that decides it.
+  // Frame slots only use saved or manually selected assets, never a generated-image default.
   const [videoFirstFrame, setVideoFirstFrame] = useState<GenerationReferenceInput | null>(scene.videoFirstFrame ?? null);
-  const [firstFrameTouched, setFirstFrameTouched] = useState(false);
   const [videoLastFrame, setVideoLastFrame] = useState<GenerationReferenceInput | null>(scene.videoLastFrame ?? null);
   const [seconds, setSeconds] = useState(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
   const [open, setOpen] = useState(false);
@@ -239,14 +237,6 @@ export function ShotRow({
     setVisualPrompt((current) => withDefaultMentions(current, resolvedDefaults, imageReferenceAssets));
   }, [defaultImageReferences, imageReferenceAssets, scene.imageReferences, scene.imageReferencesExplicit]);
 
-  const effectiveFirstFrame = videoFirstFrame ?? (
-    // Only suggest the shot's own render while nobody has decided. Once the user has
-    // saved a choice — including "不使用" — the slot is theirs and the suggestion stops.
-    !firstFrameTouched && !scene.videoFirstFrameExplicit && supportsFirstFrame && !scene.videoFirstFrame && scene.image.url
-      ? { kind: "sceneImage" as const, id: scene.id }
-      : null
-  );
-
   useEffect(() => {
     const resolvedDefaults = defaultVideoReferences.filter((reference) =>
       videoReferenceAssets.some((asset) => referenceKey(asset) === referenceKey(reference))
@@ -277,7 +267,6 @@ export function ShotRow({
       // and the row keeps showing what the user just cleared.
       setVideoFirstFrame(scene.videoFirstFrame ?? null);
       setVideoLastFrame(scene.videoLastFrame ?? null);
-      setFirstFrameTouched(false);
       setSeconds(scene.durationMs ? String(Math.round(scene.durationMs / 1000)) : "");
     }
   }, [
@@ -311,7 +300,7 @@ export function ShotRow({
     JSON.stringify(videoReferences) !== JSON.stringify(scene.videoReferences ?? []) ||
     JSON.stringify(imagePrefixes) !== JSON.stringify(scene.imagePromptPrefixes ?? []) ||
     JSON.stringify(videoPrefixes) !== JSON.stringify(scene.videoPromptPrefixes ?? []) ||
-    JSON.stringify(effectiveFirstFrame) !== JSON.stringify(scene.videoFirstFrame ?? null) ||
+    JSON.stringify(videoFirstFrame) !== JSON.stringify(scene.videoFirstFrame ?? null) ||
     JSON.stringify(videoLastFrame) !== JSON.stringify(scene.videoLastFrame ?? null) ||
     (seconds.trim() ? Number(seconds) * 1000 : 0) !== scene.durationMs;
 
@@ -330,7 +319,7 @@ export function ShotRow({
         videoPromptPrefixes: videoPrefixes,
         // "" rather than null: the backend reads an absent key and a null alike as
         // "leave alone", so null could never clear a frame the user turned off.
-        videoFirstFrame: effectiveFirstFrame ?? "",
+        videoFirstFrame: videoFirstFrame ?? "",
         videoLastFrame: videoLastFrame ?? "",
         durationMs: seconds.trim() ? Math.round(Number(seconds) * 1000) : 0,
       }),
@@ -951,11 +940,8 @@ export function ShotRow({
                       <span>{t("episode.useFirstFrame")}</span>
                       <select
                         className="h-7.5 rounded-md border border-border/60 bg-background px-2 text-foreground text-xs shadow-xs focus:ring-1 focus:ring-primary outline-none"
-                        value={effectiveFirstFrame ? referenceKey(effectiveFirstFrame) : ""}
-                        onChange={(event) => {
-                          setFirstFrameTouched(true);
-                          setVideoFirstFrame(parseFrameValue(event.target.value));
-                        }}
+                        value={videoFirstFrame ? referenceKey(videoFirstFrame) : ""}
+                        onChange={(event) => setVideoFirstFrame(parseFrameValue(event.target.value))}
                       >
                         <option value="">{t("episode.frameNone")}</option>
                         {frameOptions.map((asset) => (

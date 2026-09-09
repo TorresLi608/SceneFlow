@@ -67,6 +67,7 @@ import type {
   VoiceSheetResponse,
   AssetListResponse,
   Asset,
+  ProjectResource,
   CreateAssetInput,
   UpdateAssetInput,
   MergeAssetsInput,
@@ -79,6 +80,11 @@ export async function listProjectsAction() {
 
 export async function listAssetsAction(projectID: string) {
   const response = await httpClient.get<AssetListResponse>(`/api/bff/projects/${projectID}/assets`);
+  return response.data;
+}
+
+export async function listProjectResourcesAction(projectID: string) {
+  const response = await httpClient.get<{ resources: ProjectResource[] }>(`/api/bff/projects/${projectID}/assets/catalog`);
   return response.data;
 }
 

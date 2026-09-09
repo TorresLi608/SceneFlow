@@ -611,7 +611,7 @@ async def update_project_scene(project_id: str, scene_id: str, body: UpdateScene
         if field in sent and sent[field] is not None:
             # `""` is the client saying "no frame". It has to reach the column as a stored
             # `null` rather than "", because "" is the server default meaning "nobody has
-            # chosen yet" — and the editor refills that one with the shot's own render.
+            # chosen yet". Both now stay empty in the editor.
             # Dropping "" here, as `is not None` already does for an absent key, made
             # "不使用首帧" impossible to save.
             updates[column] = json.dumps(sent[field] or None, separators=(",", ":"))

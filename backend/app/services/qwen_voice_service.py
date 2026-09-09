@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 DESIGN_MODEL = "qwen-voice-design"
+DEFAULT_TARGET_MODEL = "qwen3-tts-vd-realtime-2025-12-16"
 # Voice design is slow enough that a short client timeout would abandon work already paid
 # for, so this matches the provider's own worst case rather than a polite default.
 DESIGN_TIMEOUT_SECONDS = 15 * 60
@@ -29,7 +30,16 @@ async def _call(config: dict[str, Any], payload: dict[str, Any]) -> dict[str, An
             headers={"Authorization": f"Bearer {config['apiKey']}", "Content-Type": "application/json"},
             json={"model": DESIGN_MODEL, "input": payload, "parameters": {"sample_rate": 24000, "response_format": "wav"}},
         )
-        response.raise_for_status()
+        status_code = getattr(response, "status_code", 200)
+        if isinstance(status_code, int) and status_code >= 400:
+            error_msg = f"HTTP {status_code}"
+            try:
+                err_data = response.json()
+                if "message" in err_data:
+                    error_msg = f"{err_data['message']} ({err_data.get('code', status_code)})"
+            except Exception:
+                error_msg = getattr(response, "text", "")[:200]
+            raise RuntimeError(f"DashScope 音色设计失败: {error_msg}")
         data = response.json()
     if not isinstance(data.get("output"), dict):
         raise ValueError("Qwen voice design returned no output")
@@ -43,9 +53,13 @@ async def create_voice(
     preferred_name: str,
 ) -> tuple[str, bytes]:
     preferred_name = re.sub(r"[^A-Za-z0-9_]", "_", preferred_name).strip("_")[:64] or "sceneflow_voice"
-    target_model = str(config.get("model") or "").strip()
-    if not target_model:
-        raise ValueError("Qwen voice design target model is required")
+    configured_model = str(config.get("model") or "").strip()
+    # "qwen-voice-design" is the task model name, whereas DashScope expects the target TTS synthesizer
+    # model as `target_model` (e.g. "qwen3-tts-vd-realtime-2025-12-16").
+    if not configured_model or configured_model == DESIGN_MODEL:
+        target_model = DEFAULT_TARGET_MODEL
+    else:
+        target_model = configured_model
     output = await _call(
         config,
         {

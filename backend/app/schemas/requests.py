@@ -460,12 +460,13 @@ class DesignVoiceProfileRequest(CamelModel):
     """
 
     name: str = Field(min_length=1, max_length=80)
-    voice_prompt: str = Field(min_length=1, max_length=1000)
-    # What the audition says. Distinct from `sample_text`, which is the line this voice
-    # contributes to the merged reference track.
-    preview_text: str = Field(min_length=1, max_length=1000)
+    voice_prompt: str = Field(min_length=1, max_length=4000)
+    # What the audition says; defaults to sample_text if omitted or empty.
+    preview_text: str = Field(default="", max_length=1000)
     note: str = Field(default="", max_length=4000)
     sample_text: str = Field(default="", max_length=1000)
+    # When specified, the newly designed timbre overwrites this existing voice profile instead of creating a new one.
+    voice_id: str | None = Field(default=None, max_length=64)
 
 
 class ImportVoiceProfileRequest(CamelModel):

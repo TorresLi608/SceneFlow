@@ -99,25 +99,33 @@ async def design_project_voice(
     """
     with db() as session:
         project = owned_project(session, project_id, user_id)
+        if body.voice_id:
+            owned_voice_profile(session, project_id, body.voice_id)
         config = project_model_config(session, user_id, project, "audio", "音色设计")
         # Checked in the request so an unaffordable job is a 402 now rather than a failure the
         # user has to go and read in the job list. The handler checks again when it runs.
         require_model_balance(session, user_id, config)
+        effective_sample = (
+            (body.sample_text or "").strip()
+            or (body.preview_text or "").strip()
+            or f"我是{body.name.strip()}。需要{body.name.strip()}配音的时候，请使用我这种声音。"
+        )
+        effective_preview = (body.preview_text or "").strip() or effective_sample
         job = enqueue_job(
             session,
             user_id,
             project_id,
             "voice_design",
             {
+                "voiceId": body.voice_id,
                 "name": body.name,
                 "voicePrompt": body.voice_prompt,
-                "previewText": body.preview_text,
-                "note": body.note or "",
-                "sampleText": body.sample_text or "",
+                "previewText": effective_preview,
+                "note": body.note or body.voice_prompt,
+                "sampleText": effective_sample,
             },
-            # Keyed on the name: designing "旁白" twice at once is the duplicate to absorb,
-            # while a genuinely different timbre carries a different name.
-            idempotency_key=f"voice-design:{body.name.strip()[:80]}",
+            # Keyed on the voice ID or name: designing the same voice twice at once is the duplicate to absorb.
+            idempotency_key=f"voice-design:{body.voice_id}" if body.voice_id else f"voice-design:{body.name.strip()[:80]}",
             # Never retried automatically: a second attempt is a second charge.
             max_attempts=1,
         )
