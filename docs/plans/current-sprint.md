@@ -1,53 +1,41 @@
-# Current sprint
+# Current implementation snapshot
 
-> **Status of this file.** Derived from repository state on 2026-08-24 (branch `feat/script`). Items below are verified against the code, not planned commitments — **owners and dates need to be filled in by the team.** Keep this file short; move anything not being worked on now to `backlog.md`.
+Base snapshot verified on **2026-09-07**; voice-design, media-preview, and export-audio entries updated from the working tree on **2026-09-08**; project asset management updated on **2026-09-09**. The filename is retained for existing links; this is a source snapshot, not a scheduled sprint or an assignment of owners. See the [code map](../architecture/code-map.md) for implementation/test locations and [backlog](backlog.md) for remaining work.
 
-## Theme
+## Available today
 
-**Making the workbench's six sections controllable.** The previous refactor built the shape — project list → six management sections → per-episode editor — and this one makes each section do the job it was standing in for. Three threads run through all of it:
-
-1. **The user says what they want, not what the model should infer.** A cover is drawn from a cover prompt rather than from the synopsis; a breakdown works against the bible entries the user ticked rather than guessing; a voice is described rather than named by model string.
-2. **Every long call can be stopped**, and stopping is not a failure. Prompt optimisation, cover generation, prompt drafting, reference drawing, voice design, storyboard renders, and clip renders all carry an abort path.
-3. **A shot carries enough to become a clip.** The old split produced a narration line and a picture prompt; a clip needs a camera move, a transition, a length, and a motion prompt, and now gets all four.
-
-## Landed
-
-| Phase | Change |
+| Area | Implemented behavior |
 |---|---|
-| 1 | Project synopsis and cover (upload or AI, both optional, placeholder fallback); `ModelRouter.complete_text`; house style wired into `build_image_prompt` |
-| 2 | `media_service` contact sheets (uniform pre-scale, 10MB ceiling); `CharacterVariant` → `CharacterState` with turnaround sheets and drafted-then-reviewed prompts; `Prop`; workbench shell with six sections |
-| 3 | `VoiceProfile` per project, bound to characters, ffmpeg-merged into one timbre reference; per-shot TTS removed |
-| 4 | Episode list CRUD with required titles; per-episode editor (script above, shots below); `storyboard_service` — tone sheet then sequential per-shot renders |
-| 5 | Per-shot clips with an optional timbre track; `ExportJob` woken up as multi-select merge and export in the video section |
-| 6 | **Project-level model configuration** (`project_model_config`, project-first with account fallback) and the generation defaults every render in a series starts from |
-| 7 | **`breakdown_script`** — camera move, transition, duration, motion prompt, speaker; `target` splits the shot pass from the video pass so re-deriving motion cannot discard rendered frames; reference selection drives what the model defers to |
-| 8 | **Tone sheet as its own step**, then batch or single frame renders, then batch or single clips, each gated on the previous stage |
-| 9 | **Cooperative cancellation** (`app/core/runs.py`), checked between shots so paid-for work is kept |
-| 10 | Voice management rebuilt on the `/audio` design flow, plus import from the account's voice library; `qwen_voice_service` made async so a client abort reaches the provider |
-| 11 | Shared `PromptField` — preset templates, zh/en output language, optimise, stop — across cover, character, prop, and voice |
+| Series workbench | Project list → seven sections (info, characters, props, voices, assets, episodes, videos) → full-screen episode editor; old workbench remains directly reachable |
+| Project settings | Synopsis, cover upload/generation, production settings, project-first text/image/video/audio choices with account fallback |
+| Unsaved model settings | Info panel sets an in-memory dirty flag; episode image/video generation can warn and continue with saved configuration |
+| Bible | Character states as parallel/ranged looks, prop ownership, labelled setting sheets, merged cast/prop references |
+| Voices | Qwen design and project redesign preserving profile IDs/bindings; optional project sample line, save-only/save-and-generate editing, account library/import, local auditions, merged timbre track; [editing flow](../architecture/data-flow.md#project-voice-design-and-editing) |
+| Media preview | Shared image/video dialog with open-in-new-tab link; cover, character/state and prop sheets, episode media, asset/reference pickers, and project videos |
+| Breakdown | Separate frame/motion targets, four detail levels, selected bible context, shot labels/continuity instructions, confirmation before replacing existing shots |
+| Storyboard | Separate tone-sheet action, persisted tone prefixes, sequential frame batches, model-dependent references, selected/pending-only shots |
+| Prompt editing | `prompt-area` mentions, asset picker, ordered prefixes, shared reference budgets, preset/optimization and compiled-prompt preview endpoints |
+| Asset management | One shared project/episode manager for custom imports plus character/state/prop media, voices, tone sheets, and every live episode’s shot images/videos; search, media/source/episode filters, episode/shot labels, preview/source links, deletion and image merging |
+| Video/export | Per-shot generation → episode composition in selected shot order → final export in selected episode order; up to 60 inputs per merge, shared audio retention/silent padding, previous episode video retained on failed recomposition |
+| Standalone generation | Image/video/audio editors reset without deleting history; unsupported FPS is omitted from standalone video requests |
+| Queue | In-process three-lane worker for reference images, prompt drafts, project voice design and preview; persisted lease/cancel/retry state |
+| Run lifecycle | Project claim guards, attached-task cancellation, unfinished-media cleanup, startup recovery of abandoned project/episode status |
+| Chat | AI SDK stream/message owner, assistant-ui composer, custom Streamdown list, context compression, artifact tools, admin-only diagnostic tool |
+| Diagnosis | Request IDs, redacted HTTP 5xx records, admin search UI, breakdown JSON compatibility samples |
+| Development | Cross-platform venv/install launcher, backend child/signal/port handling, pnpm build allowlist, isolated test runner |
 
-Earlier, on `feat/episode-layer`: the series/episode data model, path-based artifacts, start guards, and the character CRUD this refactor builds on.
+## Boundaries that are still active
 
-Consequences worth knowing before building on it: shot order restarts per episode, a serialized project carries one episode's shots, the busy lock stays at project level, and references are capped at `MAX_REFERENCE_IMAGES` = 4 — which is why a cast of any size travels as one merged sheet. See `../architecture/data-flow.md`.
+- The episode editor uses React Query polling and local drafts. `project-store` and the browser WebSocket live in the legacy editor.
+- The queue migration is partial. Tone/storyboard/video/legacy-generation and export tasks still execute in the API process; startup cleanup releases abandoned state but does not resume work.
+- Canceling a local task does not guarantee a provider-side stop/refund. Request-scoped calls still lack the queue's database-backed stop semantics.
+- Frame slots, legacy default references, save-time budgets, and preview numbering still have inconsistencies; the map does not imply those are fixed.
+- A full breakdown replaces shot rows, including their prior references/prefixes. Only the in-place video pass preserves them.
 
-## Fixed
+## Next work needs an explicit owner
 
-- **The episode editor never stopped rendering.** Two independent causes, both in `../architecture/data-flow.md` now:
-  - the busy flag was read from `queryKeys.projects` (5-minute `staleTime`, no interval) while the poll wrote to `[...projects, "poll"]` — a different cache entry — so the status never refreshed and the 3-second poll ran for the rest of the session;
-  - `_sign` stamped `iat` from the clock, so every response minted a different URL for the same file; combined with rows keyed on the image URL that remounted every shot and re-downloaded every frame each tick.
-- **Character and prop "system prompt" removed from the UI.** The built-in template *is* the system prompt; an editable copy of it beside `final_prompt` gave users two prompt fields where one was meant. Columns kept, marked legacy, read by nothing.
-- **The baseline revision no longer breaks on new `Scene` columns.** `_migrate_scene_assets` and `_backfill_first_episode` read legacy tables with core SQL naming only the columns they touch — the hazard the latter already documented for `projects` but not for `scenes`.
-- `tests/run_all.py` is still not isolated, but `backend/scripts/run_tests.sh` runs each file in its own process against a throwaway database, which is what the gate below actually needs.
+Candidate work and evidence are maintained in [backlog.md](backlog.md), particularly reference/prefix consistency, durable long-running work, safe logging, job visibility, and test-runner cleanup. There is no source-backed active assignment or delivery date to record here.
 
-## Ready to pick up
+## Verification policy
 
-Verified gaps, ordered by how much they cost to leave alone. Owner and sizing to be assigned.
-
-- [ ] **Fix `tests/run_all.py` isolation.** All 32 test files pass individually (and through `scripts/run_tests.sh`); the runner still `runpy`s everything in one process and aborts on the first failure. Either make it shell out per file the way that script does, or make it restore module state and continue.
-- [ ] **Move the remaining generation onto the jobs worker.** The worker exists now (`app/services/job_worker.py`) and drains reference images, prompt drafts, voice design, and auditions. Storyboard, tone sheet, project generation, and export still start in the API process via `asyncio.create_task`, so a restart mid-run still orphans them and `app/core/runs.py` cancellation is still in-process. These are the harder half: a run spans many shots, holds the project busy lock, and broadcasts per shot. See `../architecture/boundaries.md`.
-- [ ] **The legacy single-screen editor is still reachable** at `/projects/:id/workbench`, and nothing links to it. It is the only remaining caller of `POST /api/projects/:id/parse` and of the WebSocket client code; deleting it would let both go.
-- [ ] **Project job UI.** The endpoints exist (`GET /api/projects/:id/jobs`, cancel, retry); the workbench does not surface them.
-
-## Definition of done
-
-A change is done when: the touched backend test files pass **individually** (`sh scripts/run_tests.sh <name>…`), `pnpm exec tsc --noEmit` and `pnpm lint` are clean, `alembic check` reports no pending operations, any endpoint or schema change is reflected in a regenerated `../reference/api-spec.yaml`, and any rule this work establishes or invalidates is updated in `../conventions/`.
+Use the scoped [testing gate and test inventory](../conventions/testing.md), check migrations when schema changes, and regenerate OpenAPI when routes or contracts change. This documentation refresh does **not** assert that the application suite passes. Record actual commands/results in the change handoff, not as an undated evergreen claim. Every bug fix also updates its detail and the [Bug history index](../bugs/README.md) before handoff.

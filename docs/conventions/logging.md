@@ -1,8 +1,10 @@
 # Logging
 
+Verified on **2026-09-07**. These are the logging rules to preserve; known source violations are recorded in the [backlog](../plans/backlog.md).
+
 ## Setup
 
-`app/core/logging.py` installs one stream handler at startup from the `lifespan` hook. Each HTTP request has a server-generated `req_*` ID that is present in the log format and returned as `X-Request-Id`:
+`app/core/logging.py` installs one stream handler at startup from the `lifespan` hook. Request middleware creates a server-generated `req_*` ID, includes it in the log context, and returns `X-Request-Id` on responses that pass through it:
 
 ```
 %(asctime)s %(levelname)s %(name)s request=%(request_id)s %(message)s
@@ -28,7 +30,7 @@ logger.info("skipping unreadable reference portrait character=%s", character.get
 - Pass arguments to the logger; do not pre-format with f-strings. A suppressed record should cost nothing.
 - Lead with what happened in plain words, then the identifiers needed to find the row.
 - Include the IDs a reader would need to grep: `project=`, `scene=`, `character=`, `job=`.
-- Truncate provider text before logging it (`ERROR_DETAIL_CHARS` is 220 in `generation_service.py`) — provider errors can carry an entire response body.
+- Bound provider diagnostics (`ERROR_DETAIL_CHARS` is 220 in `generation_service.py`) and remove sensitive/user content first. Truncation alone is not redaction.
 
 ## Levels
 
@@ -36,7 +38,7 @@ logger.info("skipping unreadable reference portrait character=%s", character.get
 |---|---|---|
 | `info` | A decision the system made that a reader would otherwise find inexplicable | skipping an unreadable reference portrait; a run's terminal summary |
 | `warning` | A real failure that was contained — the request or run continues degraded | a shot's image or audio failed; portrait generation failed; parse/optimize failed |
-| `error` | Something that needs attention and was not contained | reserve it; the codebase currently prefers `warning` + a `502` to the caller |
+| `error` | Unhandled/infrastructure failure | `logger.exception` in the unhandled request handler; SMTP failure |
 | `debug` | Local diagnosis only | must not be required to understand production behaviour |
 
 A failure that is already returned to the user as a `4xx` does not also need a log line. Log what the **user cannot see**: background work, degraded paths, and swallowed exceptions.
@@ -51,14 +53,14 @@ A failure that is already returned to the user as a `4xx` does not also need a l
 
 ## Background work
 
-Generation runs in a background task, so its log lines are the only trace a developer has. Keep the run's start, per-shot failures, and the terminal outcome (`done`/`partial`/`failed`) logged with the project and episode IDs — a `partial` result is otherwise hard to explain after the fact.
+Generation can run in a request, an attached asyncio task, or the queue worker. Log identity and lifecycle decisions; also inspect persisted job/scene/export errors and status. Those rows and broadcasts are separate from HTTP error-log records. Cancellation cleanup and restart recovery should be distinguishable from provider failure.
 
 ## Request failures
 
-The HTTP exception handlers persist every `5xx` in SQLite's `error_logs` table. These are **diagnostic pointers**, not an application event archive: `requestId`, route template, method, status, stable error code, redacted message, and available user/project/episode IDs only. The table never stores request bodies, scripts, chat messages, provider output, keys, or signed URLs.
+The HTTP exception handlers attempt to persist `5xx` diagnosis in SQLite's `error_logs` table. This write is best-effort and must not replace the original response. These are **diagnostic pointers**, not an application event archive: `requestId`, route template, method, status, stable error code, redacted message, and available user/project/episode IDs only. The intended record contains no request body, script/chat content, provider output, key, or signed URL. `record_http_error` retains the operation before provider detail; preserve that boundary when introducing error messages. Errors emitted after a stream begins, and later job/render/export failures, do not automatically create rows here.
 
-Super admins can inspect the records at **Admin -> Error logs** or `GET /api/admin/error-logs`. Search by request ID first; otherwise use route, project ID, or error code. The assistant receives the same read-only lookup in a super-admin chat. Match recurring cases against `../reference/known-errors.md` and add a regression sample before changing a shared parser or provider boundary.
+Super admins can inspect the records at **Admin -> Error logs** or `GET /api/admin/error-logs`. Search by request ID first; otherwise use route, project ID, or error code. The assistant receives the same read-only lookup in a super-admin chat. Read the [Bug history index](../bugs/README.md) first and open matching details before inspecting incident-specific logs or changing a shared parser/provider boundary. After the fix, update both the issue record and index with actual regression evidence.
 
 ## Frontend
 
-There is no logging framework and no log sink. Do not add `console.log` to shipped paths; surface problems through the global toast and `resolveRequestError`. `console.error` is acceptable in an error boundary or a stream `onError` handler where the user already sees a message.
+There is no logging framework and no log sink. Do not add `console.log` to shipped paths; surface problems through `resolveRequestError` and the page's existing toast/local-message pattern. `console.error` is acceptable in an error boundary or a stream `onError` handler where the user already sees a message.

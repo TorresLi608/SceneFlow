@@ -1,6 +1,6 @@
 # Feature: chat
 
-The 智能问答 surface at `/chat`. This is the most intricate part of the frontend, and the easiest to break by "modernising" it toward a framework quickstart — read the two-bridge section before changing anything here.
+Verified on **2026-09-07**. The 智能问答 surface at `/chat`. This is the most intricate part of the frontend, and the easiest to break by "modernising" it toward a framework quickstart — read the two-bridge section before changing anything here.
 
 ## Two bridges, deliberately separate
 
@@ -26,7 +26,7 @@ Consequences that look like bugs but are not:
 - There is **no `AssistantModal`** — chat is a full page, not a floating widget.
 - The transport's base `api` carries a `_` placeholder that `prepareSendMessagesRequest` rewrites per send from `body.sessionId`, so a brand-new chat can send **before its session id exists**.
 
-Reference material: https://www.assistant-ui.com/llms-full.txt · MCP docs server `npx -y @assistant-ui/mcp-docs-server` · vendored skills under `.agents/skills/` (pinned in `skills-lock.json`). The installed assistant-ui is newer than most training data — consult one of these before changing its APIs.
+Reference material: https://www.assistant-ui.com/llms-full.txt · MCP docs server `npx -y @assistant-ui/mcp-docs-server` · vendored skills under `.agents/skills/` (pinned in `skills-lock.json`). The frontend declares AI SDK 7 / `@ai-sdk/react` 4 and `@assistant-ui/react` 0.14. Consult the installed version and repository design before applying a newer quickstart.
 
 ## The BFF route is where the halves meet
 
@@ -46,7 +46,7 @@ Adding an event type means touching three places: the backend emitter, this rout
 ## Backend
 
 - **Context assembly** — `app/graph/graphs/context_graph.py`: load history after `chat_sessions.context_summary_until` → estimate tokens → if over `SCENEFLOW_MAX_CONTEXT_TOKENS` (default 100000) **and** more than `RECENT_MESSAGES_TO_KEEP` (20) messages, summarise everything older into `context_summary` and keep the last 20 verbatim. The summary is injected as a system message explicitly framed as *prior context, not a new user request*.
-- **The agent** — `app/services/agent_service.py` uses LangChain `create_agent` with three tools: `generate_image`, `generate_pdf`, `generate_word_document`. Generated artifacts are stored server-side and returned as signed 30-day links; paths are server-controlled, never client-supplied.
+- **The agent** — `app/services/agent_service.py` uses LangChain `create_agent` with `generate_image`, `generate_pdf`, and `generate_word_document`. It adds read-only `search_error_logs` when the user is a super admin and checks that role again on tool execution. Generated artifacts use signed 30-day links and server-controlled paths. Context assembly is plain Python functions; no durable LangGraph checkpointer or production approval graph is configured.
 - **Persistence** — `chat_sessions` (with `context_summary`, `context_summary_until`) and `chat_messages`. The first question sets the session title.
 - **Balance** — chat runs the standard gate: `require_model_balance` before, `record_usage` after. Covered by `tests/test_chat_balance.py`. See `feature-billing.md`.
 - **Model selection** — a chat needs a usable default model; with none configured the request fails with a Chinese, user-facing `400` telling the user to add or activate a configuration.
@@ -85,4 +85,5 @@ The composer accepts any file, capped at `MAX_ATTACHMENT_BYTES` (5 MB) each:
 - Compression is one-shot summarisation; a very long session accumulates summary-of-summary drift with no re-anchoring.
 - No message editing, branching, or regeneration.
 - Attachment parsing is synchronous inside the request.
-- The agent's tool set is fixed at three; there is no per-user tool configuration.
+- Tool availability is fixed except for the super-admin diagnostic tool; there is no user-managed tool configuration.
+- After the HTTP stream starts, an error is an NDJSON/UI-stream event, not a new HTTP 5xx. The error-log table does not automatically capture every stream/tool failure.

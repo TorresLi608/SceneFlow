@@ -20,6 +20,7 @@ from app.services.artifact_service import artifact_absolute_path, decode_image_d
 from app.services.media_service import SheetCell, merge_images
 from app.services.project_service import owned_project
 from app.services.reference_service import resolve_generation_references
+from app.services.asset_catalog_service import project_asset_catalog
 from app.utils.common import new_id, now
 
 
@@ -90,6 +91,14 @@ def _read_image(value: str) -> bytes:
         return artifact_absolute_path(value).read_bytes()
     except (ValueError, OSError) as exc:
         raise HTTPException(400, "image asset is unavailable") from exc
+
+
+@router.get("/{project_id}/assets/catalog")
+def asset_catalog(project_id: str, user_id: int = Depends(current_user_id)) -> dict:
+    """List reusable media across all live episodes, with source metadata and stable identities."""
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        return {"resources": project_asset_catalog(session, project_id)}
 
 
 @router.get("/{project_id}/assets")
@@ -184,12 +193,8 @@ def merge_assets(project_id: str, body: MergeAssetsRequest, user_id: int = Depen
         selected_assets: list[tuple[str, str, str]] = []
         for asset_id in body.asset_ids:
             if asset_id.startswith("scene:"):
-                asset_id = asset_id.removeprefix("scene:")
-                scene = session.exec(select(Scene).where(Scene.id == asset_id, Scene.project_id == project_id, Scene.deleted_at.is_(None))).first()
-                if not scene or not scene.image_path:
-                    raise HTTPException(404, "scene image not found")
-                selected_assets.append((scene.image_path, f"分镜 {scene.order_num}", "image"))
-            elif ":" in asset_id:
+                asset_id = "sceneImage:" + asset_id.removeprefix("scene:")
+            if ":" in asset_id:
                 ref_kind, ref_id = asset_id.split(":", 1)
                 resolved = resolve_generation_references(session, project_id, [(ref_kind, ref_id)])
                 if len(resolved["images"]) != 1:

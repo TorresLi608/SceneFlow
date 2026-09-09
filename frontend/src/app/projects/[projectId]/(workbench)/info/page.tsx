@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { useUnsavedSettingsStore } from "@/store/unsaved-settings-store";
 
 import {
   getProjectModelsAction,
@@ -158,6 +160,7 @@ function ModelSettingsPanel({ project }: { project: Project }) {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<ProjectModelSettings>(project.modelSettings);
   const [message, setMessage] = useState<string | null>(null);
+  const { markUnsaved, markSaved } = useUnsavedSettingsStore();
 
   const configsQuery = useQuery({
     queryKey: queryKeys.userConfigs,
@@ -182,6 +185,7 @@ function ModelSettingsPanel({ project }: { project: Project }) {
       }),
     onSuccess: () => {
       setMessage(t("workbench.modelSettingsSaved"));
+      markSaved(project.id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projectModels(project.id) });
     },
@@ -240,9 +244,31 @@ function ModelSettingsPanel({ project }: { project: Project }) {
       )
     : [3, 4, 5, 6, 8, 10];
 
-  const patch = (values: Partial<ProjectModelSettings>) => setSettings((current) => ({ ...current, ...values }));
+  const patch = (values: Partial<ProjectModelSettings>) => {
+    setSettings((current) => ({ ...current, ...values }));
+    markUnsaved(project.id);
+  };
   const idValue = (value: number | null) => (value ? String(value) : FOLLOW_ACCOUNT);
   const parseId = (value: string) => (value === FOLLOW_ACCOUNT ? null : Number(value));
+
+  // Initialize: mark as saved on first load if no changes
+  useEffect(() => {
+    const isDifferent = JSON.stringify(settings) !== JSON.stringify(project.modelSettings);
+    if (!isDifferent) {
+      markSaved(project.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+
+  // Check if settings differ from the saved project settings
+  useEffect(() => {
+    const isDifferent = JSON.stringify(settings) !== JSON.stringify(project.modelSettings);
+    if (isDifferent) {
+      markUnsaved(project.id);
+    } else {
+      markSaved(project.id);
+    }
+  }, [settings, project.modelSettings, project.id, markUnsaved, markSaved]);
 
   if (configsQuery.isLoading || modelsQuery.isLoading) {
     return <Skeleton className="h-72 rounded-lg" />;

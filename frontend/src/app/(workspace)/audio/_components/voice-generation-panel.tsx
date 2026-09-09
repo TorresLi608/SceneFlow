@@ -8,6 +8,7 @@ import {
   Download,
   Loader2,
   Maximize2,
+  RotateCcw,
   Save,
   Sparkles,
   Square,
@@ -62,13 +63,17 @@ function isVoiceConfig(config: UserConfig) {
   return config.purpose === "audio" && config.provider === "qwen" && config.isEnabled && Boolean(config.modelSeries.trim());
 }
 
-export function VoiceGenerationPanel({
-  configs,
-  officialConfigs,
-}: {
+interface VoiceGenerationPanelProps {
   configs: UserConfig[];
   officialConfigs: UserConfig[];
-}) {
+}
+
+export function VoiceGenerationPanel(props: VoiceGenerationPanelProps) {
+  const [editorKey, setEditorKey] = useState(0);
+  return <VoiceGenerationEditor key={editorKey} {...props} onReset={() => setEditorKey((key) => key + 1)} />;
+}
+
+function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGenerationPanelProps & { onReset: () => void }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [selectedConfigId, setSelectedConfigId] = useState("");
@@ -130,7 +135,7 @@ export function VoiceGenerationPanel({
   const savedVoices = voicesQuery.data?.voices ?? [];
   const effectiveSavedVoiceId = savedVoices.some((item) => item.id === selectedVoiceId)
     ? selectedVoiceId
-    : savedVoices[0]?.id ?? "";
+    : "";
   const savedPreview = savedVoices.find((item) => item.id === effectiveSavedVoiceId) ?? null;
   const previewVoice = draftVoice ?? savedPreview;
 
@@ -393,7 +398,18 @@ export function VoiceGenerationPanel({
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={onReset}
+              disabled={designMutation.isPending || optimizeMutation.isPending || saveMutation.isPending || deleteMutation.isPending}
+              title={t("common.resetGenerationHint")}
+            >
+              <RotateCcw data-icon="inline-start" />
+              {t("common.resetGeneration")}
+            </Button>
             <Button
               className="min-w-32 h-9 text-xs font-bold shadow-sm"
               onClick={designMutation.isPending ? stopGeneration : startGeneration}

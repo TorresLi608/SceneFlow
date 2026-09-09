@@ -1,47 +1,40 @@
 # Testing
 
-There is no pytest and no frontend test framework. Both setups are deliberately dependency-free.
+Verified on **2026-09-08**. The tree contains **36 backend `test_*.py` files** and **5 frontend `*.test.mts` files**. These are inventory counts, not passing results. There is no pytest or frontend DOM/component test framework.
 
-## Backend
+## Backend: one file per process
 
-Tests are plain modules under `backend/tests/`. Each defines test functions and calls them from `if __name__ == "__main__":`. They drive the **real ASGI app** through `fastapi.testclient.TestClient` with providers monkeypatched out, against a temporary SQLite file.
+Tests are executable modules under `backend/tests/`: plain service assertions and ASGI `TestClient` checks with temporary databases and stubbed providers. Each module calls its checks from `if __name__ == "__main__":`.
 
 ```bash
 cd backend
-PYTHONPATH=. .venv/bin/python tests/test_episodes_api.py    # one file — the reliable way
-sh scripts/run_tests.sh test_episodes_api test_characters_api   # several, each isolated
-sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')   # everything
+check_dir=$(mktemp -d)
+SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_episodes_api test_project_guards
 ```
 
-### Use `scripts/run_tests.sh`, not `run_all.py`
+For the whole suite, replace the last line with:
 
-`scripts/run_tests.sh` gives each file its own interpreter and its own throwaway database,
-reports every result, and exits non-zero listing the failures. That is what the pre-commit
-gate needs.
+```bash
+SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh $(rg --files tests -g 'test_*.py' | sed 's#^tests/##; s#\.py$##')
+```
 
-`tests/run_all.py` `runpy`s every file in one process instead. Two consequences:
+The runner takes **module basenames without `.py`**; no arguments runs no checks. It gives each file a separate interpreter and overrides `DATABASE_URL` with a temporary database, reports every result, writes `/tmp/<name>.log`, and exits nonzero if any file fails. It does not supply a separate media root, so the command above supplies one before app import. `main.py` creates/chmods that directory at import time. For direct checks, explicitly set `DATABASE_URL` to a temporary SQLite URL so the default or a URL from `.env` cannot select a real database.
 
-1. **Module-level state leaks between files.** All test files pass individually and through
-   `run_tests.sh`; `run_all.py` has failed inside `test_characters_api.py`, reproducibly, when
-   `test_artifact_service.py` or `test_admin_usage_logs.py` ran first in the same process.
-2. **The first failure aborts the run** — there is no error handling, so every later file is
-   skipped and reports nothing.
+`tests/run_all.py` instead `runpy`s files in one interpreter and aborts on the first failure. Module state can leak between files. A failure there is not isolated evidence: rerun the file through `run_tests.sh`. Conversely, do not call the suite green unless every selected file actually ran and passed.
 
-**Treat a `run_all.py` failure as unproven until you rerun that file on its own.**
+### Adding a check
 
-### Writing a backend test
+Follow an existing test for the affected feature, found through the [code map](../architecture/code-map.md).
 
-Follow `tests/test_episodes_api.py`:
+- Set temporary database **and media** paths before app import/startup; never use the developer's database or real provider keys.
+- Patch provider entry points and restore all globals in `finally`. Use `TemporaryDirectory` for test-owned data.
+- Name a check after the behavior, and call it from the module's `__main__` block.
+- Include response text in status assertions: `assert response.status_code == 200, response.text`.
+- Add the smallest meaningful regression for changed logic; no new test framework or implementation-mirroring test boilerplate.
 
-- A `@contextmanager _app(directory)` that saves the originals, points `database.DB_PATH` and `artifact_service.PRIVATE_GENERATED_DIR` at a `tempfile.TemporaryDirectory()`, patches the provider entry points (`models.parse_script`, `projects.run_generation`), calls `init_db()`, seeds a user and configs, and **restores every original in a `finally`**. Restoration is not optional — that is what `run_all.py` currently trips over.
-- Name test functions as sentences: `test_deleting_an_episode_takes_its_shots_with_it`. The name is the failure message.
-- Add the function to the `__main__` block at the bottom, or it never runs.
-- Assert on the response body with the text in the message: `assert response.status_code == 200, response.text`.
-- Never let a test reach a real provider or the developer database. Point `SCENEFLOW_DB_PATH` at a temp path; never touch `backend/sceneflow.db`.
+### Queued endpoints
 
-### Testing a queued endpoint
-
-Reference images, prompt drafts, voice design, and voice auditions return `202 {job}` and do the work in the job worker (see `../architecture/data-flow.md` §2c). A test that wants to assert on the *result* has to run the job itself:
+Character-state/prop reference images and prompt drafts, project voice design, and auditions return `202 {job}`. Test their result by draining the real handler:
 
 ```python
 from tests.job_queue import drain_one, succeeded
@@ -51,55 +44,47 @@ assert queued.status_code == 202, queued.text
 prop = succeeded(drain_one())["prop"]
 ```
 
-`drain_jobs`/`drain_one` run the real path — `claim_next_job` → `dispatch` → `finish_job` — just without lease renewal and the poll interval, so the real handler and the real terminal write are still exercised.
+`drain_one`/`drain_jobs` execute claim → dispatch → finish without waiting on polling/heartbeats. Importing `tests.job_queue` sets `SCENEFLOW_WORKER_ENABLED=0` so lifespan does not race the manual drain. Patch the provider where the handler reads it (`app.services.job_handlers`), and keep the stub installed until the drain finishes.
 
-Two rules that follow from this:
-
-- **Patch the provider on `app.services.job_handlers`, not on the endpoint module.** The call moved when the endpoint became an enqueue; patching `app.api.v1.voices.synthesize` now patches a name nothing reads.
-- **Keep the stub installed until after the drain.** The provider call happens while the job drains, not during the POST, so a `finally: restore` around only the POST restores it too early.
-
-Importing `tests.job_queue` sets `SCENEFLOW_WORKER_ENABLED=0`, which keeps the in-process worker the app lifespan would otherwise start from racing the test for the same rows. Two claimants make which one runs a job a coin flip.
-
-### What is covered today
-
-Auth and admin (users, usage logs, invitation/redemption codes), model config resolution and the legacy table merge, project guards and production settings, the episode layer and its migration, characters and casting, artifacts and signed paths, jobs (lease/cancel/retry), local voice audition, video, usage/billing, websocket, and the database migrations themselves.
+Useful entry points include `test_breakdown_api.py` (replacement and error records), `test_prompt_prefixes.py`, `test_prompt_compiler.py`, `test_storyboard_api.py`, `test_project_guards.py` (selection/cancel cleanup/restart locks), and `test_job_service.py`. Existing test names can also lag behavior; inspect assertions rather than treating names as specification.
 
 ## Frontend
 
-Tests are `*.test.mts` beside the code under test, run by Node's built-in runner with type stripping:
-
 ```bash
 cd frontend
-node --no-warnings --experimental-strip-types --test src/lib/money.test.mts
-node --no-warnings --experimental-strip-types --test 'src/app/(workspace)/admin/users/_components/user-list.test.mts'
+node --no-warnings --experimental-strip-types --test src/lib/*.test.mts 'src/app/(workspace)/admin/users/_components/user-list.test.mts'
+pnpm exec tsc --noEmit
+pnpm lint
 ```
 
-- Imports inside a `.test.mts` must use the **`.ts` extension** (`from "./money.ts"`) — type stripping does no resolution. The `@ts-expect-error` above such an import is expected.
-- Use `node:test` + `node:assert/strict`, no framework.
-- This only works for **pure modules**. There is no DOM or component-rendering setup, so extract logic worth testing into a plain `.ts` module — `user-list.ts` exists precisely so the filtering rules could be tested apart from the component.
+The five pure-module suites cover money, artifact URLs, shared reference budgets, admin user filtering, and local date/time ranges (including daylight-saving boundaries). Tests use `node:test` and `node:assert/strict`, with explicit `.ts` extensions in imports because Node type stripping does no TypeScript path resolution. There is no DOM; extract nontrivial pure logic when a regression needs it, rather than introducing a component framework for one check.
 
-## The standard gate
+## Schema and contract checks
 
-Before handing work over:
+After changing SQLModel, review the Alembic revision and check a disposable database:
 
 ```bash
-cd backend && PYTHONPATH=. .venv/bin/python tests/<the files you touched>.py
-cd frontend && pnpm exec tsc --noEmit && pnpm lint
+cd backend
+schema_dir=$(mktemp -d)
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic upgrade head
+DATABASE_URL="sqlite:///$schema_dir/check.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$schema_dir/media" .venv/bin/alembic check
 ```
 
-`pnpm build` is slow and has hung in this project before; `tsc --noEmit` is the type gate. If you do run a build, do not report it as passing unless it finished.
+Regenerate OpenAPI using [the existing script and isolated command](README.md#keeping-generated-docs-current). Importing `app.openapi()` does not run lifespan or test handlers; it verifies schema generation, not business behavior.
 
-### Build and tooling gotchas
+## Scope of the gate
 
-Each of these has cost time in this repo already:
+Code changes: relevant backend self-checks, relevant frontend pure-module checks, frontend `tsc --noEmit` and lint. Add migration/OpenAPI checks when their inputs changed. Broaden testing when failures, shared behavior, or an unresolved concern warrants it.
 
-- **Turbopack production builds have hung** at `Creating an optimized production build ...` with no output for minutes. `pnpm build -- --webpack` (the webpack path) has completed when Turbopack did not. An interrupted build is **not** a pass.
-- **`next build` needs network** for `next/font` — a sandboxed run fails with `getaddrinfo ENOTFOUND fonts.googleapis.com`. Nothing is wrong with the code.
-- **`.next/types` goes stale after deleting or moving a route.** `tsc` will report errors about files that no longer exist; run a successful build once to regenerate route types, then re-run `tsc`.
-- **Run backend Python from `backend/`.** From the repo root you get `ModuleNotFoundError: No module named 'app'`. `PYTHONPATH=. .venv/bin/python tests/x.py` and `.venv/bin/python -m tests.x` both work from there.
-- **Quote bracketed route paths in zsh** — `src/app/projects/[projectId]/page.tsx` is a glob and fails with `no matches found`.
-- **`npm install` does nothing useful here.** This is a pnpm project; use `pnpm add` or the lockfile silently diverges.
+Every bug-fix handoff also updates its detail under `docs/bugs/` and the [Bug history index](../bugs/README.md), including commands actually run, results, and unexecuted/blocked checks. An existing test or historical report is not evidence of a current pass; do not mark the issue verified without verification.
 
-## Reporting
+Documentation-only changes: check local links/anchors, code paths, commands, and generated contract consistency. A documentation refresh does not establish a new passing application-test baseline. Report checks actually executed, with failures or skips, and never claim an interrupted build passed.
 
-State what you ran and what happened. A skipped check is reported as skipped, not implied by silence — an interrupted build that is reported as green is worse than no build at all.
+## Tooling gotchas
+
+- `pnpm build` has previously hung in Turbopack; use typecheck/lint for the normal loop. If a build is needed, `pnpm exec next build --webpack` is the explicit alternate bundler path.
+- `next build` can require network for `next/font`; distinguish a network failure from a source error.
+- After moving/deleting routes, regenerate stale route types with `pnpm exec next typegen`, then rerun `tsc`.
+- Run Python from `backend/` with `PYTHONPATH=.` for direct `tests/*.py` or `scripts/*.py` execution. The shell runner supplies it for tests.
+- Quote Next route paths containing brackets or parentheses in zsh.
+- Use pnpm to change frontend dependencies; npm install does not maintain `frontend/pnpm-lock.yaml`.

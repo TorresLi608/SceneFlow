@@ -319,6 +319,24 @@ paths:
           minimum: 1
           default: 20
           title: Pagesize
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starttime
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Endtime
       - name: authorization
         in: header
         required: false
@@ -398,6 +416,24 @@ paths:
           minimum: 1
           default: 20
           title: Pagesize
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starttime
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Endtime
       - name: authorization
         in: header
         required: false
@@ -937,6 +973,43 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/assets/catalog:
+    get:
+      tags:
+      - assets
+      summary: Asset Catalog
+      description: List reusable media across all live episodes, with source metadata and stable identities.
+      operationId: asset_catalog_api_projects__project_id__assets_catalog_get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Asset Catalog Api Projects  Project Id  Assets Catalog Get
         '422':
           description: Validation Error
           content:
@@ -1866,6 +1939,24 @@ paths:
           pattern: ^(all|official|user)$
           default: all
           title: Source
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starttime
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Endtime
       - name: authorization
         in: header
         required: false
@@ -1943,7 +2034,11 @@ paths:
 
         Public within the app and free of model calls — these are static templates, and gating
 
-        them behind a balance check would make an empty form unusable for a user out of credit.'
+        them behind a balance check would make an empty form unusable for a user out of credit.
+
+        Only covers have presets now; character and prop sheets have a fixed layout drafted
+
+        from the card''s own details, so `character` and `prop` are unknown kinds here.'
       operationId: list_prompt_presets_api_prompts_presets_get
       parameters:
       - name: kind
@@ -1951,7 +2046,7 @@ paths:
         required: false
         schema:
           type: string
-          default: character
+          default: cover
           title: Kind
       responses:
         '200':
@@ -1962,6 +2057,81 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response List Prompt Presets Api Prompts Presets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/prompts/prefix-presets:
+    get:
+      tags:
+      - prompts
+      summary: List Prompt Prefix Presets
+      description: 'Ready-to-insert preambles for one shot, for the editor''s quick-fill bar.
+
+
+        Served rather than templated in the browser because the wording is an instruction to a
+
+        model, and the one the tone sheet writes on a successful anchor has to stay identical to
+
+        the one this hands back — a user who deleted the automatic item is asking for that item,
+
+        not for a copy of it that drifted.
+
+
+        Four presets, each with its `source`: `tone` only once the episode has an anchor to
+
+        point at (the text is about locating this shot''s cell in the grid, which is meaningless
+
+        without one); `script` when the episode has source text; `shot` when this shot has a
+
+        narration line; and `shots`, every shot''s prompt for this list in order — the frame
+
+        prompt under `image`, the motion prompt under `video`.'
+      operationId: list_prompt_prefix_presets_api_prompts_prefix_presets_get
+      parameters:
+      - name: projectId
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+          title: Projectid
+      - name: sceneId
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 64
+          title: Sceneid
+      - name: kind
+        in: query
+        required: false
+        schema:
+          enum:
+          - image
+          - video
+          type: string
+          default: image
+          title: Kind
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Prompt Prefix Presets Api Prompts Prefix Presets Get
         '422':
           description: Validation Error
           content:
@@ -2831,6 +3001,56 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Generate Video Api Projects  Project Id  Generate Video Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}/video:
+    post:
+      tags:
+      - episodes
+      summary: Merge Episode Video
+      description: Merge rendered shots from this episode in selection order; publish only on success.
+      operationId: merge_episode_video_api_projects__project_id__episodes__episode_id__video_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComposeEpisodeRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Merge Episode Video Api Projects  Project Id  Episodes  Episode Id  Video
+                  Post
         '422':
           description: Validation Error
           content:
@@ -4705,7 +4925,7 @@ paths:
       tags:
       - exports
       summary: Add Export
-      description: Queue a merge of the chosen shots, in the order they were given.
+      description: Queue composed episodes in selection order (legacy scene selections still accepted).
       operationId: add_export_api_projects__project_id__exports_post
       parameters:
       - name: project_id
@@ -5024,12 +5244,6 @@ components:
           type: array
           maxItems: 64
           title: Propids
-        voiceProfileIds:
-          items:
-            type: string
-          type: array
-          maxItems: 64
-          title: Voiceprofileids
         useCastSheet:
           type: boolean
           title: Usecastsheet
@@ -5037,10 +5251,6 @@ components:
         usePropSheet:
           type: boolean
           title: Usepropsheet
-          default: false
-        useVoiceSheet:
-          type: boolean
-          title: Usevoicesheet
           default: false
       additionalProperties: false
       type: object
@@ -5089,12 +5299,32 @@ components:
           type: array
           maxItems: 64
           title: References
+        prefixes:
+          items:
+            $ref: '#/components/schemas/PromptPrefixRequest'
+          type: array
+          maxItems: 8
+          title: Prefixes
       additionalProperties: false
       type: object
       required:
       - projectId
       - kind
       title: CompilePromptRequest
+    ComposeEpisodeRequest:
+      properties:
+        sceneIds:
+          items:
+            type: string
+          type: array
+          maxItems: 60
+          minItems: 1
+          title: Sceneids
+      additionalProperties: false
+      type: object
+      required:
+      - sceneIds
+      title: ComposeEpisodeRequest
     CreateAssetRequest:
       properties:
         name:
@@ -5253,12 +5483,23 @@ components:
     CreateExportRequest:
       properties:
         sceneIds:
-          items:
-            type: string
-          type: array
-          maxItems: 60
-          minItems: 1
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 60
+            minItems: 1
+          - type: 'null'
           title: Sceneids
+        episodeIds:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 60
+            minItems: 1
+          - type: 'null'
+          title: Episodeids
         rangeLabel:
           type: string
           maxLength: 120
@@ -5266,15 +5507,8 @@ components:
           default: ''
       additionalProperties: false
       type: object
-      required:
-      - sceneIds
       title: CreateExportRequest
-      description: 'Merge chosen shots into one file, in the order given.
-
-
-        Ordered by the request rather than by shot number: the video section exists to assemble
-
-        a cut, which need not follow the storyboard.'
+      description: Merge composed episodes in order. sceneIds remains for legacy clients.
     CreateProjectRequest:
       properties:
         title:
@@ -5401,6 +5635,22 @@ components:
             maxItems: 64
           - type: 'null'
           title: Videoreferences
+        imagePromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Imagepromptprefixes
+        videoPromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Videopromptprefixes
         videoFirstFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'
@@ -5490,14 +5740,14 @@ components:
           title: Name
         voicePrompt:
           type: string
-          maxLength: 1000
+          maxLength: 4000
           minLength: 1
           title: Voiceprompt
         previewText:
           type: string
           maxLength: 1000
-          minLength: 1
           title: Previewtext
+          default: ''
         note:
           type: string
           maxLength: 4000
@@ -5508,12 +5758,17 @@ components:
           maxLength: 1000
           title: Sampletext
           default: ''
+        voiceId:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Voiceid
       additionalProperties: false
       type: object
       required:
       - name
       - voicePrompt
-      - previewText
       title: DesignVoiceProfileRequest
       description: 'Design a new timbre and bind it to this series in one step.
 
@@ -5534,11 +5789,6 @@ components:
           type: string
           maxLength: 4000
           title: Description
-          default: ''
-        preset:
-          type: string
-          maxLength: 40
-          title: Preset
           default: ''
         model:
           anyOf:
@@ -6196,6 +6446,47 @@ components:
       additionalProperties: false
       type: object
       title: PromptOptimizationContext
+    PromptPrefixRequest:
+      properties:
+        id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Id
+        name:
+          type: string
+          maxLength: 80
+          title: Name
+          default: ''
+        prompt:
+          type: string
+          maxLength: 4000
+          title: Prompt
+          default: ''
+        references:
+          items:
+            $ref: '#/components/schemas/GenerationReferenceRequest'
+          type: array
+          maxItems: 64
+          title: References
+        source:
+          type: string
+          maxLength: 32
+          title: Source
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      title: PromptPrefixRequest
+      description: 'One preamble item stored above a shot''s own prompt.
+
+
+        `source` is how the tone-sheet item is recognised on a regenerate; anything the user
+
+        wrote by hand leaves it empty. Its `references` are real reference slots, not decoration
+
+        — see `app/services/prompt_prefix_service.py`.'
     ReorderScenesRequest:
       properties:
         sceneIds:
@@ -6557,6 +6848,22 @@ components:
             maxItems: 64
           - type: 'null'
           title: Videoreferences
+        imagePromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Imagepromptprefixes
+        videoPromptPrefixes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/PromptPrefixRequest'
+            type: array
+            maxItems: 8
+          - type: 'null'
+          title: Videopromptprefixes
         videoFirstFrame:
           anyOf:
           - $ref: '#/components/schemas/GenerationReferenceRequest'

@@ -166,6 +166,17 @@ class Scene(SQLModel, table=True):
     image_references_explicit: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
     video_references_json: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
     video_references_explicit: bool = Field(default=False, sa_column_kwargs={"server_default": text("0")})
+    # Ordered `{id,name,prompt,references}` preambles concatenated ahead of the prompt beside
+    # them. Stored apart from the prompt text so re-running the breakdown — which rewrites
+    # `visual_prompt`/`video_prompt` wholesale — cannot take the episode-level context with
+    # it. See `app/services/prompt_prefix_service.py` for why their mentions share the
+    # shot's reference budget.
+    image_prompt_prefixes_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default=text("'[]'"))
+    )
+    video_prompt_prefixes_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default=text("'[]'"))
+    )
     video_first_frame_json: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=text("''")))
     video_last_frame_json: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=text("''")))
     # The shot's screen time. Written by the breakdown as an estimate and editable after;

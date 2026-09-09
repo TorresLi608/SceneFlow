@@ -188,11 +188,22 @@ def record_usage(
             )
 
 
-def usage_logs(session: Session, user_id: int, feature: str = "all", days: int = 30, source: str = "all") -> dict[str, Any]:
+def usage_logs(
+    session: Session,
+    user_id: int,
+    feature: str = "all",
+    days: int = 30,
+    source: str = "all",
+    *,
+    start_at: str | None = None,
+    end_before: str | None = None,
+) -> dict[str, Any]:
     conditions = [
         UsageLog.user_id == user_id,
-        UsageLog.created_at >= func.datetime("now", f"-{max(1, min(days, 365))} days"),
+        UsageLog.created_at >= (start_at or func.datetime("now", f"-{max(1, min(days, 365))} days")),
     ]
+    if end_before is not None:
+        conditions.append(UsageLog.created_at < end_before)
     if feature != "all":
         conditions.append(UsageLog.feature == feature)
     if source != "all":

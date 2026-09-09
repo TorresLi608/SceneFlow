@@ -205,35 +205,53 @@
     background: transparent;
   }
 
-  /* PromptArea 组件样式 */
+  /* PromptArea 组件样式 - 与外部引用标签胶囊保持视觉与交互一致 */
   .prompt-area-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 0.875rem;
+    padding: 0 8px;
+    height: 20px;
+    border-radius: 9999px;
+    font-size: 11px;
     font-weight: 500;
+    line-height: 1.4;
     cursor: pointer;
     user-select: none;
-    vertical-align: baseline;
-    margin: 0 1px;
-    background-color: var(--secondary);
-    color: var(--foreground);
-    transition: background-color 0.2s ease, transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+    vertical-align: middle;
+    margin: 1px 2px;
+    background-color: color-mix(in oklch, var(--primary) 10%, transparent);
+    color: var(--primary);
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
     position: relative;
     overflow: hidden;
   }
 
+  .prompt-area-chip::after {
+    content: " ×";
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    margin-left: 2px;
+    opacity: 0.8;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
   .prompt-area-chip:hover {
-    background-color: color-mix(in srgb, var(--secondary) 80%, var(--foreground) 20%);
-    box-shadow: 0 1px 4px color-mix(in srgb, var(--foreground) 10%, transparent);
+    background-color: color-mix(in oklch, var(--destructive) 10%, transparent);
+    color: var(--destructive);
+    box-shadow: none;
+  }
+
+  .prompt-area-chip:hover::after {
+    opacity: 1;
+    color: var(--destructive);
   }
 
   .prompt-area-chip:active {
-    transform: scale(0.93);
-    background-color: color-mix(in srgb, var(--secondary) 70%, var(--foreground) 30%);
-    box-shadow: 0 0 0 transparent;
-    transition: background-color 0.05s ease, transform 0.08s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.05s ease;
+    transform: scale(0.95);
+    background-color: color-mix(in oklch, var(--destructive) 15%, transparent);
+    transition: background-color 0.05s ease, transform 0.08s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   @keyframes prompt-area-chip-ripple {

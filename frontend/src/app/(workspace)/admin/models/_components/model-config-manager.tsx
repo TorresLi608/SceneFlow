@@ -178,51 +178,51 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
   const isVideoEdit = model.includes("videoedit");
   return provider === "qwen"
     ? {
-        qualities: videoQualityOptions,
-        fps: [],
-        aspectRatios: videoAspectRatioOptions,
-        promptExtend: isI2v,
-        minDuration: isI2v ? 2 : 3,
-        maxDuration: 15,
-        referenceImages: isI2v || isR2v,
-        referenceImagesRequired: isI2v || isR2v,
-        maxReferenceImages: isR2v ? 5 : isI2v || isVideoEdit ? 1 : 0,
-        referenceVideo: isVideoEdit,
-        maxReferenceVideos: isVideoEdit ? 1 : 0,
-        referenceVideosRequired: false,
-        referenceAudio: isI2v,
-        maxReferenceAudios: isI2v ? 1 : 0,
-        referenceAudiosRequired: false,
-      }
+      qualities: videoQualityOptions,
+      fps: [],
+      aspectRatios: videoAspectRatioOptions,
+      promptExtend: isI2v,
+      minDuration: isI2v ? 2 : 3,
+      maxDuration: 15,
+      referenceImages: isI2v || isR2v,
+      referenceImagesRequired: isI2v || isR2v,
+      maxReferenceImages: isR2v ? 5 : isI2v || isVideoEdit ? 1 : 0,
+      referenceVideo: isVideoEdit,
+      maxReferenceVideos: isVideoEdit ? 1 : 0,
+      referenceVideosRequired: false,
+      referenceAudio: isI2v,
+      maxReferenceAudios: isI2v ? 1 : 0,
+      referenceAudiosRequired: false,
+    }
     : {
-        qualities: videoQualityOptions,
-        fps: [24],
-        aspectRatios:
-          provider === "gemini"
-            ? videoAspectRatioOptions.filter((value) => value !== "1:1")
-            : videoAspectRatioOptions,
-        promptExtend: false,
-        minDuration: 3,
-        maxDuration: 15,
-        referenceImages: false,
-        referenceImagesRequired: false,
-        maxReferenceImages: 0,
-        referenceVideo: false,
-        maxReferenceVideos: 0,
-        referenceVideosRequired: false,
-        referenceAudio: false,
-        maxReferenceAudios: 0,
-        referenceAudiosRequired: false,
-      };
+      qualities: videoQualityOptions,
+      fps: [24],
+      aspectRatios:
+        provider === "gemini"
+          ? videoAspectRatioOptions.filter((value) => value !== "1:1")
+          : videoAspectRatioOptions,
+      promptExtend: false,
+      minDuration: 3,
+      maxDuration: 15,
+      referenceImages: false,
+      referenceImagesRequired: false,
+      maxReferenceImages: 0,
+      referenceVideo: false,
+      maxReferenceVideos: 0,
+      referenceVideosRequired: false,
+      referenceAudio: false,
+      maxReferenceAudios: 0,
+      referenceAudiosRequired: false,
+    };
 }
 
 function editableVideoCapabilities(config: UserConfig): VideoCapabilities {
   const defaults = defaultVideoCapabilities(config.provider, config.modelSeries);
   const current = config.videoCapabilities as
     | (Partial<VideoCapabilities> & {
-        resolutions?: string[];
-        drivingAudio?: boolean;
-      })
+      resolutions?: string[];
+      drivingAudio?: boolean;
+    })
     | null;
   if (!current) return defaults;
   const aspectByResolution: Record<string, VideoCapabilities["aspectRatios"][number]> = {
@@ -777,7 +777,7 @@ export function ModelConfigManager() {
         </div>
         <Button
           onClick={openCreate}
-          className="h-9 gap-1.5 rounded-xl font-semibold shadow-xs cursor-pointer"
+          className="gap-1.5 rounded-lg font-semibold shadow-xs cursor-pointer"
         >
           <Plus className="size-4" />
           {t("settings.newConfig")}
@@ -793,7 +793,7 @@ export function ModelConfigManager() {
             setPage(1);
           }}
           placeholder={t("admin.searchConfig")}
-          className="h-9 text-xs"
+          className="text-xs"
         />
         <Select
           value={purposeFilter}
@@ -1358,7 +1358,7 @@ export function ModelConfigManager() {
                     if (purpose === "video")
                       setVideoCapabilities(
                         videoCatalog.find((item) => item.model === value)?.capabilities
-                          ?? defaultVideoCapabilities(provider, value),
+                        ?? defaultVideoCapabilities(provider, value),
                       );
                   }}
                   placeholder={selectedProviderOption?.modelPlaceholder}
@@ -1906,15 +1906,15 @@ export function ModelConfigManager() {
                 <p className="text-xs text-foreground font-medium">
                   {t("admin.pricingMultiplier")}: {viewingConfig.pricingMultiplier}x ·{" "}
                   {viewingConfig.purpose === "image" ||
-                  viewingConfig.purpose === "video" ||
-                  viewingConfig.purpose === "audio"
+                    viewingConfig.purpose === "video" ||
+                    viewingConfig.purpose === "audio"
                     ? `${t(
-                        viewingConfig.purpose === "image"
-                          ? "admin.imageUnitPrice"
-                          : viewingConfig.purpose === "audio"
-                            ? "admin.audioUnitPrice"
-                            : "admin.videoUnitPrice"
-                      )}: $${viewingConfig.unitPrice}`
+                      viewingConfig.purpose === "image"
+                        ? "admin.imageUnitPrice"
+                        : viewingConfig.purpose === "audio"
+                          ? "admin.audioUnitPrice"
+                          : "admin.videoUnitPrice"
+                    )}: $${viewingConfig.unitPrice}`
                     : `${t("admin.inputPrice")}: $${viewingConfig.inputPricePerMillion} · ${t("admin.outputPrice")}: $${viewingConfig.outputPricePerMillion}`}
                 </p>
               </div>
@@ -1943,8 +1943,8 @@ export function ModelConfigManager() {
                 <DialogDescription className="text-xs mt-0.5">
                   {deletingConfig
                     ? t("admin.confirmDeleteConfig", {
-                        name: configTitle(deletingConfig, purposeLabel, t),
-                      })
+                      name: configTitle(deletingConfig, purposeLabel, t),
+                    })
                     : ""}
                 </DialogDescription>
               </div>

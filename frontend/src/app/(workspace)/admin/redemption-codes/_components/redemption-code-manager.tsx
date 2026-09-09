@@ -70,7 +70,7 @@ export function RedemptionCodeManager() {
           <h2 className="text-base font-semibold">{t("admin.redemptionCodes")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("admin.redemptionCodesDescription")}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}><Plus data-icon="inline-start" />{t("admin.createRedemptionCode")}</Button>
+        <Button onClick={() => setCreateOpen(true)} className="gap-1.5 rounded-lg font-semibold shadow-xs cursor-pointer"><Plus data-icon="inline-start" />{t("admin.createRedemptionCode")}</Button>
       </div>
 
       <div className="flex justify-end gap-2 rounded-lg border bg-muted/20 p-3">
@@ -86,38 +86,36 @@ export function RedemptionCodeManager() {
         ) : null}
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <Table className="min-w-[1200px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("admin.redemptionCode")}</TableHead>
-              <TableHead>{t("admin.status")}</TableHead>
-              <TableHead>{t("admin.redemptionAmount")}</TableHead>
-              <TableHead>{t("admin.redeemedBy")}</TableHead>
-              <TableHead>{t("admin.redeemedAt")}</TableHead>
-              <TableHead>{t("admin.createdBy")}</TableHead>
-              <TableHead>{t("admin.tableCreatedAt")}</TableHead>
-              <TableHead>{t("admin.expiresAt")}</TableHead>
+      <Table className="min-w-[1200px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("admin.redemptionCode")}</TableHead>
+            <TableHead>{t("admin.status")}</TableHead>
+            <TableHead>{t("admin.redemptionAmount")}</TableHead>
+            <TableHead>{t("admin.redeemedBy")}</TableHead>
+            <TableHead>{t("admin.redeemedAt")}</TableHead>
+            <TableHead>{t("admin.createdBy")}</TableHead>
+            <TableHead>{t("admin.tableCreatedAt")}</TableHead>
+            <TableHead>{t("admin.expiresAt")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {codesQuery.data?.redemptionCodes.map((item) => (
+            <TableRow key={item.id}>
+              <TableCell className="font-mono font-medium tracking-wide">{item.code}</TableCell>
+              <TableCell><Badge variant={statusVariant[item.status]}>{t(`admin.redemptionStatus.${item.status}`)}</Badge></TableCell>
+              <TableCell className="font-medium tabular-nums">{formatMoney(item.amountMicros, 6)}</TableCell>
+              <TableCell>{item.redeemedBy?.username ?? "—"}</TableCell>
+              <TableCell className="text-muted-foreground">{item.redeemedAt ? formatDateTime(item.redeemedAt) : "—"}</TableCell>
+              <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
+              <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
+              <TableCell className="text-muted-foreground">{formatDateTime(item.expiresAt)}</TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {codesQuery.data?.redemptionCodes.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-mono font-medium tracking-wide">{item.code}</TableCell>
-                <TableCell><Badge variant={statusVariant[item.status]}>{t(`admin.redemptionStatus.${item.status}`)}</Badge></TableCell>
-                <TableCell className="font-medium tabular-nums">{formatMoney(item.amountMicros, 6)}</TableCell>
-                <TableCell>{item.redeemedBy?.username ?? "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{item.redeemedAt ? formatDateTime(item.redeemedAt) : "—"}</TableCell>
-                <TableCell>{item.createdBy?.username ?? "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
-                <TableCell className="text-muted-foreground">{formatDateTime(item.expiresAt)}</TableCell>
-              </TableRow>
-            ))}
-            {codesQuery.isLoading ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
-            {!codesQuery.isLoading && !codesQuery.data?.redemptionCodes.length ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("admin.noRedemptionCodes")}</TableCell></TableRow> : null}
-          </TableBody>
-        </Table>
-      </div>
+          ))}
+          {codesQuery.isLoading ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
+          {!codesQuery.isLoading && !codesQuery.data?.redemptionCodes.length ? <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">{t("admin.noRedemptionCodes")}</TableCell></TableRow> : null}
+        </TableBody>
+      </Table>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{t("admin.pagination", { total: pagination.total, page: pagination.page, pageCount: pagination.pageCount })}</span>

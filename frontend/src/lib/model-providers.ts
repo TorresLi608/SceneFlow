@@ -121,8 +121,8 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
     {
       value: "qwen",
       label: "Qwen Voice Design",
-      modelSeries: "",
-      modelPlaceholder: "qwen3-tts-vd-2026-01-26",
+      modelSeries: "qwen3-tts-vd-realtime-2025-12-16",
+      modelPlaceholder: "qwen3-tts-vd-realtime-2025-12-16",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       docsUrl: "https://help.aliyun.com/zh/model-studio/qwen-voice-design",
     },

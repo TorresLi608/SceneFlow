@@ -8,21 +8,25 @@ import { listAdminErrorLogsAction } from "@/actions/admin-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateTimeRangePicker } from "@/components/ui/date-time-range-picker";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n";
+import { formatDateTime, isTodayTimeRange, timeRangeParams, todayTimeRange } from "@/lib/date-time-range";
 import { useUserStore } from "@/store/user-store";
 
 const pageSize = 20;
 
 export default function AdminErrorLogsPage() {
-  const { t, formatDateTime } = useI18n();
+  const { t } = useI18n();
   const user = useUserStore((state) => state.user);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [range, setRange] = useState(todayTimeRange);
+  const timeParams = timeRangeParams(range);
   const query = useQuery({
-    queryKey: queryKeys.adminErrorLogs(search.trim(), page),
-    queryFn: () => listAdminErrorLogsAction({ search: search.trim(), page, pageSize }),
+    queryKey: queryKeys.adminErrorLogs(search.trim(), page, timeParams),
+    queryFn: () => listAdminErrorLogsAction({ search: search.trim(), page, pageSize, ...timeParams }),
     enabled: user?.role === "superAdmin",
   });
   const pagination = query.data?.pagination ?? { total: 0, page, pageSize, pageCount: 1 };
@@ -39,47 +43,46 @@ export default function AdminErrorLogsPage() {
           <p className="mt-1 text-sm text-muted-foreground">{t("admin.errorLogsDescription")}</p>
         </div>
 
-        <div className="flex gap-2 border bg-muted/20 p-3">
+        <div className="flex flex-wrap gap-2 rounded-lg border bg-muted/20 p-3">
           <Input
             value={search}
             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
             placeholder={t("admin.searchErrorLogs")}
-            className="max-w-lg"
+            className="w-full sm:w-80"
           />
-          {search ? (
-            <Button variant="outline" onClick={() => { setSearch(""); setPage(1); }}>
+          <DateTimeRangePicker value={range} onChange={(value) => { setRange(value); setPage(1); }} />
+          {search || !isTodayTimeRange(range) ? (
+            <Button variant="outline" onClick={() => { setSearch(""); setRange(todayTimeRange()); setPage(1); }}>
               <RotateCcw data-icon="inline-start" />
               {t("common.clearFilters")}
             </Button>
           ) : null}
         </div>
 
-        <div className="overflow-hidden border">
-          <Table className="min-w-[1180px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("usage.time")}</TableHead>
-                <TableHead>{t("admin.errorCode")}</TableHead>
-                <TableHead>{t("admin.errorRequest")}</TableHead>
-                <TableHead>{t("admin.errorResource")}</TableHead>
-                <TableHead>{t("admin.errorMessage")}</TableHead>
+        <Table className="min-w-[1180px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("usage.time")}</TableHead>
+              <TableHead>{t("admin.errorCode")}</TableHead>
+              <TableHead>{t("admin.errorRequest")}</TableHead>
+              <TableHead>{t("admin.errorResource")}</TableHead>
+              <TableHead>{t("admin.errorMessage")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {query.data?.errorLogs.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="whitespace-nowrap">{formatDateTime(item.createdAt)}</TableCell>
+                <TableCell><Badge variant="destructive">{item.errorCode}</Badge><p className="mt-1 text-xs text-muted-foreground">{t("admin.httpStatus", { status: item.statusCode })}</p></TableCell>
+                <TableCell><p className="font-mono text-xs">{item.requestId}</p><p className="mt-1 max-w-72 truncate text-xs text-muted-foreground">{item.method} {item.route}</p></TableCell>
+                <TableCell><p className="font-mono text-xs">{item.projectId || "-"}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{item.episodeId || "-"}</p></TableCell>
+                <TableCell className="max-w-md whitespace-normal text-sm">{item.message}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {query.data?.errorLogs.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="whitespace-nowrap">{formatDateTime(item.createdAt)}</TableCell>
-                  <TableCell><Badge variant="destructive">{item.errorCode}</Badge><p className="mt-1 text-xs text-muted-foreground">{t("admin.httpStatus", { status: item.statusCode })}</p></TableCell>
-                  <TableCell><p className="font-mono text-xs">{item.requestId}</p><p className="mt-1 max-w-72 truncate text-xs text-muted-foreground">{item.method} {item.route}</p></TableCell>
-                  <TableCell><p className="font-mono text-xs">{item.projectId || "-"}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{item.episodeId || "-"}</p></TableCell>
-                  <TableCell className="max-w-md whitespace-normal text-sm">{item.message}</TableCell>
-                </TableRow>
-              ))}
-              {query.isLoading ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
-              {!query.isLoading && !query.data?.errorLogs.length ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">{t("admin.noErrorLogs")}</TableCell></TableRow> : null}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+            {query.isLoading ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow> : null}
+            {!query.isLoading && !query.data?.errorLogs.length ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">{t("admin.noErrorLogs")}</TableCell></TableRow> : null}
+          </TableBody>
+        </Table>
 
         <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
           <span>{t("admin.pagination", { total: pagination.total, page: pagination.page, pageCount: pagination.pageCount })}</span>

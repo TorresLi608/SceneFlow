@@ -8,6 +8,7 @@ import {
   Film,
   Info,
   Mic,
+  Library,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +39,7 @@ export default function ProjectWorkbenchLayout({ children }: { children: ReactNo
     { key: "characters", icon: Users, label: t("workbench.characters") },
     { key: "props", icon: Boxes, label: t("workbench.props") },
     { key: "voices", icon: Mic, label: t("workbench.voices") },
+    { key: "assets", icon: Library, label: t("episode.assetLibrary") },
     { key: "episodes", icon: Clapperboard, label: t("workbench.episodes") },
     { key: "videos", icon: Film, label: t("workbench.videos") },
   ];

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import json
 import logging
 import math
 from pathlib import Path
@@ -250,13 +251,53 @@ def concat_audio(sources: list[bytes], *, extension: str = "mp3") -> bytes:
 CONCAT_VIDEO_TIMEOUT_SECONDS = 900
 
 
+def _probe_video_audio_and_duration(path: Path) -> tuple[bool, float]:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return False, 0.0
+    try:
+        cmd = [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:stream=index,codec_type,duration",
+            "-of",
+            "json",
+            str(path),
+        ]
+        res = subprocess.run(cmd, capture_output=True, check=False, timeout=15)
+        if res.returncode != 0:
+            return False, 0.0
+        data = json.loads(res.stdout)
+        streams = data.get("streams") or []
+        has_audio = any(s.get("codec_type") == "audio" for s in streams)
+        duration_str = (data.get("format") or {}).get("duration")
+        duration = float(duration_str) if duration_str else 0.0
+        if duration <= 0.0:
+            for s in streams:
+                if s.get("duration"):
+                    try:
+                        parsed = float(s["duration"])
+                        if parsed > 0:
+                            duration = parsed
+                            break
+                    except (ValueError, TypeError):
+                        pass
+        return has_audio, duration
+    except Exception as exc:
+        logger.warning("failed to probe video %s: %s", path, exc)
+        return False, 0.0
+
+
 def concat_videos(sources: list[bytes], *, width: int, height: int, fps: int) -> bytes:
-    """Join clips end to end into one MP4, normalising every clip to the same geometry.
+    """Join clips end to end into one MP4, normalising every clip to the same geometry and audio.
 
     Always re-encoded, never stream-copied. Clips come from different models and settings,
     and the concat demuxer silently produces a file that plays only up to the first mismatch
     — which looks like a truncated export rather than an error. Scaling letterboxes rather
-    than crops, so nothing the user framed gets cut off.
+    than crops, so nothing the user framed gets cut off. Audio from each clip is normalized
+    and stitched together; silent clips are padded with silence to maintain synchronization.
     """
     if not sources:
         raise ValueError("no video to merge")
@@ -274,21 +315,60 @@ def concat_videos(sources: list[bytes], *, width: int, height: int, fps: int) ->
             part.write_bytes(data)
             parts.append(part)
 
+        clips_info = [_probe_video_audio_and_duration(part) for part in parts]
+        any_audio = any(has_audio for has_audio, _ in clips_info)
+
         command = [ffmpeg, "-nostdin", "-y"]
         for part in parts:
             command += ["-i", str(part)]
-        # Normalise each input, then concat the normalised streams in one graph. Doing it as
-        # a filter rather than through the demuxer is what lets the geometry differ.
-        chains = "".join(f"[{index}:v]{scale}[v{index}];" for index in range(len(parts)))
-        inputs = "".join(f"[v{index}]" for index in range(len(parts)))
+
+        chains = []
+        v_inputs = []
+        a_inputs = []
+        for index, (has_audio, duration) in enumerate(clips_info):
+            chains.append(f"[{index}:v]{scale}[v{index}];")
+            v_inputs.append(f"[v{index}]")
+            if any_audio:
+                if has_audio:
+                    if duration > 0:
+                        chains.append(
+                            f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo,aresample=async=1,apad,atrim=0:{duration:.3f}[a{index}];"
+                        )
+                    else:
+                        chains.append(
+                            f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo,aresample=async=1[a{index}];"
+                        )
+                else:
+                    safe_duration = duration if duration > 0 else 5.0
+                    chains.append(
+                        f"anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:{safe_duration:.3f}[a{index}];"
+                    )
+                a_inputs.append(f"[a{index}]")
+
         output = root / "merged.mp4"
-        command += [
-            "-filter_complex", f"{chains}{inputs}concat=n={len(parts)}:v=1:a=0[out]",
-            "-map", "[out]",
-            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            str(output),
-        ]
+        if any_audio:
+            concat_inputs = "".join(f"{v}{a}" for v, a in zip(v_inputs, a_inputs))
+            filter_complex = "".join(chains) + f"{concat_inputs}concat=n={len(parts)}:v=1:a=1[vout][aout]"
+            command += [
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
+                "-map", "[aout]",
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart",
+                str(output),
+            ]
+        else:
+            concat_inputs = "".join(v_inputs)
+            filter_complex = "".join(chains) + f"{concat_inputs}concat=n={len(parts)}:v=1:a=0[vout]"
+            command += [
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                str(output),
+            ]
+
         result = subprocess.run(command, check=False, capture_output=True, timeout=CONCAT_VIDEO_TIMEOUT_SECONDS)
         if result.returncode != 0 or not output.is_file():
             detail = result.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]

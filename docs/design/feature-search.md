@@ -1,50 +1,49 @@
 # Feature: search and filtering
 
-> **Naming note.** This file keeps the harness's template filename. SceneFlow has no unified search product — no index, no full-text engine, no cross-entity query. What exists is a set of list-filtering surfaces, documented here so new ones follow the same shape.
+Verified on **2026-09-08**, with shared asset search added and checked on **2026-09-09**. SceneFlow has list filters, not a unified full-text or cross-entity search engine. The [code map](../architecture/code-map.md) locates the pages/actions that own each surface.
 
-## Two strategies, chosen by list size
-
-| Strategy | When | Examples |
-|---|---|---|
-| **Server-side**: `WHERE … LIKE` + `LIMIT/OFFSET` pagination | The list is unbounded and grows with usage | admin usage logs, invitation codes, redemption codes |
-| **Client-side**: fetch once, filter in memory | The list is bounded and already loaded for other reasons | project list, admin user list, model config list |
-
-Pick server-side the moment a table can grow without bound. Usage logs went to server-side pagination precisely because they accumulate per API call.
-
-## Server-side surfaces
+## Server-side lists
 
 | Endpoint | Filters | Page size |
 |---|---|---|
-| `GET /api/admin/usage-logs` | `search` (username `LIKE`), `page`, `pageSize` | default 20, max 100 |
-| `GET /api/admin/invitation-codes` | `status` ∈ `all\|unused\|used\|expired`, `search` (redeeming username), `page`, `pageSize` | default 10, max 100 |
-| `GET /api/admin/redemption-codes` | `status`, `page`, `pageSize` | default 10, max 100 |
-| `GET /api/usage/logs` (per-user) | `feature`, `days` (clamped 1–365), `source` | capped at 500 rows, no paging |
+| `GET /api/admin/usage-logs` | Username `search`, `startTime`/`endTime`, `page`, `pageSize` | Default 20, max 100 |
+| `GET /api/admin/error-logs` | `search` across route/message/request/code/project, exact `errorCode`, `projectId`, `requestId`, `startTime`/`endTime` | Default 20, max 100 |
+| `GET /api/admin/invitation-codes` | `status`, redeeming username `search`, page | Default 10, max 100 |
+| `GET /api/admin/redemption-codes` | `status`, page | Default 10, max 100 |
+| `GET /api/usage/logs` | Per-user `feature`, `source`, `startTime`/`endTime`; legacy `days` (1–365) when no range is supplied | Capped at 500, no paging |
+| `GET /api/projects/:id/assets` | Media `kind` | No paging |
 
-Established shape for a paginated endpoint:
+Admin list endpoints depend on `current_super_admin_id`; the shared `find_error_logs` service is also used by the super-admin chat tool. Conditions must be applied to both count and page queries.
 
-- Query params are `Annotated[...]` with constraints so they land in the OpenAPI schema: `Query(max_length=64)`, `Query(ge=1)`, `Query(alias="pageSize", ge=1, le=100)`. **The alias is how camelCase reaches a snake_case parameter** — FastAPI query params do not go through `CamelModel`.
-- Build a `conditions` list, then apply it to **both** the `func.count()` query and the page query so the total matches the filter.
-- Return `{"items": [...], "pagination": {"total": n, "page": p, "pageSize": s}}`.
-- Status filters that depend on time compute one `stamp = now()` and compare ISO strings — `expired` is "not used **and** `expires_at <= stamp`", so an unused-but-expired code never appears under `unused`.
-- Joins to the user table use `aliased(User)` when the same table is needed twice (the redeeming user and the creating user).
+Paginated responses have an entity-specific collection key (`usageLogs`, `errorLogs`, `invitationCodes`, `redemptionCodes`) plus `pagination: {total, page, pageSize}`. Do not assume a common `items` key. Query aliases are explicit (`Query(alias="pageSize")`), independent of `CamelModel`.
 
-## Client-side surfaces
+Search bounds are endpoint-specific: usage/invitation search is capped at 64 characters, error-log search at 128, with its exact ID/code filters separately bounded. ISO timestamp status comparisons use one `now()` value so unused/expired categories agree.
 
-- **Project list** (`ai-script/page.tsx`): free-text query over the title plus a status filter (`all` + the seven project statuses), with a "clear filters" affordance when either is active.
-- **Admin users** (`admin/users/_components/user-list.ts`): combined username search, role filter, and status filter. The filtering logic lives in a **plain `.ts` module, not the component**, because that is what makes it testable — `user-list.test.mts` covers the combined case. Follow this split for any non-trivial client-side filter.
+### Log time ranges
 
-## Rules when adding a filter
+The personal usage, all usage, and error-log pages share [DateTimeRangePicker](../../frontend/src/components/ui/date-time-range-picker.tsx), composed from shadcn Calendar/Popover with Day.js for local dates and strict time parsing. It shows two months, accepts hours/minutes/seconds, and applies a complete, ordered range on confirmation. Cancel leaves the query unchanged. Initial load, Today, and clearing filters use the browser's current local day, `00:00:00`–`23:59:59`; changing filters resets the page to 1. Log rows also show seconds.
 
-1. **`LIKE '%term%'` is what this codebase uses.** It is not indexed and it is case-sensitive on SQLite for non-ASCII. Acceptable at current scale; if you need more, say so rather than quietly adding an index that changes write cost.
-2. **Cap the input.** Every search param is `max_length=64`. Keep that.
-3. **Filter and count with the same conditions.** A total that ignores the filter makes the pager lie.
-4. **Never filter across users.** Admin endpoints depend on `current_super_admin_id`; per-user endpoints always add `user_id == current_user`. A filter is not an authorisation boundary.
-5. **Soft-deleted rows stay out.** Every list adds `deleted_at IS NULL` (or the entity's equivalent) before anything else.
-6. **Key the React Query cache by the filter**, using a parameterised key from `src/actions/query-keys.ts` — e.g. `adminUsageLogs(search, page)`. Never reuse one key across different filter values.
-7. **Debounce text input** before it becomes a query key, so typing does not fire a request per keystroke.
+The client sends both `startTime` and `endTime` as ISO timestamps with a time zone. The API rejects missing partners, naive/invalid timestamps, and reversed ranges with 422. [utc_time_bounds](../../backend/app/utils/time_range.py) normalizes them to UTC and treats both selected seconds as inclusive: database queries use `created_at >= start` and `created_at < end + 1 second`, including fractional-second records at the end. The same conditions feed personal summaries and admin counts/pages. An explicit range overrides the personal endpoint's legacy `days` cutoff.
+
+For existing API/tool callers, omitting both values preserves the personal endpoint's `days=30` fallback and unbounded admin/error-log searches. The super-admin diagnostic chat tool still searches history without a date limit. These contracts are covered by `test_log_time_ranges.py`; local day and daylight-saving boundaries by `date-time-range.test.mts`.
+
+## Client-side lists
+
+- The project list at `/ai-script` fetches the user's projects and filters title/status in memory.
+- Admin user filtering combines username, role, and status in `admin/users/_components/user-list.ts`; its `.test.mts` exercises the pure function.
+- Model pickers filter already-loaded options locally.
+- Project/episode asset management and @reference pickers share the project catalogue and `lib/project-resources.ts`: case-insensitive, whitespace-separated terms must all match across name, description, episode title or bilingual/legacy label aliases; callers may add extra searchable terms, and the prompt `@` suggestions and explicit reference picker pass the displayed media-type and source-kind labels so "视频" or "image" narrows by type. The explicit picker also filters by media type and shows the used/allowed budget per type; every suggestion, picker row and chip carries a media badge or icon. Asset management adds source-kind and source-episode/shared filters; media cards initially render 36 entries with load-more. @ suggestions and the explicit reference search preserve media budgets. The catalogue is project-scoped but not paginated; no script/prompt content is returned for search.
+
+Use local filtering for small lists already loaded for editing. Move growing tables to server-side filtering/paging when the full response becomes unsuitable.
+
+## Rules and limits
+
+- SQL `LIKE '%term%'` is the current text-search mechanism. It is not full-text search; leading wildcards do not benefit from an ordinary prefix index.
+- A filter is not authorization. Always constrain per-user/project reads and preserve super-admin dependencies.
+- Domain lists exclude soft-deleted rows; historical usage/error records have audit semantics and need not disappear with a deleted domain row.
+- Put filter-sensitive cache identities in `actions/query-keys.ts`, including both time boundaries: `adminUsageLogs(search, page, range)` and `adminErrorLogs(search, page, range)`.
+- Current error-log search uses the typed text directly as a query key; debouncing is not implemented there. Add it if request volume/typing behavior warrants it, rather than documenting it as existing behavior.
 
 ## Known gaps
 
-- No search over the domain content itself: scripts, shots, characters, and chat messages are not searchable.
-- No sort controls — every list has one fixed order (usually `created_at DESC`).
-- Client-side filters do not paginate, so they assume the full list fits in one response. The project list will need server-side paging before a user has many hundreds of series.
+No search over script text, shots, characters, or chat messages; no user-facing server-side sort contract; no server-side project paging. Client filters assume the fetched list fits in memory. See [backlog](../plans/backlog.md).

@@ -146,6 +146,24 @@ pnpm run docker:up       # Build & start in background
 pnpm run docker:backup   # Backup database & media snapshot
 ```
 
+Both commands remain useful: `docker:up` builds and starts the services; `docker:backup` creates a recoverable snapshot. Persistence does not replace backups.
+
+### Persistent data and upgrades
+
+Compose mounts the entire host directory `./data` at `/app/data`; SQLite writes `/app/data/app.db`, including any `app.db-wal` and `app.db-shm` files alongside it. Rebuilding/recreating containers or running `docker compose down` retains this host data. Generated media remains in the `sceneflow_media` named volume; **`docker compose down -v` deletes that media volume**.
+
+For a server, keep data outside disposable release directories. Set `SCENEFLOW_DATA_DIR=/srv/sceneflow/data` in the repository-root `.env` (used by Compose), or pass it when starting:
+
+```bash
+SCENEFLOW_DATA_DIR=/srv/sceneflow/data docker compose up -d --build
+```
+
+The backend entrypoint gives the mounted data directory to the existing `app` user (UID 10001), restricts directory access, then runs the backend as that user. Database files and data directories are excluded from Git and both Docker build contexts.
+
+`docker:backup` briefly stops a running backend, archives the whole database directory and generated media under `backups/`, then restores its prior running state. New archives contain `data/` and `private_generated/`.
+
+**Before upgrading an existing installation**, migrate the old `sceneflow_db` volume or `backend/sceneflow.db` using the [migration instructions](docs/reference/local-setup.md#migrating-existing-data). The new location is not automatically populated from old storage; an empty location creates an empty database. Keep the existing encryption/signing secrets with the deployment.
+
 ### Access URLs
 
 | Service | URL | Note |
@@ -155,8 +173,20 @@ pnpm run docker:backup   # Backup database & media snapshot
 | **OpenAPI Docs** | [http://127.0.0.1:8080/docs](http://127.0.0.1:8080/docs) | Swagger UI |
 
 Default Super Administrator (Development only):
+
 * **Username**: `superAdmin`
 * **Password**: `superAdmin@123`
+
+Configure the login name and initial password in `backend/.env`:
+
+```dotenv
+SCENEFLOW_SUPER_ADMIN_USERNAME=site-owner
+SCENEFLOW_SUPER_ADMIN_PASSWORD=replace-with-a-strong-password
+```
+
+The username accepts 3–64 characters after trimming. On an existing database, changing the default `superAdmin` login renames that admin in place, preserving its ID, password, and owned data; the old login stops working. An occupied target name fails startup instead of granting another user admin access. Existing passwords are never reset by this setting; change them in the account profile. See [account behavior](docs/design/feature-auth.md#super-admin) for subsequent name changes.
+
+Before public deployment, set `SCENEFLOW_ENV=production` and replace the development JWT secret, AES key, and admin password.
 
 ---
 
@@ -222,14 +252,17 @@ Visit [http://localhost:4000](http://localhost:4000) in your browser.
 |---|---|---|
 | `SCENEFLOW_JWT_SECRET` | *(dev default)* | JWT signing secret. **Production startup refuses to boot on the dev value.** |
 | `SCENEFLOW_AES_KEY` | *(dev default)* | Master key encrypting stored provider API keys. **Same refusal applies.** |
+| `SCENEFLOW_SUPER_ADMIN_USERNAME` | `superAdmin` | Super-admin login name, 3–64 characters. Renames the legacy default admin without changing its ID or password. |
 | `SCENEFLOW_SUPER_ADMIN_PASSWORD` | `superAdmin@123` | Initial super-admin password. **Same refusal applies.** |
 | `SCENEFLOW_ENV` | `development` | Set to `production` to enable the checks above. |
 | `SCENEFLOW_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | Backend address baked into signed media links — must be reachable by the browser. |
 | `SCENEFLOW_CORS_ORIGINS` | `http://localhost:4000,http://127.0.0.1:4000` | Allowed frontend origins, comma-separated. |
-| `SCENEFLOW_DB_PATH` | `./sceneflow.db` | SQLite file; relative paths resolve from `backend/`. |
+| `DATABASE_URL` | Repository-root `data/app.db`; Docker `sqlite:////app/data/app.db` | The only database setting, for local development and deployment. SQLite parent directories are created before engine initialization. |
 | `SCENEFLOW_PRIVATE_GENERATED_DIR` | `./private_generated` | Generated media directory. Back this up together with the database. |
 
 The full list — port, log level, context budget, and CJK font overrides — is in [`backend/README.md`](backend/README.md#environment).
+
+For local development, set `DATABASE_URL` in `backend/.env` if needed; when unset or empty, the default is always `<repository>/data/app.db`, regardless of the working directory. Explicit relative SQLite URLs resolve from the working directory, normally `backend/`. Compose sets its container URL separately; override `DATABASE_URL` through the shell or repository-root `.env`, and keep the SQLite file under `/app/data` so it is persisted. `SCENEFLOW_DATA_DIR` selects the host directory and is also a Compose setting.
 
 ### Frontend (`frontend/.env.local`)
 
@@ -246,7 +279,8 @@ The full list — port, log level, context budget, and CJK font overrides — is
 ```bash
 # Backend — one process and one throwaway database per file
 cd backend
-sh scripts/run_tests.sh $(ls tests/test_*.py | xargs -n1 basename | sed 's/\.py$//')
+check_dir=$(mktemp -d)
+SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh $(rg --files tests -g 'test_*.py' | sed 's#^tests/##; s#\.py$##')
 
 # Frontend
 cd ../frontend
@@ -265,6 +299,7 @@ There is no pytest here: backend tests are plain modules that call their own tes
 SceneFlow/
 ├── backend/                 # FastAPI app, SQLModel schemas, services, migrations, tests
 ├── frontend/                # Next.js 16 app, BFF routes, zustand stores, UI primitives
+├── data/                    # Local/Compose SQLite data (gitignored; created on first use)
 ├── docs/                    # Architecture, conventions, feature designs, and generated reference
 ├── scripts/                 # Cross-platform install & dev runners (macOS / Windows / Linux)
 └── docker-compose.yml       # Container orchestration
@@ -287,3 +322,15 @@ Issues, feedback, and pull requests are welcome.
 
 - **License**: SceneFlow is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
 - **Disclaimer**: Please read [DISCLAIMER.md](DISCLAIMER.md) regarding AI generation output review, third-party provider terms, intellectual property, usage costs, and what support to expect.
+
+ 剧集编辑页面还有需要给视频提示词，画面提示词新增前置提示词，并且可以新增前置提示词，也能删除修改前置提示词，点击生成基调图，基调图生成成功后然后每个分镜的画面提示词和视频提示词的前置提示词都会新增一个item（前置提示词分别和画面提示词视频提示词的同级目录上面也就是说视频提示词上面有对应的视频前置提示词，画面提示词上面有对应的画面前置提示词） 大概就是以下格式字段当然你可以自己优化
+ {
+     name：基调图，
+     prompt："这是整集的基调图@基调图,我们需要制作当前分镜x的内容，所以我们需要参考基调图中分镜x的内容，以及基调图中分镜x的上一个分镜内容和下一个分镜内容，甚至整体内容，来保持剧情连贯xxxx的"（反正大致就这样我自己写的提示词可能有些差但大致意思是这样你可以当作参考后面优化,(这里可以用视频提示词和画面提示词的组件）,
+     id:xxx ,
+     }
+     这个是基调图生成好就会有的，要兼容重新生成基调图的时候会重新生成基调图的前置提示词，然后用户可以删除，当然删除了可以在手动添加的时候有个快捷预设栏点击基调图预设提示词（目前就只个预设可以选择前提是有基调图）可以快速填充基调图前置预设，不然用户就手动新增修改删除预设提示词即可
+     前置预设提示词里面如果用了@参考素材的话也是占用本镜图片生成参考图 。本镜视频生成参考图 ，
+     本镜视频生成参考视频 ，本镜视频生成参考音色 这些被@的参考素材都需要扣除总参考素材的位置 ，然后生成最终提示词或者预览最终提示词的时候需要吧前置提示词的prompt 拼接到对应的分镜图提示词或者视频提示词进去，然后参考的素材依旧是按顺序做转换映射和素材注入
+
+     对了画面提示词和视频提示词的那个组件需要支持上下联动哦，不仅可以在输入框里面@参考素材 并且也可以直接插掉对应的素材或者删除对应的素材 底部框也可以直接删掉素材，这个功能之前是有的但不知道那个版本改掉了

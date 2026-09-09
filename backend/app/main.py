@@ -37,6 +37,7 @@ from app.services.error_log_service import error_code_for, record_http_error
 from app.services import job_handlers  # noqa: F401 -- registers the generation job handlers
 from app.services.job_worker import worker
 from app.services.project_service import release_orphaned_runs
+from app.services.export_service import recover_interrupted_exports
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ async def lifespan(_: FastAPI):
     # and nothing else can ever release it. Startup is the one point where "no run is in
     # flight" is a fact rather than a guess.
     release_orphaned_runs()
+    recover_interrupted_exports()
     # Paid generation runs here rather than inside the request, so that stopping is a
     # database operation instead of a hung-up socket. See `app/services/job_worker.py`.
     worker.start()

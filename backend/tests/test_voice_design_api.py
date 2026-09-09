@@ -186,9 +186,61 @@ def test_importing_a_voice_that_is_not_yours_is_not_found() -> None:
             assert response.status_code == 404, response.text
 
 
+def test_designing_a_voice_with_voice_id_overwrites_existing_profile() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers, _):
+            project_id = _project(client, headers)
+
+            # Create initial voice
+            response = client.post(
+                f"/api/projects/{project_id}/voices/design",
+                json={
+                    "name": "narrator",
+                    "voicePrompt": "初始音色描述",
+                    "previewText": "第一句介绍",
+                },
+                headers=headers,
+            )
+            assert response.status_code == 202, response.text
+            voice1 = succeeded(drain_one())["voice"]
+            voice_id = voice1["id"]
+            assert voice1["name"] == "narrator"
+            assert voice1["voiceModel"] == "voice-narrator"
+            old_audio_url = voice1["audioUrl"]
+
+            # Redesign and overwrite the existing voice profile
+            response = client.post(
+                f"/api/projects/{project_id}/voices/design",
+                json={
+                    "voiceId": voice_id,
+                    "name": "narrator-updated",
+                    "voicePrompt": "更新后的音色描述",
+                    "previewText": "第二句介绍",
+                    "sampleText": "更新后的总轨台词",
+                },
+                headers=headers,
+            )
+            assert response.status_code == 202, response.text
+            voice2 = succeeded(drain_one())["voice"]
+            assert voice2["id"] == voice_id
+            assert voice2["name"] == "narrator-updated"
+            assert voice2["voiceModel"] == "voice-narrator-updated"
+            assert voice2["sampleText"] == "更新后的总轨台词"
+            assert voice2["note"] == "更新后的音色描述"
+            assert voice2["audioUrl"] is not None
+
+            # Verify that only one voice exists in this project
+            listed = client.get(f"/api/projects/{project_id}/voices", headers=headers).json()["voices"]
+            assert len(listed) == 1
+            assert listed[0]["id"] == voice_id
+            assert listed[0]["name"] == "narrator-updated"
+
+
 if __name__ == "__main__":
     test_designing_a_voice_binds_it_to_the_series_and_keeps_it_on_the_account()
     test_designing_a_voice_needs_a_prompt_and_an_audition_line()
     test_importing_copies_the_audition_so_the_series_survives_a_library_tidy_up()
     test_importing_a_voice_that_is_not_yours_is_not_found()
+    test_designing_a_voice_with_voice_id_overwrites_existing_profile()
     print("test_voice_design_api ok")
+

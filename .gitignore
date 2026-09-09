@@ -13,6 +13,14 @@ build/
 dist/
 /backups/
 
+# SQLite files and persistent data (including WAL / rollback journals)
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.db.bak*
+
 # Env files
 .env
 .env.local
@@ -42,7 +50,6 @@ backend/vendor/
 backend/.venv/
 backend/__pycache__/
 backend/**/__pycache__/
-backend/*.db
 backend/generated/
 backend/private_generated/
 *.pyc

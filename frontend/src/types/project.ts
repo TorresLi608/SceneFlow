@@ -23,12 +23,15 @@ export interface Scene {
   imageReferencesExplicit?: boolean;
   videoReferences: GenerationReferenceInput[];
   videoReferencesExplicit?: boolean;
+  /** Preambles concatenated ahead of `visualPrompt` at compile time. */
+  imagePromptPrefixes: PromptPrefix[];
+  /** Preambles concatenated ahead of `videoPrompt` at compile time. */
+  videoPromptPrefixes: PromptPrefix[];
   videoFirstFrame: GenerationReferenceInput | null;
   videoLastFrame: GenerationReferenceInput | null;
   /**
    * True once the user has decided about the slot at all. A null frame with this set is
-   * "off, deliberately"; a null frame without it is "nobody chose", which the editor may
-   * still fill with the shot's own render.
+   * "off, deliberately"; a null frame without it is "nobody chose". Both stay empty.
    */
   videoFirstFrameExplicit?: boolean;
   videoLastFrameExplicit?: boolean;
@@ -75,6 +78,7 @@ export interface EpisodeSummary {
   title: string;
   synopsis: string;
   status: EpisodeStatus;
+  videoUrl: string | null;
   videoStatus: SceneTaskStatus | "idle";
   videoProgress: number;
   durationMs: number;
@@ -293,10 +297,9 @@ export type BreakdownDetailLevel = "concise" | "standard" | "detailed" | "custom
 export interface BreakdownReferences {
   characterIds?: string[];
   propIds?: string[];
-  voiceProfileIds?: string[];
+  /** The merged sheets, picked as chips beside the cards once the project has drawn them. */
   useCastSheet?: boolean;
   usePropSheet?: boolean;
-  useVoiceSheet?: boolean;
 }
 
 export interface BreakdownEpisodeInput {
@@ -370,6 +373,22 @@ export interface GenerationReferenceInput {
   id: string;
 }
 
+/**
+ * One preamble stored above a shot's prompt, concatenated ahead of it at compile time.
+ *
+ * Its `references` are not decoration: they resolve through the same path as the prompt's
+ * own mentions and spend the same provider reference slots, prefix-first — which is also
+ * the order they are numbered `图1`, `图2`… in.
+ */
+export interface PromptPrefix {
+  id: string;
+  name: string;
+  prompt: string;
+  references: GenerationReferenceInput[];
+  /** `"tone"` for the item the tone sheet writes; empty for anything hand-written. */
+  source?: string;
+}
+
 export interface Asset {
   id: string;
   projectId: string;
@@ -383,6 +402,18 @@ export interface Asset {
 }
 
 export interface AssetListResponse { assets: Asset[] }
+export interface ProjectResource extends GenerationReferenceInput {
+  label: string;
+  media: Asset["kind"];
+  url: string;
+  description: string;
+  aliases: string[];
+  episodeId: string | null;
+  episodeNumber: number | null;
+  episodeTitle: string;
+  sceneOrder: number | null;
+  updatedAt: string | null;
+}
 export interface CreateAssetInput { name: string; description?: string; kind: Asset["kind"]; data: string }
 export interface UpdateAssetInput { name?: string; description?: string; data?: string }
 export interface MergeAssetsInput { name: string; description?: string; kind: "image"; assetIds: string[] }
@@ -503,12 +534,11 @@ export type UpdateCharacterStateInput = Partial<CreateCharacterStateInput>;
 /**
  * Draft an image prompt for review. The fields come from the dialog rather than the stored
  * row so drafting works against edits the user has not saved yet. The instruction template
- * is the built-in one and is not overridable; `preset` picks which built-in to draft from.
+ * is the built-in one and is not overridable.
  */
 export interface DraftPromptInput {
   name?: string;
   description?: string;
-  preset?: string;
   model?: string;
 }
 
@@ -575,6 +605,7 @@ export type UpdateVoiceProfileInput = Partial<CreateVoiceProfileInput>;
  * model come from the project's audio configuration, never from the client.
  */
 export interface DesignVoiceProfileInput {
+  voiceId?: string;
   name: string;
   voicePrompt: string;
   /** What the audition says. Distinct from `sampleText`, the line in the merged track. */
@@ -690,6 +721,9 @@ export interface UpdateSceneInput {
   videoPrompt?: string;
   imageReferences?: GenerationReferenceInput[];
   videoReferences?: GenerationReferenceInput[];
+  /** An empty array is a real edit — the last preamble was deleted — not "leave alone". */
+  imagePromptPrefixes?: PromptPrefix[];
+  videoPromptPrefixes?: PromptPrefix[];
   /** `""` clears the slot; omitting the key leaves it alone. `null` would mean "leave alone". */
   videoFirstFrame?: GenerationReferenceInput | "" | null;
   videoLastFrame?: GenerationReferenceInput | "" | null;
@@ -799,11 +833,13 @@ export interface GenerateVideoResponse {
 
 export type ExportStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
-/** Several rendered shots merged into one file. Order follows the request, not shot number. */
+/** Ordered episode composition or delivery export; legacy shot exports remain readable. */
 export interface ExportJob {
   id: string;
   projectId: string;
   sceneIds: string[];
+  episodeIds: string[];
+  targetEpisodeId: string | null;
   rangeLabel: string;
   status: ExportStatus;
   progress: number;
@@ -816,8 +852,9 @@ export interface ExportJob {
 }
 
 export interface CreateExportInput {
-  /** Ordered: the video section assembles a cut, which need not follow the storyboard. */
-  sceneIds: string[];
+  /** Ordered selections: current video management submits episodeIds; sceneIds is legacy. */
+  sceneIds?: string[];
+  episodeIds?: string[];
   rangeLabel?: string;
 }
 

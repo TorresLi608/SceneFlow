@@ -1,6 +1,6 @@
 # Feature: billing and metering
 
-Every model call is priced, logged, and — when it runs on an **official** configuration — deducted from the user's balance. Personal configurations are metered but never charged, because the user is paying the provider directly.
+Provider-backed features use `require_model_balance` / `record_usage` to gate and meter calls. Successful calls on an **official** configuration deduct from the user's balance. Personal configurations are metered but never charged, because the user is paying the provider directly.
 
 ## Units
 
@@ -55,8 +55,8 @@ Add both hooks whenever you introduce a new provider-backed feature. The `featur
 
 ## Reporting
 
-- Per-user: `GET /api/usage/logs` with `feature`/`days`/`source` filters, returning a `summary` (calls, input tokens, output tokens, `costMicros`) plus up to 500 rows. Config names are joined in with an outer join so a deleted configuration still shows its logs.
-- Admin: `GET /api/admin/usage-logs` with username search and pagination.
+- Per-user: `GET /api/usage/logs` with `feature`/`source` and `startTime`/`endTime` filters, returning a `summary` (calls, input tokens, output tokens, `costMicros`) plus up to 500 rows. The summary and rows share the time range. Config names are joined in with an outer join so a deleted configuration still shows its logs. Legacy callers without a range retain the `days` filter.
+- Admin: `GET /api/admin/usage-logs` with username search, the same time range, and pagination. Both usage pages default to the current local day; see [time-range semantics](feature-search.md#log-time-ranges).
 
 ## Rules when extending
 
@@ -70,5 +70,6 @@ Add both hooks whenever you introduce a new provider-backed feature. The `featur
 ## Known gaps
 
 - No invoicing, no currency field, no tax handling — `micros` are unit-less by design.
+- Canceling a local task cannot prove whether an already-submitted provider request was billed. Queue jobs therefore do not automatically retry paid work; the usage ledger is not a provider-side reconciliation system.
 - No spend alerts or budget caps; the only control is the `402` at zero balance.
 - Balance is floored at zero rather than blocking mid-run, so a long generation run can end up costing more than the remaining balance.

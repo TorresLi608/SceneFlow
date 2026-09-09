@@ -173,9 +173,15 @@ def test_video_options_follow_model_capabilities() -> None:
         "minDuration": 3,
         "maxDuration": 10,
     }
-    assert resolve_video_options({"quality": "720p", "aspectRatio": "adaptive", "duration": 3, "promptExtend": True}, capabilities) == (
+    options = resolve_video_options({"quality": "720p", "aspectRatio": "adaptive", "duration": 3, "promptExtend": True}, capabilities)
+    assert options == (
         "720p", "adaptive", None, 3, True
     )
+    quality, ratio, fps, duration, _ = options
+    payload = build_doubao_payload(
+        "doubao-seedance-2.0", "A camera move", resolve_video_settings("doubao", ratio, quality), quality, fps, duration
+    )
+    assert "fps" not in payload
     assert_raises("between 3 and 10", lambda: resolve_video_options({"duration": 11}, capabilities))
     assert_raises("does not support fps", lambda: resolve_video_options({"fps": 24}, capabilities))
 

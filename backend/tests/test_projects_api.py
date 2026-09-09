@@ -362,8 +362,7 @@ def test_clearing_the_video_first_frame_sticks() -> None:
 
             cleared = patch({"videoFirstFrame": ""})
             assert cleared["videoFirstFrame"] is None
-            # Still explicit: the editor tells "off, deliberately" from "nobody chose" by
-            # this flag, and refills only the latter with the shot's own render.
+            # Preserve the distinction between "off, deliberately" and "nobody chose".
             assert cleared["videoFirstFrameExplicit"] is True
             assert patch({"narration": "再改一次"})["videoFirstFrame"] is None
 

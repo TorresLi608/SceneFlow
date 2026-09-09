@@ -47,26 +47,30 @@ function DesignVoiceCard({ projectId, onError }: { projectId: string; onError: (
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [voicePrompt, setVoicePrompt] = useState("");
-  const [previewText, setPreviewText] = useState("");
   const [sampleText, setSampleText] = useState("");
   const controller = useRef<AbortController | null>(null);
 
   const designMutation = useMutation({
-    mutationFn: () =>
-      designVoiceProfileAction(
+    mutationFn: () => {
+      const effectiveSample =
+        sampleText.trim() ||
+        (name.trim()
+          ? `我是${name.trim()}。需要${name.trim()}配音的时候，请使用我这种声音。`
+          : "我是旁白。需要旁白配音的时候，请使用我这种声音。");
+      return designVoiceProfileAction(
         projectId,
         {
           name: name.trim(),
           voicePrompt: voicePrompt.trim(),
-          previewText: previewText.trim(),
-          sampleText: sampleText.trim(),
+          previewText: effectiveSample,
+          sampleText: effectiveSample,
         },
         controller.current?.signal
-      ),
+      );
+    },
     onSuccess: () => {
       setName("");
       setVoicePrompt("");
-      setPreviewText("");
       setSampleText("");
       void queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) });
     },
@@ -80,7 +84,7 @@ function DesignVoiceCard({ projectId, onError }: { projectId: string; onError: (
   });
 
   const designing = designMutation.isPending;
-  const canDesign = Boolean(name.trim() && voicePrompt.trim() && previewText.trim());
+  const canDesign = Boolean(name.trim() && voicePrompt.trim());
 
   return (
     <section className="flex flex-col gap-4 rounded-lg border border-border/70 bg-card/60 p-4">
@@ -114,24 +118,17 @@ function DesignVoiceCard({ projectId, onError }: { projectId: string; onError: (
         />
 
         <Field>
-          <FieldLabel htmlFor="designVoicePreview">{t("voice.previewText")}</FieldLabel>
-          <Textarea
-            id="designVoicePreview"
-            value={previewText}
-            maxLength={1000}
-            rows={3}
-            placeholder={t("voice.previewTextPlaceholder")}
-            onChange={(event) => setPreviewText(event.target.value)}
-          />
-        </Field>
-
-        <Field>
           <FieldLabel htmlFor="designVoiceSample">{t("voice.sampleTextLabel")}</FieldLabel>
           <Textarea
             id="designVoiceSample"
             value={sampleText}
             maxLength={1000}
             rows={2}
+            placeholder={
+              name.trim()
+                ? `我是${name.trim()}。需要${name.trim()}配音的时候，请使用我这种声音。`
+                : t("voice.sampleTextPlaceholder")
+            }
             onChange={(event) => setSampleText(event.target.value)}
           />
           <FieldDescription>{t("voice.sampleTextHint")}</FieldDescription>
@@ -252,18 +249,27 @@ interface VoiceEditValues {
 function EditVoiceForm({
   voice,
   pending,
+  regenerating,
   onSubmit,
+  onSaveAndGenerate,
   onClose,
 }: {
   voice: VoiceProfile;
   pending: boolean;
+  regenerating: boolean;
   onSubmit: (values: VoiceEditValues) => void;
+  onSaveAndGenerate: (values: VoiceEditValues) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(voice.name);
   const [note, setNote] = useState(voice.note);
   const [sampleText, setSampleText] = useState(voice.sampleText);
+
+  const canSave = Boolean(name.trim()) && !pending && !regenerating;
+  const isBuiltinTts = voice.voiceProvider === "edge" || voice.voiceProvider === "system";
+  const canSaveAndGenerate =
+    Boolean(name.trim()) && (isBuiltinTts || Boolean(note.trim())) && !pending && !regenerating;
 
   return (
     <form
@@ -281,18 +287,23 @@ function EditVoiceForm({
             value={name}
             maxLength={80}
             required
+            placeholder={t("voice.namePlaceholder")}
             onChange={(event) => setName(event.target.value)}
           />
         </Field>
         <Field>
           <FieldLabel htmlFor="voiceNote">{t("voice.note")}</FieldLabel>
-          <Input
+          <Textarea
             id="voiceNote"
             value={note}
             maxLength={4000}
-            placeholder={t("voice.notePlaceholder")}
+            rows={3}
+            placeholder={isBuiltinTts ? t("voice.notePlaceholder") : t("voice.promptPlaceholder")}
             onChange={(event) => setNote(event.target.value)}
           />
+          {!isBuiltinTts ? (
+            <FieldDescription>{t("voice.noteDesignHint")}</FieldDescription>
+          ) : null}
         </Field>
         <Field>
           <FieldLabel htmlFor="voiceSample">{t("voice.sampleTextLabel")}</FieldLabel>
@@ -301,19 +312,52 @@ function EditVoiceForm({
             value={sampleText}
             maxLength={1000}
             rows={3}
+            placeholder={
+              name.trim()
+                ? `我是${name.trim()}。需要${name.trim()}配音的时候，请使用我这种声音。`
+                : t("voice.sampleTextPlaceholder")
+            }
             onChange={(event) => setSampleText(event.target.value)}
           />
           <FieldDescription>{t("voice.sampleTextHint")}</FieldDescription>
         </Field>
       </FieldGroup>
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={pending || regenerating}
+          onClick={onClose}
+        >
           <X data-icon="inline-start" />
           {t("common.cancel")}
         </Button>
-        <Button type="submit" disabled={pending || !name.trim()}>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={!canSave}
+        >
           {pending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
           {t("common.save")}
+        </Button>
+        <Button
+          type="button"
+          variant="default"
+          disabled={!canSaveAndGenerate}
+          onClick={() =>
+            onSaveAndGenerate({
+              name: name.trim(),
+              note: note.trim(),
+              sampleText: sampleText.trim(),
+            })
+          }
+        >
+          {regenerating ? (
+            <Loader2 data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <Sparkles data-icon="inline-start" />
+          )}
+          {regenerating ? t("voice.savingAndGenerating") : t("voice.saveAndGenerate")}
         </Button>
       </div>
     </form>
@@ -328,6 +372,7 @@ export default function VoicesPage() {
   const [pendingDelete, setPendingDelete] = useState<VoiceProfile | null>(null);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const saveAndDesignController = useRef<AbortController | null>(null);
 
   const voicesQuery = useQuery({
     queryKey: queryKeys.voices(projectId),
@@ -350,6 +395,52 @@ export default function VoicesPage() {
       void refresh();
     },
     onError: (error) => setMessage(resolveRequestError(error, t("reference.saveFailed"))),
+  });
+
+  const saveAndDesignMutation = useMutation({
+    mutationFn: async (values: VoiceEditValues) => {
+      if (!editing) return;
+      saveAndDesignController.current = new AbortController();
+      const effectiveSample =
+        values.sampleText.trim() ||
+        (values.name.trim()
+          ? `我是${values.name.trim()}。需要${values.name.trim()}配音的时候，请使用我这种声音。`
+          : "我是旁白。需要旁白配音的时候，请使用我这种声音。");
+
+      if (editing.voiceProvider === "edge" || editing.voiceProvider === "system") {
+        await updateVoiceAction(projectId, editing.id, {
+          name: values.name.trim(),
+          note: values.note.trim(),
+          sampleText: effectiveSample,
+        });
+        return previewVoiceAction(projectId, editing.id, saveAndDesignController.current.signal);
+      }
+
+      return designVoiceProfileAction(
+        projectId,
+        {
+          voiceId: editing.id,
+          name: values.name.trim(),
+          voicePrompt: values.note.trim(),
+          previewText: effectiveSample,
+          sampleText: effectiveSample,
+          note: values.note.trim(),
+        },
+        saveAndDesignController.current.signal
+      );
+    },
+    onSuccess: () => {
+      setEditing(null);
+      setMessage(null);
+      void refresh();
+    },
+    onError: (error) => {
+      if (isCanceled(error)) return;
+      setMessage(resolveRequestError(error, t("voice.designFailed")));
+    },
+    onSettled: () => {
+      saveAndDesignController.current = null;
+    },
   });
 
   const deleteMutation = useMutation({
@@ -487,7 +578,15 @@ export default function VoicesPage() {
         </div>
       )}
 
-      <Dialog open={Boolean(editing)} onOpenChange={(open) => (open ? null : setEditing(null))}>
+      <Dialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => {
+          if (!open) {
+            saveAndDesignController.current?.abort();
+            setEditing(null);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t("voice.editVoice")}</DialogTitle>
@@ -498,8 +597,13 @@ export default function VoicesPage() {
               key={editing.id}
               voice={editing}
               pending={saveMutation.isPending}
+              regenerating={saveAndDesignMutation.isPending}
               onSubmit={(values) => saveMutation.mutate(values)}
-              onClose={() => setEditing(null)}
+              onSaveAndGenerate={(values) => saveAndDesignMutation.mutate(values)}
+              onClose={() => {
+                saveAndDesignController.current?.abort();
+                setEditing(null);
+              }}
             />
           ) : null}
         </DialogContent>

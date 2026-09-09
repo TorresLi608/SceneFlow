@@ -20,6 +20,7 @@ from app.models import Episode, Project, Scene
 from app.schemas.requests import (
     BreakdownEpisodeRequest,
     CreateEpisodeRequest,
+    ComposeEpisodeRequest,
     GenerateStoryboardRequest,
     GenerateToneSheetRequest,
     UpdateEpisodeRequest,
@@ -45,8 +46,12 @@ from app.services.project_service import (
     selected_scenes,
 )
 from app.services.prompt_service import with_shot_label
+from app.services.prompt_prefix_service import combined_prompt, combined_references, stored_prompt_prefixes
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
+from app.services.export_service import resolve_clips, run_export, create_export, export_job_json
+from app.models import ExportJob
+from sqlmodel import select
 from app.services.usage_service import record_usage, require_model_balance
 from app.utils.common import new_id, now
 
@@ -54,6 +59,25 @@ from app.utils.common import new_id, now
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["episodes"])
+
+
+@router.post("/{project_id}/episodes/{episode_id}/video", status_code=202)
+async def merge_episode_video(project_id: str, episode_id: str, body: ComposeEpisodeRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Merge rendered shots from this episode in selection order; publish only on success."""
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        episode = resolve_episode(session, project_id, episode_id)
+        scene_rows = {scene.id: scene for scene in episode_scenes(session, episode.id)}
+        if any(scene_id not in scene_rows or scene_rows[scene_id].video_status != "success" for scene_id in body.scene_ids):
+            raise HTTPException(400, "select completed shots from this episode")
+        pending = session.exec(select(ExportJob.id).where(ExportJob.target_episode_id == episode_id, ExportJob.status.in_(["queued", "running"]))).first()
+        if pending:
+            raise HTTPException(409, "episode composition is already running")
+        paths = resolve_clips(session, project_id, body.scene_ids)
+        job = create_export(session, user_id, project_id, body.scene_ids, episode.title, target_episode_id=episode_id)
+        data = export_job_json(job)
+    asyncio.create_task(run_export(data["id"], project_id, paths))
+    return {"export": data}
 
 
 def _detail(session, episode) -> dict[str, Any]:
@@ -318,7 +342,6 @@ async def breakdown_episode(
         context = {
             "characters": breakdown_service.character_context(session, project_id, references.character_ids),
             "props": breakdown_service.prop_context(session, project_id, references.prop_ids),
-            "voices": breakdown_service.voice_context(session, project_id, references.voice_profile_ids),
         }
         existing_payload = [scene.model_dump() for scene in existing]
         user_prompt = breakdown_service.build_user_prompt(
@@ -329,7 +352,6 @@ async def breakdown_episode(
             detail_prompt=body.detail_prompt,
             use_cast_sheet=references.use_cast_sheet,
             use_prop_sheet=references.use_prop_sheet,
-            use_voice_sheet=references.use_voice_sheet,
             existing_shots=existing_payload,
             **context,
         )
@@ -399,6 +421,7 @@ def _plan(
     max_reference_images: int,
     scene_reference_sources: dict[str, list[tuple[str, str]]] | None = None,
     scene_reference_items: dict[str, list[dict[str, Any]]] | None = None,
+    scene_prefix_text: dict[str, str] | None = None,
 ) -> StoryboardPlan:
     """Everything a background render needs, resolved before the session closes."""
     return StoryboardPlan(
@@ -419,6 +442,7 @@ def _plan(
         max_reference_images=max_reference_images,
         scene_reference_sources=scene_reference_sources or {},
         scene_reference_items=scene_reference_items or {},
+        scene_prefix_text=scene_prefix_text or {},
     )
 
 
@@ -514,9 +538,14 @@ async def generate_storyboard(
             raise HTTPException(400, f"selected image model accepts at most {selected_limit} additional references")
         scene_sources: dict[str, list[tuple[str, str]]] = {}
         scene_reference_items: dict[str, list[dict[str, Any]]] = {}
+        scene_prefix_text: dict[str, str] = {}
         if body.references is None:
             for scene in pending:
-                pairs = stored_generation_references(scene.image_references_json)
+                prefixes = stored_prompt_prefixes(scene.image_prompt_prefixes_json)
+                scene_prefix_text[scene.id] = combined_prompt(prefixes, "")
+                # One budget, one numbering: the preamble's mentions and the shot's own are
+                # resolved as a single prefix-first list.
+                pairs = combined_references(prefixes, stored_generation_references(scene.image_references_json))
                 if scene.image_references_explicit and not pairs:
                     continue
                 if not pairs:
@@ -545,6 +574,7 @@ async def generate_storyboard(
             max_reference_images=maximum,
             scene_reference_sources=scene_sources,
             scene_reference_items=scene_reference_items,
+            scene_prefix_text=scene_prefix_text,
         )
 
     await broadcast(

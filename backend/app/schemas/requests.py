@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.models import MAX_EXPORT_CLIPS
@@ -90,7 +90,6 @@ class UpdateProjectRequest(CamelModel):
     original_script: str | None = Field(default=None, max_length=200_000)
     series_bible: str | None = Field(default=None, max_length=200_000)
     model_settings: ProjectModelConfigRequest | None = None
-
 
 class SetProjectCoverRequest(CamelModel):
     """A cover to store on the project. `data:image/...;base64,` — the app never takes multipart."""
@@ -174,6 +173,21 @@ class GenerationReferenceRequest(CamelModel):
     id: str = Field(min_length=1, max_length=64)
 
 
+class PromptPrefixRequest(CamelModel):
+    """One preamble item stored above a shot's own prompt.
+
+    `source` is how the tone-sheet item is recognised on a regenerate; anything the user
+    wrote by hand leaves it empty. Its `references` are real reference slots, not decoration
+    — see `app/services/prompt_prefix_service.py`.
+    """
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(default="", max_length=80)
+    prompt: str = Field(default="", max_length=4000)
+    references: list[GenerationReferenceRequest] = Field(default_factory=list, max_length=64)
+    source: str = Field(default="", max_length=32)
+
+
 class CompilePromptRequest(CamelModel):
     project_id: str = Field(min_length=1, max_length=64)
     kind: Literal["image", "video"]
@@ -183,6 +197,9 @@ class CompilePromptRequest(CamelModel):
     prompt: str = Field(default="", max_length=10_000)
     dialogue: str = Field(default="", max_length=4000)
     references: list[GenerationReferenceRequest] = Field(default_factory=list, max_length=64)
+    # Combined here rather than by the client, so the preview numbers `图N` exactly the way
+    # the render will. Prefix text comes first and its mentions take the low numbers.
+    prefixes: list[PromptPrefixRequest] = Field(default_factory=list, max_length=8)
 
 
 class GenerateToneSheetRequest(CamelModel):
@@ -235,12 +252,11 @@ class BreakdownReferencesRequest(CamelModel):
 
     character_ids: list[str] = Field(default_factory=list, max_length=64)
     prop_ids: list[str] = Field(default_factory=list, max_length=64)
-    voice_profile_ids: list[str] = Field(default_factory=list, max_length=64)
-    # The merged sheets, when the user would rather point at the whole cast than name it
-    # member by member. Characters the bible has never heard of are inferred from the script.
+    # The merged sheets, picked in the editor as chips beside the individual cards once the
+    # project has drawn them. Characters the bible has never heard of are inferred from the
+    # script. Voices are not offered: the breakdown writes no audio and needs no timbre.
     use_cast_sheet: bool = False
     use_prop_sheet: bool = False
-    use_voice_sheet: bool = False
 
 
 class BreakdownEpisodeRequest(CamelModel):
@@ -283,6 +299,10 @@ class UpdateSceneRequest(CamelModel):
     video_prompt: str | None = Field(default=None, max_length=4000)
     image_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
     video_references: list[GenerationReferenceRequest] | None = Field(default=None, max_length=64)
+    # An empty list is a real edit — the user deleted the last preamble — so these follow the
+    # same absent-means-leave-alone rule as everything else rather than treating `[]` as unset.
+    image_prompt_prefixes: list[PromptPrefixRequest] | None = Field(default=None, max_length=8)
+    video_prompt_prefixes: list[PromptPrefixRequest] | None = Field(default=None, max_length=8)
     # `""` clears the slot. A JSON null cannot mean "clear" here: after `exclude_unset` it
     # is indistinguishable from a field the client left alone, and absent has to keep
     # meaning "leave alone". Same reason `speaker_character_id` takes "" rather than null.
@@ -371,8 +391,6 @@ class DraftPromptRequest(CamelModel):
 
     name: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
-    # Which built-in template to draft against, e.g. "turnaround". Empty picks the default.
-    preset: str = Field(default="", max_length=40)
     model: str | None = Field(default=None, max_length=160)
 
 
@@ -438,12 +456,13 @@ class DesignVoiceProfileRequest(CamelModel):
     """
 
     name: str = Field(min_length=1, max_length=80)
-    voice_prompt: str = Field(min_length=1, max_length=1000)
-    # What the audition says. Distinct from `sample_text`, which is the line this voice
-    # contributes to the merged reference track.
-    preview_text: str = Field(min_length=1, max_length=1000)
+    voice_prompt: str = Field(min_length=1, max_length=4000)
+    # What the audition says; defaults to sample_text if omitted or empty.
+    preview_text: str = Field(default="", max_length=1000)
     note: str = Field(default="", max_length=4000)
     sample_text: str = Field(default="", max_length=1000)
+    # When specified, the newly designed timbre overwrites this existing voice profile instead of creating a new one.
+    voice_id: str | None = Field(default=None, max_length=64)
 
 
 class ImportVoiceProfileRequest(CamelModel):
@@ -455,16 +474,30 @@ class ImportVoiceProfileRequest(CamelModel):
     sample_text: str = Field(default="", max_length=1000)
 
 
-class CreateExportRequest(CamelModel):
-    """Merge chosen shots into one file, in the order given.
-
-    Ordered by the request rather than by shot number: the video section exists to assemble
-    a cut, which need not follow the storyboard.
-    """
-
+class ComposeEpisodeRequest(CamelModel):
     scene_ids: list[str] = Field(min_length=1, max_length=MAX_EXPORT_CLIPS)
-    # Human-facing label such as "第一集 1-6", kept so the history reads the way it was asked for.
+
+    @model_validator(mode="after")
+    def unique_scenes(self):
+        if len(set(self.scene_ids)) != len(self.scene_ids) or any(not item.strip() for item in self.scene_ids):
+            raise ValueError("sceneIds must be nonempty unique IDs")
+        return self
+
+
+class CreateExportRequest(CamelModel):
+    """Merge composed episodes in order. sceneIds remains for legacy clients."""
+    scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_EXPORT_CLIPS)
+    episode_ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_EXPORT_CLIPS)
     range_label: str = Field(default="", max_length=120)
+
+    @model_validator(mode="after")
+    def one_source(self):
+        if (self.scene_ids is None) == (self.episode_ids is None):
+            raise ValueError("provide exactly one of sceneIds or episodeIds")
+        ids = self.scene_ids or self.episode_ids or []
+        if len(set(ids)) != len(ids) or any(not item.strip() for item in ids):
+            raise ValueError("source IDs must be nonempty and unique")
+        return self
 
 
 class SetSceneCastRequest(CamelModel):

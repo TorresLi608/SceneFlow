@@ -177,18 +177,31 @@ async def design_voice(job: dict[str, Any]) -> dict[str, Any]:
                 is_saved=True,
             )
         )
-        profile = create_voice_profile(
-            session,
-            project_id,
-            name=payload["name"],
-            note=payload.get("note") or str(payload["voicePrompt"])[:200],
-            voice_provider=config["provider"],
-            # The designed voice id, not the base model: this is what synthesis has to ask
-            # for to get this timbre back rather than the model's default one.
-            voice_model=voice_id,
-            sample_text=payload.get("sampleText") or NARRATOR_SAMPLE_TEXT,
-            audio_path=stored,
-        )
+        target_voice_id = payload.get("voiceId") or payload.get("voice_id")
+        if target_voice_id:
+            profile = owned_voice_profile(session, project_id, target_voice_id)
+            profile.name = payload["name"]
+            profile.note = payload.get("note") or payload.get("voicePrompt") or ""
+            profile.voice_provider = config["provider"]
+            profile.voice_model = voice_id
+            profile.sample_text = payload.get("sampleText") or NARRATOR_SAMPLE_TEXT
+            profile.audio_path = stored
+            profile.updated_at = stamp
+            session.add(profile)
+            session.flush()
+        else:
+            profile = create_voice_profile(
+                session,
+                project_id,
+                name=payload["name"],
+                note=payload.get("note") or payload.get("voicePrompt") or "",
+                voice_provider=config["provider"],
+                # The designed voice id, not the base model: this is what synthesis has to ask
+                # for to get this timbre back rather than the model's default one.
+                voice_model=voice_id,
+                sample_text=payload.get("sampleText") or NARRATOR_SAMPLE_TEXT,
+                audio_path=stored,
+            )
         result = voice_profile_json(profile)
     await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": result})
     return {"voice": result}

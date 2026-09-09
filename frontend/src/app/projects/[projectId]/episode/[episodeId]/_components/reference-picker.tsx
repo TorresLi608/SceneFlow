@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { matchesResource, type ReferenceAssetOption } from "@/lib/project-resources";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -13,11 +15,7 @@ import { MediaPreviewDialog } from "./media-preview-dialog";
 
 export type ReferenceMedia = "image" | "video" | "audio";
 
-export interface ReferenceAssetOption extends GenerationReferenceInput {
-  label: string;
-  media: ReferenceMedia;
-  url: string;
-}
+export type { ReferenceAssetOption } from "@/lib/project-resources";
 
 const keyOf = (item: GenerationReferenceInput) => `${item.kind}:${item.id}`;
 
@@ -39,11 +37,12 @@ export function ReferencePicker({
   onDelete?: (asset: ReferenceAssetOption) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const [search, setSearch] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ReferenceAssetOption | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [preview, setPreview] = useState<{ kind: "image" | "video"; url: string; title: string } | null>(null);
   const selectedKeys = new Set(selected.map(keyOf));
-  const visible = assets.filter((asset) => selectedKeys.has(keyOf(asset)) || (limits[asset.media] ?? 0) > 0);
+  const visible = assets.filter((asset) => matchesResource(asset, search) && (selectedKeys.has(keyOf(asset)) || (limits[asset.media] ?? 0) > 0));
 
   const toggle = (asset: ReferenceAssetOption) => {
     const key = keyOf(asset);
@@ -78,10 +77,11 @@ export function ReferencePicker({
         <p className="text-xs font-semibold text-foreground">{title}</p>
         <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{hint}</p>
       </div>
+      <Input type="search" aria-label={t("assets.searchReferences")} placeholder={t("assets.searchReferences")} value={search} onChange={(event) => setSearch(event.target.value)} />
       {visible.length === 0 ? (
         <p className="text-xs text-muted-foreground py-2">{t("episode.referenceEmpty")}</p>
       ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
           {visible.map((asset) => {
             const active = selectedKeys.has(keyOf(asset));
             const selectedCount = assets.filter(
@@ -145,7 +145,7 @@ export function ReferencePicker({
                     <span className="block truncate text-xs font-medium text-foreground">{asset.label}</span>
                     <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
                       {asset.media === "image" ? <ImageIcon className="size-3 text-muted-foreground/80" /> : null}
-                      {t(`episode.referenceType.${asset.media}`)}
+                      {t(`assets.kind.${asset.kind}`)} · {asset.episodeTitle || t("assets.shared")}
                     </span>
                   </span>
                 </button>

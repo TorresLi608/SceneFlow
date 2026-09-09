@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.services.artifact_service import signed_url_for_stored
 from app.services.config_service import video_capabilities
+from app.services.prompt_prefix_service import stored_prompt_prefixes
 from app.services.reference_service import stored_generation_references
 
 
@@ -135,11 +136,15 @@ def scene_json(scene: Scene, character_ids: list[str] | None = None) -> dict[str
             for kind, asset_id in stored_generation_references(scene.video_references_json)
         ],
         "videoReferencesExplicit": bool(scene.video_references_explicit),
+        # Ordered preambles concatenated ahead of each prompt at compile time. Their `@`
+        # mentions spend the same reference slots as the prompt's own, so the editor needs
+        # them to size its limits.
+        "imagePromptPrefixes": stored_prompt_prefixes(scene.image_prompt_prefixes_json),
+        "videoPromptPrefixes": stored_prompt_prefixes(scene.video_prompt_prefixes_json),
         "videoFirstFrame": frame_reference(scene.video_first_frame_json),
         "videoLastFrame": frame_reference(scene.video_last_frame_json),
         # A cleared frame and a frame nobody ever chose are both `videoFirstFrame: null`,
-        # but they mean opposite things to the editor: the first must stay off, the second
-        # may still be filled with the shot's own render. The column tells them apart —
+        # and both stay empty in the editor. Preserve the explicit-choice metadata —
         # "" is untouched, "null" is the user turning it off.
         "videoFirstFrameExplicit": bool((scene.video_first_frame_json or "").strip()),
         "videoLastFrameExplicit": bool((scene.video_last_frame_json or "").strip()),
@@ -199,6 +204,7 @@ def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, An
         "title": episode.title or f"第 {episode.episode_number} 集",
         "synopsis": episode.synopsis or "",
         "status": episode.status or "draft",
+        "videoUrl": scene_asset_url(episode.video_path, f"episode-{episode.episode_number}"),
         "videoStatus": episode.video_status or "idle",
         "videoProgress": episode.video_progress or 0,
         "durationMs": episode.duration_ms or 0,

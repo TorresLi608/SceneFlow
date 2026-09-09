@@ -1,6 +1,11 @@
 .env
 .env.*
-*.db
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
+**/*.db.bak*
+**/data
 private_generated
 .venv
 __pycache__

@@ -15,6 +15,7 @@ import {
   Sparkles,
   Square,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -33,11 +34,8 @@ import {
   getEpisodeAction,
   getProjectModelsAction,
   listCharactersAction,
-  listAssetsAction,
-  listEpisodesAction,
   listProjectsAction,
   listPropsAction,
-  listVoicesAction,
   updateEpisodeAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
@@ -52,7 +50,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { artifactBffUrl } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
+import { useProjectResources } from "@/hooks/use-project-resources";
 import { cn } from "@/lib/utils";
+import { useUnsavedSettingsStore } from "@/store/unsaved-settings-store";
 import type { BreakdownDetailLevel, BreakdownTarget, Episode, GenerationReferenceInput, Scene } from "@/types/project";
 
 import { BreakdownPanel, EMPTY_SELECTION, type BreakdownSelection } from "./_components/breakdown-panel";
@@ -60,6 +60,7 @@ import { ReferencePicker, type ReferenceAssetOption } from "./_components/refere
 import { ShotRow } from "./_components/shot-row";
 import { MediaPreviewDialog } from "./_components/media-preview-dialog";
 import { AssetLibraryDialog } from "./_components/asset-library-dialog";
+import { EpisodeVideoComposer } from "../../_components/episode-video-composer";
 
 /** While a render is in flight the page polls; the run is a background task with no reply. */
 const RENDER_POLL_MS = 3_000;
@@ -92,8 +93,13 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const [message, setMessage] = useState<string | null>(null);
   const [activeBatch, setActiveBatch] = useState<"image" | "video" | null>(null);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+  const [pendingGeneration, setPendingGeneration] = useState<{ type: "image" | "video"; target: BatchTarget } | null>(null);
   const activeBatchWasBusy = useRef(false);
   const breakdownController = useRef<AbortController | null>(null);
+
+  const { hasUnsaved } = useUnsavedSettingsStore();
 
   const isInfoDirty =
     title !== episode.title || synopsis !== episode.synopsis || script !== episode.sourceText;
@@ -123,10 +129,6 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     staleTime: 300_000,
   });
 
-  const episodesQuery = useQuery({
-    queryKey: queryKeys.episodes(projectId),
-    queryFn: () => listEpisodesAction(projectId),
-  });
   const charactersQuery = useQuery({
     queryKey: queryKeys.characters(projectId),
     queryFn: () => listCharactersAction(projectId),
@@ -135,11 +137,10 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     queryKey: queryKeys.props(projectId),
     queryFn: () => listPropsAction(projectId),
   });
-  const voicesQuery = useQuery({
-    queryKey: queryKeys.voices(projectId),
-    queryFn: () => listVoicesAction(projectId),
-  });
-  const assetsQuery = useQuery({ queryKey: queryKeys.assets(projectId), queryFn: () => listAssetsAction(projectId) });
+  const resourcesQuery = useProjectResources(projectId, busy);
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projectResources(projectId) });
+  }, [projectId, queryClient, episode.updatedAt, busy]);
 
   const refreshEpisode = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.episode(projectId, episode.id) });
@@ -262,6 +263,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         queryClient.invalidateQueries({ queryKey: queryKeys.props(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.assets(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projectResources(projectId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.episodes(projectId) }),
         refreshEpisode(),
         refreshProject(),
@@ -273,6 +275,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const deleteReference = (asset: ReferenceAssetOption) => deleteReferenceMutation.mutateAsync(asset);
 
   const shots = episode.scenes;
+  const readyImagesCount = shots.filter((s) => s.image.status === "success").length;
+  const readyVideosCount = shots.filter((s) => s.video.status === "success").length;
   const toneReady = episode.toneImageStatus === "success" && Boolean(episode.toneImageUrl);
   const toneGenerating = toneMutation.isPending || episode.toneImageStatus === "generating";
   const targetShots = (): BatchTarget => ({
@@ -303,63 +307,42 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
       current.includes(sceneId) ? current.filter((item) => item !== sceneId) : [...current, sceneId]
     );
 
-  const characterAssets: ReferenceAssetOption[] = (charactersQuery.data?.characters ?? []).flatMap((character) => [
-    ...(character.sheetImageUrl || character.referenceImageUrl
-      ? [{
-        kind: "character" as const,
-        id: character.id,
-        label: character.name,
-        media: "image" as const,
-        url: artifactBffUrl((character.sheetImageUrl || character.referenceImageUrl)!),
-      }]
-      : []),
-    ...character.states
-      .filter((state) => state.referenceImageUrl)
-      .map((state) => ({
-        kind: "characterState" as const,
-        id: state.id,
-        label: `${character.name} · ${state.name}`,
-        media: "image" as const,
-        url: artifactBffUrl(state.referenceImageUrl!),
-      })),
-  ]);
-  const propAssets: ReferenceAssetOption[] = (propsQuery.data?.props ?? [])
-    .filter((prop) => prop.imageUrl)
-    .map((prop) => ({ kind: "prop", id: prop.id, label: prop.name, media: "image", url: artifactBffUrl(prop.imageUrl!) }));
-  const toneAssets: ReferenceAssetOption[] = [episode, ...(episodesQuery.data?.episodes ?? []).filter((item) => item.id !== episode.id)]
-    .filter((item) => item.toneImageUrl)
-    .map((item) => ({
-      kind: "tone",
-      id: item.id,
-      label: item.title,
-      media: "image",
-      url: artifactBffUrl(item.toneImageUrl!),
-    }));
-  const sceneImageAssets: ReferenceAssetOption[] = shots
-    .filter((scene) => scene.image.url)
-    .map((scene) => ({
-      kind: "sceneImage",
-      id: scene.id,
-      label: `分镜 ${scene.order}`,
-      media: "image",
-      url: artifactBffUrl(scene.image.url!),
-    }));
-  const sceneVideoAssets: ReferenceAssetOption[] = shots
-    .filter((scene) => scene.video.url)
-    .map((scene) => ({
-      kind: "sceneVideo",
-      id: scene.id,
-      label: `分镜 ${scene.order}`,
-      media: "video",
-      url: artifactBffUrl(scene.video.url!),
-    }));
-  const voiceAssets: ReferenceAssetOption[] = (voicesQuery.data?.voices ?? [])
-    .filter((voice) => voice.audioUrl)
-    .map((voice) => ({ kind: "voice", id: voice.id, label: voice.name, media: "audio", url: artifactBffUrl(voice.audioUrl!) }));
+  // Check for unsaved settings before generation
+  const checkAndGenerate = (type: "image" | "video", target: BatchTarget) => {
+    if (hasUnsaved(projectId)) {
+      setPendingGeneration({ type, target });
+      setShowUnsavedWarning(true);
+    } else {
+      proceedWithGeneration(type, target);
+    }
+  };
+
+  const proceedWithGeneration = (type: "image" | "video", target: BatchTarget) => {
+    setShowUnsavedWarning(false);
+    setPendingGeneration(null);
+    if (type === "image") {
+      setActiveBatch("image");
+      renderMutation.mutate(target);
+    } else {
+      setActiveBatch("video");
+      videoMutation.mutate(target);
+    }
+  };
+
+  const handleUnsavedConfirm = () => {
+    if (pendingGeneration) {
+      proceedWithGeneration(pendingGeneration.type, pendingGeneration.target);
+    }
+  };
+
+  const handleUnsavedCancel = () => {
+    setShowUnsavedWarning(false);
+    setPendingGeneration(null);
+  };
+
+  const characterAssets = resourcesQuery.resources.filter((item) => item.kind === "character" || item.kind === "characterState");
+  const imageReferenceAssets = resourcesQuery.resources.filter((item) => item.media === "image");
   const imageModelLimit = modelsQuery.data?.models.image?.capabilities?.maxReferenceImages ?? 0;
-  const customAssets: ReferenceAssetOption[] = (assetsQuery.data?.assets ?? [])
-    .filter((asset) => asset.url)
-    .map((asset) => ({ kind: "asset", id: asset.id, label: asset.name, media: asset.kind, url: artifactBffUrl(asset.url!) }));
   const imageReferenceLimit = imageModelLimit;
   const videoCapabilities = modelsQuery.data?.models.video?.capabilities;
 
@@ -374,15 +357,15 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     breakdownMutation.reset();
   };
 
-  const breakdownBlocked =
-    !script.trim() ||
-    (target === "video" && shots.length === 0) ||
-    (!toneReady && shots.length > 0);
+  // Re-splitting an episode that already has shots is a supported edit, not an error state.
+  // What protects rendered work is the discard confirmation below — the backend reports
+  // `applied: false` with a count first, and only destroys anything once the user agrees.
+  // Gating on the tone sheet instead made re-splitting impossible in the ordinary case:
+  // shots exist, no anchor has been drawn yet, and the user wants a different breakdown.
+  const breakdownBlocked = !script.trim() || (target === "video" && shots.length === 0);
   const breakdownBlockedReason = !script.trim()
     ? t("episode.splitNeedsScript")
-    : target === "video" && shots.length === 0
-      ? t("episode.breakdownNeedsShots")
-      : t("episode.needsToneSheetFirst");
+    : t("episode.breakdownNeedsShots");
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -396,10 +379,26 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
             <ArrowLeft className="size-4" />
             {t("episode.backToEpisodes")}
           </Link>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="max-w-[200px] truncate text-sm font-medium text-muted-foreground">{project?.title}</span>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="max-w-[240px] truncate text-sm font-semibold text-foreground">{episode.title}</span>
+          <span className="text-muted-foreground/40">/</span>
+          <span className="max-w-[160px] truncate text-sm font-medium text-muted-foreground">{project?.title}</span>
+          <span className="text-muted-foreground/40">/</span>
+          <span className="max-w-[200px] truncate text-sm font-semibold text-foreground">{episode.title}</span>
+
+          {/* 剧集制作进度概览徽章 */}
+          <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-3 border-l border-border/50 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground border border-border/40">
+              <Layers className="size-3 text-primary" />
+              {shots.length} {t("episode.shots")}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+              <Sparkles className="size-3" />
+              {t("episode.imagesBadge", { ready: readyImagesCount, total: shots.length })}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 font-mono text-[11px] text-blue-600 dark:text-blue-400 border border-blue-500/25">
+              <Film className="size-3" />
+              {t("episode.videosBadge", { ready: readyVideosCount, total: shots.length })}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -531,7 +530,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         <BreakdownPanel
           characters={charactersQuery.data?.characters ?? []}
           props={propsQuery.data?.props ?? []}
-          voices={voicesQuery.data?.voices ?? []}
+          castSheetAvailable={Boolean(project?.characterSheetUrl)}
+          propSheetAvailable={Boolean(project?.propSheetUrl)}
           selection={selection}
           onSelectionChange={setSelection}
           target={target}
@@ -542,8 +542,9 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
           onDetailPromptChange={setDetailPrompt}
           running={breakdownMutation.isPending}
           disabled={busy || breakdownBlocked}
-          targetDisabled={busy || (!toneReady && shots.length > 0)}
+          targetDisabled={busy}
           disabledReason={breakdownBlocked ? breakdownBlockedReason : undefined}
+          defaultCollapsed={shots.length > 0}
           onStart={startBreakdown}
           onStop={stopBreakdown}
         />
@@ -593,7 +594,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               <ReferencePicker
                 title={t("episode.toneReferences")}
                 hint={t("episode.toneReferencesHint")}
-                assets={[...characterAssets, ...propAssets, ...toneAssets, ...customAssets.filter((item) => item.media === "image")]}
+                assets={imageReferenceAssets}
                 selected={toneReferences}
                 limits={{ image: imageModelLimit }}
                 onChange={setToneReferences}
@@ -622,15 +623,15 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         <MediaPreviewDialog item={tonePreview} onOpenChange={(open) => !open && setTonePreview(null)} />
 
         {/* Section 4: Shots & Videos List */}
-        <section className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/40 p-4 shadow-sm">
-          {/* Sticky-like Batch Actions Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-3">
+        <section className="flex flex-col gap-3.5 rounded-xl border border-border/70 bg-card/40 p-4 shadow-sm relative">
+          {/* Smart Sticky Batch Actions Toolbar */}
+          <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-0.5 flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-border/60 bg-background/90 px-4 py-3 shadow-xs backdrop-blur-md transition-all">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
                 <Layers className="size-4" />
               </div>
               <h2 className="text-sm font-semibold">{t("episode.imagesSection")}</h2>
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="text-xs font-mono font-medium">
                 {t("episode.selectedCount", { count: selectedShots.length })}
               </Badge>
               <Button
@@ -638,7 +639,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 variant="ghost"
                 disabled={shots.length === 0}
                 onClick={() => setSelectedShots(allSelected ? [] : shots.map((shot) => shot.id))}
-                className="cursor-pointer text-muted-foreground hover:text-foreground"
+                className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
               >
                 {allSelected ? <X className="mr-1 size-3" /> : null}
                 {allSelected ? t("episode.clearSelection") : t("episode.selectAll")}
@@ -652,11 +653,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 size="sm"
                 disabled={busy || shots.length === 0 || !toneReady}
                 title={toneReady ? undefined : t("episode.needsToneSheetFirst")}
-                onClick={() => {
-                  setActiveBatch("image");
-                  renderMutation.mutate(targetShots());
-                }}
-                className="cursor-pointer"
+                onClick={() => checkAndGenerate("image", targetShots())}
+                className="cursor-pointer shadow-xs"
               >
                 {imageBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
                 {t("episode.batchImages")}
@@ -665,11 +663,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 size="sm"
                 variant="outline"
                 disabled={busy || !toneReady || pendingShots("image").length === 0}
-                onClick={() => {
-                  setActiveBatch("image");
-                  renderMutation.mutate({ pendingOnly: true });
-                }}
-                className="cursor-pointer"
+                onClick={() => checkAndGenerate("image", { pendingOnly: true })}
+                className="cursor-pointer shadow-xs text-xs"
               >
                 <RefreshCw data-icon="inline-start" />
                 {t("episode.retryPendingImages", { count: pendingShots("image").length })}
@@ -683,11 +678,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 variant="secondary"
                 disabled={busy || !toneReady || videoBatchCandidates.length === 0}
                 title={toneReady ? (videoBatchCandidates.length > 0 ? undefined : t("episode.needsImageFirst")) : t("episode.needsToneSheetFirst")}
-                onClick={() => {
-                  setActiveBatch("video");
-                  videoMutation.mutate(targetVideoShots());
-                }}
-                className="cursor-pointer"
+                onClick={() => checkAndGenerate("video", targetVideoShots())}
+                className="cursor-pointer shadow-xs"
               >
                 {videoBatchGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Film data-icon="inline-start" />}
                 {t("episode.batchVideos")}
@@ -697,21 +689,27 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 variant="outline"
                 disabled={busy || !toneReady || pendingShots("video").length === 0}
                 title={toneReady ? (pendingShots("video").length > 0 ? undefined : t("episode.needsImageFirst")) : t("episode.needsToneSheetFirst")}
-                onClick={() => {
-                  setActiveBatch("video");
-                  videoMutation.mutate({ sceneIds: pendingShots("video").map((shot) => shot.id), pendingOnly: true });
-                }}
-                className="cursor-pointer"
+                onClick={() => checkAndGenerate("video", { sceneIds: pendingShots("video").map((shot) => shot.id), pendingOnly: true })}
+                className="cursor-pointer shadow-xs text-xs"
               >
                 <RefreshCw data-icon="inline-start" />
                 {t("episode.retryPendingVideos", { count: pendingShots("video").length })}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !shots.some((shot) => shot.video.status === "success")}
+                onClick={() => setComposeOpen(true)}
+              >
+                <Film data-icon="inline-start" />
+                {t("episode.composeVideo")}
               </Button>
 
               <div className="h-4 w-px bg-border/60 mx-0.5" />
 
               {/* Add Shot Button */}
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => addShotMutation.mutate()} className="cursor-pointer">
-                <Plus data-icon="inline-start" />
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => addShotMutation.mutate()} className="cursor-pointer shadow-xs text-xs">
+                <Plus data-icon="inline-start" className="text-primary" />
                 {t("episode.newShot")}
               </Button>
             </div>
@@ -736,8 +734,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                       return asset ? [{ kind: asset.kind, id: asset.id }] : [];
                     }).slice(0, imageReferenceLimit)
                   }
-                  // The shot's own frame is deliberately absent: it is the first-frame
-                  // slot's job, and the render prepends it anyway (`defaultVideoReferencePaths`).
+                  // The shot's own frame is deliberately absent: users can select it
+                  // manually as a reference or first frame.
                   // Listing it here too spent a second reference slot on the same image and
                   // wrote `@分镜 N` into the motion prompt on every reload.
                   defaultVideoReferences={
@@ -752,15 +750,16 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   }
                   selected={selectedShots.includes(scene.id)}
                   toneReady={toneReady}
+                  episodeHasSource={Boolean(episode.sourceText.trim())}
                   onToggle={() => toggleShot(scene.id)}
                   busy={busy}
                   onGenerateImage={() => {
                     setActiveBatch(null);
-                    renderMutation.mutate({ sceneIds: [scene.id] });
+                    checkAndGenerate("image", { sceneIds: [scene.id] });
                   }}
                   onGenerateVideo={() => {
                     setActiveBatch(null);
-                    videoMutation.mutate({ sceneIds: [scene.id] });
+                    checkAndGenerate("video", { sceneIds: [scene.id] });
                   }}
                   imageGenerating={
                     scene.image.status === "generating" ||
@@ -774,16 +773,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                     (activeBatch === null && project?.status === "video_generating" &&
                       batchIncludes(scene, "video", videoMutation.variables))
                   }
-                  imageReferenceAssets={[...characterAssets, ...propAssets, ...toneAssets, ...sceneImageAssets, ...customAssets.filter((item) => item.media === "image")]}
-                  videoReferenceAssets={[
-                    ...characterAssets,
-                    ...propAssets,
-                    ...toneAssets,
-                    ...sceneImageAssets,
-                    ...customAssets,
-                    ...sceneVideoAssets.filter((asset) => asset.id !== scene.id),
-                    ...voiceAssets,
-                  ]}
+                  imageReferenceAssets={imageReferenceAssets}
+                  videoReferenceAssets={resourcesQuery.resources.filter((asset) => asset.kind !== "sceneVideo" || asset.id !== scene.id)}
                   imageReferenceLimit={imageReferenceLimit}
                   videoReferenceLimits={{
                     image: videoCapabilities?.referenceImages ? videoCapabilities.maxReferenceImages : 0,
@@ -809,17 +800,11 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
       </main>
 
       {/* Discard Confirmation Dialog */}
+      {composeOpen ? <EpisodeVideoComposer projectId={projectId} episodeId={episode.id} open={composeOpen} onOpenChange={setComposeOpen} initialSelection={selectedShots} /> : null}
       <AssetLibraryDialog
         projectId={projectId}
         open={assetLibraryOpen}
         onOpenChange={setAssetLibraryOpen}
-        assets={assetsQuery.data?.assets ?? []}
-        generatedImages={[
-          ...characterAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...propAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...toneAssets.map((item) => ({ id: `${item.kind}:${item.id}`, name: item.label, url: item.url })),
-          ...shots.filter((shot) => shot.image.url).map((shot) => ({ id: `scene:${shot.id}`, name: `分镜 ${shot.order}`, url: artifactBffUrl(shot.image.url!) })),
-        ]}
         onChanged={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.assets(projectId) });
           void refreshEpisode();
@@ -852,6 +837,37 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 <Sparkles data-icon="inline-start" />
               )}
               {t("common.confirm")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unsaved Settings Warning Dialog */}
+      <Dialog open={showUnsavedWarning} onOpenChange={setShowUnsavedWarning}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-amber-500" />
+              {t("episode.unsavedSettingsTitle")}
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed pt-2">
+              {t("episode.unsavedSettingsMessage")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-3 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleUnsavedCancel}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              onClick={handleUnsavedConfirm}
+            >
+              {t("episode.generateWithoutSaving")}
             </Button>
           </div>
         </DialogContent>

@@ -79,6 +79,8 @@ def compile_prompt(
             media_type = "reference_image"
         if label:
             replacements[f"@{label}"] = f"{placeholder} {provider_label}" if provider == "doubao" else placeholder
+            for alias in ref.get("aliases") or []:
+                replacements.setdefault(f"@{alias}", replacements[f"@{label}"])
             replacements.setdefault(f"@{label.replace(' · ', ' ')}", replacements[f"@{label}"])
             if provider_label != label:
                 replacements.setdefault(f"@{provider_label}", replacements[f"@{label}"])

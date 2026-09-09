@@ -87,8 +87,14 @@ def find_error_logs(
     request_id: str = "",
     page: int = 1,
     page_size: int = 20,
+    start_at: str | None = None,
+    end_before: str | None = None,
 ) -> tuple[int, list[ErrorLog]]:
     conditions = []
+    if start_at is not None:
+        conditions.append(ErrorLog.created_at >= start_at)
+    if end_before is not None:
+        conditions.append(ErrorLog.created_at < end_before)
     if search.strip():
         term = f"%{search.strip()}%"
         conditions.append(

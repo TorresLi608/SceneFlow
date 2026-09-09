@@ -1,21 +1,19 @@
-"""Merging rendered shots into one deliverable.
-
-Videos are produced per shot — the models cap out at a handful of seconds — so an episode,
-or any cut of one, is assembled here. The user picks the clips and their order, which is why
-a job stores a list of shots rather than deriving one from an episode.
-"""
+"""Compose shots into an episode, then merge episode videos into delivery exports."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
+from sqlalchemy import update
 
 from app.core.database import db
 from app.models import ExportJob, Project, Scene
+from app.models import Episode
 from app.services.artifact_service import (
     artifact_absolute_path,
     remove_stored_artifacts,
@@ -27,6 +25,14 @@ from app.utils.common import new_id, now
 
 
 logger = logging.getLogger(__name__)
+
+
+def recover_interrupted_exports() -> None:
+    """Single-process startup: unfinished merges cannot resume after a restart."""
+    with db() as session:
+        session.execute(update(ExportJob).where(ExportJob.status.in_(["queued", "running"])).values(
+            status="failed", progress=0, finished_at=now(), updated_at=now(), error_message="Export interrupted by server restart"
+        ))
 
 
 def _signed(stored: str | None, download_stem: str) -> str | None:
@@ -52,6 +58,8 @@ def export_job_json(job: ExportJob) -> dict[str, Any]:
         "id": job.id,
         "projectId": job.project_id,
         "sceneIds": scene_ids if isinstance(scene_ids, list) else [],
+        "episodeIds": json.loads(job.source_episode_ids or "[]"),
+        "targetEpisodeId": job.target_episode_id,
         "rangeLabel": job.range_label or "",
         "status": job.status,
         "progress": job.progress or 0,
@@ -84,7 +92,13 @@ def owned_export(session: Session, project_id: str, job_id: str) -> ExportJob:
 
 def delete_export(session: Session, project_id: str, job_id: str) -> None:
     job = owned_export(session, project_id, job_id)
+    if job.status in {"queued", "running"}:
+        raise HTTPException(409, "cannot delete a running export")
     if job.output_path:
+        for episode in session.exec(select(Episode).where(Episode.project_id == project_id, Episode.video_path == job.output_path)).all():
+            episode.video_path = None
+            episode.updated_at = now()
+            session.add(episode)
         remove_stored_artifacts([job.output_path])
     session.delete(job)
     session.flush()
@@ -113,7 +127,7 @@ def resolve_clips(session: Session, project_id: str, scene_ids: list[str]) -> li
     return [rows[scene_id].video_path for scene_id in scene_ids]
 
 
-def create_export(session: Session, user_id: int, project_id: str, scene_ids: list[str], range_label: str) -> ExportJob:
+def create_export(session: Session, user_id: int, project_id: str, scene_ids: list[str], range_label: str, *, episode_ids: list[str] | None = None, target_episode_id: str | None = None) -> ExportJob:
     stamp = now()
     job = ExportJob(
         id=new_id("export"),
@@ -122,6 +136,8 @@ def create_export(session: Session, user_id: int, project_id: str, scene_ids: li
         user_id=user_id,
         project_id=project_id,
         source_scene_ids=json.dumps(scene_ids, ensure_ascii=False),
+        source_episode_ids=json.dumps(episode_ids or []),
+        target_episode_id=target_episode_id,
         range_label=range_label[:120],
         status="queued",
     )
@@ -139,6 +155,12 @@ def _finish(job_id: str, **values: Any) -> None:
             setattr(job, key, value)
         job.updated_at = now()
         session.add(job)
+        if values.get("status") == "succeeded" and job.target_episode_id:
+            episode = session.get(Episode, job.target_episode_id)
+            if episode and not episode.deleted_at and episode.project_id == job.project_id:
+                episode.video_path = job.output_path
+                episode.updated_at = now()
+                session.add(episode)
 
 
 async def run_export(job_id: str, project_id: str, stored_paths: list[str]) -> None:
@@ -156,14 +178,14 @@ async def run_export(job_id: str, project_id: str, stored_paths: list[str]) -> N
             # skip part of what the user selected, so it fails instead.
             clips.append(artifact_absolute_path(stored).read_bytes())
         _finish(job_id, progress=40)
-        merged = concat_videos(clips, width=width, height=height, fps=fps)
+        merged = await asyncio.to_thread(concat_videos, clips, width=width, height=height, fps=fps)
+        output_path = store_artifact("exports", project_id, f"{job_id}.mp4", merged)
     except Exception as exc:
         detail = str(exc)[:220]
         logger.warning("export failed job=%s project=%s: %s", job_id, project_id, detail)
         _finish(job_id, status="failed", progress=0, finished_at=now(), error_message=detail)
         return
 
-    output_path = store_artifact("exports", project_id, f"{job_id}.mp4", merged)
     _finish(
         job_id,
         status="succeeded",
@@ -173,3 +195,12 @@ async def run_export(job_id: str, project_id: str, stored_paths: list[str]) -> N
         file_size=len(merged),
         error_message=None,
     )
+
+
+def resolve_episode_videos(session: Session, project_id: str, episode_ids: list[str]) -> list[str]:
+    rows = {episode.id: episode for episode in session.exec(select(Episode).where(
+        Episode.id.in_(episode_ids), Episode.project_id == project_id, Episode.deleted_at.is_(None)
+    )).all()}
+    if any(episode_id not in rows or not rows[episode_id].video_path for episode_id in episode_ids):
+        raise HTTPException(400, "selected episodes must belong to this project and have a composed video")
+    return [rows[episode_id].video_path for episode_id in episode_ids]

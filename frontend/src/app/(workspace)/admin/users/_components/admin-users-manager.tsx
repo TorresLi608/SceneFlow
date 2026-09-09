@@ -133,7 +133,7 @@ export function AdminUsersManager() {
           <h2 className="text-base font-semibold">{t("admin.registeredUsers")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t("admin.usersDescription")}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button className="gap-1.5 rounded-lg font-semibold shadow-xs cursor-pointer" onClick={() => setCreateOpen(true)}>
           <Plus data-icon="inline-start" />
           {t("admin.createUser")}
         </Button>
@@ -198,94 +198,92 @@ export function AdminUsersManager() {
         ) : null}
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <Table className="min-w-[980px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("settings.name")}</TableHead>
-              <TableHead>{t("admin.tableRole")}</TableHead>
-              <TableHead>{t("admin.userLevel")}</TableHead>
-              <TableHead>{t("admin.status")}</TableHead>
-              <TableHead>{t("admin.tableCreatedAt")}</TableHead>
-              <TableHead>{t("admin.tableUpdatedAt")}</TableHead>
-              <TableHead className="text-center">{t("admin.tableActions")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageUsers.map((item) => {
-              const isProtected = item.role === "superAdmin";
-              return (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <p className="font-medium">{item.username}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">ID {item.id}</p>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={isProtected ? "default" : "secondary"}>
-                      {isProtected ? t("admin.roleSuperAdmin") : t("admin.roleUser")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      items={levelItems}
-                      value={String(item.level)}
+      <Table className="min-w-[980px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("settings.name")}</TableHead>
+            <TableHead>{t("admin.tableRole")}</TableHead>
+            <TableHead>{t("admin.userLevel")}</TableHead>
+            <TableHead>{t("admin.status")}</TableHead>
+            <TableHead>{t("admin.tableCreatedAt")}</TableHead>
+            <TableHead>{t("admin.tableUpdatedAt")}</TableHead>
+            <TableHead className="text-center">{t("admin.tableActions")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pageUsers.map((item) => {
+            const isProtected = item.role === "superAdmin";
+            return (
+              <TableRow key={item.id}>
+                <TableCell>
+                  <p className="font-medium">{item.username}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">ID {item.id}</p>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={isProtected ? "default" : "secondary"}>
+                    {isProtected ? t("admin.roleSuperAdmin") : t("admin.roleUser")}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Select
+                    items={levelItems}
+                    value={String(item.level)}
+                    disabled={isProtected || isMutating}
+                    onValueChange={(value) => updateUserMutation.mutate({ id: item.id, payload: { level: Number(value) as 1 | 2 | 3 } })}
+                  >
+                    <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectGroup>{levelItems.map((level) => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}</SelectGroup></SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={item.isDisabled ? "destructive" : "outline"}>
+                    {item.isDisabled ? t("admin.userDisabled") : t("common.statusNormal")}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDateTime(item.updatedAt)}</TableCell>
+                <TableCell>
+                  <div className="flex justify-center items-center gap-2">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
                       disabled={isProtected || isMutating}
-                      onValueChange={(value) => updateUserMutation.mutate({ id: item.id, payload: { level: Number(value) as 1 | 2 | 3 } })}
+                      onClick={() => setConfirmAction({ type: "reset", id: item.id, username: item.username })}
+                      aria-label={t("admin.resetPassword")}
+                      title={t("admin.resetPassword")}
                     >
-                      <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectGroup>{levelItems.map((level) => <SelectItem key={level.value} value={level.value}>{level.label}</SelectItem>)}</SelectGroup></SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={item.isDisabled ? "destructive" : "outline"}>
-                      {item.isDisabled ? t("admin.userDisabled") : t("common.statusNormal")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell>
-                  <TableCell className="text-muted-foreground">{formatDateTime(item.updatedAt)}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-center items-center gap-2">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={isProtected || isMutating}
-                        onClick={() => setConfirmAction({ type: "reset", id: item.id, username: item.username })}
-                        aria-label={t("admin.resetPassword")}
-                        title={t("admin.resetPassword")}
-                      >
-                        <KeyRound />
-                      </Button>
-                      <Switch
-                        checked={!item.isDisabled}
-                        disabled={isProtected || isMutating}
-                        onCheckedChange={(enabled) => updateUserMutation.mutate({ id: item.id, payload: { isDisabled: !enabled } })}
-                        aria-label={item.isDisabled ? t("admin.enable") : t("admin.disable")}
-                        title={item.isDisabled ? t("admin.enable") : t("admin.disable")}
-                      />
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        disabled={isProtected || isMutating}
-                        onClick={() => setConfirmAction({ type: "delete", id: item.id, username: item.username })}
-                        aria-label={t("common.delete")}
-                        title={t("common.delete")}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {usersQuery.isLoading ? (
-              <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow>
-            ) : null}
-            {!usersQuery.isLoading && pageUsers.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("admin.noMatchingUsers")}</TableCell></TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
-      </div>
+                      <KeyRound />
+                    </Button>
+                    <Switch
+                      checked={!item.isDisabled}
+                      disabled={isProtected || isMutating}
+                      onCheckedChange={(enabled) => updateUserMutation.mutate({ id: item.id, payload: { isDisabled: !enabled } })}
+                      aria-label={item.isDisabled ? t("admin.enable") : t("admin.disable")}
+                      title={item.isDisabled ? t("admin.enable") : t("admin.disable")}
+                    />
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      disabled={isProtected || isMutating}
+                      onClick={() => setConfirmAction({ type: "delete", id: item.id, username: item.username })}
+                      aria-label={t("common.delete")}
+                      title={t("common.delete")}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {usersQuery.isLoading ? (
+            <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("common.loading")}</TableCell></TableRow>
+          ) : null}
+          {!usersQuery.isLoading && pageUsers.length === 0 ? (
+            <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">{t("admin.noMatchingUsers")}</TableCell></TableRow>
+          ) : null}
+        </TableBody>
+      </Table>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>{t("admin.pagination", { total: filteredUsers.length, page: currentPage, pageCount })}</span>

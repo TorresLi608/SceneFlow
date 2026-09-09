@@ -8,7 +8,6 @@ import { useState } from "react";
 import {
   createExportAction,
   deleteExportAction,
-  getEpisodeAction,
   listEpisodesAction,
   listExportsAction,
 } from "@/actions/projects-actions";
@@ -29,7 +28,7 @@ import type { ExportJob, ExportStatus } from "@/types/project";
 const EXPORT_POLL_MS = 2_000;
 
 interface Clip {
-  sceneId: string;
+  episodeId: string;
   label: string;
   url: string;
 }
@@ -50,29 +49,11 @@ export default function VideosPage() {
   });
   const episodes = episodesQuery.data?.episodes ?? [];
 
-  // One request per episode: the list endpoint carries summaries, and the clips live on the
-  // shots inside each episode. The episode ids are part of the key, not just the closure —
-  // without them adding or deleting an episode left this list showing the old clips.
-  const episodeIds = episodes.map((episode) => episode.id).join(",");
-  const episodeDetails = useQuery({
-    queryKey: [...queryKeys.episodes(projectId), "clips", episodeIds],
-    enabled: episodes.length > 0,
-    queryFn: async () => {
-      const details = await Promise.all(
-        episodes.map((episode) => getEpisodeAction(projectId, episode.id))
-      );
-      return details.flatMap<Clip>(({ episode }) =>
-        episode.scenes
-          .filter((scene) => scene.video.url)
-          .map((scene) => ({
-            sceneId: scene.id,
-            label: `${episode.title} · ${scene.order}`,
-            url: scene.video.url as string,
-          }))
-      );
-    },
-  });
-  const clips = episodeDetails.data ?? [];
+  const clips: Clip[] = episodes.filter((episode) => episode.videoUrl).map((episode) => ({
+    episodeId: episode.id,
+    label: `${t("assets.episodeNumber", { number: episode.episodeNumber })} · ${episode.title}`,
+    url: episode.videoUrl!,
+  }));
 
   const exportsQuery = useQuery({
     queryKey: queryKeys.exports(projectId),
@@ -84,7 +65,7 @@ export default function VideosPage() {
   });
 
   const mergeMutation = useMutation({
-    mutationFn: () => createExportAction(projectId, { sceneIds: selected, rangeLabel: rangeLabel.trim() }),
+    mutationFn: () => createExportAction(projectId, { episodeIds: selected, rangeLabel: rangeLabel.trim() }),
     onSuccess: () => {
       setMessage(null);
       setSelected([]);
@@ -103,9 +84,9 @@ export default function VideosPage() {
     onError: (error) => setMessage(resolveRequestError(error, t("video.deleteFailed"))),
   });
 
-  const toggle = (sceneId: string) =>
+  const toggle = (episodeId: string) =>
     setSelected((current) =>
-      current.includes(sceneId) ? current.filter((item) => item !== sceneId) : [...current, sceneId]
+      current.includes(episodeId) ? current.filter((item) => item !== episodeId) : [...current, episodeId]
     );
 
   const statusLabel: Record<ExportStatus, string> = {
@@ -127,7 +108,7 @@ export default function VideosPage() {
           <Badge variant={job.status === "succeeded" ? "default" : job.status === "failed" ? "destructive" : "outline"}>
             {statusLabel[job.status]}
           </Badge>
-          <span className="text-xs text-muted-foreground">{t("video.clipCount", { count: job.sceneIds.length })}</span>
+          <span className="text-xs text-muted-foreground">{t(job.episodeIds.length ? "video.episodeCount" : "video.clipCount", { count: job.episodeIds.length || job.sceneIds.length })}</span>
         </div>
         {job.errorMessage ? <p className="mt-1 text-xs text-destructive">{job.errorMessage}</p> : null}
       </div>
@@ -172,6 +153,7 @@ export default function VideosPage() {
             variant="ghost"
             className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             title={t("video.deleteExport")}
+            disabled={job.status === "queued" || job.status === "running"}
             onClick={() => setPendingDeleteJob(job)}
           >
             <Trash2 data-icon="inline-start" />
@@ -203,7 +185,7 @@ export default function VideosPage() {
           </div>
         </div>
 
-        {episodeDetails.isLoading ? (
+        {episodesQuery.isLoading ? (
           <Skeleton className="h-32 rounded-lg" />
         ) : clips.length === 0 ? (
           <p className="rounded-md border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
@@ -212,12 +194,13 @@ export default function VideosPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {clips.map((clip) => {
-              const order = selected.indexOf(clip.sceneId);
+              const order = selected.indexOf(clip.episodeId);
               return (
                 <button
-                  key={clip.sceneId}
+                  key={clip.episodeId}
                   type="button"
-                  onClick={() => toggle(clip.sceneId)}
+                  disabled={order < 0 && selected.length >= 60}
+                  onClick={() => toggle(clip.episodeId)}
                   aria-pressed={order >= 0}
                   className={cn(
                     "flex flex-col gap-2 rounded-lg border p-2 text-left transition",
@@ -248,7 +231,7 @@ export default function VideosPage() {
             />
           </Field>
           <Button
-            disabled={mergeMutation.isPending || selected.length === 0}
+            disabled={mergeMutation.isPending || selected.length === 0 || selected.length > 60}
             title={selected.length === 0 ? t("video.needsSelection") : undefined}
             onClick={() => mergeMutation.mutate()}
           >
@@ -268,12 +251,12 @@ export default function VideosPage() {
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("video.history")}</p>
         {exportsQuery.isLoading ? (
           <Skeleton className="h-24 rounded-lg" />
-        ) : (exportsQuery.data?.exports ?? []).length === 0 ? (
+        ) : (exportsQuery.data?.exports ?? []).filter((job) => !job.targetEpisodeId).length === 0 ? (
           <p className="rounded-lg border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
             {t("video.noHistory")}
           </p>
         ) : (
-          (exportsQuery.data?.exports ?? []).map(historyRow)
+          (exportsQuery.data?.exports ?? []).filter((job) => !job.targetEpisodeId).map(historyRow)
         )}
       </section>
 

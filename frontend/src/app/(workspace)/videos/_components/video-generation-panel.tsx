@@ -121,10 +121,16 @@ interface VideoGenerationPanelProps {
   officialConfigs: UserConfig[];
 }
 
-export function VideoGenerationPanel({
+export function VideoGenerationPanel(props: VideoGenerationPanelProps) {
+  const [editorKey, setEditorKey] = useState(0);
+  return <VideoGenerationEditor key={editorKey} {...props} onReset={() => setEditorKey((key) => key + 1)} />;
+}
+
+function VideoGenerationEditor({
   configs,
   officialConfigs,
-}: VideoGenerationPanelProps) {
+  onReset,
+}: VideoGenerationPanelProps & { onReset: () => void }) {
   const { t, formatDateTime } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -213,7 +219,7 @@ export function VideoGenerationPanel({
     : capabilities?.aspectRatios[0] ?? "16:9";
   const selectedFps = capabilities?.fps.includes(fps)
     ? fps
-    : capabilities?.fps[0] ?? 24;
+    : capabilities?.fps[0];
   const selectedDuration = capabilities
     ? Math.min(capabilities.maxDuration, Math.max(capabilities.minDuration, duration))
     : duration;
@@ -1097,18 +1103,28 @@ export function VideoGenerationPanel({
         </div>
 
         {/* 立即生成主按钮 */}
-        <div className="mt-3 border-t border-border/70 pt-3">
+        <div className="mt-3 flex gap-2 border-t border-border/70 pt-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10"
+            onClick={onReset}
+            disabled={generateMutation.isPending || optimizeMutation.isPending}
+            title={t("common.resetGenerationHint")}
+          >
+            <RotateCcw data-icon="inline-start" />
+            {t("common.resetGeneration")}
+          </Button>
           {generateMutation.isPending ? (
-            <Button variant="destructive" className="h-10 w-full gap-2 rounded-xl font-bold" onClick={stopGeneration}>
+            <Button variant="destructive" className="h-10 min-w-0 flex-1 gap-2 rounded-xl font-bold" onClick={stopGeneration}>
               <Square className="size-3.5 fill-current" />
               {t("common.stopGeneration")}
             </Button>
           ) : <Button
-            className="h-10 w-full gap-2 rounded-xl font-bold shadow-md cursor-pointer transition-all active:scale-[0.99]"
+            className="h-10 min-w-0 flex-1 gap-2 rounded-xl font-bold shadow-md cursor-pointer transition-all active:scale-[0.99]"
             onClick={generate}
             disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}
           >
-            <Sparkles className="size-4" />
             <Sparkles className="size-4" />
             {t("videos.generateNow")}
           </Button>}
