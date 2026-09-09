@@ -295,6 +295,95 @@ def test_merging_clips_with_audio_preserves_audio_stream() -> None:
                 assert streams[0]["codec_name"] == "aac"
 
 
+
+def test_episode_composition_then_series_export_preserves_order_and_audio() -> None:
+    if not HAS_FFMPEG:
+        print("skipping two-stage export: ffmpeg is not installed")
+        return
+    from app.models import Episode, ExportJob, Project
+    from app.services import export_service
+    from sqlmodel import select
+
+    with tempfile.TemporaryDirectory() as directory:
+        with _app(directory) as (client, headers):
+            first_clip, second_clip = _clip(with_audio=True), _clip(seconds=0.75)
+            project_id, ids = _project_with_clips(client, headers, [first_clip, second_clip, None])
+            with database.db() as session:
+                episode_id = session.get(Scene, ids[0]).episode_id
+                project = session.get(Project, project_id)
+                project.width, project.height, project.fps = 320, 240, 12
+                session.add(project)
+            second = client.post(f"/api/projects/{project_id}/episodes", headers=headers, json={"title": "第二集"}).json()["episode"]["id"]
+            url = f"/api/projects/{project_id}/episodes/{episode_id}/video"
+            for payload, status in (([], 422), ([ids[0], ids[0]], 422), ([ids[2]], 400), (["missing"], 400)):
+                response = client.post(url, headers=headers, json={"sceneIds": payload})
+                assert response.status_code == status, response.text
+            wrong_episode = client.post(f"/api/projects/{project_id}/episodes/{second}/video", headers=headers, json={"sceneIds": ids[:1]})
+            assert wrong_episode.status_code == 400, wrong_episode.text
+            absent = client.post(f"/api/projects/{project_id}/exports", headers=headers, json={"episodeIds": [second]})
+            assert absent.status_code == 400, absent.text
+
+            original = export_service.concat_videos
+            captured = []
+            entered, release = threading.Event(), threading.Event()
+            def recording(clips, **kwargs):
+                captured.append(list(clips))
+                entered.set()
+                assert release.wait(10)
+                return original(clips, **kwargs)
+            export_service.concat_videos = recording
+            try:
+                started = client.post(url, headers=headers, json={"sceneIds": ids[1::-1]})
+                assert started.status_code == 202, started.text
+                job_id = started.json()["export"]["id"]
+                assert entered.wait(10)
+                duplicate = client.post(url, headers=headers, json={"sceneIds": ids[:1]})
+                assert duplicate.status_code == 409, duplicate.text
+                assert client.delete(f"/api/projects/{project_id}/exports/{job_id}", headers=headers).status_code == 409
+                release.set()
+                completed = _wait_for(client, headers, project_id, job_id)
+                assert completed["status"] == "succeeded", completed
+                assert captured[0] == [second_clip, first_clip]
+            finally:
+                release.set()
+                export_service.concat_videos = original
+            with database.db() as session:
+                first_path = session.get(Episode, episode_id).video_path
+                assert first_path == session.get(ExportJob, job_id).output_path
+                other = session.get(Episode, second)
+                other.video_path = artifact_service.store_artifact("exports", project_id, "second.mp4", second_clip)
+                session.add(other)
+            series = client.post(f"/api/projects/{project_id}/exports", headers=headers, json={"episodeIds": [second, episode_id]})
+            assert series.status_code == 202, series.text
+            assert series.json()["export"]["episodeIds"] == [second, episode_id]
+            with database.db() as session:
+                assert export_service.resolve_episode_videos(session, project_id, [second, episode_id]) == [session.get(Episode, second).video_path, first_path]
+            finished = _wait_for(client, headers, project_id, series.json()["export"]["id"])
+            assert finished["status"] == "succeeded", finished
+            with database.db() as session:
+                output = artifact_service.artifact_absolute_path(session.get(ExportJob, finished["id"]).output_path)
+            streams = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)], check=True, capture_output=True, text=True).stdout)["streams"]
+            assert any(stream["codec_type"] == "audio" for stream in streams)
+            assert client.get(f"/api/projects/{project_id}/episodes", headers=headers).json()["episodes"][0]["videoUrl"]
+
+            def fail(*args, **kwargs):
+                raise ValueError("test composition failure")
+            export_service.concat_videos = fail
+            try:
+                retry = client.post(url, headers=headers, json={"sceneIds": ids[:1]}).json()["export"]
+                assert _wait_for(client, headers, project_id, retry["id"])["status"] == "failed"
+                with database.db() as session:
+                    assert session.get(Episode, episode_id).video_path == first_path
+            finally:
+                export_service.concat_videos = original
+            with database.db() as session:
+                stale = export_service.create_export(session, 1, project_id, ids[:1], "interrupted", target_episode_id=episode_id)
+                stale_id = stale.id
+            export_service.recover_interrupted_exports()
+            with database.db() as session:
+                assert session.get(ExportJob, stale_id).status == "failed"
+                assert session.get(Episode, episode_id).video_path == first_path
+
 if __name__ == "__main__":
     test_merging_clips_produces_one_downloadable_file()
     test_clips_of_different_sizes_still_merge()
@@ -305,4 +394,5 @@ if __name__ == "__main__":
     test_history_lists_newest_first_with_the_label_that_was_asked_for()
     test_deleting_an_export_record_removes_it()
     test_merging_clips_with_audio_preserves_audio_stream()
+    test_episode_composition_then_series_export_preserves_order_and_audio()
     print("test_exports_api ok")

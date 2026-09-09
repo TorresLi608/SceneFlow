@@ -2076,11 +2076,15 @@ paths:
         not for a copy of it that drifted.
 
 
-        Only the tone preset exists today, and only once the episode has an anchor to point at:
+        Four presets, each with its `source`: `tone` only once the episode has an anchor to
 
-        the text is entirely about locating this shot''s cell in the grid, which is meaningless
+        point at (the text is about locating this shot''s cell in the grid, which is meaningless
 
-        without a grid.'
+        without one); `script` when the episode has source text; `shot` when this shot has a
+
+        narration line; and `shots`, every shot''s prompt for this list in order — the frame
+
+        prompt under `image`, the motion prompt under `video`.'
       operationId: list_prompt_prefix_presets_api_prompts_prefix_presets_get
       parameters:
       - name: projectId
@@ -2097,6 +2101,16 @@ paths:
           type: string
           maxLength: 64
           title: Sceneid
+      - name: kind
+        in: query
+        required: false
+        schema:
+          enum:
+          - image
+          - video
+          type: string
+          default: image
+          title: Kind
       - name: authorization
         in: header
         required: false
@@ -2983,6 +2997,56 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Generate Video Api Projects  Project Id  Generate Video Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/episodes/{episode_id}/video:
+    post:
+      tags:
+      - episodes
+      summary: Merge Episode Video
+      description: Merge rendered shots from this episode in selection order; publish only on success.
+      operationId: merge_episode_video_api_projects__project_id__episodes__episode_id__video_post
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComposeEpisodeRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Merge Episode Video Api Projects  Project Id  Episodes  Episode Id  Video
+                  Post
         '422':
           description: Validation Error
           content:
@@ -4857,7 +4921,7 @@ paths:
       tags:
       - exports
       summary: Add Export
-      description: Queue a merge of the chosen shots, in the order they were given.
+      description: Queue composed episodes in selection order (legacy scene selections still accepted).
       operationId: add_export_api_projects__project_id__exports_post
       parameters:
       - name: project_id
@@ -5253,6 +5317,20 @@ components:
       - projectId
       - kind
       title: CompilePromptRequest
+    ComposeEpisodeRequest:
+      properties:
+        sceneIds:
+          items:
+            type: string
+          type: array
+          maxItems: 60
+          minItems: 1
+          title: Sceneids
+      additionalProperties: false
+      type: object
+      required:
+      - sceneIds
+      title: ComposeEpisodeRequest
     CreateAssetRequest:
       properties:
         name:
@@ -5411,12 +5489,23 @@ components:
     CreateExportRequest:
       properties:
         sceneIds:
-          items:
-            type: string
-          type: array
-          maxItems: 60
-          minItems: 1
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 60
+            minItems: 1
+          - type: 'null'
           title: Sceneids
+        episodeIds:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 60
+            minItems: 1
+          - type: 'null'
+          title: Episodeids
         rangeLabel:
           type: string
           maxLength: 120
@@ -5424,15 +5513,8 @@ components:
           default: ''
       additionalProperties: false
       type: object
-      required:
-      - sceneIds
       title: CreateExportRequest
-      description: 'Merge chosen shots into one file, in the order given.
-
-
-        Ordered by the request rather than by shot number: the video section exists to assemble
-
-        a cut, which need not follow the storyboard.'
+      description: Merge composed episodes in order. sceneIds remains for legacy clients.
     CreateProjectRequest:
       properties:
         title:

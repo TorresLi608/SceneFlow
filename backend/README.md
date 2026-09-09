@@ -250,7 +250,13 @@ The catalogue returns `{resources: [...]}` across all live episodes and project-
 | Methods | Path |
 |---|---|
 | GET, POST | `/api/projects/{project_id}/exports` |
+| POST | `/api/projects/{project_id}/episodes/{episode_id}/video` |
 | GET, DELETE | `/api/projects/{project_id}/exports/{export_id}` |
+
+Episode composition accepts `{sceneIds}` (1–60 unique, completed shots belonging to that episode) in caller order. It returns `{export}` with `targetEpisodeId`, and publishes the output to `Episode.video_path` only on success. A second unfinished composition for the same episode is 409. Episode summaries now expose `videoUrl` for final delivery selection. Composition does not reuse the episode's video-generation status fields; `export_jobs` owns its state.
+
+Final exports accept `{episodeIds, rangeLabel?}` in caller order; each episode must belong to the project and already have a composed video. Legacy `{sceneIds}` remains supported, but both/neither source fields are rejected. Export responses include `episodeIds` and `targetEpisodeId` alongside the old fields. Migration `b7e2a91c6d04` adds their storage without modifying existing records. Startup marks interrupted queued/running exports failed, without discarding the previous episode video. Deleting running exports is rejected. Existing FFmpeg normalization/audio behavior is shared by both stages.
+
 
 ### images — app/api/v1/images.py
 

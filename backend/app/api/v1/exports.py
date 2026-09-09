@@ -17,6 +17,7 @@ from app.services.export_service import (
     exports_for,
     owned_export,
     resolve_clips,
+    resolve_episode_videos,
     run_export,
 )
 from app.services.project_service import owned_project
@@ -39,11 +40,11 @@ async def add_export(
     body: CreateExportRequest,
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
-    """Queue a merge of the chosen shots, in the order they were given."""
+    """Queue composed episodes in selection order (legacy scene selections still accepted)."""
     with db() as session:
         owned_project(session, project_id, user_id)
-        stored_paths = resolve_clips(session, project_id, body.scene_ids)
-        job = create_export(session, user_id, project_id, body.scene_ids, body.range_label)
+        stored_paths = resolve_episode_videos(session, project_id, body.episode_ids) if body.episode_ids is not None else resolve_clips(session, project_id, body.scene_ids or [])
+        job = create_export(session, user_id, project_id, body.scene_ids or [], body.range_label, episode_ids=body.episode_ids)
         data = export_job_json(job)
 
     # No project-level lock: merging reads finished artifacts and writes only its own row,

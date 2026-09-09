@@ -345,7 +345,13 @@ def _write_tone_prefixes(plan: StoryboardPlan) -> None:
             stamp = now()
             for index, scene in enumerate(scenes, start=1):
                 order = scene.order_num or index
-                for column in ("image_prompt_prefixes_json", "video_prompt_prefixes_json"):
+                # Each list gets the wording for its own render: the still is pointed at its
+                # grid cell, the clip is told the grid is a look reference and not a shot
+                # list to play through.
+                for column, media in (
+                    ("image_prompt_prefixes_json", "image"),
+                    ("video_prompt_prefixes_json", "video"),
+                ):
                     setattr(
                         scene,
                         column,
@@ -355,6 +361,7 @@ def _write_tone_prefixes(plan: StoryboardPlan) -> None:
                             tone_label=tone_label,
                             order=order,
                             total=total,
+                            media=media,
                         ),
                     )
                 scene.updated_at = stamp

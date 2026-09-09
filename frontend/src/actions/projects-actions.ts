@@ -223,7 +223,7 @@ export async function getProjectModelsAction(projectID: string) {
 }
 
 /** Built-in starting points for a prompt field, so a blank box is never the only option. */
-export async function listPromptPresetsAction(kind: "character" | "prop" | "cover") {
+export async function listPromptPresetsAction(kind: "cover") {
   const response = await httpClient.get<PromptPresetListResponse>(`/api/bff/prompts/presets?kind=${kind}`);
   return response.data;
 }
@@ -240,6 +240,11 @@ export async function cancelProjectRunAction(projectID: string) {
 
 export async function listEpisodesAction(projectID: string) {
   const response = await httpClient.get<EpisodeListResponse>(`/api/bff/projects/${projectID}/episodes`);
+  return response.data;
+}
+
+export async function mergeEpisodeVideoAction(projectID: string, episodeID: string, sceneIds: string[]) {
+  const response = await httpClient.post<ExportItemResponse>(`/api/bff/projects/${projectID}/episodes/${episodeID}/video`, { sceneIds });
   return response.data;
 }
 

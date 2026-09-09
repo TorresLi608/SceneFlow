@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Film, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import type { EpisodeSummary } from "@/types/project";
+import { EpisodeVideoComposer } from "../../_components/episode-video-composer";
 
 interface EpisodeFormValues {
   title: string;
@@ -93,6 +94,8 @@ export default function EpisodesPage() {
   const { t, formatDateTime } = useI18n();
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
+  const [composeEpisodeId, setComposeEpisodeId] = useState<string | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<EpisodeSummary | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -164,6 +167,7 @@ export default function EpisodesPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm font-semibold">{episode.title}</h2>
                   <Badge variant="outline">{t("episode.shotCount", { count: episode.sceneCount })}</Badge>
+                  {episode.videoUrl ? <Badge>{t("episode.composedVideo")}</Badge> : null}
                   <Badge variant={episode.toneImageStatus === "success" ? "default" : "outline"}>
                     {toneLabel(episode)}
                   </Badge>
@@ -174,6 +178,9 @@ export default function EpisodesPage() {
                 <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(episode.updatedAt)}</p>
               </div>
               <div className="flex flex-wrap gap-1">
+                <Button variant="outline" size="sm" onClick={() => { setComposeEpisodeId(episode.id); setComposeOpen(true); }}>
+                  <Film data-icon="inline-start" />{t("episode.composeVideo")}
+                </Button>
                 <Button size="sm" render={<Link href={`/projects/${projectId}/episode/${episode.id}`} />}>
                   <Pencil data-icon="inline-start" />
                   {t("episode.edit")}
@@ -188,6 +195,7 @@ export default function EpisodesPage() {
         </div>
       )}
 
+      {composeEpisodeId ? <EpisodeVideoComposer key={composeEpisodeId} projectId={projectId} episodeId={composeEpisodeId} open={composeOpen} onOpenChange={setComposeOpen} /> : null}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

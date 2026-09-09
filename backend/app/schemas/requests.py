@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.models import MAX_EXPORT_CLIPS
@@ -90,7 +90,6 @@ class UpdateProjectRequest(CamelModel):
     original_script: str | None = Field(default=None, max_length=200_000)
     series_bible: str | None = Field(default=None, max_length=200_000)
     model_settings: ProjectModelConfigRequest | None = None
-
 
 class SetProjectCoverRequest(CamelModel):
     """A cover to store on the project. `data:image/...;base64,` — the app never takes multipart."""
@@ -393,8 +392,6 @@ class DraftPromptRequest(CamelModel):
 
     name: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
-    # Which built-in template to draft against, e.g. "turnaround". Empty picks the default.
-    preset: str = Field(default="", max_length=40)
     model: str | None = Field(default=None, max_length=160)
 
 
@@ -478,16 +475,30 @@ class ImportVoiceProfileRequest(CamelModel):
     sample_text: str = Field(default="", max_length=1000)
 
 
-class CreateExportRequest(CamelModel):
-    """Merge chosen shots into one file, in the order given.
-
-    Ordered by the request rather than by shot number: the video section exists to assemble
-    a cut, which need not follow the storyboard.
-    """
-
+class ComposeEpisodeRequest(CamelModel):
     scene_ids: list[str] = Field(min_length=1, max_length=MAX_EXPORT_CLIPS)
-    # Human-facing label such as "第一集 1-6", kept so the history reads the way it was asked for.
+
+    @model_validator(mode="after")
+    def unique_scenes(self):
+        if len(set(self.scene_ids)) != len(self.scene_ids) or any(not item.strip() for item in self.scene_ids):
+            raise ValueError("sceneIds must be nonempty unique IDs")
+        return self
+
+
+class CreateExportRequest(CamelModel):
+    """Merge composed episodes in order. sceneIds remains for legacy clients."""
+    scene_ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_EXPORT_CLIPS)
+    episode_ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_EXPORT_CLIPS)
     range_label: str = Field(default="", max_length=120)
+
+    @model_validator(mode="after")
+    def one_source(self):
+        if (self.scene_ids is None) == (self.episode_ids is None):
+            raise ValueError("provide exactly one of sceneIds or episodeIds")
+        ids = self.scene_ids or self.episode_ids or []
+        if len(set(ids)) != len(ids) or any(not item.strip() for item in ids):
+            raise ValueError("source IDs must be nonempty and unique")
+        return self
 
 
 class SetSceneCastRequest(CamelModel):

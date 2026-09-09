@@ -15,6 +15,19 @@ const keyOf = (item: GenerationReferenceInput) => `${item.kind}:${item.id}`;
 /** Distinct per row and stable across renders, so editing one prefix never remounts another. */
 const newPrefixId = () => `prefix-${Math.random().toString(36).slice(2, 10)}`;
 
+/** Where a quick-fill preset's text comes from; matches the `source` the server stamps on it. */
+export type PrefixPresetSource = "tone" | "script" | "shot" | "shots";
+
+type TranslationKey = Parameters<ReturnType<typeof useI18n>["t"]>[0];
+
+/** The quick-fill bar in order. Labels and hints are i18n keys; the text itself is the server's. */
+const PRESET_BUTTONS: { source: PrefixPresetSource; label: TranslationKey; hint: TranslationKey }[] = [
+  { source: "tone", label: "episode.prefixPresetTone", hint: "episode.prefixPresetToneHint" },
+  { source: "script", label: "episode.prefixPresetScript", hint: "episode.prefixPresetScriptHint" },
+  { source: "shot", label: "episode.prefixPresetShot", hint: "episode.prefixPresetShotHint" },
+  { source: "shots", label: "episode.prefixPresetShots", hint: "episode.prefixPresetShotsHint" },
+];
+
 /**
  * The ordered preambles above one prompt field.
  *
@@ -30,7 +43,6 @@ export function PromptPrefixList({
   limitsFor,
   preset,
   presetDisabled,
-  presetDisabledReason,
   disabled,
 }: {
   prefixes: PromptPrefix[];
@@ -39,13 +51,15 @@ export function PromptPrefixList({
   /** Per-media budget still available to the prefix at `index`, siblings already deducted. */
   limitsFor: (index: number) => Partial<Record<ReferenceAssetOption["media"], number>>;
   /**
-   * The tone-sheet quick fill. Returns the server's own wording rather than a copy — see
-   * `/api/prompts/prefix-presets`.
+   * The quick fills, one per preset source. Returns the server's own wording rather than
+   * a copy — see `/api/prompts/prefix-presets`.
    */
-  preset?: () => Promise<PromptPrefix | null>;
-  /** Shown but inert until an anchor exists; a vanished button reads as a missing feature. */
-  presetDisabled?: boolean;
-  presetDisabledReason?: string;
+  preset?: (source: PrefixPresetSource) => Promise<PromptPrefix | null>;
+  /**
+   * Presets shown but inert, keyed by source, with the reason shown on hover; a vanished
+   * button reads as a missing feature rather than a prerequisite.
+   */
+  presetDisabled?: Partial<Record<PrefixPresetSource, string>>;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -144,20 +158,26 @@ export function PromptPrefixList({
           <Plus data-icon="inline-start" className="size-3" />
           {t("episode.prefixAdd")}
         </Button>
-        {preset ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            disabled={disabled || presetDisabled}
-            title={presetDisabled ? presetDisabledReason : t("episode.prefixPresetToneHint")}
-            onClick={() => void preset().then((item) => item && add(item))}
-            className="h-6 text-[11px] cursor-pointer disabled:cursor-not-allowed"
-          >
-            <Sparkles data-icon="inline-start" className="size-3" />
-            {t("episode.prefixPresetTone")}
-          </Button>
-        ) : null}
+        {preset
+          ? PRESET_BUTTONS.map(({ source, label, hint }) => {
+              const reason = presetDisabled?.[source];
+              return (
+                <Button
+                  key={source}
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={disabled || Boolean(reason)}
+                  title={reason ?? t(hint)}
+                  onClick={() => void preset(source).then((item) => item && add(item))}
+                  className="h-6 text-[11px] cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <Sparkles data-icon="inline-start" className="size-3" />
+                  {t(label)}
+                </Button>
+              );
+            })
+          : null}
         {prefixes.length ? (
           <span className="text-[10px] text-muted-foreground/80">
             {t("episode.prefixReferenceNote", {

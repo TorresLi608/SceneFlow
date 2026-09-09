@@ -61,6 +61,7 @@ import { ReferencePicker, type ReferenceAssetOption } from "./_components/refere
 import { ShotRow } from "./_components/shot-row";
 import { MediaPreviewDialog } from "./_components/media-preview-dialog";
 import { AssetLibraryDialog } from "./_components/asset-library-dialog";
+import { EpisodeVideoComposer } from "../../_components/episode-video-composer";
 
 /** While a render is in flight the page polls; the run is a background task with no reply. */
 const RENDER_POLL_MS = 3_000;
@@ -93,6 +94,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const [message, setMessage] = useState<string | null>(null);
   const [activeBatch, setActiveBatch] = useState<"image" | "video" | null>(null);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const [pendingGeneration, setPendingGeneration] = useState<{ type: "image" | "video"; target: BatchTarget } | null>(null);
   const activeBatchWasBusy = useRef(false);
@@ -697,6 +699,15 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 <RefreshCw data-icon="inline-start" />
                 {t("episode.retryPendingVideos", { count: pendingShots("video").length })}
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !shots.some((shot) => shot.video.status === "success")}
+                onClick={() => setComposeOpen(true)}
+              >
+                <Film data-icon="inline-start" />
+                {t("episode.composeVideo")}
+              </Button>
 
               <div className="h-4 w-px bg-border/60 mx-0.5" />
 
@@ -743,6 +754,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                   }
                   selected={selectedShots.includes(scene.id)}
                   toneReady={toneReady}
+                  episodeHasSource={Boolean(episode.sourceText.trim())}
                   onToggle={() => toggleShot(scene.id)}
                   busy={busy}
                   onGenerateImage={() => {
@@ -792,6 +804,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
       </main>
 
       {/* Discard Confirmation Dialog */}
+      {composeOpen ? <EpisodeVideoComposer projectId={projectId} episodeId={episode.id} open={composeOpen} onOpenChange={setComposeOpen} initialSelection={selectedShots} /> : null}
       <AssetLibraryDialog
         projectId={projectId}
         open={assetLibraryOpen}

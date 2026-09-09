@@ -78,6 +78,7 @@ export interface EpisodeSummary {
   title: string;
   synopsis: string;
   status: EpisodeStatus;
+  videoUrl: string | null;
   videoStatus: SceneTaskStatus | "idle";
   videoProgress: number;
   durationMs: number;
@@ -534,12 +535,11 @@ export type UpdateCharacterStateInput = Partial<CreateCharacterStateInput>;
 /**
  * Draft an image prompt for review. The fields come from the dialog rather than the stored
  * row so drafting works against edits the user has not saved yet. The instruction template
- * is the built-in one and is not overridable; `preset` picks which built-in to draft from.
+ * is the built-in one and is not overridable.
  */
 export interface DraftPromptInput {
   name?: string;
   description?: string;
-  preset?: string;
   model?: string;
 }
 
@@ -834,11 +834,13 @@ export interface GenerateVideoResponse {
 
 export type ExportStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
-/** Several rendered shots merged into one file. Order follows the request, not shot number. */
+/** Ordered episode composition or delivery export; legacy shot exports remain readable. */
 export interface ExportJob {
   id: string;
   projectId: string;
   sceneIds: string[];
+  episodeIds: string[];
+  targetEpisodeId: string | null;
   rangeLabel: string;
   status: ExportStatus;
   progress: number;
@@ -851,8 +853,9 @@ export interface ExportJob {
 }
 
 export interface CreateExportInput {
-  /** Ordered: the video section assembles a cut, which need not follow the storyboard. */
-  sceneIds: string[];
+  /** Ordered selections: current video management submits episodeIds; sceneIds is legacy. */
+  sceneIds?: string[];
+  episodeIds?: string[];
   rangeLabel?: string;
 }
 

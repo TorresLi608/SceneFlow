@@ -73,14 +73,18 @@ export async function compilePromptAction(
  * stay byte-identical to the one the tone sheet writes on a successful anchor. Comes back
  * empty when the episode has no tone sheet — the wording is about locating this shot's cell
  * in the grid, which needs a grid.
+ *
+ * `kind` picks the list the preset is for: the still and the motion render are handed
+ * different tone wording, so the bar under each list asks for its own.
  */
 export async function listPromptPrefixPresetsAction(
   projectId: string,
   sceneId: string,
+  kind: "image" | "video" = "image",
   signal?: AbortSignal,
 ) {
   const response = await httpClient.get<{ presets: PromptPrefix[] }>("/api/bff/prompts/prefix-presets", {
-    params: { projectId, sceneId },
+    params: { projectId, sceneId, kind },
     signal,
   });
   return response.data;

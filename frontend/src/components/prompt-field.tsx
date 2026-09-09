@@ -16,7 +16,8 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type OutputLanguage = "auto" | "zh" | "en";
-export type PresetKind = "character" | "prop" | "cover";
+/** Only covers offer templates; character and prop sheets have a fixed layout on the backend. */
+export type PresetKind = "cover";
 
 /**
  * Options for a prompt-language `Select`, in the shape base-ui's `items` prop wants.
@@ -38,13 +39,9 @@ interface PromptFieldProps {
   kind: PromptKind;
   value: string;
   onChange: (value: string) => void;
-  /** Omit to hide the preset dropdown — voice prompts have no templates worth offering. */
+  /** Omit to hide the preset dropdown — only cover prompts have templates worth offering. */
   presetKind?: PresetKind;
-  /**
-   * The chosen preset's key. Lifted out of this component because the caller has to send it
-   * with "draft it for me": the backend falls back to the *first* preset for an unknown key,
-   * so a dropped key silently drafts a turnaround sheet no matter what the user picked.
-   */
+  /** The chosen preset's key, lifted out so the caller can show which template is in the box. */
   preset?: string;
   onPresetChange?: (key: string) => void;
   placeholder?: string;

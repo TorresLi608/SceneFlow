@@ -20,6 +20,7 @@ from app.models import Episode, Project, Scene
 from app.schemas.requests import (
     BreakdownEpisodeRequest,
     CreateEpisodeRequest,
+    ComposeEpisodeRequest,
     GenerateStoryboardRequest,
     GenerateToneSheetRequest,
     UpdateEpisodeRequest,
@@ -48,6 +49,9 @@ from app.services.prompt_service import with_shot_label
 from app.services.prompt_prefix_service import combined_prompt, combined_references, stored_prompt_prefixes
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
+from app.services.export_service import resolve_clips, run_export, create_export, export_job_json
+from app.models import ExportJob
+from sqlmodel import select
 from app.services.usage_service import record_usage, require_model_balance
 from app.utils.common import new_id, now
 
@@ -55,6 +59,25 @@ from app.utils.common import new_id, now
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["episodes"])
+
+
+@router.post("/{project_id}/episodes/{episode_id}/video", status_code=202)
+async def merge_episode_video(project_id: str, episode_id: str, body: ComposeEpisodeRequest, user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Merge rendered shots from this episode in selection order; publish only on success."""
+    with db() as session:
+        owned_project(session, project_id, user_id)
+        episode = resolve_episode(session, project_id, episode_id)
+        scene_rows = {scene.id: scene for scene in episode_scenes(session, episode.id)}
+        if any(scene_id not in scene_rows or scene_rows[scene_id].video_status != "success" for scene_id in body.scene_ids):
+            raise HTTPException(400, "select completed shots from this episode")
+        pending = session.exec(select(ExportJob.id).where(ExportJob.target_episode_id == episode_id, ExportJob.status.in_(["queued", "running"]))).first()
+        if pending:
+            raise HTTPException(409, "episode composition is already running")
+        paths = resolve_clips(session, project_id, body.scene_ids)
+        job = create_export(session, user_id, project_id, body.scene_ids, episode.title, target_episode_id=episode_id)
+        data = export_job_json(job)
+    asyncio.create_task(run_export(data["id"], project_id, paths))
+    return {"export": data}
 
 
 def _detail(session, episode) -> dict[str, Any]:

@@ -49,79 +49,42 @@ def cover_prompt(prompt: str, title: str = "", style_prompt: str = "") -> str:
 # setting alongside the drawing so the reference is self-describing. That text is why
 # `shot_prompt` states so firmly that the rendered shot must carry none — a labelled
 # reference passed image-to-image will otherwise leak its captions into the episode.
+#
+# One image, three zones: the turnaround, an expression set, and a profile card. The
+# expression close-ups are what lets a later shot ask for 怒 or 悲 and still get the same
+# face; the profile card (name, age, role, the one or two features that make the character
+# recognisable) is what the sheet says about itself when it is read as a reference.
 CHARACTER_SHEET_SYSTEM = (
-    "你是动画角色设定师。根据用户给的角色信息，写一段用于生成【角色设定三面图】的图像提示词。"
-    "三面图指同一角色的正面、四分之三侧面、正侧面并排排列，同一套服装、同一光照、同一比例，"
-    "纯色背景，全身，中性表情，不要多余道具。"
-    "画面中必须以清晰易读的排版标注：角色名称（作为标题）、角色简介、角色设定要点。"
+    "你是动画角色设定师。根据用户给的角色信息，写一段用于生成【角色设定总图】的图像提示词，"
+    "总图的全部内容绘制在同一张图上，分为三个区域："
+    "①角色三面图：同一角色的正面、四分之三侧面、正侧面并排排列，同一套服装、同一光照、同一比例，"
+    "全身，中性表情，不要多余道具；"
+    "②角色多表情集：至少 4 个情绪反差鲜明的五官特写（如喜、怒、冷、悲），同一张脸、同一发型，每格下方标注情绪名称；"
+    "③角色档案摘要：姓名、年龄、定位、核心外貌记忆点。年龄与定位依据用户给的角色信息填写，"
+    "信息不足时按剧情合理推断并保持简短，不要编造与原意冲突的设定。"
+    "纯色背景。画面中必须以清晰易读的排版标注：角色名称（作为标题）、角色简介、角色设定要点与上述档案摘要。"
     "文字排布在画面边缘或下方的信息栏内，不要遮挡角色本身。"
-    "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 400 字以内。"
+    "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 500 字以内。"
 )
 
-# Props are a single object rather than a turnaround, but they carry the same requirement:
+# Props get a multi-angle sheet rather than a single view, and carry the same requirement:
 # a neutral, well-lit reference the renderer can match against in any later shot — and the
 # same labelling, including who it belongs to, since an unattributed object is the first
 # thing continuity loses.
 PROP_SYSTEM = (
-    "你是美术道具设计师。根据用户给的道具信息，写一段用于生成【道具设定图】的图像提示词。"
-    "要求：单一物体居中，纯色背景，均匀打光，展示材质与结构细节，不要人物。"
+    "你是美术道具设计师。根据用户给的道具信息，写一段用于生成【道具多角度设定图】的图像提示词。"
+    "要求：同一物体的正面、侧面、背面与一个材质或结构细节特写并排排列，同一光照与比例，"
+    "纯色背景，均匀打光，清晰展示材质、结构与工艺细节，不要人物。"
     "画面中必须以清晰易读的排版标注：道具名称（作为标题）、归属角色（这是谁的道具）、"
     "道具简介、道具设定要点。文字排布在画面边缘或下方的信息栏内，不要遮挡道具本身。"
-    "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 300 字以内。"
+    "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 400 字以内。"
 )
 
 
-# Presets the user picks between before drafting. They are starting points rather than
-# finished prompts: each is dropped into the prompt field for editing, and the drafting
-# step can rewrite one from the character's actual details.
-CHARACTER_PRESETS: tuple[dict[str, str], ...] = (
-    {
-        "key": "turnaround",
-        "label": "三面图设定",
-        "template": (
-            "角色设定三面图：同一角色的正面、四分之三侧面、正侧面并排排列，同一套服装、同一光照、"
-            "同一比例，全身，中性表情，纯色背景。画面下方信息栏标注角色名称、角色简介与角色设定要点，"
-            "排版清晰易读，不遮挡角色。电影级柔和打光，高细节。"
-        ),
-    },
-    {
-        "key": "expressions",
-        "label": "表情设定",
-        "template": (
-            "角色表情设定图：同一角色的六个半身表情（平静、微笑、愤怒、悲伤、惊讶、冷笑）排成两行三列，"
-            "同一套服装、同一光照、同一画风，纯色背景。每格下方标注表情名称，画面顶部标注角色名称，"
-            "底部信息栏写角色简介与设定要点。"
-        ),
-    },
-    {
-        "key": "outfit",
-        "label": "服装设定",
-        "template": (
-            "角色服装设定图：同一角色的全身正面立绘，重点展示服装的剪裁、材质、配饰与细节特写，"
-            "旁边附两到三个局部放大图。纯色背景，均匀打光。画面标注角色名称、服装名称与设定要点。"
-        ),
-    },
-)
-
-PROP_PRESETS: tuple[dict[str, str], ...] = (
-    {
-        "key": "single",
-        "label": "单体道具图",
-        "template": (
-            "道具设定图：单一物体居中，纯色背景，均匀打光，清晰展示材质、结构与工艺细节，不要人物。"
-            "画面下方信息栏标注道具名称、归属角色、道具简介与设定要点，排版清晰易读，不遮挡道具。"
-        ),
-    },
-    {
-        "key": "multiview",
-        "label": "多角度道具图",
-        "template": (
-            "道具多角度设定图：同一物体的正面、侧面、背面与一个细节特写并排排列，同一光照与比例，"
-            "纯色背景。画面标注道具名称、归属角色、道具简介与设定要点。"
-        ),
-    },
-)
-
+# Presets the user picks between before drafting a cover. They are starting points rather
+# than finished prompts: each is dropped into the prompt field for editing. Character and
+# prop sheets no longer offer presets — their layout is fixed by the system prompts above,
+# and the draft is written from the card's own details.
 COVER_PRESETS: tuple[dict[str, str], ...] = (
     {
         "key": "portrait",
@@ -141,21 +104,8 @@ COVER_PRESETS: tuple[dict[str, str], ...] = (
 )
 
 PRESETS: dict[str, tuple[dict[str, str], ...]] = {
-    "character": CHARACTER_PRESETS,
-    "prop": PROP_PRESETS,
     "cover": COVER_PRESETS,
 }
-
-
-def preset_template(kind: str, key: str) -> str:
-    """The named preset's text, or the kind's first preset when the key is unknown."""
-    presets = PRESETS.get(kind, ())
-    if not presets:
-        return ""
-    for preset in presets:
-        if preset["key"] == key:
-            return preset["template"]
-    return presets[0]["template"]
 
 
 def character_sheet_prompt(
@@ -164,13 +114,13 @@ def character_sheet_prompt(
     appearance_prompt: str,
     state_name: str,
     state_description: str,
-    preset: str = "",
 ) -> str:
-    """The user turn for drafting a state's turnaround prompt.
+    """The user turn for drafting a state's sheet prompt.
 
     Everything the bible knows about the character goes in together: the model needs the
     card's own look to keep 幼年 and 老年 recognisably the same person, and the same
-    details are what the sheet prints alongside the drawing.
+    details are what the sheet prints alongside the drawing — including the profile card,
+    whose age and role the model has to read out of these lines.
     """
     lines = [f"角色名称：{character_name.strip()}"]
     if character_description.strip():
@@ -180,19 +130,15 @@ def character_sheet_prompt(
     lines.append(f"当前状态：{state_name.strip()}")
     if state_description.strip():
         lines.append(f"状态描述：{state_description.strip()}")
-    if preset.strip():
-        lines.append(f"参考版式：{preset_template('character', preset.strip())}")
     return "\n".join(lines)
 
 
-def prop_prompt(name: str, description: str, owner_name: str = "", preset: str = "") -> str:
+def prop_prompt(name: str, description: str, owner_name: str = "") -> str:
     lines = [f"道具名称：{name.strip()}"]
     if owner_name.strip():
         lines.append(f"归属角色：{owner_name.strip()}")
     if description.strip():
         lines.append(f"道具描述：{description.strip()}")
-    if preset.strip():
-        lines.append(f"参考版式：{preset_template('prop', preset.strip())}")
     return "\n".join(lines)
 
 
@@ -202,15 +148,22 @@ def fallback_character_sheet_prompt(character_name: str, state_name: str, traits
     Plainer than a drafted prompt on purpose: this image is used as an image-to-image
     reference, so any *drama* baked into it would leak into every shot the character is in.
     The printed name and traits are the deliberate exception — they make the reference
-    self-describing, and `shot_prompt` is what keeps them out of the rendered frame.
+    self-describing, and `shot_prompt` is what keeps them out of the rendered frame. The
+    same three zones as the drafted sheet, so a card that skipped drafting is not the one
+    card without an expression set.
     """
     return (
-        "Create a clean character turnaround reference sheet for an anime short drama. "
-        "Show the same character three times side by side: front view, three-quarter view, "
-        "and side profile. Identical outfit, identical proportions, even neutral lighting, "
-        "plain neutral background, full body, neutral expression, no props. "
-        "Print the character's name as a heading and the traits in a caption bar along the "
-        "bottom edge, clearly legible and not overlapping the figure. "
+        "Create a clean character reference sheet for an anime short drama, all on one image "
+        "in three zones. Zone 1, turnaround: the same character three times side by side — "
+        "front view, three-quarter view, and side profile — identical outfit, identical "
+        "proportions, full body, neutral expression, no props. Zone 2, expression set: at "
+        "least four facial close-ups with strongly contrasting emotions (joy, anger, cold "
+        "detachment, sorrow), same face and hairstyle, each labelled with its emotion. "
+        "Zone 3, profile card: name, age, role, and the key visual traits that make the "
+        "character recognisable; infer age and role from the details below and keep them "
+        "short. Even neutral lighting, plain neutral background. Print the character's name "
+        "as a heading and the profile card in a caption bar along the bottom edge, clearly "
+        "legible and not overlapping the figures. "
         f"Character: {character_name.strip()}. State: {state_name.strip()}. "
         f"Appearance: {traits.strip()}."
     )
@@ -219,11 +172,13 @@ def fallback_character_sheet_prompt(character_name: str, state_name: str, traits
 def fallback_prop_prompt(name: str, description: str, owner_name: str = "") -> str:
     owner = f" Belongs to: {owner_name.strip()}." if owner_name.strip() else ""
     return (
-        "Create a clean prop reference image for an anime short drama. Single object, "
-        "centred, plain neutral background, even lighting, material and construction "
-        "clearly readable, no characters. Print the prop's name as a heading and the "
-        "details in a caption bar along the bottom edge, clearly legible and not "
-        f"overlapping the object. Prop: {name.strip()}.{owner} Details: {description.strip()}."
+        "Create a clean multi-angle prop reference sheet for an anime short drama. Show the "
+        "same object four times side by side: front view, side view, back view, and one "
+        "close-up of its material or construction. Identical lighting and scale, plain "
+        "neutral background, even lighting, no characters. Print the prop's name as a "
+        "heading and its owner, description, and setting notes in a caption bar along the "
+        "bottom edge, clearly legible and not overlapping the object. "
+        f"Prop: {name.strip()}.{owner} Details: {description.strip()}."
     )
 
 
@@ -386,12 +341,19 @@ def tone_sheet_prompt(
     every cell is far too small — but generating all of it in one sampling is exactly what
     makes lighting, palette, and render style agree, and the per-shot renders then carry it
     as a reference. The whole script goes in so the model can pace the look across the arc.
+
+    Each cell carries its number and a few-word caption of what it shows (「1 黄昏街道 |
+    青年走路」), so the sheet can be read as a shot list at a glance. The tone prefixes and
+    `shot_prompt` are what keep those captions out of the rendered frames.
     """
     numbered = "\n".join(f"{index}. {shot.strip()}" for index, shot in enumerate(shots, start=1) if shot.strip())
     parts = [
         f"为短剧《{episode_title.strip()}》绘制一张分镜基调总览图。",
-        "把下列分镜按顺序排成网格缩略图，每格画出该分镜的构图与氛围，格子左上角标注分镜序号。",
-        "要求：所有格子共用同一套光线、色调、材质与渲染风格；不要出现字幕、水印或说明文字（序号除外）。",
+        "把下列分镜按顺序排成网格缩略图，每格画出该分镜的构图与氛围。"
+        "每格左上角用清晰易读的小字标注分镜序号和一句不超过十个字的画面概述，"
+        "格式如「1 黄昏街道 | 青年走路」，概述从该分镜内容提炼，写地点或状态加人物动作。",
+        "要求：所有格子共用同一套光线、色调、材质与渲染风格；"
+        "除每格左上角的序号与画面概述外，不要出现字幕、水印或其他说明文字。",
         f"整体风格：{style_prompt.strip()}。" if style_prompt.strip() else "",
         f"避免出现：{negative_prompt.strip()}。" if negative_prompt.strip() else "",
         f"剧本：\n{script.strip()}" if script.strip() else "",

@@ -1,4 +1,4 @@
-"""Merged delivery: several rendered shots joined into one file the user can export."""
+"""Ordered shot composition and whole-episode delivery exports."""
 
 from __future__ import annotations
 
@@ -29,7 +29,10 @@ class ExportJob(SQLModel, table=True):
     # JSON array of scene ids, in output order. The user picks and orders the clips, so this
     # is the export, not a derived view of an episode.
     source_scene_ids: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
-    # Human-facing label such as "第一集 1-6", kept so the history reads the way it was asked for.
+    # A composition publishes to this episode; plain IDs preserve export history after deletion.
+    target_episode_id: str | None = None
+    source_episode_ids: str = Field(default="[]", sa_column_kwargs={"server_default": text("'[]'")})
+    # Human-facing name retained in export history.
     range_label: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     status: str = Field(default="queued", sa_column_kwargs={"server_default": text("'queued'")})
     progress: int = Field(default=0, sa_column_kwargs={"server_default": text("0")})

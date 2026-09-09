@@ -141,7 +141,6 @@ async def draft_prop_prompt(
             body.name or prop.name,
             body.description or prop.description,
             _owner_names(session, project_id).get(prop.owner_character_id or "", ""),
-            body.preset,
         )
         # Resolved in the request so an unaffordable job is a 402 now rather than a failure
         # the user has to go and read in the job list.

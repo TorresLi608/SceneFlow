@@ -157,6 +157,7 @@ function toSummary(episode: EpisodeSummary | Episode): EpisodeSummary {
     synopsis: episode.synopsis,
     status: episode.status,
     videoStatus: episode.videoStatus,
+    videoUrl: episode.videoUrl,
     videoProgress: episode.videoProgress,
     durationMs: episode.durationMs,
     sceneCount: episode.sceneCount,

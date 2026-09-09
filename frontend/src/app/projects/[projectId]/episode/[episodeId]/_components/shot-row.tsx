@@ -41,7 +41,7 @@ import type { Scene } from "@/types/project";
 import type { GenerationReferenceInput, PromptPrefix } from "@/types/project";
 import type { ReferenceAssetOption } from "./reference-picker";
 import { MentionTextarea } from "./mention-textarea";
-import { PromptPrefixList } from "./prompt-prefix-list";
+import { PromptPrefixList, type PrefixPresetSource } from "./prompt-prefix-list";
 import { MediaPreviewDialog } from "./media-preview-dialog";
 
 
@@ -105,6 +105,8 @@ export interface ShotRowProps {
   /** True while any run owns the project; per-shot actions are unavailable then. */
   busy: boolean;
   toneReady: boolean;
+  /** Whether the episode has saved source text; gates the script quick-fill preset. */
+  episodeHasSource: boolean;
   onGenerateImage: () => void;
   onGenerateVideo: () => void;
   imageGenerating: boolean;
@@ -130,6 +132,7 @@ export function ShotRow({
   onToggle,
   busy,
   toneReady,
+  episodeHasSource,
   onGenerateImage,
   onGenerateVideo,
   imageGenerating,
@@ -388,10 +391,21 @@ export function ShotRow({
     audio: videoSpendByMedia("audio"),
   };
 
-  // The quick-fill bar is always shown, disabled with a reason until an anchor exists —
-  // a button that simply is not there reads as a missing feature rather than a prerequisite.
-  const prefixPreset = () =>
-    listPromptPrefixPresetsAction(projectId, scene.id).then((result) => result.presets[0] ?? null);
+  // The quick-fill bar is always shown, each button disabled with a reason until its
+  // prerequisite exists — a button that simply is not there reads as a missing feature
+  // rather than a prerequisite. Asked per list: the still and the motion render get
+  // different wording, and the server owns every text.
+  const prefixPresetFor = (kind: "image" | "video") => (source: PrefixPresetSource) =>
+    listPromptPrefixPresetsAction(projectId, scene.id, kind).then(
+      (result) => result.presets.find((item) => item.source === source) ?? null,
+    );
+  const imagePrefixPreset = prefixPresetFor("image");
+  const videoPrefixPreset = prefixPresetFor("video");
+  const prefixPresetDisabled: Partial<Record<PrefixPresetSource, string>> = {
+    ...(toneReady ? {} : { tone: t("episode.needsToneSheetFirst") }),
+    ...(episodeHasSource ? {} : { script: t("episode.prefixPresetScriptMissing") }),
+    ...(scene.narration?.trim() ? {} : { shot: t("episode.prefixPresetShotMissing") }),
+  };
 
   // Frame slots take a still, whatever its source.
   const frameOptions = videoReferenceAssets.filter((asset) => asset.media === "image");
@@ -792,9 +806,8 @@ export function ShotRow({
                     { image: imageReferenceLimit }
                   )
                 }
-                preset={prefixPreset}
-                presetDisabled={!toneReady}
-                presetDisabledReason={t("episode.needsToneSheetFirst")}
+                preset={imagePrefixPreset}
+                presetDisabled={prefixPresetDisabled}
                 disabled={busy}
               />
             </Field>
@@ -909,9 +922,8 @@ export function ShotRow({
                     videoReferenceLimits
                   )
                 }
-                preset={prefixPreset}
-                presetDisabled={!toneReady}
-                presetDisabledReason={t("episode.needsToneSheetFirst")}
+                preset={videoPrefixPreset}
+                presetDisabled={prefixPresetDisabled}
                 disabled={busy}
               />
             </Field>

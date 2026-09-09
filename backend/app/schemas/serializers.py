@@ -204,6 +204,7 @@ def episode_summary_json(episode: Episode, scene_count: int = 0) -> dict[str, An
         "title": episode.title or f"第 {episode.episode_number} 集",
         "synopsis": episode.synopsis or "",
         "status": episode.status or "draft",
+        "videoUrl": scene_asset_url(episode.video_path, f"episode-{episode.episode_number}"),
         "videoStatus": episode.video_status or "idle",
         "videoProgress": episode.video_progress or 0,
         "durationMs": episode.duration_ms or 0,

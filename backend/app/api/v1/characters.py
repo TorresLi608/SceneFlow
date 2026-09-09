@@ -249,7 +249,6 @@ async def draft_state_prompt(
             character.appearance_prompt,
             body.name or state.name,
             body.description or state.description,
-            body.preset,
         )
         # Resolved in the request so an unaffordable job is a 402 now rather than a failure
         # the user has to go and read in the job list.

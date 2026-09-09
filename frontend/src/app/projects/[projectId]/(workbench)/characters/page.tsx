@@ -135,9 +135,6 @@ function StateEditor({
   const [name, setName] = useState(state.name);
   const [description, setDescription] = useState(state.description);
   const [prompt, setPrompt] = useState(state.finalPrompt);
-  // Which built-in template the draft should be written against. Empty means the backend's
-  // default (the turnaround sheet), which is exactly what a dropped selection looked like.
-  const [preset, setPreset] = useState("");
   const [fromEpisode, setFromEpisode] = useState(state.fromEpisode?.toString() ?? "");
   const [toEpisode, setToEpisode] = useState(state.toEpisode?.toString() ?? "");
   const draftController = useRef<AbortController | null>(null);
@@ -165,7 +162,7 @@ function StateEditor({
         projectId,
         character.id,
         state.id,
-        { name: name.trim(), description: description.trim(), preset },
+        { name: name.trim(), description: description.trim() },
         draftController.current?.signal
       ),
     onSuccess: (response) => setPrompt(response.prompt),
@@ -278,9 +275,6 @@ function StateEditor({
             id={`statePrompt-${state.id}`}
             label={t("character.prompt")}
             kind="character"
-            presetKind="character"
-            preset={preset}
-            onPresetChange={setPreset}
             value={prompt}
             onChange={setPrompt}
             placeholder={t("character.promptPlaceholder")}

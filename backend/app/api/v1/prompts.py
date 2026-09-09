@@ -4,7 +4,7 @@ import json
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select
@@ -17,7 +17,14 @@ from app.schemas.requests import CompilePromptRequest, OptimizePromptRequest
 from app.services.config_service import active_model_config, project_model_config
 from app.services.project_service import owned_project
 from app.services.prompt_compiler import compile_prompt
-from app.services.prompt_prefix_service import combined_prompt, combined_references, tone_prefix_item
+from app.services.prompt_prefix_service import (
+    combined_prompt,
+    combined_references,
+    script_prefix_item,
+    shot_list_prefix_item,
+    shot_prefix_item,
+    tone_prefix_item,
+)
 from app.services.prompt_service import PRESETS
 from app.services.reference_service import resolve_generation_references
 from app.services.usage_service import record_usage, require_model_balance
@@ -49,15 +56,18 @@ SYSTEM_PROMPTS = {
     # The three below draw *setting sheets*, not frames, so unlike `image` they must keep the
     # on-image labelling the reference depends on rather than optimising it away.
     "character": (
-        "你是动画角色设定师。把用户给的角色设定图提示词补全得更专业：明确三视图或多视图的排布、"
+        "你是动画角色设定师。把用户给的角色设定总图提示词补全得更专业：明确三面图的排布、"
         "服装材质、体型比例、发型五官特征、配色、光照与背景处理。"
+        "务必保留同一张图上的三个区域：角色三面图、角色多表情集（至少 4 个情绪反差鲜明的五官特写，如喜、怒、冷、悲）、"
+        "角色档案摘要（姓名、年龄、定位、核心外貌记忆点）；"
         "务必保留「画面中标注角色名称、角色简介与角色设定」这一要求，"
         "并说明文字排布在信息栏内、不遮挡角色。不要编造与原意冲突的设定。"
         "只输出最终提示词，不要标题、解释、引号或 Markdown。"
     ),
     "prop": (
-        "你是美术道具设计师。把用户给的道具设定图提示词补全得更专业：明确物体的形制、材质、工艺、"
+        "你是美术道具设计师。把用户给的道具多角度设定图提示词补全得更专业：明确物体的形制、材质、工艺、"
         "磨损痕迹、尺度参照、打光与背景处理。"
+        "务必保留多角度排布（正面、侧面、背面与细节特写并排，同一光照与比例）；"
         "务必保留「画面中标注道具名称、归属角色、道具简介与道具设定」这一要求，"
         "并说明文字排布在信息栏内、不遮挡道具。不要编造与原意冲突的设定。"
         "只输出最终提示词，不要标题、解释、引号或 Markdown。"
@@ -128,11 +138,13 @@ def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(c
 
 
 @router.get("/presets")
-def list_prompt_presets(kind: str = "character") -> dict[str, Any]:
+def list_prompt_presets(kind: str = "cover") -> dict[str, Any]:
     """Starting points for a prompt field, so a blank box is never the only option.
 
     Public within the app and free of model calls — these are static templates, and gating
     them behind a balance check would make an empty form unusable for a user out of credit.
+    Only covers have presets now; character and prop sheets have a fixed layout drafted
+    from the card's own details, so `character` and `prop` are unknown kinds here.
     """
     presets = PRESETS.get(kind.strip().lower())
     if presets is None:
@@ -146,6 +158,10 @@ def list_prompt_prefix_presets(
     # endpoint being the exception a client has to remember.
     project_id: str = Query(alias="projectId", max_length=64),
     scene_id: str = Query(alias="sceneId", max_length=64),
+    # Which list the preset is for. The still and the motion render get different tone
+    # wording, so the bar under each list asks for its own rather than the still text
+    # being pasted above a video prompt.
+    kind: Literal["image", "video"] = Query("image"),
     user_id: int = Depends(current_user_id),
 ) -> dict[str, Any]:
     """Ready-to-insert preambles for one shot, for the editor's quick-fill bar.
@@ -155,9 +171,11 @@ def list_prompt_prefix_presets(
     the one this hands back — a user who deleted the automatic item is asking for that item,
     not for a copy of it that drifted.
 
-    Only the tone preset exists today, and only once the episode has an anchor to point at:
-    the text is entirely about locating this shot's cell in the grid, which is meaningless
-    without a grid.
+    Four presets, each with its `source`: `tone` only once the episode has an anchor to
+    point at (the text is about locating this shot's cell in the grid, which is meaningless
+    without one); `script` when the episode has source text; `shot` when this shot has a
+    narration line; and `shots`, every shot's prompt for this list in order — the frame
+    prompt under `image`, the motion prompt under `video`.
     """
     with db() as session:
         owned_project(session, project_id, user_id)
@@ -169,7 +187,7 @@ def list_prompt_prefix_presets(
         if not scene:
             raise HTTPException(404, "scene not found")
         episode = session.get(Episode, scene.episode_id) if scene.episode_id else None
-        if not episode or not episode.tone_image_path:
+        if not episode:
             return {"presets": []}
         scenes = session.exec(
             select(Scene)
@@ -179,8 +197,45 @@ def list_prompt_prefix_presets(
         order = scene.order_num or 1
         # The label has to be the one `resolve_generation_references` gives a `tone`
         # reference, or the `@` in the preset never compiles to a numbered `图N`.
-        item = tone_prefix_item(episode.id, str(episode.title or ""), order, len(scenes))
-    return {"presets": [item]}
+        tone_label = str(episode.title or "") if episode.tone_image_path else ""
+        presets: list[dict[str, Any] | None] = []
+        if episode.tone_image_path:
+            presets.append(tone_prefix_item(episode.id, tone_label, order, len(scenes), media=kind))
+        presets.append(script_prefix_item(episode.source_text or ""))
+        presets.append(shot_prefix_item(scene.narration or "", order))
+        presets.append(
+            shot_list_prefix_item(
+                [
+                    {"order": row.order_num or index, "text": _shot_list_text(row, kind)}
+                    for index, row in enumerate(scenes, start=1)
+                ],
+                order,
+                media=kind,
+                episode_id=episode.id,
+                tone_label=tone_label,
+            )
+        )
+    return {"presets": [item for item in presets if item]}
+
+
+def _shot_list_text(scene: Scene, kind: str) -> str:
+    """One shot's entry in the all-shots preset.
+
+    The prompt this list is for, tagged the way the breakdown writes shots — shot type,
+    and for motion the camera move too — so the list reads like the storyboard rather than
+    like bare sentences. Falls back through the older fields so a shot the breakdown only
+    described is still listed.
+    """
+    if kind == "video":
+        body = scene.video_prompt or scene.visual_prompt or scene.narration or ""
+        tag = "，".join(part.strip() for part in (scene.shot_type, scene.camera_move) if part and part.strip())
+    else:
+        body = scene.visual_prompt or scene.narration or ""
+        tag = str(scene.shot_type or "").strip()
+    body = str(body).strip()
+    if not body:
+        return ""
+    return f"【{tag}】{body}" if tag else body
 
 
 @router.post("/optimize")
