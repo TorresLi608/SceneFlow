@@ -342,7 +342,6 @@ async def breakdown_episode(
         context = {
             "characters": breakdown_service.character_context(session, project_id, references.character_ids),
             "props": breakdown_service.prop_context(session, project_id, references.prop_ids),
-            "voices": breakdown_service.voice_context(session, project_id, references.voice_profile_ids),
         }
         existing_payload = [scene.model_dump() for scene in existing]
         user_prompt = breakdown_service.build_user_prompt(
@@ -353,7 +352,6 @@ async def breakdown_episode(
             detail_prompt=body.detail_prompt,
             use_cast_sheet=references.use_cast_sheet,
             use_prop_sheet=references.use_prop_sheet,
-            use_voice_sheet=references.use_voice_sheet,
             existing_shots=existing_payload,
             **context,
         )

@@ -257,11 +257,9 @@ def with_shot_label(text: str, order: int) -> str:
 def breakdown_reference_block(
     characters: list[dict[str, str]],
     props: list[dict[str, str]],
-    voices: list[str],
     *,
     use_cast_sheet: bool = False,
     use_prop_sheet: bool = False,
-    use_voice_sheet: bool = False,
 ) -> str:
     """The bible entries the breakdown may lean on, phrased so the model knows what to defer to.
 
@@ -273,14 +271,16 @@ def breakdown_reference_block(
     - anyone the bible has never heard of (walk-ons, 甲乙丙丁) — invented from the script.
 
     Selecting nothing at all is meaningful: it means decide everything from the script.
+    Voices are not part of this block: the breakdown writes no audio, and the speaker
+    column is filled from the cast regardless.
     """
     def clean(value: Any) -> str:
         return str(value or "").strip()
 
-    if not any((characters, props, voices, use_cast_sheet, use_prop_sheet, use_voice_sheet)):
+    if not any((characters, props, use_cast_sheet, use_prop_sheet)):
         return (
-            "本次没有提供任何角色、道具或音色参考资料。"
-            "请完全依据剧本内容自行推断所有人物、道具与声音的设定。"
+            "本次没有提供任何角色或道具参考资料。"
+            "请完全依据剧本内容自行推断所有人物与道具的设定。"
         )
 
     lines: list[str] = ["以下是本剧已有的设定资料，请在分镜提示词中优先沿用它们："]
@@ -316,14 +316,9 @@ def breakdown_reference_block(
             else:
                 lines.append(f"- {name}{owned}：没有设定图，请依据文字设定推理。{clean(prop.get('description'))}")
 
-    if use_voice_sheet:
-        lines.append("【音色】已提供整体音色参考轨。")
-    if voices:
-        lines.append("【音色】已配置：" + "、".join(voices) + "。台词分镜请标注说话角色，便于后续配音对应。")
-
     lines.append(
-        "剧本中出现但不在上述清单里的角色（配角、路人、甲乙丙丁等），"
-        "以及未列出的道具与声音，请依据剧本描述自行推断生成，不要遗漏。"
+        "剧本中出现但不在上述清单里的角色（配角、路人、甲乙丙丁等）以及未列出的道具，"
+        "请依据剧本描述自行推断生成，不要遗漏。台词分镜请标注说话角色，便于后续配音对应。"
     )
     return "\n".join(lines)
 

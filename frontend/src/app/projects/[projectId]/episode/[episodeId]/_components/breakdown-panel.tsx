@@ -1,44 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, ChevronUp, Clapperboard, Film, Layers, Mic, Package, Sparkles, Square, User } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Clapperboard, Film, Layers, LayoutGrid, Package, Sparkles, Square, User } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import type { BreakdownDetailLevel, BreakdownTarget, Character, Prop, VoiceProfile } from "@/types/project";
+import type { BreakdownDetailLevel, BreakdownTarget, Character, Prop } from "@/types/project";
 
+/**
+ * What the breakdown may look at. Voices are deliberately absent: the breakdown writes no
+ * audio, and the speaker column is filled from the cast regardless. The merged sheets are
+ * ticked like any other card rather than through a separate switch.
+ */
 export interface BreakdownSelection {
   characterIds: string[];
   propIds: string[];
-  voiceProfileIds: string[];
   useCastSheet: boolean;
   usePropSheet: boolean;
-  useVoiceSheet: boolean;
 }
 
 export const EMPTY_SELECTION: BreakdownSelection = {
   characterIds: [],
   propIds: [],
-  voiceProfileIds: [],
   useCastSheet: false,
   usePropSheet: false,
-  useVoiceSheet: false,
 };
 
 function Chip({
   label,
   hint,
+  title,
   icon: Icon,
   active,
   onClick,
 }: {
   label: string;
   hint?: string;
+  title?: string;
   icon?: React.ComponentType<{ className?: string }>;
   active: boolean;
   onClick: () => void;
@@ -47,6 +49,7 @@ function Chip({
     <button
       type="button"
       aria-pressed={active}
+      title={title}
       onClick={onClick}
       className={cn(
         "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-all cursor-pointer select-none",
@@ -72,7 +75,8 @@ function Chip({
 export function BreakdownPanel({
   characters,
   props,
-  voices,
+  castSheetAvailable = false,
+  propSheetAvailable = false,
   selection,
   onSelectionChange,
   target,
@@ -91,7 +95,9 @@ export function BreakdownPanel({
 }: {
   characters: Character[];
   props: Prop[];
-  voices: VoiceProfile[];
+  /** Whether the project has drawn its merged cast / prop sheet; the chip only exists then. */
+  castSheetAvailable?: boolean;
+  propSheetAvailable?: boolean;
   selection: BreakdownSelection;
   onSelectionChange: (next: BreakdownSelection) => void;
   target: BreakdownTarget;
@@ -111,7 +117,7 @@ export function BreakdownPanel({
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
-  const toggle = (key: "characterIds" | "propIds" | "voiceProfileIds", id: string) => {
+  const toggle = (key: "characterIds" | "propIds", id: string) => {
     const current = selection[key];
     onSelectionChange({
       ...selection,
@@ -131,13 +137,17 @@ export function BreakdownPanel({
     { value: "custom", label: t("episode.detailCustom") },
   ];
 
-  const nothingToPick = characters.length === 0 && props.length === 0 && voices.length === 0;
+  const nothingToPick = characters.length === 0 && props.length === 0 && !castSheetAvailable && !propSheetAvailable;
   const cannotStart = disabled || (detailLevel === "custom" && !detailPrompt.trim());
   const isExpanded = !collapsed || running;
 
   const currentTargetLabel = targets.find((item) => item.value === target)?.label ?? "";
   const currentDetailLabel = detailLevels.find((item) => item.value === detailLevel)?.label ?? "";
-  const totalRefsSelected = selection.characterIds.length + selection.propIds.length + selection.voiceProfileIds.length;
+  const totalRefsSelected =
+    selection.characterIds.length +
+    selection.propIds.length +
+    Number(selection.useCastSheet) +
+    Number(selection.usePropSheet);
 
   return (
     <section className="flex flex-col rounded-xl border border-border/70 bg-card/60 p-4 shadow-sm backdrop-blur-xs transition-all duration-200 hover:border-border">
@@ -277,7 +287,7 @@ export function BreakdownPanel({
                 {t("episode.references")}
               </p>
 
-              {characters.length > 0 ? (
+              {characters.length > 0 || castSheetAvailable ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium flex items-center gap-1.5 text-foreground">
@@ -287,18 +297,19 @@ export function BreakdownPanel({
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
                       {selection.characterIds.length}/{characters.length}
                     </Badge>
-                    <Field orientation="horizontal" className="ml-auto flex items-center gap-2">
-                      <Switch
-                        id="useCastSheet"
-                        checked={selection.useCastSheet}
-                        onCheckedChange={(checked) => onSelectionChange({ ...selection, useCastSheet: checked })}
-                      />
-                      <FieldLabel htmlFor="useCastSheet" className="text-xs text-muted-foreground cursor-pointer">
-                        {t("episode.useCastSheet")}
-                      </FieldLabel>
-                    </Field>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
+                    {/* The merged sheet is picked like any card — it only exists once drawn. */}
+                    {castSheetAvailable ? (
+                      <Chip
+                        label={t("episode.castSheetChip")}
+                        title={t("episode.sheetChipHint")}
+                        icon={LayoutGrid}
+                        hint="◉"
+                        active={selection.useCastSheet}
+                        onClick={() => onSelectionChange({ ...selection, useCastSheet: !selection.useCastSheet })}
+                      />
+                    ) : null}
                     {characters.map((character) => (
                       <Chip
                         key={character.id}
@@ -313,7 +324,7 @@ export function BreakdownPanel({
                 </div>
               ) : null}
 
-              {props.length > 0 ? (
+              {props.length > 0 || propSheetAvailable ? (
                 <div className="flex flex-col gap-2 border-t border-border/40 pt-2.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium flex items-center gap-1.5 text-foreground">
@@ -323,18 +334,18 @@ export function BreakdownPanel({
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
                       {selection.propIds.length}/{props.length}
                     </Badge>
-                    <Field orientation="horizontal" className="ml-auto flex items-center gap-2">
-                      <Switch
-                        id="usePropSheet"
-                        checked={selection.usePropSheet}
-                        onCheckedChange={(checked) => onSelectionChange({ ...selection, usePropSheet: checked })}
-                      />
-                      <FieldLabel htmlFor="usePropSheet" className="text-xs text-muted-foreground cursor-pointer">
-                        {t("episode.usePropSheet")}
-                      </FieldLabel>
-                    </Field>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
+                    {propSheetAvailable ? (
+                      <Chip
+                        label={t("episode.propSheetChip")}
+                        title={t("episode.sheetChipHint")}
+                        icon={LayoutGrid}
+                        hint="◉"
+                        active={selection.usePropSheet}
+                        onClick={() => onSelectionChange({ ...selection, usePropSheet: !selection.usePropSheet })}
+                      />
+                    ) : null}
                     {props.map((prop) => (
                       <Chip
                         key={prop.id}
@@ -343,41 +354,6 @@ export function BreakdownPanel({
                         hint={prop.imageUrl ? "◉" : undefined}
                         active={selection.propIds.includes(prop.id)}
                         onClick={() => toggle("propIds", prop.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {voices.length > 0 ? (
-                <div className="flex flex-col gap-2 border-t border-border/40 pt-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium flex items-center gap-1.5 text-foreground">
-                      <Mic className="size-3.5 text-muted-foreground" />
-                      {t("episode.refVoices")}
-                    </span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
-                      {selection.voiceProfileIds.length}/{voices.length}
-                    </Badge>
-                    <Field orientation="horizontal" className="ml-auto flex items-center gap-2">
-                      <Switch
-                        id="useVoiceSheet"
-                        checked={selection.useVoiceSheet}
-                        onCheckedChange={(checked) => onSelectionChange({ ...selection, useVoiceSheet: checked })}
-                      />
-                      <FieldLabel htmlFor="useVoiceSheet" className="text-xs text-muted-foreground cursor-pointer">
-                        {t("episode.useVoiceSheet")}
-                      </FieldLabel>
-                    </Field>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {voices.map((voice) => (
-                      <Chip
-                        key={voice.id}
-                        label={voice.name}
-                        icon={Mic}
-                        active={selection.voiceProfileIds.includes(voice.id)}
-                        onClick={() => toggle("voiceProfileIds", voice.id)}
                       />
                     ))}
                   </div>

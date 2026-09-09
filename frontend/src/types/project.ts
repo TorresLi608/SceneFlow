@@ -297,10 +297,9 @@ export type BreakdownDetailLevel = "concise" | "standard" | "detailed" | "custom
 export interface BreakdownReferences {
   characterIds?: string[];
   propIds?: string[];
-  voiceProfileIds?: string[];
+  /** The merged sheets, picked as chips beside the cards once the project has drawn them. */
   useCastSheet?: boolean;
   usePropSheet?: boolean;
-  useVoiceSheet?: boolean;
 }
 
 export interface BreakdownEpisodeInput {

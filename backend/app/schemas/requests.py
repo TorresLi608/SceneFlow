@@ -252,12 +252,11 @@ class BreakdownReferencesRequest(CamelModel):
 
     character_ids: list[str] = Field(default_factory=list, max_length=64)
     prop_ids: list[str] = Field(default_factory=list, max_length=64)
-    voice_profile_ids: list[str] = Field(default_factory=list, max_length=64)
-    # The merged sheets, when the user would rather point at the whole cast than name it
-    # member by member. Characters the bible has never heard of are inferred from the script.
+    # The merged sheets, picked in the editor as chips beside the individual cards once the
+    # project has drawn them. Characters the bible has never heard of are inferred from the
+    # script. Voices are not offered: the breakdown writes no audio and needs no timbre.
     use_cast_sheet: bool = False
     use_prop_sheet: bool = False
-    use_voice_sheet: bool = False
 
 
 class BreakdownEpisodeRequest(CamelModel):

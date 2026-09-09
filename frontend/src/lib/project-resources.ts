@@ -12,8 +12,13 @@ export interface ReferenceAssetOption extends GenerationReferenceInput {
   sceneOrder?: number | null;
 }
 
-export function matchesResource(asset: ReferenceAssetOption, search: string) {
-  const text = [asset.label, asset.description, asset.episodeTitle, ...(asset.aliases ?? [])].join(" ").toLocaleLowerCase();
+/**
+ * Every whitespace-separated word of `search` must appear in the label, description, episode
+ * title, aliases, or `extraTerms`. Callers pass the type labels they display there, so a query
+ * such as "视频 角色" narrows by media type and source kind exactly as the list shows them.
+ */
+export function matchesResource(asset: ReferenceAssetOption, search: string, extraTerms: string[] = []) {
+  const text = [asset.label, asset.description, asset.episodeTitle, ...(asset.aliases ?? []), ...extraTerms].join(" ").toLocaleLowerCase();
   return search.trim().toLocaleLowerCase().split(/\s+/).every((word) => text.includes(word));
 }
 

@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from app.models import Character, CharacterState, Episode, Prop, VoiceProfile
+from app.models import Character, CharacterState, Episode, Prop
 from app.services.character_service import states_for
 from app.services.prompt_service import BREAKDOWN_SYSTEM, breakdown_reference_block
 
@@ -100,22 +100,6 @@ def prop_context(session: Session, project_id: str, prop_ids: list[str]) -> list
     ]
 
 
-def voice_context(session: Session, project_id: str, voice_ids: list[str]) -> list[str]:
-    if not voice_ids:
-        return []
-    profiles = _selected(
-        list(
-            session.exec(
-                select(VoiceProfile)
-                .where(VoiceProfile.project_id == project_id, VoiceProfile.deleted_at.is_(None))
-                .order_by(VoiceProfile.order_num.asc(), VoiceProfile.name.asc())
-            ).all()
-        ),
-        voice_ids,
-    )
-    return [profile.name for profile in profiles]
-
-
 # What each target asks the model to fill in. Split because the two halves have different
 # lifetimes: re-deriving motion for shots whose frames are already rendered must not ask
 # for — or overwrite — the frames themselves.
@@ -149,16 +133,13 @@ def build_user_prompt(
     detail_prompt: str | None = None,
     characters: list[dict[str, Any]],
     props: list[dict[str, Any]],
-    voices: list[str],
     use_cast_sheet: bool,
     use_prop_sheet: bool,
-    use_voice_sheet: bool,
     existing_shots: list[dict[str, Any]] | None = None,
 ) -> str:
     """The user turn: what to produce, what to lean on, and the script itself."""
     characters = [item for item in (characters or []) if isinstance(item, dict)]
     props = [item for item in (props or []) if isinstance(item, dict)]
-    voices = [str(item).strip() for item in (voices or []) if item is not None and str(item).strip()]
     existing_shots = [item for item in (existing_shots or []) if isinstance(item, dict)]
     parts = [TARGET_INSTRUCTIONS.get(target, TARGET_INSTRUCTIONS["both"])]
     parts.append("连续性要求：按镜头顺序保持同场景中的人物外观、服装、道具、空间位置、视线、光线和情绪变化连贯；切换场景时写明转场并保留人物形象设定。")
@@ -173,10 +154,8 @@ def build_user_prompt(
         breakdown_reference_block(
             characters,
             props,
-            voices,
             use_cast_sheet=use_cast_sheet,
             use_prop_sheet=use_prop_sheet,
-            use_voice_sheet=use_voice_sheet,
         )
     )
     if target == "video" and existing_shots:
@@ -243,5 +222,4 @@ __all__ = [
     "prop_context",
     "resolve_speaker",
     "system_prompt",
-    "voice_context",
 ]

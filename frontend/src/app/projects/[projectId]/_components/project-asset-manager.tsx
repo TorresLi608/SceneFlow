@@ -189,7 +189,9 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
   };
 
   const content = (
-    <div className="flex min-h-0 flex-col gap-3.5">
+    // Fills the workbench main area (or shrinks inside the dialog) so the header, tabs and
+    // filters stay put and only the asset list / form columns below scroll.
+    <div className="flex min-h-0 flex-1 flex-col gap-3.5 md:h-full">
 
           <header className="border-b border-border/50 pb-2.5">
             <div className="flex items-center gap-2">
@@ -271,7 +273,7 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
           {catalog.isPending ? <p role="status">{t("common.loading")}</p> : null}
           {catalog.isError ? <p role="alert" className="text-destructive">{t("assets.loadFailed")}</p> : null}
           {/* Body Content Grid */}
-          <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[1fr_320px] lg:grid-cols-[1fr_350px] md:max-h-[65vh] overflow-y-auto">
+          <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[1fr_320px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden lg:grid-cols-[1fr_350px]">
             {/* Left: Asset List Grid */}
             <div className="flex flex-col min-h-0 rounded-xl border border-border/60 bg-muted/10 p-3.5 overflow-hidden">
               <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-border/40 text-xs font-medium text-muted-foreground">

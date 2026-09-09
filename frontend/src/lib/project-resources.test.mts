@@ -17,3 +17,17 @@ test("resources search across episode, shot, description and bilingual aliases",
   assert.equal(localizeResource(resource, "en").label, resource.aliases[1]);
   assert.equal(localizeResource(resource, "en").id, resource.id);
 });
+
+test("extra terms make the displayed media and kind labels searchable", () => {
+  const character: ProjectResource = {
+    kind: "character", id: "li-lei", label: "李雷", media: "image", url: "/character",
+    episodeId: null, episodeNumber: null, episodeTitle: "", sceneOrder: null,
+    description: "", aliases: [], updatedAt: null,
+  };
+  const typeTerms = ["图片", "Image", "角色", "Character"];
+  assert.equal(matchesResource(character, "图片"), false);
+  assert.equal(matchesResource(character, "图片", typeTerms), true);
+  assert.equal(matchesResource(character, "character 李", typeTerms), true);
+  assert.equal(matchesResource(character, "视频", typeTerms), false);
+  assert.equal(matchesResource(character, "", typeTerms), true);
+});

@@ -35,7 +35,6 @@ import {
   getProjectModelsAction,
   listCharactersAction,
   listProjectsAction,
-  listVoicesAction,
   listPropsAction,
   updateEpisodeAction,
 } from "@/actions/projects-actions";
@@ -137,10 +136,6 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
   const propsQuery = useQuery({
     queryKey: queryKeys.props(projectId),
     queryFn: () => listPropsAction(projectId),
-  });
-  const voicesQuery = useQuery({
-    queryKey: queryKeys.voices(projectId),
-    queryFn: () => listVoicesAction(projectId),
   });
   const resourcesQuery = useProjectResources(projectId, busy);
   useEffect(() => {
@@ -535,7 +530,8 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         <BreakdownPanel
           characters={charactersQuery.data?.characters ?? []}
           props={propsQuery.data?.props ?? []}
-          voices={voicesQuery.data?.voices ?? []}
+          castSheetAvailable={Boolean(project?.characterSheetUrl)}
+          propSheetAvailable={Boolean(project?.propSheetUrl)}
           selection={selection}
           onSelectionChange={setSelection}
           target={target}

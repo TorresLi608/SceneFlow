@@ -2034,7 +2034,11 @@ paths:
 
         Public within the app and free of model calls — these are static templates, and gating
 
-        them behind a balance check would make an empty form unusable for a user out of credit.'
+        them behind a balance check would make an empty form unusable for a user out of credit.
+
+        Only covers have presets now; character and prop sheets have a fixed layout drafted
+
+        from the card''s own details, so `character` and `prop` are unknown kinds here.'
       operationId: list_prompt_presets_api_prompts_presets_get
       parameters:
       - name: kind
@@ -2042,7 +2046,7 @@ paths:
         required: false
         schema:
           type: string
-          default: character
+          default: cover
           title: Kind
       responses:
         '200':
@@ -5240,12 +5244,6 @@ components:
           type: array
           maxItems: 64
           title: Propids
-        voiceProfileIds:
-          items:
-            type: string
-          type: array
-          maxItems: 64
-          title: Voiceprofileids
         useCastSheet:
           type: boolean
           title: Usecastsheet
@@ -5253,10 +5251,6 @@ components:
         usePropSheet:
           type: boolean
           title: Usepropsheet
-          default: false
-        useVoiceSheet:
-          type: boolean
-          title: Usevoicesheet
           default: false
       additionalProperties: false
       type: object
@@ -5795,11 +5789,6 @@ components:
           type: string
           maxLength: 4000
           title: Description
-          default: ''
-        preset:
-          type: string
-          maxLength: 40
-          title: Preset
           default: ''
         model:
           anyOf:
