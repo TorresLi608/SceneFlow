@@ -36,7 +36,7 @@ export function PreferencesSwitcher({ className, showGithub = true }: Preference
   const toggleTheme = usePreferencesStore((state) => state.toggleTheme);
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex shrink-0 items-center gap-1 sm:gap-2", className)}>
       {showGithub ? (
         <Button
           variant="outline"
@@ -56,14 +56,14 @@ export function PreferencesSwitcher({ className, showGithub = true }: Preference
         </Button>
       ) : null}
 
-      <Button variant="outline" size="sm" onClick={toggleLocale}>
-        <Languages className="mr-1 size-3.5" />
-        {locale === "zh" ? t("common.localeZh") : t("common.localeEn")}
+      <Button variant="outline" size="sm" onClick={toggleLocale} aria-label={t("common.language")} title={t("common.language")}>
+        <Languages data-icon="inline-start" />
+        <span className="hidden sm:inline">{locale === "zh" ? t("common.localeZh") : t("common.localeEn")}</span>
       </Button>
 
-      <Button variant="outline" size="sm" onClick={toggleTheme}>
-        {theme === "dark" ? <Moon className="mr-1 size-3.5" /> : <Sun className="mr-1 size-3.5" />}
-        {theme === "dark" ? t("common.themeDark") : t("common.themeLight")}
+      <Button variant="outline" size="sm" onClick={toggleTheme} aria-label={t("common.theme")} title={t("common.theme")}>
+        {theme === "dark" ? <Moon data-icon="inline-start" /> : <Sun data-icon="inline-start" />}
+        <span className="hidden sm:inline">{theme === "dark" ? t("common.themeDark") : t("common.themeLight")}</span>
       </Button>
     </div>
   );

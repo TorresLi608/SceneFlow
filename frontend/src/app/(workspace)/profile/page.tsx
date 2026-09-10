@@ -9,7 +9,7 @@ import { changePasswordAction, getMeAction, redeemCodeAction, updateMeAction } f
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
@@ -17,6 +17,8 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { formatMicros, formatMoney } from "@/lib/money";
 import { useUserStore } from "@/store/user-store";
+
+import { RedemptionHistoryDialog } from "./_components/redemption-history-dialog";
 
 export default function ProfilePage() {
   const { t } = useI18n();
@@ -49,6 +51,7 @@ export default function ProfilePage() {
     onSuccess: (data) => {
       setUser(data.user);
       queryClient.setQueryData(queryKeys.me, { user: data.user });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.redemptionHistory });
       setCode("");
       toast.add({
         title: t("profile.redeemSuccess", { amount: formatMicros(data.amountMicros, 6) }),
@@ -104,6 +107,7 @@ export default function ProfilePage() {
             <CardHeader>
               <CardTitle>{t("profile.redeemTitle")}</CardTitle>
               <CardDescription>{t("profile.redeemDescription")}</CardDescription>
+              <CardAction><RedemptionHistoryDialog /></CardAction>
             </CardHeader>
             <CardContent>
               <form onSubmit={(event) => { event.preventDefault(); redeemMutation.mutate(); }}>
@@ -197,11 +201,11 @@ export default function ProfilePage() {
 
 function ProfileMetric({ icon: Icon, label, value }: { icon: typeof Coins; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border p-4">
-      <div className="flex size-10 items-center justify-center rounded-lg bg-muted"><Icon /></div>
+    <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border p-4">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted"><Icon /></div>
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
+        <p className="mt-1 text-xl font-semibold tabular-nums [overflow-wrap:anywhere]">{value}</p>
       </div>
     </div>
   );

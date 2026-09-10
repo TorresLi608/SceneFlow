@@ -72,7 +72,7 @@ export function ReferencePicker({
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/20 p-3.5 shadow-2xs">
+    <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border/60 bg-muted/20 p-3.5 shadow-2xs">
       <div>
         <p className="text-xs font-semibold text-foreground">{title}</p>
         <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{hint}</p>
@@ -81,7 +81,7 @@ export function ReferencePicker({
       {visible.length === 0 ? (
         <p className="text-xs text-muted-foreground py-2">{t("episode.referenceEmpty")}</p>
       ) : (
-        <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
+        <div className="grid max-h-72 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-2 overflow-y-auto">
           {visible.map((asset) => {
             const active = selectedKeys.has(keyOf(asset));
             const selectedCount = assets.filter(
@@ -143,8 +143,8 @@ export function ReferencePicker({
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-xs font-medium text-foreground">{asset.label}</span>
-                    <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                      {asset.media === "image" ? <ImageIcon className="size-3 text-muted-foreground/80" /> : null}
+                    <span className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">
+                      {asset.media === "image" ? <ImageIcon className="mr-1 inline size-3 text-muted-foreground/80" /> : null}
                       {t(`assets.kind.${asset.kind}`)} · {asset.episodeTitle || t("assets.shared")}
                     </span>
                   </span>

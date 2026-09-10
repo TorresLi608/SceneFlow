@@ -1,5 +1,5 @@
 import { httpClient } from "@/lib/http/client";
-import type { RedeemCodeResponse, UpdateMeInput, UserMeResponse } from "@/types/auth";
+import type { RedeemCodeResponse, RedemptionHistoryResponse, UpdateMeInput, UserMeResponse } from "@/types/auth";
 
 export async function getMeAction() {
   const response = await httpClient.get<UserMeResponse>("/api/bff/users/me");
@@ -18,5 +18,10 @@ export async function changePasswordAction(currentPassword: string, password: st
 
 export async function redeemCodeAction(code: string) {
   const response = await httpClient.post<RedeemCodeResponse>("/api/bff/users/redeem", { code });
+  return response.data;
+}
+
+export async function listRedemptionHistoryAction(params: { page: number; pageSize: number }) {
+  const response = await httpClient.get<RedemptionHistoryResponse>("/api/bff/users/redemptions", { params });
   return response.data;
 }

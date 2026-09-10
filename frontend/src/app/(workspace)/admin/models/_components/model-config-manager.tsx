@@ -785,7 +785,7 @@ export function ModelConfigManager() {
       </div>
 
       {/* 筛选与搜索卡片 */}
-      <div className="grid gap-2.5 rounded-2xl border border-border/70 bg-card/40 p-3.5 backdrop-blur-xl md:grid-cols-2 xl:grid-cols-[minmax(180px,1.2fr)_140px_140px_140px_130px_130px_auto]">
+      <div className="grid gap-2.5 rounded-2xl border border-border/70 bg-card/40 p-3.5 backdrop-blur-xl md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[minmax(180px,1.2fr)_140px_140px_140px_130px_130px_auto]">
         <Input
           value={search}
           onChange={(event) => {
@@ -1114,7 +1114,7 @@ export function ModelConfigManager() {
 
       {/* 模型配置 新建 / 编辑 Dialog（全量卡片化重构） */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden gap-0">
+        <DialogContent className="sm:max-w-3xl max-h-[90dvh] flex flex-col p-0 overflow-hidden gap-0">
           <DialogHeader className="p-5 border-b border-border/70">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">

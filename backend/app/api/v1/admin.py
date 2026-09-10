@@ -20,7 +20,7 @@ from app.schemas.serializers import config_json, official_config_json, user_json
 from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_api_key
 from app.services.error_log_service import error_log_json, find_error_logs
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates, usage_log_json
-from app.utils.common import now
+from app.utils.common import now, pagination
 from app.utils.time_range import utc_time_bounds
 
 
@@ -89,10 +89,6 @@ def redemption_code_json(
             else None
         ),
     }
-
-
-def pagination(total: int, page: int, page_size: int) -> dict[str, int]:
-    return {"total": total, "page": page, "pageSize": page_size, "pageCount": max(1, (total + page_size - 1) // page_size)}
 
 
 def amount_micros(value: Any) -> int:

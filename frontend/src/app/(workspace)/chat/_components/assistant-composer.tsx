@@ -24,7 +24,7 @@ import type { ChatAttachment, ChatAttachmentPart, ChatMessage } from "@/types/ch
 interface AssistantComposerProps {
   sessionId: string | null;
   messages: ChatMessage[];
-  disabled: boolean;
+  sendDisabled: boolean;
   isRunning: boolean;
   onSend: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   onStop: () => void;
@@ -292,7 +292,7 @@ function AttachmentError({ onError }: { onError: (message: string) => void }) {
   return null;
 }
 
-export function AssistantComposer({ sessionId, messages, disabled, isRunning, onSend, onStop }: AssistantComposerProps) {
+export function AssistantComposer({ sessionId, messages, sendDisabled, isRunning, onSend, onStop }: AssistantComposerProps) {
   const { t } = useI18n();
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -314,11 +314,8 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
       const attachments = toChatAttachments(message.attachments);
       if (content || attachments.length) {
         setAttachmentError(null);
-        try {
-          await onSend(content, attachments);
-        } finally {
-          requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
-        }
+        inputRef.current?.focus({ preventScroll: true });
+        await onSend(content, attachments);
       }
     },
     [onSend]
@@ -330,7 +327,7 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
 
   const runtime = useExternalStoreRuntime({
     messages: assistantMessages,
-    isDisabled: disabled,
+    isSendDisabled: sendDisabled,
     isRunning,
     onNew: handleNew,
     adapters: {
@@ -343,7 +340,7 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
       <ThreadPrimitive.ViewportProvider>
         <AttachmentError onError={setAttachmentError} />
         <ComposerPrimitive.Root className="rounded-3xl border border-border/70 bg-background px-3 py-2 shadow-sm">
-          <ComposerPrimitive.AttachmentDropzone disabled={disabled} className="flex flex-col gap-1.5 rounded-2xl data-[dragging]:bg-muted/45">
+          <ComposerPrimitive.AttachmentDropzone className="flex flex-col gap-1.5 rounded-2xl data-[dragging]:bg-muted/45">
             <AuiIf condition={({ composer }) => composer.attachments.length > 0}>
               <div className="flex flex-wrap gap-2 px-1 pb-1">
                 <ComposerPrimitive.Attachments>{() => <ComposerAttachment />}</ComposerPrimitive.Attachments>
@@ -352,7 +349,6 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
             <div className="flex min-h-10 items-center gap-1.5">
               <ComposerPrimitive.AddAttachment
                 multiple
-                disabled={disabled}
                 className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:text-muted-foreground/50"
                 aria-label={t("chat.addAttachment")}
               >
@@ -362,9 +358,8 @@ export function AssistantComposer({ sessionId, messages, disabled, isRunning, on
                 ref={inputRef}
                 autoFocus
                 submitMode="enter"
-                disabled={disabled}
                 placeholder={t("chat.inputPlaceholder")}
-                className="max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground"
+                className="max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-base leading-6 outline-none placeholder:text-muted-foreground md:text-sm"
               />
               {isRunning ? (
                 <button

@@ -87,7 +87,7 @@ function MessageContent({ content, isRunning }: { content: string; isRunning: bo
     <TextMessagePartProvider text={content} isRunning={isRunning}>
       <StreamdownTextPrimitive
         caret={isRunning ? "block" : undefined}
-        containerClassName="min-w-0"
+        containerClassName="min-w-0 max-w-full [overflow-wrap:anywhere]"
         containerProps={{ onClickCapture: handleCodeCopyCapture }}
         controls={streamdownControls}
         defer
@@ -292,9 +292,9 @@ export function ChatMessageList({ autoScrollKey, messages, agentSteps, isLoading
             <div
               key={message.id}
               className={cn(
-                "max-w-[86%] text-sm leading-7",
+                "min-w-0 text-sm leading-7",
                 message.role === "user"
-                  ? "ml-auto rounded-2xl bg-muted px-4 py-2.5 whitespace-pre-wrap"
+                  ? "ml-auto max-w-[92%] rounded-2xl bg-muted px-4 py-2.5 whitespace-pre-wrap sm:max-w-[86%]"
                   : "mr-auto w-full max-w-full text-foreground"
               )}
             >

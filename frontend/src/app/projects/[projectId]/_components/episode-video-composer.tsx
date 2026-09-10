@@ -42,7 +42,7 @@ export function EpisodeVideoComposer({ projectId, episodeId, open, onOpenChange,
     onSuccess: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.exports(projectId) }); },
   });
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
       <DialogHeader>
         <DialogTitle>{t("episode.composeVideo")} · {episode?.title}</DialogTitle>
         <DialogDescription>{t("episode.composeHint")}</DialogDescription>

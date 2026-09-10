@@ -363,7 +363,7 @@ export default function RegisterPage() {
   ];
 
   return (
-    <main className="relative flex min-h-screen w-full items-center justify-center overflow-x-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">
+    <main className="relative flex min-h-dvh w-full items-center justify-center overflow-x-hidden bg-background px-4 py-8 sm:px-6 lg:px-8">
       {/* 顶部工具条 */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2 sm:top-6 sm:right-6">
         <PreferencesSwitcher />

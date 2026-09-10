@@ -189,9 +189,8 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
   };
 
   const content = (
-    // Fills the workbench main area (or shrinks inside the dialog) so the header, tabs and
-    // filters stay put and only the asset list / form columns below scroll.
-    <div className="flex min-h-0 flex-1 flex-col gap-3.5 md:h-full">
+    // Desktop columns scroll independently; stacked mobile content scrolls with the page/dialog.
+    <div className="flex min-w-0 shrink-0 flex-col gap-3.5 xl:h-full xl:min-h-0 xl:flex-1">
 
           <header className="border-b border-border/50 pb-2.5">
             <div className="flex items-center gap-2">
@@ -210,8 +209,8 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
           </header>
 
           {/* Category Tabs */}
-          <div className="flex items-center justify-between border-b border-border/60 pb-1">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-2">
               {(["image", "video", "audio"] as const).map((kind) => {
                 const active = tab === kind;
                 const Icon = kind === "image" ? ImageIcon : kind === "video" ? Film : Volume2;
@@ -226,7 +225,7 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
                       reset();
                     }}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                      "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 py-2 sm:gap-1.5 sm:px-3.5 text-xs font-medium transition-all cursor-pointer",
                       active
                         ? "bg-primary/10 text-primary shadow-2xs font-semibold ring-1 ring-primary/30"
                         : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -259,12 +258,12 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Input type="search" value={search} aria-label={t("assets.search")} placeholder={t("assets.search")} className="min-w-48 flex-1" onChange={(event) => { setSearch(event.target.value); setVisibleCount(36); }} />
-            <select aria-label={t("assets.source")} className="h-9 rounded-md border bg-background px-2 text-xs" value={source} onChange={(event) => { setSource(event.target.value); setVisibleCount(36); }}>
+            <Input type="search" value={search} aria-label={t("assets.search")} placeholder={t("assets.search")} className="min-w-0 flex-1 basis-full sm:basis-48" onChange={(event) => { setSearch(event.target.value); setVisibleCount(36); }} />
+            <select aria-label={t("assets.source")} className="h-9 min-w-0 max-w-full rounded-md border bg-background px-2 text-xs" value={source} onChange={(event) => { setSource(event.target.value); setVisibleCount(36); }}>
               <option value="all">{t("assets.allSources")}</option>
               {(["character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice", "asset"] as const).map((kind) => <option key={kind} value={kind}>{t(`assets.kind.${kind}`)}</option>)}
             </select>
-            <select aria-label={t("assets.episode")} className="h-9 max-w-64 rounded-md border bg-background px-2 text-xs" value={episodeFilter} onChange={(event) => { setEpisodeFilter(event.target.value); setVisibleCount(36); }}>
+            <select aria-label={t("assets.episode")} className="h-9 min-w-0 max-w-full rounded-md border bg-background px-2 text-xs sm:max-w-64" value={episodeFilter} onChange={(event) => { setEpisodeFilter(event.target.value); setVisibleCount(36); }}>
               <option value="all">{t("assets.allEpisodes")}</option>
               <option value="shared">{t("assets.shared")}</option>
               {episodes.map((item) => <option key={item.episodeId} value={item.episodeId!}>{t("assets.episodeNumber", { number: item.episodeNumber ?? "" })} · {item.episodeTitle}</option>)}
@@ -273,10 +272,10 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
           {catalog.isPending ? <p role="status">{t("common.loading")}</p> : null}
           {catalog.isError ? <p role="alert" className="text-destructive">{t("assets.loadFailed")}</p> : null}
           {/* Body Content Grid */}
-          <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[1fr_320px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden lg:grid-cols-[1fr_350px]">
+          <div className="grid min-w-0 grid-cols-1 gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_350px] xl:grid-rows-[minmax(0,1fr)] xl:overflow-hidden">
             {/* Left: Asset List Grid */}
-            <div className="flex flex-col min-h-0 rounded-xl border border-border/60 bg-muted/10 p-3.5 overflow-hidden">
-              <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-border/40 text-xs font-medium text-muted-foreground">
+            <div className="flex min-w-0 flex-col min-h-0 rounded-xl border border-border/60 bg-muted/10 p-3.5 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2 border-b border-border/40 text-xs font-medium text-muted-foreground">
                 <span>{t("episode.assetListHeader", { count: visible.length })}</span>
                 <span className="text-[11px] opacity-70">{t("episode.assetPreviewHint")}</span>
               </div>
@@ -288,7 +287,7 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
                   <p className="text-[11px] opacity-70">{t("episode.assetEmptyHint")}</p>
                 </div>
               ) : (
-                <div className="grid min-h-0 flex-1 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 overflow-y-auto pr-1 content-start auto-rows-max chat-message-list-scrollbar">
+                <div className="grid max-h-[36rem] min-h-0 flex-1 grid-cols-1 sm:grid-cols-2 xl:max-h-none gap-3 overflow-y-auto pr-1 content-start auto-rows-max chat-message-list-scrollbar">
                   {visible.slice(0, visibleCount).map((asset) => (
                     <div
                       key={`${asset.referenceKind}:${asset.id}`}
@@ -577,7 +576,7 @@ export function ProjectAssetManager({ projectId, open, onOpenChange, onChanged }
     <>
       {onOpenChange ? (
         <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="flex max-h-[90vh] w-[95vw] flex-col overflow-y-auto sm:max-w-5xl">
+          <DialogContent className="flex max-h-[90dvh] w-[95vw] flex-col overflow-y-auto sm:max-w-5xl">
             <DialogTitle className="sr-only">{t("episode.assetLibrary")}</DialogTitle>
             {content}
           </DialogContent>

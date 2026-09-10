@@ -22,6 +22,8 @@ import { useUserStore } from "@/store/user-store";
 import type { UserConfig } from "@/types/auth";
 import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
 
+import { clearFailedReasoning } from "./chat-message-state";
+
 type ChatMessageMetadata = {
   attachments?: ChatAttachment[];
   chatMessage?: ChatMessage;
@@ -123,6 +125,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   );
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [agentSteps, setAgentSteps] = useState<ChatAgentStep[]>([]);
   const stoppedRef = useRef(false);
@@ -200,6 +203,8 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
       }
     },
     onError: (error) => {
+      setAgentSteps([]);
+      setAiMessages(clearFailedReasoning);
       setErrorMessage(resolveRequestError(error, t("chat.sendFailed")));
     },
   });
@@ -256,7 +261,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     },
   });
 
-  const isBusy = createSessionMutation.isPending || deleteSessionMutation.isPending || isStreaming;
+  const isBusy = createSessionMutation.isPending || deleteSessionMutation.isPending || isSending || isStreaming;
 
   const createSession = () => {
     createSessionMutation.mutate({
@@ -311,8 +316,9 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     if ((!content && attachments.length === 0) || isBusy || !selectedConfig) {
       return;
     }
-    if (!effectiveSessionId) {
-      try {
+    setIsSending(true);
+    try {
+      if (!effectiveSessionId) {
         const response = await createChatSessionAction({
           title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || t("chat.newSession"),
           ...selectedConfigPayload(selectedConfig),
@@ -322,16 +328,14 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
         // its optimistic user message, leaving that message in the discarded runtime.
         await streamToSession(response.session.id, content, attachments);
         setSelectedSessionId(response.session.id);
-      } catch (error) {
-        setErrorMessage(resolveRequestError(error, t("chat.createSessionFailed")));
+      } else {
+        await streamToSession(effectiveSessionId, content, attachments);
       }
-      return;
-    }
-
-    try {
-      await streamToSession(effectiveSessionId, content, attachments);
     } catch (error) {
-      setErrorMessage(resolveRequestError(error, t("chat.sendFailed")));
+      setAgentSteps([]);
+      setErrorMessage(resolveRequestError(error, t(effectiveSessionId ? "chat.sendFailed" : "chat.createSessionFailed")));
+    } finally {
+      setIsSending(false);
     }
   };
 

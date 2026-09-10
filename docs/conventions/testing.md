@@ -1,6 +1,6 @@
 # Testing
 
-Verified on **2026-09-08**. The tree contains **36 backend `test_*.py` files** and **5 frontend `*.test.mts` files**. These are inventory counts, not passing results. There is no pytest or frontend DOM/component test framework.
+Verified on **2026-09-10**. The tree contains **36 backend `test_*.py` files** and **7 frontend `*.test.mts` files**. These are inventory counts, not passing results. There is no pytest or frontend DOM/component test framework.
 
 ## Backend: one file per process
 
@@ -52,12 +52,12 @@ Useful entry points include `test_breakdown_api.py` (replacement and error recor
 
 ```bash
 cd frontend
-node --no-warnings --experimental-strip-types --test src/lib/*.test.mts 'src/app/(workspace)/admin/users/_components/user-list.test.mts'
+node --no-warnings --experimental-strip-types --test src/lib/*.test.mts 'src/app/(workspace)/admin/users/_components/user-list.test.mts' 'src/app/(workspace)/chat/_components/chat-message-state.test.mts'
 pnpm exec tsc --noEmit
 pnpm lint
 ```
 
-The five pure-module suites cover money, artifact URLs, shared reference budgets, admin user filtering, and local date/time ranges (including daylight-saving boundaries). Tests use `node:test` and `node:assert/strict`, with explicit `.ts` extensions in imports because Node type stripping does no TypeScript path resolution. There is no DOM; extract nontrivial pure logic when a regression needs it, rather than introducing a component framework for one check.
+The seven pure-module suites cover money, artifact URLs, project resource search, shared reference budgets, admin user filtering, local date/time ranges (including daylight-saving boundaries), and failed chat reasoning cleanup. Tests use `node:test` and `node:assert/strict`, with explicit `.ts` extensions in imports because Node type stripping does no TypeScript path resolution. There is no DOM; extract nontrivial pure logic when a regression needs it, rather than introducing a component framework for one check.
 
 ## Schema and contract checks
 

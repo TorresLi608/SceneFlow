@@ -10,6 +10,9 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20260910-chat-composer-draft-focus | 智能问答、输入框、焦点、草稿、isSendDisabled、isSending | 发送时整体禁用输入且等待回复结束才恢复焦点；现改为立即聚焦、持续编辑并单独限制发送 | 本地检查和模拟流浏览器验证通过 | 2026-09-10 | [聊天输入框焦点与草稿](2026-09-10-chat-composer-draft-focus.md) |
+| BUG-20260910-chat-error-thinking-state | 智能问答、报错、思考框、执行流程、agentSteps、reasoning、onError | 错误回调未清理临时步骤及本轮思考；现统一清理并保留历史、正文和草稿 | 前端回归和模拟流浏览器验证通过 | 2026-09-10 | [聊天报错后思考区域残留](2026-09-10-chat-error-thinking-state.md) |
+| BUG-20260910-mobile-responsive-layout | 移动端、响应式、320px、侧栏、分镜详情、素材弹窗、英文按钮、dvh、iOS | 补齐手机导航、纵向滚动、弹窗约束和按钮换行，调整平板表单列宽；折叠导航保留可访问名称 | 浏览器视口回归及前端检查通过，真机待验证 | 2026-09-10 | [移动端布局适配](2026-09-10-mobile-responsive-layout.md) |
 | BUG-20260909-video-first-frame-default | 首帧、分镜图、视频提示词、videoFirstFrame、shot-row | 生成分镜图后视频编辑器自动填充首帧；已移除自动推导，手动选择仍保留 | 类型检查和现有回归通过，浏览器未验证 | 2026-09-09 | [视频首帧默认填充](2026-09-09-video-first-frame-default.md) |
 | BUG-20260908-qwen-voice-design-target-model | Qwen、DashScope、qwen-voice-design、target_model、音色设计、qwen_voice_service | 任务模型被误作合成目标；共享适配器增加目标模型回退，账号音色 targetModel 元数据仍待对齐 | 本地回归通过，实网待验证 | 2026-09-08 | [Qwen 音色目标模型](2026-09-08-qwen-voice-design-target-model.md) |
 | BUG-20260908-export-video-audio-missing | 视频导出、合并导出、音频丢失、concat_videos、export_service、无声音、FFmpeg、a=0 | concat 的 a=0 丢弃音轨；已增加探测、补齐与映射，但探测失败仍按无音频处理 | 正常路径已验证，探测失败待完善 | 2026-09-08 | [合并导出视频丢失音频](2026-09-08-export-video-audio-missing.md) |

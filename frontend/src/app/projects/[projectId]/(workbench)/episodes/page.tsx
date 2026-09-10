@@ -161,9 +161,9 @@ export default function EpisodesPage() {
           {episodes.map((episode) => (
             <section
               key={episode.id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border/70 bg-card/60 p-4"
+              className="flex flex-col items-start gap-3 rounded-lg border border-border/70 bg-card/60 p-4 sm:flex-row sm:flex-wrap sm:justify-between"
             >
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 w-full sm:w-auto sm:flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm font-semibold">{episode.title}</h2>
                   <Badge variant="outline">{t("episode.shotCount", { count: episode.sceneCount })}</Badge>

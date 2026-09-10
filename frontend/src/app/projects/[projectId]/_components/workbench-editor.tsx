@@ -14,6 +14,7 @@ import {
   Layers,
   LayoutDashboard,
   LogOut,
+  Menu,
   Plus,
   RefreshCw,
   Shield,
@@ -68,6 +69,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
@@ -114,6 +116,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const sceneSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [videoQuality, setVideoQuality] = useState("");
@@ -868,7 +871,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   if (!hydrated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+      <main className="flex min-h-dvh items-center justify-center bg-background text-foreground">
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
           <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm font-medium text-muted-foreground">{t("common.initializing")}</span>
@@ -879,7 +882,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   if (!token) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+      <main className="flex min-h-dvh items-center justify-center bg-background text-foreground">
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
           <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm font-medium text-muted-foreground">{t("common.redirectingToLogin")}</span>
@@ -890,7 +893,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
 
   if (!currentProject && !projectsQuery.isLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
+      <main className="flex min-h-dvh items-center justify-center">
         <Button onClick={() => createProjectMutation.mutate()} disabled={createProjectMutation.isPending}>
           {t("common.createFirstProject")}
         </Button>
@@ -898,119 +901,131 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     );
   }
 
-  return (
-    <main className="h-screen overflow-hidden bg-background">
-      <div className="flex h-full flex-col md:flex-row overflow-hidden">
-        {/* 左侧工作台导航侧栏 */}
-        <aside className="flex w-full shrink-0 flex-col border-b border-border/70 bg-card/60 md:w-[280px] md:border-b-0 md:border-r backdrop-blur-md overflow-hidden">
-          <div className="space-y-3 p-4">
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-inner">
-                <Clapperboard className="size-4" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">SceneFlow</p>
-                <p className="text-[10px] text-muted-foreground">{t("home.brandSubtitle")}</p>
-              </div>
-            </div>
-
-            <Button
-              className="w-full justify-start gap-1.5 h-9 rounded-xl font-semibold shadow-xs cursor-pointer"
-              onClick={() => createProjectMutation.mutate()}
-              disabled={createProjectMutation.isPending}
-            >
-              <Plus className="size-4" />
-              {t("home.newProject")}
-            </Button>
+  const sidebar = (
+    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border/70 bg-card/60 lg:w-[280px] lg:border-b-0 lg:border-r backdrop-blur-md overflow-hidden">
+      <div className="space-y-3 p-4 pr-12 lg:pr-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-inner">
+            <Clapperboard className="size-4" />
           </div>
+          <div>
+            <p className="text-sm font-bold text-foreground">SceneFlow</p>
+            <p className="text-[10px] text-muted-foreground">{t("home.brandSubtitle")}</p>
+          </div>
+        </div>
 
-          <div className="space-y-1 px-3 pb-3">
-            <p className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.businessCenter")}</p>
+        <Button
+          className="w-full justify-start gap-1.5 h-9 rounded-xl font-semibold shadow-xs cursor-pointer"
+          onClick={() => createProjectMutation.mutate()}
+          disabled={createProjectMutation.isPending}
+        >
+          <Plus className="size-4" />
+          {t("home.newProject")}
+        </Button>
+      </div>
+
+      <div className="space-y-1 px-3 pb-3">
+        <p className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.businessCenter")}</p>
+        <button
+          type="button"
+          onClick={() => router.push("/ai-script")}
+          className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
+        >
+          <LayoutDashboard className="size-3.5" />
+          {t("home.backToProjectList")}
+        </button>
+
+        <div className="pt-2">
+          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.adminCenter")}</p>
+          <button
+            type="button"
+            onClick={() => router.push("/admin/models")}
+            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
+          >
+            <SlidersHorizontal className="size-3.5" />
+            {t("home.modelManagement")}
+          </button>
+          {user?.role === "superAdmin" ? (
             <button
               type="button"
-              onClick={() => router.push("/ai-script")}
+              onClick={() => router.push("/admin/users")}
               className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
             >
-              <LayoutDashboard className="size-3.5" />
-              {t("home.backToProjectList")}
+              <Shield className="size-3.5" />
+              {t("home.userManagement")}
             </button>
+          ) : null}
+        </div>
+      </div>
 
-            <div className="pt-2">
-              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.adminCenter")}</p>
-              <button
-                type="button"
-                onClick={() => router.push("/admin/models")}
-                className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                {t("home.modelManagement")}
-              </button>
-              {user?.role === "superAdmin" ? (
-                <button
-                  type="button"
-                  onClick={() => router.push("/admin/users")}
-                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground cursor-pointer transition-colors"
-                >
-                  <Shield className="size-3.5" />
-                  {t("home.userManagement")}
-                </button>
-              ) : null}
-            </div>
+      <Separator />
+
+      <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
+        <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.projectList")}</p>
+
+        {projectsQuery.isLoading && projects.length === 0 ? (
+          <div className="space-y-2 px-1">
+            <Skeleton className="h-14 w-full rounded-xl" />
+            <Skeleton className="h-14 w-full rounded-xl" />
+            <Skeleton className="h-14 w-4/5 rounded-xl" />
           </div>
+        ) : null}
 
-          <Separator />
+        {projects.map((project, index) => {
+          const isActive = project.id === currentProject?.id;
 
-          <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
-            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t("home.projectList")}</p>
+          return (
+            <button
+              key={project.id}
+              type="button"
+              onClick={() => {
+                selectProject(project.id);
+                router.push(`/projects/${project.id}`);
+              }}
+              className={cn(
+                "animate-in fade-in-0 slide-in-from-left-1 w-full rounded-xl border px-3 py-2 text-left transition duration-200 cursor-pointer",
+                isActive
+                  ? "border-primary/40 bg-primary/10 shadow-xs"
+                  : "border-transparent bg-background/40 hover:border-border/80 hover:bg-background/80"
+              )}
+              style={{ animationDelay: `${index * 30}ms` }}
+            >
+              <p className={cn("truncate text-xs font-semibold", isActive ? "text-primary" : "text-foreground")}>
+                {project.title}
+              </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                {t("home.scenesCount", {
+                  count: project.scenes.length,
+                  time: formatDateTime(project.updatedAt),
+                })}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
 
-            {projectsQuery.isLoading && projects.length === 0 ? (
-              <div className="space-y-2 px-1">
-                <Skeleton className="h-14 w-full rounded-xl" />
-                <Skeleton className="h-14 w-full rounded-xl" />
-                <Skeleton className="h-14 w-4/5 rounded-xl" />
-              </div>
-            ) : null}
-
-            {projects.map((project, index) => {
-              const isActive = project.id === currentProject?.id;
-
-              return (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => {
-                    selectProject(project.id);
-                    router.push(`/projects/${project.id}`);
-                  }}
-                  className={cn(
-                    "animate-in fade-in-0 slide-in-from-left-1 w-full rounded-xl border px-3 py-2 text-left transition duration-200 cursor-pointer",
-                    isActive
-                      ? "border-primary/40 bg-primary/10 shadow-xs"
-                      : "border-transparent bg-background/40 hover:border-border/80 hover:bg-background/80"
-                  )}
-                  style={{ animationDelay: `${index * 30}ms` }}
-                >
-                  <p className={cn("truncate text-xs font-semibold", isActive ? "text-primary" : "text-foreground")}>
-                    {project.title}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    {t("home.scenesCount", {
-                      count: project.scenes.length,
-                      time: formatDateTime(project.updatedAt),
-                    })}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
+  return (
+    <main className="safe-area h-dvh overflow-hidden bg-background">
+      <div className="flex h-full overflow-hidden">
+        <div className="hidden min-h-0 shrink-0 lg:flex">{sidebar}</div>
 
         {/* 主编辑区 */}
-        <section className="flex min-w-0 flex-1 flex-col overflow-y-auto chat-message-list-scrollbar">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto chat-message-list-scrollbar">
           {/* 工作台顶部工具栏 */}
           <header className="sticky top-0 z-20 border-b border-border/70 bg-card/80 backdrop-blur-md">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 md:px-6">
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 max-w-full items-center gap-2 sm:gap-3">
+                <Dialog open={navigationOpen} onOpenChange={setNavigationOpen}>
+                  <DialogTrigger render={<Button variant="outline" size="icon" className="shrink-0 lg:hidden" aria-label={t("home.menu")} />}>
+                    <Menu />
+                  </DialogTrigger>
+                  <DialogContent className="top-[env(safe-area-inset-top)] left-[env(safe-area-inset-left)] h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-h-dvh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 gap-0 rounded-none p-0 sm:max-w-xs" aria-describedby={undefined}>
+                    <DialogTitle className="sr-only">{t("home.menu")}</DialogTitle>
+                    {sidebar}
+                  </DialogContent>
+                </Dialog>
                 <Button
                   variant="ghost"
                   size="xs"
@@ -1021,9 +1036,9 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                   <span className="hidden sm:inline">{t("home.aiScript")}</span>
                 </Button>
                 <div className="h-4 w-px bg-border/80" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-foreground">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-bold text-foreground">
                       {currentProject?.title ?? t("home.projectTitleLoading")}
                     </p>
                     {currentProject ? (
@@ -1040,7 +1055,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {currentProject ? (
                   <Button
                     variant="outline"
@@ -1071,7 +1086,7 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
             </div>
           </header>
 
-          <div className="grid flex-1 gap-6 p-4 md:p-6 xl:grid-cols-[400px_minmax(0,1fr)]">
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-6 p-4 md:p-6 2xl:grid-cols-[400px_minmax(0,1fr)]">
             {/* 左侧：剧本与生产设置 */}
             <div className="space-y-5">
               {/* 剧本输入与处理卡片 */}

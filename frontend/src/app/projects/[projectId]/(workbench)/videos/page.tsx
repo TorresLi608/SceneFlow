@@ -100,9 +100,9 @@ export default function VideosPage() {
   const historyRow = (job: ExportJob) => (
     <section
       key={job.id}
-      className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/70 bg-card/60 p-4 transition-colors hover:border-border"
+      className="flex flex-col items-start gap-4 rounded-lg border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
     >
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 w-full sm:w-auto sm:flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">{job.rangeLabel || formatDateTime(job.createdAt)}</span>
           <Badge variant={job.status === "succeeded" ? "default" : job.status === "failed" ? "destructive" : "outline"}>

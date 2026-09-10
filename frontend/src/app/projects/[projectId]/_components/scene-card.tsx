@@ -174,7 +174,7 @@ export function SceneCard({
             <button
               type="button"
               aria-label={t("scene.dragSort")}
-              className="rounded-lg p-1 text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-grab active:cursor-grabbing"
+              className="touch-none rounded-lg p-2 text-muted-foreground hover:bg-muted/80 hover:text-foreground cursor-grab active:cursor-grabbing"
               {...attributes}
               {...listeners}
             >
