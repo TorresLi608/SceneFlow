@@ -49,4 +49,5 @@ SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_
 ## 历史与关联
 
 - 2026-09-10：根据用户报告和源码确认状态清理缺失，完成修复与上述验证。
+- 修复已包含在当前本地提交 [`fda218c`](https://github.com/TorresLi608/SceneFlow/commit/fda218c2b1f53b9551cb4fd1ceec70614c0e49b0)；未验证远端推送状态。
 - 同次处理：[发送后的输入框焦点与草稿](2026-09-10-chat-composer-draft-focus.md)。

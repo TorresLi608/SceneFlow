@@ -40,4 +40,5 @@
 ## 历史与关联
 
 - 2026-09-10：根据用户要求分离编辑和发送限制，完成源码核对与上述验证。
+- 修复已包含在当前本地提交 [`fda218c`](https://github.com/TorresLi608/SceneFlow/commit/fda218c2b1f53b9551cb4fd1ceec70614c0e49b0)；未验证远端推送状态。
 - 同次处理：[报错后的思考区域](2026-09-10-chat-error-thinking-state.md)。
