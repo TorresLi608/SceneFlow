@@ -53,6 +53,10 @@ Add both hooks whenever you introduce a new provider-backed feature. The `featur
 
 `RedemptionCode` rows carry `amount_micros`, an expiry, and audit fields (`created_by_user_id`, `redeemed_by_user_id`, `redeemed_at`). Redemption is an atomic conditional `UPDATE` with a `rowcount` check, so a code cannot be redeemed twice: unknown → `404`, already redeemed → `409`, expired → `410`. Codes are created by a super admin with a validity of 1, 7, or 30 days.
 
+Personal settings exposes **Redemption history** beside the redemption form. `GET /api/users/redemptions` reads successful redemptions for the authenticated user only, ordered by `redeemed_at DESC, id DESC`. It accepts `page` (minimum 1, default 1) and `pageSize` (1–100, default 10), returning `redemptions` (`id`, `code`, string `amountMicros`, `redeemedAt`) and the shared `pagination` shape. Existing redeemed codes remain visible after their original expiry; unused codes and other users' records are excluded. No additional ledger or schema change is needed.
+
+The history dialog loads on open, shows 10 entries per page with localized dates and six-decimal money formatting, and handles loading, empty, and retry states. Successful redemption invalidates the history query so the next view includes the new credit. `test_redemption_codes.py` covers immediate visibility, account isolation, ordering, pagination, validation, and string money precision.
+
 ## Reporting
 
 - Per-user: `GET /api/usage/logs` with `feature`/`source` and `startTime`/`endTime` filters, returning a `summary` (calls, input tokens, output tokens, `costMicros`) plus up to 500 rows. The summary and rows share the time range. Config names are joined in with an outer join so a deleted configuration still shows its logs. Legacy callers without a range retain the `days` filter.

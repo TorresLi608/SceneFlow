@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -12,7 +12,7 @@ from app.api.deps import current_user_id
 from app.core.database import db
 from app.models import RedemptionCode, UsageLog, User
 from app.schemas.serializers import user_json
-from app.utils.common import now
+from app.utils.common import now, pagination
 
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -39,6 +39,35 @@ def get_me(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
         if not profile:
             raise HTTPException(401, "user not found")
         return {"user": profile_json(profile)}
+
+
+@router.get("/redemptions")
+def list_redemptions(
+    user_id: int = Depends(current_user_id),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 10,
+) -> dict[str, Any]:
+    """List the signed-in user's successful redemptions, newest first."""
+    conditions = (
+        RedemptionCode.redeemed_by_user_id == user_id,
+        RedemptionCode.redeemed_at.is_not(None),
+    )
+    with db() as session:
+        total = session.exec(select(func.count()).select_from(RedemptionCode).where(*conditions)).one()
+        redemptions = session.exec(
+            select(RedemptionCode)
+            .where(*conditions)
+            .order_by(RedemptionCode.redeemed_at.desc(), RedemptionCode.id.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        ).all()
+    return {
+        "redemptions": [
+            {"id": item.id, "code": item.code, "amountMicros": str(item.amount_micros), "redeemedAt": item.redeemed_at}
+            for item in redemptions
+        ],
+        "pagination": pagination(total, page, page_size),
+    }
 
 
 @router.post("/redeem")

@@ -11,7 +11,7 @@ function Table({ className, containerClassName, ...props }: TableProps) {
     <div
       data-slot="table-container"
       className={cn(
-        "relative w-full overflow-x-auto rounded-2xl border border-border/80 bg-card/60 shadow-xs backdrop-blur-md dark:border-white/10",
+        "relative min-w-0 w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-border/80 bg-card/60 shadow-xs backdrop-blur-md dark:border-white/10",
         containerClassName
       )}
     >

@@ -87,14 +87,14 @@ export function PromptPrefixList({
           key={prefix.id}
           className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-background/50 p-2.5"
         >
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <div className="flex flex-col">
               <button
                 type="button"
                 aria-label={t("episode.prefixMoveUp")}
                 disabled={disabled || index === 0}
                 onClick={() => move(index, -1)}
-                className="flex h-3 w-4 items-center justify-center text-muted-foreground/60 hover:text-foreground disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                className="flex size-7 items-center justify-center text-muted-foreground/60 hover:text-foreground disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed sm:h-3 sm:w-4"
               >
                 <GripVertical className="size-3 rotate-90" />
               </button>
@@ -108,7 +108,7 @@ export function PromptPrefixList({
               disabled={disabled}
               placeholder={t("episode.prefixNamePlaceholder")}
               onChange={(event) => replace(index, { name: event.target.value })}
-              className="h-7 flex-1 bg-background/80 text-xs"
+              className="order-last h-8 w-full flex-none bg-background/80 text-xs sm:order-none sm:h-7 sm:w-auto sm:flex-1"
             />
             {prefix.source === "tone" ? (
               <span className="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">

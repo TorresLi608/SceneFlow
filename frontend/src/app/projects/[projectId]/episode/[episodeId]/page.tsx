@@ -368,21 +368,21 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
     : t("episode.breakdownNeedsShots");
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="safe-area flex h-dvh flex-col overflow-hidden bg-background">
       {/* Top Navigation Header */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-background/80 px-5 py-3 backdrop-blur-md z-10 shadow-xs">
-        <div className="flex items-center gap-2.5">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/70 bg-background/80 px-3 py-2 sm:px-5 sm:py-3 backdrop-blur-md z-10 shadow-xs">
+        <div className="flex min-w-0 max-w-full items-center gap-2.5">
           <Link
             href={`/projects/${projectId}/episodes`}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
+            className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
           >
             <ArrowLeft className="size-4" />
             {t("episode.backToEpisodes")}
           </Link>
           <span className="text-muted-foreground/40">/</span>
-          <span className="max-w-[160px] truncate text-sm font-medium text-muted-foreground">{project?.title}</span>
-          <span className="text-muted-foreground/40">/</span>
-          <span className="max-w-[200px] truncate text-sm font-semibold text-foreground">{episode.title}</span>
+          <span className="hidden max-w-[160px] truncate text-sm font-medium text-muted-foreground sm:inline">{project?.title}</span>
+          <span className="hidden text-muted-foreground/40 sm:inline">/</span>
+          <span className="min-w-0 max-w-[200px] truncate text-sm font-semibold text-foreground">{episode.title}</span>
 
           {/* 剧集制作进度概览徽章 */}
           <div className="hidden lg:flex items-center gap-1.5 ml-2 pl-3 border-l border-border/50 text-xs">
@@ -401,7 +401,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {busy ? (
             <Badge variant="outline" className="animate-pulse border-primary/50 text-primary">
               <Loader2 className="mr-1 size-3 animate-spin" />
@@ -434,7 +434,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
       </header>
 
       {/* Main Workspace Body */}
-      <main className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 md:p-6 chat-message-list-scrollbar max-w-7xl mx-auto w-full">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto p-4 md:p-6 chat-message-list-scrollbar max-w-7xl mx-auto w-full">
         {/* Section 1: Combined Episode Story & Script Workbench */}
         <section className="flex flex-col rounded-xl border border-border/70 bg-card/60 shadow-sm transition-all">
           {/* Header with Title and Save Button */}
@@ -451,7 +451,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
               ) : null}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <span className="text-xs text-muted-foreground font-mono">
                 {t("episode.charCount", { count: script.length })}
               </span>
@@ -506,7 +506,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
 
             {/* Bottom row: Script Editor */}
             <Field>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                 <FieldLabel htmlFor="episodeScript" className="text-xs font-medium text-muted-foreground">
                   {t("episode.script")}
                 </FieldLabel>
@@ -520,7 +520,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
                 maxLength={200_000}
                 placeholder={t("episode.scriptPlaceholder")}
                 onChange={(event) => setScript(event.target.value)}
-                className="field-sizing-fixed min-h-48 max-h-[50vh] resize-y overflow-auto bg-background/80 font-sans text-sm leading-relaxed"
+                className="field-sizing-fixed min-h-48 max-h-[50dvh] resize-y overflow-auto bg-background/80 font-sans text-sm leading-relaxed"
               />
             </Field>
           </div>
@@ -625,7 +625,7 @@ function EpisodeEditor({ projectId, episode }: { projectId: string; episode: Epi
         {/* Section 4: Shots & Videos List */}
         <section className="flex flex-col gap-3.5 rounded-xl border border-border/70 bg-card/40 p-4 shadow-sm relative">
           {/* Smart Sticky Batch Actions Toolbar */}
-          <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-0.5 flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-border/60 bg-background/90 px-4 py-3 shadow-xs backdrop-blur-md transition-all">
+          <div className="md:sticky top-0 z-20 -mx-4 -mt-4 mb-0.5 flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-border/60 bg-background/90 px-4 py-3 shadow-xs backdrop-blur-md transition-all">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
                 <Layers className="size-4" />

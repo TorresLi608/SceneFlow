@@ -250,7 +250,7 @@ export function MergeButton({
   onClick: () => void;
 }) {
   return (
-    <Button type="button" disabled={pending || disabled} onClick={onClick}>
+    <Button type="button" className="h-auto min-h-8 max-w-full whitespace-normal py-1.5" disabled={pending || disabled} onClick={onClick}>
       {pending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
       {pending ? pendingLabel : label}
     </Button>

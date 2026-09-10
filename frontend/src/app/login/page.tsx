@@ -90,7 +90,7 @@ export default function LoginPage() {
   ];
 
   return (
-    <main className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-background px-4 py-8 lg:p-12">
+    <main className="relative flex min-h-dvh w-full items-center justify-center overflow-hidden bg-background px-4 py-8 lg:p-12">
       {/* 背景动态环境光晕与点阵 */}
       <div className="pointer-events-none absolute -top-40 -left-40 size-[550px] rounded-full bg-primary/15 blur-[120px]" />
       <div className="pointer-events-none absolute -bottom-40 -right-40 size-[550px] rounded-full bg-purple-600/15 blur-[120px]" />

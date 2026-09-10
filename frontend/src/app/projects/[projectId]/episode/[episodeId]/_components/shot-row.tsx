@@ -413,7 +413,7 @@ export function ShotRow({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-card/75 p-4 transition-all duration-200 shadow-xs",
+        "group relative overflow-hidden rounded-xl border bg-card/75 p-3 transition-all duration-200 shadow-xs sm:p-4",
         "before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:transition-colors",
         selected
           ? "border-primary/60 bg-primary/[0.03] ring-1 ring-primary/25 before:bg-primary shadow-sm"
@@ -430,10 +430,10 @@ export function ShotRow({
           <button
             type="button"
             aria-pressed={selected}
-            aria-label={t("episode.selectAll")}
+            aria-label={t("scene.select", { order: index + 1 })}
             onClick={onToggle}
             className={cn(
-              "flex size-5 shrink-0 items-center justify-center rounded-md border transition-all cursor-pointer shadow-xs",
+              "flex size-7 shrink-0 items-center justify-center rounded-md border sm:size-5 transition-all cursor-pointer shadow-xs",
               selected
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border/80 hover:border-primary/60 bg-background/90"
@@ -653,12 +653,12 @@ export function ShotRow({
                     sizes="280px"
                     className="object-cover transition-transform duration-300 group-hover/media:scale-105"
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-xs">
+                  <div className="absolute inset-0 bg-black/40 [@media(hover:hover)]:opacity-0 group-hover/media:opacity-100 group-focus-within/media:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-xs">
                     <Button
                       type="button"
                       size="icon-xs"
                       variant="secondary"
-                      className="rounded-full shadow-md cursor-pointer hover:scale-110 transition-transform"
+                      className="size-10 rounded-full shadow-md cursor-pointer hover:scale-110 transition-transform sm:size-8"
                       title={t("episode.openPreview")}
                       onClick={() =>
                         setPreview({
@@ -688,12 +688,12 @@ export function ShotRow({
                     preload="metadata"
                     className="size-full object-cover"
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-xs">
+                  <div className="absolute inset-0 bg-black/40 [@media(hover:hover)]:opacity-0 group-hover/media:opacity-100 group-focus-within/media:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-xs">
                     <Button
                       type="button"
                       size="icon-xs"
                       variant="secondary"
-                      className="rounded-full shadow-md cursor-pointer hover:scale-110 transition-transform"
+                      className="size-10 rounded-full shadow-md cursor-pointer hover:scale-110 transition-transform sm:size-8"
                       title={t("episode.openPreview")}
                       onClick={() =>
                         setPreview({
@@ -769,10 +769,10 @@ export function ShotRow({
 
       {/* Expanded details section */}
       {open ? (
-        <div className="mt-4 flex flex-col gap-4 rounded-xl border border-border/50 bg-muted/20 p-4 text-xs animate-in fade-in-50 duration-200">
+        <div className="mt-4 flex min-w-0 flex-col gap-4 rounded-xl text-xs animate-in fade-in-50 duration-200 sm:border sm:border-border/50 sm:bg-muted/20 sm:p-4">
           {/* Visual Settings Card */}
           <div className="flex flex-col gap-3 rounded-lg border border-border/40 bg-card/50 p-3.5 shadow-xs">
-            <div className="flex items-center justify-between pb-1 border-b border-border/30">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-border/30">
               <span className="font-semibold text-foreground flex items-center gap-1.5 text-xs">
                 <ImageIcon className="size-3.5 text-primary" />
                 {t("episode.frameSettings")}
@@ -835,7 +835,7 @@ export function ShotRow({
 
           {/* Motion & Video Settings Card */}
           <div className="flex flex-col gap-3 rounded-lg border border-border/40 bg-card/50 p-3.5 shadow-xs">
-            <div className="flex items-center justify-between pb-1 border-b border-border/30">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-border/30">
               <span className="font-semibold text-foreground flex items-center gap-1.5 text-xs">
                 <Film className="size-3.5 text-primary" />
                 {t("episode.motionSettings")}
@@ -948,10 +948,10 @@ export function ShotRow({
               {supportsFirstFrame || supportsLastFrame ? (
                 <div className="flex flex-wrap gap-3 pt-1 text-xs">
                   {supportsFirstFrame ? (
-                    <label className="flex items-center gap-1.5 text-muted-foreground">
+                    <label className="flex min-w-0 flex-1 basis-40 flex-col gap-1.5 text-muted-foreground">
                       <span>{t("episode.useFirstFrame")}</span>
                       <select
-                        className="h-7.5 rounded-md border border-border/60 bg-background px-2 text-foreground text-xs shadow-xs focus:ring-1 focus:ring-primary outline-none"
+                        className="h-8 w-full min-w-0 rounded-md border border-border/60 bg-background px-2 text-foreground text-xs shadow-xs focus:ring-1 focus:ring-primary outline-none"
                         value={videoFirstFrame ? referenceKey(videoFirstFrame) : ""}
                         onChange={(event) => setVideoFirstFrame(parseFrameValue(event.target.value))}
                       >
@@ -965,10 +965,10 @@ export function ShotRow({
                     </label>
                   ) : null}
                   {supportsLastFrame ? (
-                    <label className="flex items-center gap-1.5 text-muted-foreground">
+                    <label className="flex min-w-0 flex-1 basis-40 flex-col gap-1.5 text-muted-foreground">
                       <span>{t("episode.useLastFrame")}</span>
                       <select
-                        className="h-7.5 rounded-md border border-border/60 bg-background px-2 text-foreground text-xs shadow-xs focus:ring-1 focus:ring-primary outline-none"
+                        className="h-8 w-full min-w-0 rounded-md border border-border/60 bg-background px-2 text-foreground text-xs shadow-xs focus:ring-1 focus:ring-primary outline-none"
                         value={videoLastFrame ? referenceKey(videoLastFrame) : ""}
                         onChange={(event) => setVideoLastFrame(parseFrameValue(event.target.value))}
                       >
@@ -1026,11 +1026,11 @@ export function ShotRow({
 
       {/* Compiled Prompt Preview Dialog */}
       <Dialog open={compiledPrompt !== null} onOpenChange={(isOpen) => !isOpen && setCompiledPrompt(null)}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden flex flex-col">
+        <DialogContent className="max-h-[85dvh] max-w-2xl overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-sm font-semibold">{t("episode.finalPromptPreview")}</DialogTitle>
           </DialogHeader>
-          <pre className="max-h-[55vh] flex-1 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3.5 text-xs leading-relaxed font-mono border border-border/50 select-text">
+          <pre className="max-h-[55dvh] flex-1 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3.5 text-xs leading-relaxed font-mono border border-border/50 select-text">
             {compiledPrompt}
           </pre>
           <div className="flex items-center justify-between border-t border-border/40 pt-3 mt-1">

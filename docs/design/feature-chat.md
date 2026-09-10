@@ -28,6 +28,12 @@ Consequences that look like bugs but are not:
 
 Reference material: https://www.assistant-ui.com/llms-full.txt · MCP docs server `npx -y @assistant-ui/mcp-docs-server` · vendored skills under `.agents/skills/` (pinned in `skills-lock.json`). The frontend declares AI SDK 7 / `@ai-sdk/react` 4 and `@assistant-ui/react` 0.14. Consult the installed version and repository design before applying a newer quickstart.
 
+## Composer and failed turns
+
+Rechecked on **2026-09-10**. Sending focuses the composer immediately. Its `sendDisabled` prop maps to assistant-ui's `isSendDisabled`, so the next draft and attachments remain editable while sending is blocked. The controller's `isSending` covers automatic session creation, streaming, and the final query refresh; `isRunning` still controls the stop button. A new draft survives completion, failure, and cancellation of the preceding request.
+
+The AI SDK error callback clears transient execution steps and removes reasoning parts only from the failed turn's last assistant message. Earlier messages and partial answer text remain intact. An error before any assistant message leaves the conversation unchanged. Normal completion keeps completed steps; an explicit stop keeps partial content and marks running steps stopped. The message list does not need its own duplicate error state.
+
 ## The BFF route is where the halves meet
 
 `src/app/api/bff/chat/sessions/[id]/messages/stream/route.ts` is the **only** real route under `app/api/bff/**`; everything else is the fallback proxy. It reads the backend's NDJSON and writes an AI SDK UI stream. Backend event types:

@@ -216,7 +216,7 @@ function StateEditor({
     removeMutation.isPending;
 
   return (
-    <div className="grid gap-4 rounded-lg border border-border/60 p-3 md:grid-cols-[minmax(0,1fr)_240px]">
+    <div className="grid gap-4 rounded-lg border border-border/60 p-3 lg:grid-cols-[minmax(0,1fr)_240px]">
       <div className="flex min-w-0 flex-col gap-3">
         <FieldGroup>
           <div className="grid gap-3 sm:grid-cols-2">

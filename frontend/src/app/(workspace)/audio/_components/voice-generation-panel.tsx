@@ -224,9 +224,9 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
   };
 
   return (
-    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[300px_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/35 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
-        <div className="flex items-center justify-between gap-3">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden">
+      <aside className="flex min-h-0 min-w-0 shrink-0 flex-col border-b border-border/70 bg-card/35 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <AudioLines className="size-4" />
@@ -265,7 +265,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
             <p className="text-xs font-semibold">{t("voice.saved")}</p>
             <Badge variant="outline" className="text-[10px]">{savedVoices.length}</Badge>
           </div>
-          <div className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
+          <div className="mt-2 max-h-56 min-h-0 flex-1 space-y-1.5 overflow-y-auto lg:max-h-none pr-1 chat-message-list-scrollbar">
             {savedVoices.map((voice) => (
               <div key={voice.id} className={cn("flex w-full items-center gap-1 rounded-xl px-1", !draftVoice && effectiveSavedVoiceId === voice.id ? "bg-primary/10" : "hover:bg-muted/60")}>
                 <button
@@ -294,7 +294,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto p-4 md:p-6 chat-message-list-scrollbar">
+      <section className="flex min-w-0 shrink-0 flex-col p-4 md:p-6 lg:min-h-0 lg:overflow-y-auto chat-message-list-scrollbar">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
           <header className="border-b border-border/70 pb-4">
             <div className="flex items-center gap-2 text-primary">
@@ -319,7 +319,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
               />
             </div>
             <div className="space-y-1.5">
-              <div className="flex h-6 items-center justify-between gap-2">
+              <div className="flex min-h-6 flex-wrap items-center justify-between gap-2">
                 <label htmlFor="voice-prompt" className="text-xs font-semibold text-foreground/90">
                   {t("voice.prompt")}
                 </label>
@@ -382,7 +382,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
               />
             </div>
             <div className="space-y-1.5">
-              <div className="flex h-6 items-center justify-between gap-2">
+              <div className="flex min-h-6 flex-wrap items-center justify-between gap-2">
                 <label htmlFor="voice-preview-text" className="text-xs font-semibold text-foreground/90">
                   {t("voice.previewText")}
                 </label>
@@ -422,7 +422,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
           </div>
 
           <div className="min-h-64 border-t border-border/70 pt-5">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Volume2 className="size-4" />
@@ -517,7 +517,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
                   ) : null}
 
                   {draftVoice ? (
-                    <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3.5">
                       <p className="text-xs text-muted-foreground">{t("voice.draftHint")}</p>
                       <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="cursor-pointer">
                         {saveMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
@@ -540,8 +540,8 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
 
           {/* 音色大屏试听与参数详情 Dialog */}
           <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
-            <DialogContent className="w-[85vw] sm:w-[85vw] min-w-[80vw] sm:max-w-[90vw] max-h-[90vh] sm:max-h-[90vh] rounded-2xl border border-border/80 p-0 overflow-hidden shadow-2xl bg-background">
-              <DialogHeader className="p-3 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+            <DialogContent className="w-[calc(100%-1rem)] max-w-5xl max-h-[90dvh] sm:w-[85vw] rounded-2xl border border-border/80 p-0 overflow-y-auto shadow-2xl bg-background">
+              <DialogHeader className="p-3 pr-12 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Volume2 className="size-4" />
@@ -558,7 +558,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
               </DialogHeader>
 
               {previewVoice ? (
-                <div className="p-6 space-y-5">
+                <div className="p-3 space-y-5 sm:p-6">
                   {/* 大屏声波舞台播放区 */}
                   <div className="flex flex-col items-center justify-center rounded-2xl border border-border/70 bg-card/60 p-6 space-y-5 shadow-inner">
                     <div className="flex items-center justify-center gap-2.5 h-20 w-full max-w-4xl px-2">
@@ -605,7 +605,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
                     ) : null}
                   </div>
 
-                  <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/70">
+                  <div className="flex flex-wrap items-center justify-end gap-2.5 pt-3 border-t border-border/70">
                     <Button
                       variant="outline"
                       size="sm"

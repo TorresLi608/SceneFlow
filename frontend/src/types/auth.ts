@@ -89,6 +89,23 @@ export interface RedeemCodeResponse {
   user: AuthUser;
 }
 
+export interface Pagination {
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+export interface RedemptionHistoryResponse {
+  redemptions: {
+    id: number;
+    code: string;
+    amountMicros: string;
+    redeemedAt: string;
+  }[];
+  pagination: Pagination;
+}
+
 export interface UserConfig extends ModelPricing {
   id: number;
   source: "user" | "official";

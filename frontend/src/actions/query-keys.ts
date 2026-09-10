@@ -2,6 +2,7 @@ import type { TimeRangeParams } from "@/lib/date-time-range";
 
 export const queryKeys = {
   me: ["me"] as const,
+  redemptionHistory: ["redemption-history"] as const,
   userConfigs: ["user-configs"] as const,
   videoModelCatalog: ["video-model-catalog"] as const,
   projects: ["projects"] as const,

@@ -200,8 +200,8 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
               onError={setMessage}
             />
 
-            <div className="flex items-start gap-3.5 rounded-2xl border border-border/60 bg-muted/20 p-3">
-              <span className="relative flex aspect-[16/10] w-40 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/80 bg-muted/60 shadow-inner">
+            <div className="flex flex-col items-start gap-3.5 rounded-2xl sm:flex-row border border-border/60 bg-muted/20 p-3">
+              <span className="relative flex aspect-[16/10] w-full shrink-0 sm:w-40 items-center justify-center overflow-hidden rounded-xl border border-border/80 bg-muted/60 shadow-inner">
                 {coverPreview ? (
                   <Image src={coverPreview} alt="" fill unoptimized sizes="160px" className="object-cover" />
                 ) : (
@@ -212,7 +212,7 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
                 )}
               </span>
 
-              <div className="flex flex-1 flex-col justify-between self-stretch py-0.5">
+              <div className="flex min-w-0 flex-1 flex-col justify-between self-stretch py-0.5">
                 <div>
                   <p className="text-xs font-medium text-foreground">{t("home.coverFieldTitle")}</p>
                   <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">

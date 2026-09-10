@@ -25,11 +25,11 @@ export function MediaPreviewDialog({
 
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[98vw] max-w-[1850px] h-[95vh] max-h-[96vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
-        <DialogHeader className="p-3.5 px-5 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
-          <DialogTitle className="truncate pr-8 text-sm font-bold">{item?.title}</DialogTitle>
+      <DialogContent className="w-[98vw] max-w-[1850px] h-[95dvh] max-h-[96dvh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
+        <DialogHeader className="p-3 pr-12 border-b border-border/70 flex flex-row flex-wrap items-center justify-between gap-2 sm:pl-5 bg-card/40 shrink-0">
+          <DialogTitle className="min-w-0 max-w-full truncate text-sm font-bold">{item?.title}</DialogTitle>
           {item?.url ? (
-            <div className="flex items-center gap-2 mr-8">
+            <div className="flex shrink-0 items-center gap-2">
               <a
                 href={item.url}
                 target="_blank"

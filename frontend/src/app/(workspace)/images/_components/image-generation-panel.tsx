@@ -369,12 +369,12 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
   const generatingLabel = t("images.generatingImageWithSeconds", { seconds: elapsedSeconds });
 
   return (
-    <div className="grid min-h-0 flex-1 bg-background lg:grid-cols-[320px_minmax(0,1fr)]">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:overflow-hidden">
       {/* 左侧控制栏 */}
-      <aside className="flex min-h-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
+      <aside className="flex min-h-0 min-w-0 shrink-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         {/* 头部标题 */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Sparkles className="size-4" />
             </div>
@@ -388,7 +388,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
         </div>
 
         {/* 控制项滚动区域 */}
-        <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 chat-message-list-scrollbar">
+        <div className="mt-4 space-y-4 px-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto chat-message-list-scrollbar">
           {/* 模型选择 */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground/90">
@@ -553,7 +553,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
                 </Badge>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="secondary"
@@ -726,9 +726,9 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
       </aside>
 
       {/* 右侧：专业图片监视视窗 */}
-      <section className="flex min-h-0 min-w-0 flex-col p-3 md:p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+      <section className="flex h-[min(70dvh,36rem)] min-h-80 min-w-0 shrink-0 flex-col p-3 md:p-4 lg:h-auto lg:min-h-0">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-bold tracking-tight text-foreground">
               {t("images.preview")}
             </h2>
@@ -738,7 +738,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
               </Badge>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {imageUrl ? (
               <Button
                 variant="outline"
@@ -833,8 +833,8 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
 
       {/* 图片全屏与参数详情 Dialog（大屏沉浸式视窗） */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="w-[88vw] sm:w-[88vw] min-w-[80vw] sm:max-w-[92vw] h-[94vh] sm:max-h-[96vh] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
-          <DialogHeader className="p-2.5 px-4 border-b border-border/70 flex flex-row items-center justify-between bg-card/40 shrink-0">
+        <DialogContent className="w-[calc(100%-1rem)] max-w-[92rem] h-[94dvh] max-h-[94dvh] sm:w-[88vw] flex flex-col p-0 overflow-hidden gap-0 rounded-2xl border border-border/80 shadow-2xl bg-background">
+          <DialogHeader className="p-3 pr-12 border-b border-border/70 flex flex-row flex-wrap items-center justify-between gap-2 bg-card/40 shrink-0">
             <div className="flex items-center gap-3">
               <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <ImageIcon className="size-4" />
@@ -849,7 +849,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pr-8">
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -891,7 +891,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
 
               {/* 右侧参数与操作面板 */}
               {showLightboxSidebar ? (
-                <div className="w-full md:w-64 lg:w-72 flex flex-col justify-between shrink-0 border-t md:border-t-0 md:border-l border-border/70 bg-card/75 p-3.5 space-y-3 overflow-y-auto chat-message-list-scrollbar animate-in slide-in-from-right-4 duration-200">
+                <div className="w-full max-h-[45%] md:max-h-none md:w-64 lg:w-72 flex flex-col justify-between shrink-0 border-t md:border-t-0 md:border-l border-border/70 bg-card/75 p-3.5 space-y-3 overflow-y-auto chat-message-list-scrollbar animate-in slide-in-from-right-4 duration-200">
                   <div className="space-y-3">
                     <div className="space-y-1.5">
                       <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">

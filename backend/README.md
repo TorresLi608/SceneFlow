@@ -105,6 +105,9 @@ Except for auth, health, static prompt presets, and token-signed artifact downlo
 |---|---|
 | GET, PATCH, DELETE | `/api/users/me` |
 | POST | `/api/users/redeem` |
+| GET | `/api/users/redemptions` |
+
+`GET /api/users/redemptions` returns only the authenticated user's successful redemptions, newest first (redemption time, then ID). Query parameters: `page` ≥ 1 (default 1), `pageSize` 1–100 (default 10). The response contains `redemptions` with `id`, `code`, string `amountMicros`, and `redeemedAt`, plus `pagination` (`total`, `page`, `pageSize`, `pageCount`). Redeemed codes stay visible after expiry; no user ID parameter is accepted to select another account. See [billing](../docs/design/feature-billing.md#topping-up).
 
 ### settings — app/api/v1/settings.py
 

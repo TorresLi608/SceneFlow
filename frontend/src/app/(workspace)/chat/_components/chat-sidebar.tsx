@@ -49,8 +49,8 @@ export function ChatSidebar({
   );
 
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl md:border-r md:border-b-0 md:p-5">
-      <div className="flex items-center justify-between">
+    <aside className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl md:border-r md:border-b-0 md:p-5">
+      <div className="flex items-center justify-between pr-8 md:pr-0">
         <div className="flex items-center gap-2">
           <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <MessageSquare className="size-4" />
@@ -63,6 +63,7 @@ export function ChatSidebar({
           size="icon-sm"
           className="rounded-xl shadow-xs cursor-pointer"
           onClick={onCreateSession}
+          aria-label={t("chat.newSession")}
           disabled={isBusy || chatConfigs.length === 0}
         >
           <MessageSquarePlus className="size-4" />
@@ -72,7 +73,7 @@ export function ChatSidebar({
       <div className="mt-4 space-y-3">
         {/* 模型选择 */}
         <div className="space-y-1">
-          <label className="text-[11px] font-semibold text-muted-foreground">推理模型</label>
+          <label className="text-[11px] font-semibold text-muted-foreground">{t("chat.selectModel")}</label>
           <Select
             value={effectiveConfigId}
             onValueChange={(value) => onConfigChange(value ?? "")}
@@ -105,7 +106,7 @@ export function ChatSidebar({
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 chat-message-list-scrollbar">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-            会话历史
+            {t("chat.history")}
           </span>
           <span className="text-[10px] text-muted-foreground">{sessions.length}</span>
         </div>
@@ -136,7 +137,7 @@ export function ChatSidebar({
                   className="min-w-0 flex-1 text-left cursor-pointer"
                 >
                   <span className="block truncate font-semibold">
-                    {session.title || "新会话"}
+                    {session.title || t("chat.newSession")}
                   </span>
                   <span className="mt-1 block text-[10px] text-muted-foreground">
                     {formatDateTime(session.updatedAt)}
@@ -149,7 +150,7 @@ export function ChatSidebar({
                     event.stopPropagation();
                     onDeleteSession(session.id);
                   }}
-                  className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+                  className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
                   aria-label={t("chat.deleteSession")}
                 >
                   <Trash2 className="size-3.5" />

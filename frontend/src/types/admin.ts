@@ -1,4 +1,4 @@
-import type { AuthUser, CreateUserConfigInput, UpdateUserConfigInput, UserConfig, UserConfigItemResponse } from "@/types/auth";
+import type { AuthUser, CreateUserConfigInput, Pagination, UpdateUserConfigInput, UserConfig, UserConfigItemResponse } from "@/types/auth";
 import type { UsageLogItem } from "@/types/usage";
 
 export interface AdminUserListResponse {
@@ -69,13 +69,6 @@ export interface InvitationCodeListResponse {
 
 export interface InvitationCodeItemResponse {
   invitationCode: InvitationCode;
-}
-
-export interface Pagination {
-  total: number;
-  page: number;
-  pageSize: number;
-  pageCount: number;
 }
 
 export type RedemptionCodeStatus = "unused" | "expired" | "redeemed";

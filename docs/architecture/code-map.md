@@ -51,7 +51,7 @@ Route groups in parentheses do not appear in URLs. Paths below are relative to [
 | `/chat` | [(workspace)/chat](../../frontend/src/app/(workspace)/chat/page.tsx) | Session list, custom message list, assistant-ui composer |
 | `/images`, `/videos`, `/audio` | [images](../../frontend/src/app/(workspace)/images/page.tsx), [videos](../../frontend/src/app/(workspace)/videos/page.tsx), [audio](../../frontend/src/app/(workspace)/audio/page.tsx) | Standalone image/video generation and account voice design |
 | `/ai-script` | [(workspace)/ai-script](../../frontend/src/app/(workspace)/ai-script/page.tsx) | Series list, filters, create/edit project dialog |
-| `/profile`, `/usage` | [profile](../../frontend/src/app/(workspace)/profile/page.tsx), [usage](../../frontend/src/app/(workspace)/usage/page.tsx) | Account, personal/official model choices, redemption, usage |
+| `/profile`, `/usage` | [profile](../../frontend/src/app/(workspace)/profile/page.tsx), [usage](../../frontend/src/app/(workspace)/usage/page.tsx) | Account settings, balance redemption and personal redemption history, usage |
 | `/admin` | [(workspace)/admin](../../frontend/src/app/(workspace)/admin/page.tsx) | Redirects to `/admin/models` |
 | `/admin/{models,users,invitation-codes,redemption-codes,usage-logs,error-logs}` | [admin subtree](../../frontend/src/app/(workspace)/admin/) | Super-admin management; page-local managers under `_components/` |
 | `/projects/:projectId` | [projects/[projectId]/page.tsx](../../frontend/src/app/projects/[projectId]/page.tsx) | Redirects to the project's `/info` |
@@ -64,6 +64,8 @@ Route groups in parentheses do not appear in URLs. Paths below are relative to [
 | `/projects/:projectId/workbench` | [workbench/page.tsx](../../frontend/src/app/projects/[projectId]/workbench/page.tsx) | Legacy single-screen editor; still reachable directly |
 
 The [workspace shell](../../frontend/src/app/(workspace)/_components/workspace-shell.tsx) handles the general workspace session/navigation. The [project layout](../../frontend/src/app/projects/[projectId]/(workbench)/layout.tsx) supplies seven project sections. The episode editor and legacy editor sit outside that route group and supply their own full-screen layout. Layouts are not backend authorization boundaries.
+
+The profile's [redemption-history-dialog.tsx](../../frontend/src/app/(workspace)/profile/_components/redemption-history-dialog.tsx) owns the paginated personal redemption history, queried through `user-actions.ts` → `users.py::list_redemptions`. Backend pagination metadata is shared with admin lists through `app/utils/common.py::pagination`; the frontend `Pagination` type lives in `src/types/auth.ts` and is reused by admin responses.
 
 ### Episode editor: where to change what
 
@@ -104,7 +106,7 @@ Actions below are in [frontend/src/actions](../../frontend/src/actions/); endpoi
 | Merge/export with source audio | `projects-actions.ts`, project videos page | `episodes.py` / `exports.py` → `export_service.py::run_export` → `media_service.py::concat_videos` / `_probe_video_audio_and_duration` | `test_exports_api.py` (including mixed audio/silent clips), `test_media_service.py` |
 | Queued generation / cancel / retry | `job-actions.ts` (`runJob`, `awaitJob`) | `jobs.py`, `job_service.py`, `job_worker.py`, `job_handlers.py` | `test_job_service.py`; `tests/job_queue.py` drains handlers for API tests |
 | Standalone images / videos | `image-generation-actions.ts`, `video-generation-actions.ts` | `images.py` → `llms/router.py`; `videos.py` → `video_service.py` | `test_images.py`, `test_video_service.py` |
-| Chat / generated documents | `chat-actions.ts`, `use-chat-controller.ts`, composer and message list | `chat.py`, `chat_service.py`, `graph/graphs/context_graph.py`, `agent_service.py`, `artifact_service.py`, `utils/attachment_parser.py` | `test_agent_service.py`, `test_chat_balance.py`, `test_artifact_service.py` |
+| Chat / generated documents | `chat-actions.ts`, `use-chat-controller.ts`, `chat-message-state.ts`, composer and message list | `chat.py`, `chat_service.py`, `graph/graphs/context_graph.py`, `agent_service.py`, `artifact_service.py`, `utils/attachment_parser.py` | `test_agent_service.py`, `test_chat_balance.py`, `test_artifact_service.py`; frontend `chat-message-state.test.mts` |
 | Billing / redemption / admin logs | `usage-actions.ts`, `user-actions.ts`, `admin-actions.ts`, `ui/date-time-range-picker.tsx` | `usage.py`, `users.py`, `admin.py`, `usage_service.py`, `utils/time_range.py` | `test_usage_service.py`, `test_redemption_codes.py`, `test_admin_usage_logs.py`, `test_log_time_ranges.py`; frontend `money.test.mts`, `date-time-range.test.mts`, `user-list.test.mts` |
 | Request diagnosis | `admin-actions.ts`, admin error-log page, `ui/date-time-range-picker.tsx` | `main.py`, `core/logging.py`, `error_log_service.py`, `utils/time_range.py`, `agent_service.py::search_error_logs` (admin-only tool) | `test_breakdown_api.py`, `test_log_time_ranges.py`; [Bug history index](../bugs/README.md) |
 

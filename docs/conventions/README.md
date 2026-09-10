@@ -32,6 +32,14 @@ Violating any of these produces a bug that does not show up until production dat
 - **Prefer fewer, sharper abstractions.** Reuse existing module boundaries rather than introducing one-off indirection. `AppSidebar` is concrete because there is one sidebar; do not build a framework for a single caller.
 - **A base-ui `Select` needs `items` on the root, not just `label` on each item.** `Select.Value` resolves the trigger's text from the root's `items` prop; the `label` on `Select.Item` only feeds keyboard typeahead. Omit `items` and the trigger renders the raw value — a language picker showed `zh` after the user chose 中文, and the production-settings mode showed `comic`. Either pass `items={[{value, label}]}` or give `Select.Value` explicit children. The shared prompt-language list is `promptLanguageItems(t)` in `components/prompt-field.tsx`.
 
+## Responsive frontend layouts
+
+- Full-screen workspaces use `h-dvh` and the shared `safe-area` utility. Workspace and legacy navigation open in a Base UI dialog below `lg`; project section navigation scrolls horizontally below `md`. Keep an accessible name on icon-only navigation links and buttons.
+- Stack generation controls and previews below `lg`. Asset management stacks below `xl`; stacked content scrolls with its page or dialog, while desktop columns can scroll independently. Set `min-w-0` on flexible content and let action groups wrap, including English labels.
+- Shared dialogs and popovers constrain their size to the viewport and allow scrolling. Wide admin tables scroll inside their own container. Do not conceal overflowing controls by clipping the page.
+- Narrow-screen inputs, native selects, textareas and editable prompt fields use at least 16px text to avoid iOS focus zoom. Preserve browser zoom and keep media actions available without hover.
+- For layout changes, inspect both languages at phone and desktop widths, including open dialogs and expanded editors. The [mobile layout record](../bugs/2026-09-10-mobile-responsive-layout.md) lists the executed viewport checks and their limits.
+
 ## Recording bug fixes
 
 Every bug-fix task starts with the [Bug history index](../bugs/README.md) and matching details, and ends by updating the issue record and its index row in the same handoff. Same root cause means updating the existing record; a new root cause gets its own detail under `docs/bugs/`. No root-level bug/fix summary files. Follow [AGENTS.md](../../AGENTS.md#bug-fix-workflow) and the index template; record actual validation, not intended results.

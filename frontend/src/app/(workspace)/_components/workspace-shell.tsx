@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Crown,
   LogOut,
+  Menu,
   Settings,
   UserRound,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { useI18n } from "@/lib/i18n";
@@ -50,6 +52,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const setUser = useUserStore((state) => state.setUser);
   const logout = useUserStore((state) => state.logout);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [navigationPath, setNavigationPath] = useState<string | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const keepAccountOpen = () => {
@@ -88,7 +91,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   if (!hydrated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background">
+      <main className="flex min-h-dvh items-center justify-center bg-background">
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
           <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm font-medium text-muted-foreground">{t("common.initializing")}</span>
@@ -99,7 +102,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   if (!token || meQuery.isError) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background">
+      <main className="flex min-h-dvh items-center justify-center bg-background">
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
           <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm font-medium text-muted-foreground">{t("common.redirectingToLogin")}</span>
@@ -111,19 +114,28 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const isSuperAdmin = user?.role === "superAdmin";
 
   return (
-    <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      <AppSidebar showUserManagement={isSuperAdmin} />
+    <main className="safe-area flex h-dvh overflow-hidden bg-background text-foreground">
+      <AppSidebar showUserManagement={isSuperAdmin} className="hidden lg:flex" />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* 顶部毛玻璃导航栏 */}
         <header className="shrink-0 border-b border-border/70 bg-card/40 backdrop-blur-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-            <div className="flex items-center gap-3">
-              <div>
-                <h1 className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-3 md:px-6">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <Dialog open={navigationPath === pathname} onOpenChange={(open) => setNavigationPath(open ? pathname : null)}>
+                <DialogTrigger render={<Button variant="outline" size="icon" className="shrink-0 lg:hidden" aria-label={t("home.menu")} />}>
+                  <Menu />
+                </DialogTrigger>
+                <DialogContent className="top-[env(safe-area-inset-top)] left-[env(safe-area-inset-left)] h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] max-h-dvh w-72 max-w-[calc(100%-3rem)] translate-x-0 translate-y-0 gap-0 rounded-none p-0 sm:max-w-xs" aria-describedby={undefined}>
+                  <DialogTitle className="sr-only">{t("home.menu")}</DialogTitle>
+                  <AppSidebar isMobile showUserManagement={isSuperAdmin} className="h-full w-full border-0 [&>div:first-child]:pr-12" onNavigate={() => setNavigationPath(null)} />
+                </DialogContent>
+              </Dialog>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-bold tracking-tight text-foreground sm:text-lg">
                   {t(pageTitleKey(pathname))}
                 </h1>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
                   {t("common.currentUser", {
                     username: meQuery.isLoading
                       ? t("common.loading")
@@ -133,7 +145,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
               <PreferencesSwitcher />
 
               {/* 用户快捷菜单 */}
@@ -143,17 +155,18 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                     render={
                       <Button
                         variant="outline"
-                        className="h-9 gap-2 rounded-xl border-border/80 bg-card/60 px-3 backdrop-blur-md hover:bg-card hover:border-primary/40 cursor-pointer shadow-xs"
+                        className="h-9 gap-2 rounded-xl border-border/80 bg-card/60 px-2 backdrop-blur-md hover:bg-card hover:border-primary/40 cursor-pointer shadow-xs sm:px-3"
+                        aria-label={t("home.personalSettings")}
                       />
                     }
                   >
                     <div className="flex size-6 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       {isSuperAdmin ? <Crown className="size-3.5" /> : <UserRound className="size-3.5" />}
                     </div>
-                    <span className="max-w-[120px] truncate text-xs font-semibold sm:max-w-[160px]">
+                    <span className="hidden max-w-[160px] truncate text-xs font-semibold sm:inline">
                       {user?.nickname || user?.username || t("common.loading")}
                     </span>
-                    <ChevronDown className="size-3.5 text-muted-foreground" />
+                    <ChevronDown className="hidden size-3.5 text-muted-foreground sm:block" />
                   </PopoverTrigger>
                 </div>
 

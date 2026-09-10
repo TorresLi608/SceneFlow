@@ -525,16 +525,16 @@ export default function VoicesPage() {
           {voices.map((voice) => (
             <section
               key={voice.id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border/70 bg-card/60 p-4"
+              className="flex flex-col items-start gap-3 rounded-lg border border-border/70 bg-card/60 p-4 sm:flex-row sm:flex-wrap sm:justify-between"
             >
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 w-full sm:w-auto sm:flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Volume2 className="size-3.5" />
                   </span>
                   <h2 className="text-sm font-semibold">{voice.name}</h2>
                   {voice.voiceModel ? (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="max-w-full whitespace-normal break-all text-[10px]">
                       {voice.voiceModel}
                     </Badge>
                   ) : null}
