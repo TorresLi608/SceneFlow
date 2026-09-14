@@ -10,6 +10,7 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20260914-request-unit-metering | 视频、按次、按秒、unitName、quantity、record_usage | 按次配置仍按视频时长乘价；共享计费入口统一按次数量为 1，视频表单支持两种单位并保留保存值 | 本地专项回归通过，完整配置套件有既有失败 | 2026-09-14 | [按次计费量](2026-09-14-request-unit-metering.md) |
 | BUG-20260910-chat-composer-draft-focus | 智能问答、输入框、焦点、草稿、isSendDisabled、isSending | 发送时整体禁用输入且等待回复结束才恢复焦点；现改为立即聚焦、持续编辑并单独限制发送 | 本地检查和模拟流浏览器验证通过 | 2026-09-10 | [聊天输入框焦点与草稿](2026-09-10-chat-composer-draft-focus.md) |
 | BUG-20260910-chat-error-thinking-state | 智能问答、报错、思考框、执行流程、agentSteps、reasoning、onError | 错误回调未清理临时步骤及本轮思考；现统一清理并保留历史、正文和草稿 | 前端回归和模拟流浏览器验证通过 | 2026-09-10 | [聊天报错后思考区域残留](2026-09-10-chat-error-thinking-state.md) |
 | BUG-20260910-mobile-responsive-layout | 移动端、响应式、320px、侧栏、分镜详情、素材弹窗、英文按钮、dvh、iOS | 补齐手机导航、纵向滚动、弹窗约束和按钮换行，调整平板表单列宽；折叠导航保留可访问名称 | 浏览器视口回归及前端检查通过，真机待验证 | 2026-09-10 | [移动端布局适配](2026-09-10-mobile-responsive-layout.md) |

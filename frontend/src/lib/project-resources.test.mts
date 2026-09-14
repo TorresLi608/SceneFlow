@@ -31,3 +31,16 @@ test("extra terms make the displayed media and kind labels searchable", () => {
   assert.equal(matchesResource(character, "视频", typeTerms), false);
   assert.equal(matchesResource(character, "", typeTerms), true);
 });
+
+test("mention search filters Chinese asset names and resets after an empty result", () => {
+  const asset = {
+    kind: "characterState" as const, id: "han-child", label: "韩立 · 韩立–幼年",
+    media: "image" as const, url: "", aliases: ["Han Li Young"], episodeTitle: "山村",
+  };
+  const typeTerms = ["图片", "角色状态"];
+  assert.equal(matchesResource(asset, " 韩立 幼年 ", typeTerms), true);
+  assert.equal(matchesResource(asset, "山村 图片", typeTerms), true);
+  assert.equal(matchesResource(asset, "HAN YOUNG", typeTerms), true);
+  assert.equal(matchesResource(asset, "掌天瓶", typeTerms), false);
+  assert.equal(matchesResource(asset, "", typeTerms), true);
+});

@@ -332,6 +332,18 @@ def test_user_config_pricing_round_trip() -> None:
             assert created["unitName"] == "image"
             assert updated["modelSeries"] == "gpt-image-2"
             assert updated["unitPrice"] == "0.250000000000000001"
+            video = asyncio.run(create_config({
+                "purpose": "video", "provider": "qwen", "modelSeries": "wan2.6-t2v",
+                "apiKey": "test-key", "isActive": False,
+                "unitName": "request", "unitPrice": "0.123456789012345678",
+            }, user_id))["config"]
+            assert video["unitName"] == "request"
+            for unit in ("second", "request"):
+                video = asyncio.run(update_config(video["id"], {"unitName": unit}, user_id))["config"]
+                assert video["unitName"] == unit
+                assert video["unitPrice"] == "0.123456789012345678"
+                video = asyncio.run(update_config(video["id"], {"description": "Keep pricing"}, user_id))["config"]
+                assert video["unitName"] == unit
         finally:
             database.DB_PATH = original_path
 

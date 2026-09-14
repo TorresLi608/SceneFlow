@@ -25,6 +25,10 @@ A model configuration carries seven pricing fields, normalised by `normalize_pri
 | `unit_name` | `token` \| `request` \| `image` \| `second` |
 | `pricing_multiplier` | Applied last; must be > 0 |
 
+Video model forms offer **per generation** (`request`) and **per second** (`second`). New video forms default to per generation; editing restores the saved unit, including existing per-second configurations. The price label and read-only model details use that unit. Prices remain strings through the form and API; switching units does not convert or reinterpret the entered numeric price.
+
+`record_usage` resolves the saved pricing first, then uses quantity **1** for `request`. For `second`, standalone video and episode/legacy shot generation supply the resolved duration sent to the video provider. This is generated-video duration in seconds, not the API's elapsed `duration_ms`; it does not probe the finished file. Both paths use the same calculation and log the billed quantity with its unit. See the [per-request metering record](../bugs/2026-09-14-request-unit-metering.md).
+
 ```
 uncached_input = input_tokens - cache_read - cache_write        # floored at 0
 token_cost = (uncached_input·in + output·out + read·cr + write·cw) / 1_000_000
@@ -46,6 +50,8 @@ record_usage(user_id, config, feature, started_at, usage, quantity)   # AFTER
 - `record_usage` prices the call, writes a `usage_logs` row, and — for official configs only — decrements the balance with an **atomic SQL expression** (`max(0, balance_micros - cost)`), so concurrent requests cannot clobber each other. `superAdmin` is excluded in the same `WHERE`.
 
 **A usage log stores a snapshot of the prices**, not a reference to the config. Editing a model's price later must not rewrite history; `pricing_json` plus the individual columns preserve what was charged at the time.
+
+`test_usage_service.py::test_video_pricing_units` covers both video feature names, request/second quantities, decimal rounding, official deductions versus personal metering, and snapshots after a model edit. `test_config_service.py::test_user_config_pricing_round_trip` checks switching and preserving the video unit without losing price precision.
 
 Add both hooks whenever you introduce a new provider-backed feature. The `feature` string is truncated to 40 chars and is what the usage dashboard groups by.
 

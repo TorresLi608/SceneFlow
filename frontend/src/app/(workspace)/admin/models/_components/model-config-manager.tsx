@@ -332,6 +332,7 @@ export function ModelConfigManager() {
   const [cacheReadPricePerMillion, setCacheReadPricePerMillion] = useState("0");
   const [cacheWritePricePerMillion, setCacheWritePricePerMillion] = useState("0");
   const [unitPrice, setUnitPrice] = useState("0");
+  const [videoPricingUnit, setVideoPricingUnit] = useState<"request" | "second">("request");
   const [imageMaxReferenceImages, setImageMaxReferenceImages] = useState(4);
   const [videoCapabilities, setVideoCapabilities] = useState<VideoCapabilities>(
     defaultVideoCapabilities(defaultOption.value)
@@ -463,6 +464,7 @@ export function ModelConfigManager() {
     setCacheReadPricePerMillion("0");
     setCacheWritePricePerMillion("0");
     setUnitPrice("0");
+    setVideoPricingUnit("request");
     setImageMaxReferenceImages(4);
     setVideoCapabilities(defaultVideoCapabilities(option.value));
   };
@@ -506,6 +508,7 @@ export function ModelConfigManager() {
     setCacheReadPricePerMillion(String(config.cacheReadPricePerMillion));
     setCacheWritePricePerMillion(String(config.cacheWritePricePerMillion));
     setUnitPrice(String(config.unitPrice));
+    setVideoPricingUnit(config.unitName === "second" ? "second" : "request");
     setImageMaxReferenceImages(config.imageMaxReferenceImages ?? 4);
     setVideoCapabilities(editableVideoCapabilities(config));
     setFormOpen(true);
@@ -523,6 +526,7 @@ export function ModelConfigManager() {
     setModelSeries(option.modelSeries);
     setModelOptions([]);
     setUnitPrice("0");
+    setVideoPricingUnit("request");
     setImageMaxReferenceImages(4);
     setVideoCapabilities(defaultVideoCapabilities(option.value));
   };
@@ -626,7 +630,7 @@ export function ModelConfigManager() {
         cacheWritePricePerMillion,
         unitPrice:
           purpose === "image" || purpose === "video" || purpose === "audio" ? unitPrice : "0",
-        unitName: defaultPricingUnit(purpose),
+        unitName: purpose === "video" ? videoPricingUnit : defaultPricingUnit(purpose),
         imageMaxReferenceImages: purpose === "image" ? imageMaxReferenceImages : undefined,
         videoCapabilities: purpose === "video" ? videoCapabilities : undefined,
       };
@@ -1728,6 +1732,35 @@ export function ModelConfigManager() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
+                {purpose === "video" ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="videoPricingUnit" className="text-xs font-semibold text-foreground/90">
+                      {t("admin.videoPricingUnit")}
+                    </Label>
+                    <Select
+                      value={videoPricingUnit}
+                      onValueChange={(value) =>
+                        setVideoPricingUnit(value === "second" ? "second" : "request")
+                      }
+                    >
+                      <SelectTrigger id="videoPricingUnit" className="h-9 w-full text-xs">
+                        <SelectValue>
+                          {videoPricingUnit === "second"
+                            ? t("admin.videoPricingSecond")
+                            : t("admin.videoPricingRequest")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectItem value="request" label={t("admin.videoPricingRequest")} className="text-xs">
+                          {t("admin.videoPricingRequest")}
+                        </SelectItem>
+                        <SelectItem value="second" label={t("admin.videoPricingSecond")} className="text-xs">
+                          {t("admin.videoPricingSecond")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
                 <PricingInput
                   id="pricingMultiplier"
                   label={t("admin.pricingMultiplier")}
@@ -1743,7 +1776,9 @@ export function ModelConfigManager() {
                         ? "admin.imageUnitPrice"
                         : purpose === "audio"
                           ? "admin.audioUnitPrice"
-                          : "admin.videoUnitPrice"
+                          : videoPricingUnit === "second"
+                            ? "admin.videoUnitPrice"
+                            : "admin.videoRequestUnitPrice"
                     )}
                     value={unitPrice}
                     onChange={setUnitPrice}
@@ -1913,7 +1948,9 @@ export function ModelConfigManager() {
                         ? "admin.imageUnitPrice"
                         : viewingConfig.purpose === "audio"
                           ? "admin.audioUnitPrice"
-                          : "admin.videoUnitPrice"
+                          : viewingConfig.unitName === "second"
+                            ? "admin.videoUnitPrice"
+                            : "admin.videoRequestUnitPrice"
                     )}: $${viewingConfig.unitPrice}`
                     : `${t("admin.inputPrice")}: $${viewingConfig.inputPricePerMillion} · ${t("admin.outputPrice")}: $${viewingConfig.outputPricePerMillion}`}
                 </p>

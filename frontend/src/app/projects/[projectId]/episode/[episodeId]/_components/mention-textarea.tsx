@@ -1,16 +1,16 @@
 "use client";
 
+import { Combobox } from "@base-ui/react/combobox";
 import { Check, Film, ImageIcon, Search, Volume2, X } from "lucide-react";
 import Image from "next/image";
 import {
   PromptArea,
   chip,
   getChips,
-  mentionTrigger,
   segmentsToPlainText,
   type ChipSegment,
   type Segment,
-  type TriggerSuggestion,
+  type TriggerActivateContext,
 } from "prompt-area";
 import { useMemo, useState } from "react";
 
@@ -160,6 +160,11 @@ export function MentionTextarea({
 }) {
   const { t } = useI18n();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [mention, setMention] = useState<{
+    context: TriggerActivateContext;
+    editor: HTMLElement;
+    range: Range | null;
+  } | null>(null);
   const [referenceSearch, setReferenceSearch] = useState("");
   const [mediaFilter, setMediaFilter] = useState<ReferenceMedia | "all">("all");
   const [segments, setSegments] = useState<Segment[]>(() => initialSegments(value, references, assets));
@@ -199,18 +204,6 @@ export function MentionTextarea({
     (asset) => (activeFilter === "all" || asset.media === activeFilter) && matches(asset, referenceSearch)
   );
 
-  const search = async (query: string): Promise<TriggerSuggestion[]> =>
-    assets
-      .filter((asset) => matches(asset, query))
-      .filter((asset) => selected.has(keyOf(asset)) || hasBudget(asset.media))
-      .map((asset) => ({
-        value: keyOf(asset),
-        label: asset.label,
-        description: describe(asset),
-        icon: <ReferenceThumb asset={asset} className="size-5 rounded" />,
-        data: asset,
-      }));
-
   const appendReference = (asset: ReferenceAssetOption) => {
     const last = effectiveSegments[effectiveSegments.length - 1];
     const needsSpace = last !== undefined && !(last.type === "text" && (last.text === "" || /\s$/.test(last.text)));
@@ -227,6 +220,15 @@ export function MentionTextarea({
   const closePicker = () => {
     setPickerOpen(false);
     setReferenceSearch("");
+  };
+
+  const openMention = (context: TriggerActivateContext) => {
+    const editor = document.activeElement;
+    if (!(editor instanceof HTMLElement)) return;
+    const selection = window.getSelection();
+    closePicker();
+    // Keep the caret and insertion callback before the search input takes focus.
+    setMention({ context, editor, range: selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null });
   };
 
   const removeChip = (target: ChipSegment) => {
@@ -350,9 +352,91 @@ export function MentionTextarea({
         value={effectiveSegments}
         onChange={emit}
         onChipClick={removeChip}
-        triggers={[mentionTrigger({ onSearch: search, onSelect: (suggestion) => suggestion.label, chipStyle: "pill", accessibilityLabel: t("episode.mentionAssetsAccessibility"), emptyMessage: t("episode.mentionAssetsEmpty") })]}
+        triggers={[{
+          char: "@",
+          position: "any",
+          mode: "launch",
+          chipStyle: "pill",
+          accessibilityLabel: t("episode.mentionAssetsAccessibility"),
+          onActivate: openMention,
+        }]}
         submitOnEnter={false}
       />
+      {mention ? (
+        <Combobox.Root<ReferenceAssetOption>
+          open
+          autoHighlight
+          disabled={props.disabled}
+          items={assets.filter((asset) => selected.has(keyOf(asset)) || hasBudget(asset.media))}
+          filter={matches}
+          itemToStringLabel={(asset) => asset.label}
+          itemToStringValue={keyOf}
+          onOpenChange={(open) => { if (!open) setMention(null); }}
+          onValueChange={(asset) => {
+            if (!asset) return;
+            mention.context.insertChip({
+              trigger: "@", value: keyOf(asset), displayText: asset.label,
+              data: { kind: asset.kind, id: asset.id },
+            });
+            setMention(null);
+          }}
+        >
+          <Combobox.Portal>
+            <Combobox.Positioner
+              align="start"
+              sideOffset={6}
+              className="z-50"
+              anchor={{
+                contextElement: mention.editor,
+                getBoundingClientRect: () => {
+                  const rect = mention.range?.getBoundingClientRect();
+                  return rect?.height ? rect : mention.editor.getBoundingClientRect();
+                },
+              }}
+            >
+              <Combobox.Popup
+                aria-label={t("episode.mentionAssetsAccessibility")}
+                initialFocus
+                finalFocus={() => mention.editor}
+                className="flex max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-md outline-hidden"
+              >
+                <div className="mb-2 flex shrink-0 items-center gap-1">
+                  <Combobox.Input
+                    render={<Input type="search" />}
+                    aria-label={t("assets.searchReferences")}
+                    placeholder={t("assets.searchReferences")}
+                  />
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label={t("common.close")} onClick={() => setMention(null)}>
+                    <X />
+                  </Button>
+                </div>
+                <Combobox.Empty className="text-xs text-muted-foreground">
+                  <p className="p-2">{t("assets.noMatches")}</p>
+                </Combobox.Empty>
+                <Combobox.List className="min-h-0 max-h-56 overflow-y-auto overscroll-contain chat-message-list-scrollbar">
+                  {(asset: ReferenceAssetOption) => (
+                    <Combobox.Item
+                      key={keyOf(asset)}
+                      value={asset}
+                      title={describe(asset)}
+                      className="flex cursor-pointer items-center gap-2 rounded-md p-2 text-xs outline-hidden data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                    >
+                      <ReferenceThumb asset={asset} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{asset.label}</span>
+                        <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
+                          <MediaBadge media={asset.media} label={mediaLabel(asset.media)} />
+                          <span className="truncate">{kindLabel(asset)} · {sourceLabel(asset)}</span>
+                        </span>
+                      </span>
+                    </Combobox.Item>
+                  )}
+                </Combobox.List>
+              </Combobox.Popup>
+            </Combobox.Positioner>
+          </Combobox.Portal>
+        </Combobox.Root>
+      ) : null}
       {chips.length ? (
         <div className="flex flex-wrap gap-1">
           {chips.map((item, index) => {

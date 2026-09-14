@@ -1,6 +1,6 @@
 # Feature: search and filtering
 
-Verified on **2026-09-08**, with shared asset search added and checked on **2026-09-09**. SceneFlow has list filters, not a unified full-text or cross-entity search engine. The [code map](../architecture/code-map.md) locates the pages/actions that own each surface.
+Verified on **2026-09-08**, with shared asset search added and checked on **2026-09-09**, and an explicit prompt @ search input added on **2026-09-14**. SceneFlow has list filters, not a unified full-text or cross-entity search engine. The [code map](../architecture/code-map.md) locates the pages/actions that own each surface.
 
 ## Server-side lists
 
@@ -35,6 +35,14 @@ For existing API/tool callers, omitting both values preserves the personal endpo
 - Project/episode asset management and @reference pickers share the project catalogue and `lib/project-resources.ts`: case-insensitive, whitespace-separated terms must all match across name, description, episode title or bilingual/legacy label aliases; callers may add extra searchable terms, and the prompt `@` suggestions and explicit reference picker pass the displayed media-type and source-kind labels so "视频" or "image" narrows by type. The explicit picker also filters by media type and shows the used/allowed budget per type; every suggestion, picker row and chip carries a media badge or icon. Asset management adds source-kind and source-episode/shared filters; media cards initially render 36 entries with load-more. @ suggestions and the explicit reference search preserve media budgets. The catalogue is project-scoped but not paginated; no script/prompt content is returned for search.
 
 Use local filtering for small lists already loaded for editing. Move growing tables to server-side filtering/paging when the full response becomes unsuitable.
+
+### Prompt @ search
+
+Episode image prompts, video prompts, and both kinds of prompt prefixes share `MentionTextarea`. Typing `@` opens a Base UI Combobox with a focused search input, anchored to the saved caret range. It reuses `matchesResource`, media labels and the current reference budget. The existing **Choose references** panel retains its search and media filters.
+
+The search text stays outside the prompt. Selecting a result calls `prompt-area`'s launch-trigger insertion callback so the `{kind, id}` chip is inserted at the original position. Escape, the close button, or clicking outside dismisses the popup; reopening starts with an empty search. Empty results use the combobox's filtered list, independently of the separate reference panel's query. The popup width and scrollable results are bounded by the viewport.
+
+The 2026-09-14 checks passed the resource-search/reference-budget/money Node suites (11 checks), TypeScript and lint (one existing unused-import warning). Browser checks confirmed opening at the caret, automatic search focus and Chinese multi-word filtering. Selection, full keyboard/IME behavior and responsive/bilingual browser checks were interrupted by browser-session availability and are not recorded as passing.
 
 ## Rules and limits
 

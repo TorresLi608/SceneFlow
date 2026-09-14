@@ -9,7 +9,7 @@ from sqlmodel import select
 from app.core import database
 from app.core.database import db, init_db
 from app.models import ModelConfig, User
-from app.services.usage_service import calculate_cost_micros, record_usage, require_model_balance, usage_logs
+from app.services.usage_service import calculate_cost_micros, normalize_pricing, pricing_snapshot, record_usage, require_model_balance, usage_logs
 from app.utils.common import now
 
 
@@ -122,6 +122,58 @@ def test_official_and_user_logs() -> None:
             database.DB_PATH = original_path
 
 
+def test_video_pricing_units() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original_path = database.DB_PATH
+        database.DB_PATH = str(Path(directory) / "video-pricing.db")
+        try:
+            init_db()
+            with db() as session:
+                user = User(username="video-pricing-user", password="x", role="user", balance_micros=20_000_000)
+                session.add(user)
+                session.flush()
+                user_id = int(user.id)
+            for source in ("official", "user"):
+                for unit in ("request", "second"):
+                    with db() as session:
+                        pricing = normalize_pricing({"unitName": unit, "unitPrice": "0.1234567", "pricingMultiplier": "1.5"})
+                        model = ModelConfig(
+                            name=f"{source}-{unit}", source=source, user_id=user_id if source == "user" else None,
+                            provider="qwen", purpose="video", model_name="video-test", encrypted_key="x",
+                            **pricing, pricing_json=pricing_snapshot(pricing),
+                        )
+                        session.add(model)
+                        session.flush()
+                        config_id = int(model.id)
+                    config = {"source": source, "officialConfigId" if source == "official" else "configId": config_id}
+                    for feature, duration in (("video", 6), ("scene_video", 3)):
+                        record_usage(user_id, config, feature, time.monotonic(), quantity=duration)
+                    # Editing a model later must not change the recorded unit or price.
+                    with db() as session:
+                        model = session.get(ModelConfig, config_id)
+                        model.pricing_json = pricing_snapshot(normalize_pricing({"unitName": "image", "unitPrice": "9"}))
+            with db() as session:
+                result = usage_logs(session, user_id)
+                assert result["summary"]["calls"] == 8
+                for log in result["logs"]:
+                    duration = 6 if log["feature"] == "video" else 3
+                    assert log["unitPrice"] == "0.1234567"
+                    assert log["pricingMultiplier"] == "1.5"
+                    if log["unitName"] == "request":
+                        assert log["quantity"] == 1
+                        assert log["costMicros"] == "185185"
+                    else:
+                        assert log["unitName"] == "second"
+                        assert log["quantity"] == duration
+                        assert log["costMicros"] == ("1111110" if duration == 6 else "555555")
+                assert result["summary"]["costMicros"] == "4074070"
+                # Personal models log costs but only the four official calls deduct balance.
+                assert session.get(User, user_id).balance_micros == 20_000_000 - 2_037_035
+        finally:
+            database.DB_PATH = original_path
+
+
 if __name__ == "__main__":
     test_cost_calculation()
     test_official_and_user_logs()
+    test_video_pricing_units()

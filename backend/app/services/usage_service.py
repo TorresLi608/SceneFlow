@@ -149,6 +149,9 @@ def record_usage(
             ).first()
         if stored_config:
             pricing = normalize_pricing({}, stored_config)
+    # Each successful provider call is one request, even when callers supply video seconds.
+    if pricing["unit_name"] == "request":
+        quantity = 1
     cost_micros = calculate_cost_micros(pricing, token_usage, quantity)
     with db() as session:
         session.add(
