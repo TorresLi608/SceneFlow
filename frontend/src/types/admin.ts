@@ -101,3 +101,14 @@ export interface AdminDefaultModelListResponse {
 export type CreateOfficialConfigInput = CreateUserConfigInput;
 export type UpdateOfficialConfigInput = UpdateUserConfigInput;
 export type AdminDefaultModelItemResponse = UserConfigItemResponse;
+
+/** Retention policy for the standalone image/video panels. `retentionDays` 0 keeps everything. */
+export interface GenerationRetentionResponse {
+  retentionDays: number;
+  maxDays: number;
+  /** Live rows the next sweep would remove under the current policy. */
+  expiredCount: number;
+  updatedAt: string | null;
+  /** Present on the manual sweep response only. */
+  removedCount?: number;
+}

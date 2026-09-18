@@ -16,6 +16,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  Timer,
   TriangleAlert,
   Video,
 } from "lucide-react";
@@ -342,6 +343,15 @@ export function AppSidebar({
                     collapsed={collapsed}
                   >
                     {t("home.redemptionCodeManagement")}
+                  </SidebarLink>
+                  <SidebarLink
+                    onNavigate={onNavigate}
+                    href="/admin/generation-retention"
+                    active={isActive("/admin/generation-retention")}
+                    icon={Timer}
+                    collapsed={collapsed}
+                  >
+                    {t("home.generationRetention")}
                   </SidebarLink>
                 </>
               ) : null}

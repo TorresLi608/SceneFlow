@@ -19,12 +19,50 @@ from app.models import ChatSession, InvitationCode, ModelConfig, RedemptionCode,
 from app.schemas.serializers import config_json, official_config_json, user_json
 from app.services.config_service import config_api_key, config_create_fields, config_update_fields, normalize_config_payload, validate_api_key
 from app.services.error_log_service import error_log_json, find_error_logs
+from app.services.generation_record_service import expired_generation_count, run_retention_sweep
+from app.services.system_setting_service import GENERATION_RETENTION_MAX_DAYS, generation_retention_days, generation_retention_json, set_generation_retention_days
 from app.services.usage_service import normalize_pricing, pricing_snapshot, pricing_updates, usage_log_json
 from app.utils.common import now, pagination
 from app.utils.time_range import utc_time_bounds
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def _generation_retention_response(session: Session) -> dict[str, Any]:
+    payload = generation_retention_json(session)
+    payload["expiredCount"] = expired_generation_count(session, generation_retention_days(session))
+    payload["maxDays"] = GENERATION_RETENTION_MAX_DAYS
+    return payload
+
+
+@router.get("/generation-retention")
+def get_generation_retention(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+    """Retention policy for the standalone image/video panels; `retentionDays` 0 keeps forever."""
+    with db() as session:
+        return _generation_retention_response(session)
+
+
+@router.patch("/generation-retention")
+def update_generation_retention(payload: dict[str, Any], admin_id: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+    if "retentionDays" not in payload:
+        raise HTTPException(400, "retentionDays is required")
+    with db() as session:
+        try:
+            set_generation_retention_days(session, payload["retentionDays"], admin_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return _generation_retention_response(session)
+
+
+@router.post("/generation-retention/sweep")
+def sweep_generation_retention(_: int = Depends(current_super_admin_id)) -> dict[str, Any]:
+    """Apply the current policy immediately instead of waiting for the hourly pass."""
+    removed = run_retention_sweep()
+    with db() as session:
+        response = _generation_retention_response(session)
+    response["removedCount"] = removed
+    return response
 
 
 def editable_user(session: Session, target_user_id: int, admin_id: int) -> User:

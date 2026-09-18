@@ -10,14 +10,14 @@ Base snapshot verified on **2026-09-07**; voice-design, media-preview, and expor
 | Project settings | Synopsis, cover upload/generation, production settings, project-first text/image/video/audio choices with account fallback |
 | Unsaved model settings | Info panel sets an in-memory dirty flag; episode image/video generation can warn and continue with saved configuration |
 | Bible | Character states as parallel/ranged looks, prop ownership, labelled setting sheets, merged cast/prop references |
-| Voices | Qwen design and project redesign preserving profile IDs/bindings; optional project sample line, save-only/save-and-generate editing, account library/import, local auditions, merged timbre track; [editing flow](../architecture/data-flow.md#project-voice-design-and-editing) |
+| Voices | Qwen design and project redesign preserving profile IDs/bindings; optional project sample line, save-only/save-and-generate editing, local auditions, merged timbre track; project voices are isolated from the standalone voice library (no shared writes, no import); [editing flow](../architecture/data-flow.md#project-voice-design-and-editing) |
 | Media preview | Shared image/video dialog with open-in-new-tab link; cover, character/state and prop sheets, episode media, asset/reference pickers, and project videos |
 | Breakdown | Separate frame/motion targets, four detail levels, selected bible context, shot labels/continuity instructions, confirmation before replacing existing shots |
 | Storyboard | Separate tone-sheet action, persisted tone prefixes, sequential frame batches, model-dependent references, selected/pending-only shots |
 | Prompt editing | `prompt-area` mentions, asset picker, ordered prefixes, shared reference budgets, preset/optimization and compiled-prompt preview endpoints |
 | Asset management | One shared project/episode manager for custom imports plus character/state/prop media, voices, tone sheets, and every live episode’s shot images/videos; search, media/source/episode filters, episode/shot labels, preview/source links, deletion and image merging |
 | Video/export | Per-shot generation → episode composition in selected shot order → final export in selected episode order; up to 60 inputs per merge, shared audio retention/silent padding, previous episode video retained on failed recomposition |
-| Standalone generation | Image/video/audio editors reset without deleting history; unsupported FPS is omitted from standalone video requests |
+| Standalone generation | Image/video/audio editors reset without deleting history; image/video history panels show the admin retention window as a cleanup notice when one is set; unsupported FPS is omitted from standalone video requests |
 | Queue | In-process three-lane worker for reference images, prompt drafts, project voice design and preview; persisted lease/cancel/retry state |
 | Run lifecycle | Project claim guards, attached-task cancellation, unfinished-media cleanup, startup recovery of abandoned project/episode status |
 | Chat | AI SDK stream/message owner, assistant-ui composer, custom Streamdown list, context compression, artifact tools, admin-only diagnostic tool |

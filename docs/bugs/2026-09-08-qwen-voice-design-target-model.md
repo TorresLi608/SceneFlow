@@ -1,8 +1,8 @@
 # BUG-20260908-qwen-voice-design-target-model：音色设计任务模型被误作合成目标
 
 - 首次记录：2026-09-08
-- 最近更新：2026-09-08
-- 状态：请求目标回退的本地回归通过；真实 DashScope 调用待验证，账号音色目标元数据仍待对齐
+- 最近更新：2026-09-18
+- 状态：请求目标回退的本地回归通过；真实 DashScope 调用待验证，账号音色目标元数据仍待对齐（现仅剩独立音色页一处写入）
 - 检索词：Qwen、DashScope、`qwen-voice-design`、`target_model`、`qwen_voice_service.create_voice`、音色设计
 - [返回 Bug 索引](README.md)
 
@@ -25,7 +25,7 @@
 
 共享适配器保持任务模型 `qwen-voice-design`，把空值或同名任务模型回退为 `qwen3-tts-vd-realtime-2025-12-16`；其他显式配置保持原值。前端 Qwen 音色预设和输入提示同步使用该目标。HTTP ≥400 时，适配器现在提取供应商 `message`/`code`，解析失败时截取响应文本；该错误分支尚无本次执行的专项断言。
 
-回退只影响发往供应商的请求。两个调用方仍把原始配置写入 `UserVoice.target_model`，因此回退后的 `targetModel` 展示元数据可能不准确；本次文档核对没有修改这条持久化路径。长期契约见 [后端供应商说明](../../backend/README.md#providers-and-model-configuration)，待办见 [Backlog](../plans/backlog.md)。
+回退只影响发往供应商的请求。记录时两个调用方仍把原始配置写入 `UserVoice.target_model`，因此回退后的 `targetModel` 展示元数据可能不准确；本次文档核对没有修改这条持久化路径（2026-09-18 起项目任务不再写入 `UserVoice`，见下方历史，仅剩 `user_voices.py` 一处）。长期契约见 [后端供应商说明](../../backend/README.md#providers-and-model-configuration)，待办见 [Backlog](../plans/backlog.md)。
 
 ## 验证
 
@@ -48,3 +48,4 @@ SCENEFLOW_PRIVATE_GENERATED_DIR="$audit_voice_dir/media" sh scripts/run_tests.sh
 
 - 2026-09-08：核对现有未提交修复及调用方，执行上述检查并补录本记录；不将文档补录描述为另一次代码修复。
 - 同批的项目音色原位重新设计、默认台词和共享媒体预览属于功能变更，分别更新 [数据流](../architecture/data-flow.md#project-voice-design-and-editing) 和 [代码地图](../architecture/code-map.md)，不另建 Bug 条目。
+- 2026-09-18：功能变更（非本 Bug 修复）：项目 `voice_design` 任务不再写入 `UserVoice`，`POST /api/projects/{id}/voices/import` 已移除，独立音色库与项目音色完全隔离。`target_model` 元数据问题因此只剩 `user_voices.py` 一处，仍未修复；`test_voice_design_api` 中原"账号保存/导入"断言已改为隔离断言。

@@ -1,8 +1,11 @@
-"""Designing a timbre inside a project, and importing one the account already has.
+"""Designing a timbre inside a project, isolated from the account's standalone voice library.
 
 The old project voice form asked the user to type a provider and a model name, which is
-how a series ended up with profiles no synthesiser here could voice. Both paths below get
-those from configuration instead, so a profile always names something real.
+how a series ended up with profiles no synthesiser here could voice. Design gets those from
+configuration instead, so a profile always names something real.
+
+Project voices and the standalone `/api/voices` library are separate workspaces: a project
+design never lands in the library, and a library voice can never be imported into a series.
 """
 
 from __future__ import annotations
@@ -83,8 +86,8 @@ def _project(client: TestClient, headers: dict[str, str]) -> str:
     return response.json()["project"]["id"]
 
 
-def test_designing_a_voice_binds_it_to_the_series_and_keeps_it_on_the_account() -> None:
-    """A timbre that cost a paid request should be reusable in the next series for free."""
+def test_designing_a_voice_binds_it_to_the_series_and_leaves_the_account_library_alone() -> None:
+    """The result belongs to the series only; the standalone voice workspace must not list it."""
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers, user_id):
             project_id = _project(client, headers)
@@ -114,8 +117,8 @@ def test_designing_a_voice_binds_it_to_the_series_and_keeps_it_on_the_account() 
                 from sqlmodel import select
 
                 saved = session.exec(select(UserVoice).where(UserVoice.user_id == user_id)).all()
-            assert [item.voice_id for item in saved] == ["voice-narrator"]
-            assert saved[0].is_saved is True
+            assert saved == []
+            assert client.get("/api/voices", headers=headers).json()["voices"] == []
 
 
 def test_designing_a_voice_needs_a_prompt_and_an_audition_line() -> None:
@@ -132,7 +135,8 @@ def test_designing_a_voice_needs_a_prompt_and_an_audition_line() -> None:
             assert refused.status_code == 422, refused.text
 
 
-def test_importing_copies_the_audition_so_the_series_survives_a_library_tidy_up() -> None:
+def test_the_account_library_never_enters_a_project() -> None:
+    """The other direction of the isolation: a saved library voice is neither listed nor importable in a series."""
     with tempfile.TemporaryDirectory() as directory:
         with _app(directory) as (client, headers, user_id):
             project_id = _project(client, headers)
@@ -157,33 +161,18 @@ def test_importing_copies_the_audition_so_the_series_survives_a_library_tidy_up(
             listed = client.get("/api/voices", headers=headers).json()["voices"]
             assert [item["name"] for item in listed] == ["女主"]
 
+            # The series sees nothing of the library, and the old import route is gone.
+            assert client.get(f"/api/projects/{project_id}/voices", headers=headers).json()["voices"] == []
             response = client.post(
                 f"/api/projects/{project_id}/voices/import",
                 json={"userVoiceId": listed[0]["id"]},
                 headers=headers,
             )
-
-            assert response.status_code == 201, response.text
-            voice = response.json()["voice"]
-            assert voice["name"] == "女主"
-            assert voice["voiceModel"] == "voice-heroine"
-            assert voice["audioUrl"] is not None
-            # A copy, not a reference: the library row's file is left where it was.
+            assert response.status_code in (404, 405), response.text
+            assert client.get(f"/api/projects/{project_id}/voices", headers=headers).json()["voices"] == []
+            # The library row itself is untouched by the attempt.
             assert artifact_service.artifact_absolute_path(stored).exists()
-
-
-def test_importing_a_voice_that_is_not_yours_is_not_found() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        with _app(directory) as (client, headers, _):
-            project_id = _project(client, headers)
-
-            response = client.post(
-                f"/api/projects/{project_id}/voices/import",
-                json={"userVoiceId": "user-voice-someone-else"},
-                headers=headers,
-            )
-
-            assert response.status_code == 404, response.text
+            assert [item["name"] for item in client.get("/api/voices", headers=headers).json()["voices"]] == ["女主"]
 
 
 def test_designing_a_voice_with_voice_id_overwrites_existing_profile() -> None:
@@ -237,10 +226,9 @@ def test_designing_a_voice_with_voice_id_overwrites_existing_profile() -> None:
 
 
 if __name__ == "__main__":
-    test_designing_a_voice_binds_it_to_the_series_and_keeps_it_on_the_account()
+    test_designing_a_voice_binds_it_to_the_series_and_leaves_the_account_library_alone()
     test_designing_a_voice_needs_a_prompt_and_an_audition_line()
-    test_importing_copies_the_audition_so_the_series_survives_a_library_tidy_up()
-    test_importing_a_voice_that_is_not_yours_is_not_found()
+    test_the_account_library_never_enters_a_project()
     test_designing_a_voice_with_voice_id_overwrites_existing_profile()
     print("test_voice_design_api ok")
 

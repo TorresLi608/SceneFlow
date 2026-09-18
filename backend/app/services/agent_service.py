@@ -25,7 +25,7 @@ Match the user's language unless they ask for another language.
 You can generate images, PDF files, and Word documents with tools.
 - When the user asks for a file or image and has supplied enough information, call the matching tool instead of only describing how to make it.
 - For PDF and Word tools, write the complete document content yourself. Use simple Markdown headings and lists; do not include the title again in the content.
-- After a successful tool call, include the exact Markdown link or image Markdown returned by the tool.
+- When generating images or documents with tools, do NOT manually copy long artifact URLs or raw image/document markdown in your response. The system will automatically attach the generated image or document to your reply. Simply describe your creative work or summarize the result concisely to the user.
 - Never claim a file was generated unless the tool returned a successful result.
 - If a tool fails, do not retry it more than once; tell the user briefly what failed and what they can do.
 - Do not expose internal paths, API keys, tool arguments, or implementation details.
@@ -232,20 +232,59 @@ def _failure_notices(tool_messages: list[Any]) -> list[str]:
     return notices
 
 
-def _missing_tool_outcomes(tool_messages: list[Any], answer: str) -> list[str]:
-    """Blocks the reply must carry whatever the model chose to say.
+def _reconcile_tool_artifacts(answer: str, tool_messages: list[Any]) -> tuple[str, list[str]]:
+    """Ensure artifacts are properly mounted without duplicate or broken URLs from model hallucination.
 
-    The chat UI renders the reply text, so a generated image only reaches the user when its
-    Markdown is in the content, and a failed tool only becomes visible when its notice is.
-    Relying on the model to echo either leaves turns that show nothing but a URL in the
-    transient execution panel, or an empty reply that fails the whole turn.
+    If the model tried to copy a broken or hallucinated artifact link, replace it with the canonical
+    markdown. If the artifact is missing entirely from the answer, return it in missing_blocks.
     """
-    return [block for block in [*_artifact_markdowns(tool_messages), *_failure_notices(tool_messages)] if block not in answer]
+    reconciled = answer
+    missing_blocks: list[str] = []
+
+    for message in tool_messages:
+        if _tool_status(message) == "error":
+            continue
+        payload = _tool_payload(message)
+        if not payload:
+            continue
+        markdown = str(payload.get("markdown") or "").strip()
+        url = str(payload.get("url") or "").strip()
+        if not markdown or not url:
+            continue
+
+        if markdown in reconciled or url in reconciled:
+            continue
+
+        title = str(payload.get("title") or payload.get("filename") or "").strip()
+        replaced = False
+        if title:
+            pattern = re.compile(rf"!\[{re.escape(title)}\]\([^\)]+\)")
+            if pattern.search(reconciled):
+                reconciled = pattern.sub(markdown, reconciled, count=1)
+                replaced = True
+
+        if not replaced:
+            missing_blocks.append(markdown)
+
+    for message in tool_messages:
+        if _tool_status(message) != "error":
+            continue
+        notice = _failure_notice(str(getattr(message, "name", "") or ""), message)
+        if notice not in reconciled:
+            missing_blocks.append(notice)
+
+    return reconciled, missing_blocks
+
+
+def _missing_tool_outcomes(tool_messages: list[Any], answer: str) -> list[str]:
+    _, missing = _reconcile_tool_artifacts(answer, tool_messages)
+    return missing
 
 
 def _answer_with_artifacts(output: Any, tool_messages: list[Any] | None = None) -> str:
-    answer = _final_answer(output)
-    missing = _missing_tool_outcomes(_tool_messages(output) if tool_messages is None else tool_messages, answer)
+    raw_answer = _final_answer(output)
+    messages = _tool_messages(output) if tool_messages is None else tool_messages
+    answer, missing = _reconcile_tool_artifacts(raw_answer, messages)
     if missing:
         answer = (answer + "\n\n" if answer else "") + "\n\n".join(missing)
     return answer

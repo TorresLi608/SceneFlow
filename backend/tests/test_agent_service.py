@@ -113,6 +113,25 @@ def test_image_tool_result_reaches_the_reply_without_leaking_the_url_into_steps(
     assert any(event["type"] == "content_delta" and "![橘猫](" in event["content"] for event in events)
 
 
+def test_image_tool_reconciles_broken_model_copied_url_without_duplicate() -> None:
+    from app.llms.router import ImageResult
+
+    generate = AsyncMock(return_value=ImageResult(data=b"\x89PNG fake", format="png"))
+    events = asyncio.run(
+        _run_image_tool(
+            {"provider": "openai", "apiKey": "k", "model": "img", "baseUrl": ""},
+            "为你画好了：\n\n![橘猫](http://127.0.0.1:8080/api/chat/artifacts/broken-token)",
+            generate=generate,
+        )
+    )
+
+    final = events[-1]["content"]
+    assert "broken-token" not in final
+    assert "/api/chat/artifacts/" in final
+    # 确保没有重复生成两张图片
+    assert final.count("![橘猫](") == 1
+
+
 def test_failed_image_tool_marks_the_step_and_adds_a_notice_to_the_reply() -> None:
     events = asyncio.run(_run_image_tool(None, "抱歉，暂时无法生成图片。"))
 

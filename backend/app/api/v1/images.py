@@ -12,6 +12,7 @@ from app.schemas.serializers import generation_record_json
 from app.services.artifact_service import decode_image_data_url
 from app.services.config_service import active_model_config, official_model_config_any, user_model_config_any
 from app.services.generation_record_service import delete_generation_record, list_generation_records, save_generation_record
+from app.services.system_setting_service import generation_retention_days
 from app.services.usage_service import record_usage, require_model_balance
 
 
@@ -54,8 +55,16 @@ def persist_image(user_id: int, config: dict[str, Any], data: bytes, ext: str, *
 
 @router.get("/history")
 def list_image_history(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """The account's image results plus the admin retention window (0 = kept forever).
+
+    The window rides along so the panel can warn that rows expire, without a separate
+    request or exposing the admin endpoint to members.
+    """
     with db() as session:
-        return {"items": [generation_record_json(item) for item in list_generation_records(session, user_id, "image")]}
+        return {
+            "items": [generation_record_json(item) for item in list_generation_records(session, user_id, "image")],
+            "retentionDays": generation_retention_days(session),
+        }
 
 
 @router.delete("/history/{record_id}", status_code=204)

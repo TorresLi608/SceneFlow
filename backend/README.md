@@ -1,6 +1,6 @@
 # SceneFlow Backend
 
-Verified on **2026-09-07**, with voice-design contracts and export-audio behavior rechecked on **2026-09-08**. Start with the [documentation index](../docs/README.md), [code map](../docs/architecture/code-map.md), and [data flow](../docs/architecture/data-flow.md). This file owns environment variables, provider notes, and the endpoint inventory.
+Verified on **2026-09-07**, with voice-design contracts and export-audio behavior rechecked on **2026-09-08**, and voice-workspace isolation plus the history `retentionDays` field updated on **2026-09-18**. Start with the [documentation index](../docs/README.md), [code map](../docs/architecture/code-map.md), and [data flow](../docs/architecture/data-flow.md). This file owns environment variables, provider notes, and the endpoint inventory.
 
 ## Run and check
 
@@ -74,7 +74,7 @@ Startup keeps the configured admin enabled. A legacy `superAdmin` row is renamed
 - Doubao uses `volcengine-python-sdk[ark]` and the configured `baseUrl`. The current catalog declares Seedance 2.0 variants and 2.5; its capability defaults are application declarations, with provider discrepancies still recorded as field reports in the backlog.
 - Qwen chat defaults to `https://dashscope.aliyuncs.com/compatible-mode/v1`; image/video use DashScope media APIs. Wan media keys and audio switches differ by family (`reference_audio` / `audio` versus `reference_voice`, and older `video` / `driving_audio`). The model catalog is served by `/api/settings/video-models` and allows custom relay IDs.
 - Qwen Voice Design uses the fixed task model `qwen-voice-design`. The configured `modelSeries` supplies the separate synthesis `target_model`; if empty or equal to the task model, the shared adapter uses `qwen3-tts-vd-realtime-2025-12-16`. Other explicit target models are preserved. This applies to standalone and queued project design; see the [target-model fix record](../docs/bugs/2026-09-08-qwen-voice-design-target-model.md) for verification and remaining metadata limits.
-- Standalone `/api/voices/design` creates a draft preview and `/api/voices/:id/save` promotes it to the saved account library. Project design creates or replaces a project profile's timbre and saves a new account library entry; import copies an existing account audition. Project preview jobs use local Edge/system TTS.
+- Standalone `/api/voices/design` creates a draft preview and `/api/voices/:id/save` promotes it to the saved account library. Project design creates or replaces a project profile's timbre and writes nothing to that library; there is no import from the library into a project. The two voice workspaces are isolated. Project preview jobs use local Edge/system TTS.
 - Most frontend provider presets leave `modelSeries` empty; the Qwen audio preset supplies `qwen3-tts-vd-realtime-2025-12-16` and the same input hint. Discovery uses the submitted provider/base URL/key when supported; saving validates fields without a remote connectivity test. Official and personal configs share `model_configs`, with account official defaults in `user_official_config_defaults`.
 - Generation resolves the project's model pick first, then account/system fallback. Four project config IDs and generation defaults are updated through `modelSettings`; `0` clears a pick and `null` means leave alone. Unsupported saved defaults can be omitted for a changed model; explicit unsupported options fail validation.
 - Prompt optimization uses the configured text model and returns editable text. Prefix presets and compilation do not start generation. See [prompt/reference flow](../docs/architecture/data-flow.md#4-references-prefix-prompts-and-asset-library).
@@ -127,6 +127,8 @@ Except for auth, health, static prompt presets, and token-signed artifact downlo
 | GET, POST | `/api/admin/users` |
 | GET | `/api/admin/usage-logs` |
 | GET | `/api/admin/error-logs` |
+| GET, PATCH | `/api/admin/generation-retention` |
+| POST | `/api/admin/generation-retention/sweep` |
 | PATCH, POST, DELETE | `/api/admin/users/{target_user_id}` |
 | GET, POST | `/api/admin/invitation-codes` |
 | GET, POST | `/api/admin/redemption-codes` |
@@ -198,12 +200,11 @@ Both log-list endpoints accept paired `startTime`/`endTime` ISO timestamps with 
 |---|---|
 | GET, POST | `/api/projects/{project_id}/voices` |
 | POST | `/api/projects/{project_id}/voices/design` |
-| POST | `/api/projects/{project_id}/voices/import` |
 | PATCH, DELETE | `/api/projects/{project_id}/voices/{voice_id}` |
 | POST | `/api/projects/{project_id}/voices/{voice_id}/preview` |
 | POST | `/api/projects/{project_id}/voices/merge` |
 
-`POST .../voices/design` returns `202 {job}`. `name` is 1–80 characters and `voicePrompt` is 1–4000. Optional `voiceId` (up to 64 characters) identifies an existing live profile in this project; an unknown/foreign ID is 404. Omitting it, passing `null`, or passing `""` creates a profile. A redesign preserves the profile ID and order, updates its metadata/audio, and also saves a new account library entry.
+`POST .../voices/design` returns `202 {job}`. `name` is 1–80 characters and `voicePrompt` is 1–4000. Optional `voiceId` (up to 64 characters) identifies an existing live profile in this project; an unknown/foreign ID is 404. Omitting it, passing `null`, or passing `""` creates a profile. A redesign preserves the profile ID and order and updates its metadata/audio. Neither path writes to `user_voices`; the former `POST .../voices/import` route was removed on 2026-09-18 when the two voice workspaces were isolated.
 
 `previewText` and `sampleText` are optional strings up to 1000 characters, defaulting to `""`. The effective sample is trimmed `sampleText`, then trimmed `previewText`, then `我是{name}。需要{name}配音的时候，请使用我这种声音。` with the trimmed name. The effective preview is trimmed `previewText` or that sample. `note` is up to 4000 characters and defaults to `voicePrompt` when empty. Unfinished design jobs deduplicate by `voiceId`, or by trimmed name when creating, within the project.
 
@@ -218,7 +219,7 @@ Saving with PATCH does not regenerate audio; redesign and local preview are sepa
 | POST | `/api/voices/{voice_id}/save` |
 | DELETE | `/api/voices/{voice_id}` |
 
-Standalone `/api/voices/design` remains request-scoped and requires nonempty `voicePrompt` and `previewText`, each up to 1000 characters. The optional preview/default sample and `voiceId` replacement contract above apply only to project voice design.
+Standalone `/api/voices/design` remains request-scoped and requires nonempty `voicePrompt` and `previewText`, each up to 1000 characters. The optional preview/default sample and `voiceId` replacement contract above apply only to project voice design. `user_voices` belongs to the standalone voice workspace alone: project design never saves here, and nothing here can be bound to a project.
 
 ### assets — app/api/v1/assets.py
 
@@ -276,6 +277,8 @@ Final exports accept `{episodeIds, rangeLabel?}` in caller order; each episode m
 | POST | `/api/videos/generate` |
 | GET | `/api/videos/history` |
 | DELETE | `/api/videos/history/{record_id}` |
+
+Both `GET .../history` responses are `{items, retentionDays}`. `retentionDays` is the super-admin retention window from `system_settings` (0 = keep forever), included so the image/video panels can show a cleanup notice without members reading the admin endpoint.
 
 ### chat — app/api/v1/chat.py
 

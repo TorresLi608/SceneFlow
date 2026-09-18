@@ -22,6 +22,7 @@ export const queryKeys = {
   invitationCodes: (status: string, search: string, page: number) => ["invitation-codes", status, search, page] as const,
   redemptionCodes: (status: string, page: number) => ["redemption-codes", status, page] as const,
   officialConfigs: ["official-configs"] as const,
+  generationRetention: ["generation-retention"] as const,
   usageLogs: (feature: string, range: TimeRangeParams, source: string) => ["usage-logs", feature, range, source] as const,
   userVoices: ["user-voices"] as const,
   generationHistory: (kind: "image" | "video") => ["generation-history", kind] as const,

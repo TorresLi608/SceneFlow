@@ -4,9 +4,9 @@ import { TextMessagePartProvider } from "@assistant-ui/react";
 import { StreamdownTextPrimitive, type ControlsConfig } from "@assistant-ui/react-streamdown";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
-import { ArrowDown, CheckCircle2, FileText, ImageIcon, ImageOff, Loader2, Square, XCircle } from "lucide-react";
+import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, Square, XCircle } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/lib/i18n";
@@ -39,55 +39,52 @@ const streamdownControls = { code: { copy: true, download: false }, table: false
 const BOTTOM_THRESHOLD = 80;
 const INITIAL_SCROLL_RETRY_DELAYS = [50, 150, 350];
 
+import { ChatMarkdownImage } from "./chat-markdown-image";
+
+const streamdownComponents = { img: ChatMarkdownImage };
+
 /**
- * Generated images arrive as `![title](signed-url)` in the reply text. Streamdown's default
- * renderer hides a broken image behind a one-line italic note, which reads as "nothing came
- * back"; this keeps the image inline in the reply and, when the signed link cannot load, shows
- * an explicit notice with the link so the user can still open it.
- * Only inline elements are used so the block stays valid inside a paragraph.
+ * 清洗消息中可能由模型 Base64 幻觉手抄导致的重复或坏损图片 Markdown。
+ * 当同一条消息包含相同标题的图片时，保留最后出现的合法签名版本。
  */
-function MarkdownImage({ node, src, alt, className, ...props }: ComponentProps<"img"> & { node?: unknown }) {
-  void node; // hast node injected by Streamdown; must not reach the DOM element
-  const { t } = useI18n();
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const url = typeof src === "string" ? src : "";
-  if (!url) {
-    return null;
+function sanitizeChatMessageContent(content: string): string {
+  if (!content || !content.includes("![")) {
+    return content;
+  }
+  const imgRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+  const matches = [...content.matchAll(imgRegex)];
+  if (matches.length <= 1) {
+    return content;
   }
 
-  if (failedSrc === url) {
-    return (
-      <span role="note" className="my-2 inline-flex max-w-full items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-        <ImageOff className="mt-0.5 size-4 shrink-0" />
-        <span className="min-w-0 [overflow-wrap:anywhere]">
-          {t("chat.imageLoadFailed")}{" "}
-          <a href={url} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-            {t("chat.openImage")}
-          </a>
-        </span>
-      </span>
-    );
+  const seenKeys = new Set<string>();
+  const toRemoveIndices = new Set<number>();
+
+  // 从后向前扫描（保留最后出现的版本，即后端标准签名的权威产物）
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i];
+    const alt = match[1].trim();
+    const url = match[2];
+    const key = alt || url;
+    if (seenKeys.has(key)) {
+      toRemoveIndices.add(i);
+    } else {
+      seenKeys.add(key);
+    }
   }
 
-  return (
-    <a href={url} target="_blank" rel="noreferrer" title={t("chat.openImage")} className="my-2 inline-block max-w-full align-top" data-streamdown="image-wrapper">
-      {/* Plain <img>: signed artifact URLs are cross-origin and must bypass the Next image optimizer. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        {...props}
-        src={url}
-        alt={alt ?? ""}
-        loading="lazy"
-        onError={() => setFailedSrc(url)}
-        data-streamdown="image"
-        className={cn("max-h-[28rem] max-w-full rounded-xl border border-border/60 bg-muted/30 object-contain", className)}
-      />
-      {alt ? <span className="mt-1 block text-xs text-muted-foreground">{alt}</span> : null}
-    </a>
-  );
+  if (toRemoveIndices.size === 0) {
+    return content;
+  }
+
+  let result = content;
+  for (let i = matches.length - 1; i >= 0; i--) {
+    if (toRemoveIndices.has(i)) {
+      result = result.replace(matches[i][0], "").replace(/\n{3,}/g, "\n\n").trim();
+    }
+  }
+  return result;
 }
-
-const streamdownComponents = { img: MarkdownImage };
 
 function isNearBottom(element: HTMLDivElement) {
   return element.scrollHeight - element.scrollTop - element.clientHeight < BOTTOM_THRESHOLD;
@@ -133,8 +130,9 @@ function handleCodeCopyCapture(event: MouseEvent<HTMLDivElement>) {
 }
 
 function MessageContent({ content, isRunning }: { content: string; isRunning: boolean }) {
+  const sanitizedContent = sanitizeChatMessageContent(content);
   return (
-    <TextMessagePartProvider text={content} isRunning={isRunning}>
+    <TextMessagePartProvider text={sanitizedContent} isRunning={isRunning}>
       <StreamdownTextPrimitive
         caret={isRunning ? "block" : undefined}
         components={streamdownComponents}

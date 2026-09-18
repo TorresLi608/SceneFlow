@@ -39,6 +39,7 @@ function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/admin/error-logs")) return "home.errorLogs";
   if (pathname.startsWith("/admin/invitation-codes")) return "home.invitationCodeManagement";
   if (pathname.startsWith("/admin/redemption-codes")) return "home.redemptionCodeManagement";
+  if (pathname.startsWith("/admin/generation-retention")) return "home.generationRetention";
   return "home.chat";
 }
 

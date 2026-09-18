@@ -16,4 +16,6 @@ export interface GenerationHistoryItem {
 
 export interface GenerationHistoryListResponse {
   items: GenerationHistoryItem[];
+  /** Super-admin retention window in whole days; 0 means results are kept forever. */
+  retentionDays: number;
 }

@@ -268,6 +268,105 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/generation-retention:
+    get:
+      tags:
+      - admin
+      summary: Get Generation Retention
+      description: Retention policy for the standalone image/video panels; `retentionDays` 0 keeps forever.
+      operationId: get_generation_retention_api_admin_generation_retention_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Generation Retention Api Admin Generation Retention Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - admin
+      summary: Update Generation Retention
+      operationId: update_generation_retention_api_admin_generation_retention_patch
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Generation Retention Api Admin Generation Retention Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/generation-retention/sweep:
+    post:
+      tags:
+      - admin
+      summary: Sweep Generation Retention
+      description: Apply the current policy immediately instead of waiting for the hourly pass.
+      operationId: sweep_generation_retention_api_admin_generation_retention_sweep_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Sweep Generation Retention Api Admin Generation Retention Sweep Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/admin/users:
     get:
       tags:
@@ -1879,6 +1978,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/images/history:
+    get:
+      tags:
+      - images
+      summary: List Image History
+      description: 'The account''s image results plus the admin retention window (0 = kept forever).
+
+
+        The window rides along so the panel can warn that rows expire, without a separate
+
+        request or exposing the admin endpoint to members.'
+      operationId: list_image_history_api_images_history_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Image History Api Images History Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/images/history/{record_id}:
+    delete:
+      tags:
+      - images
+      summary: Delete Image History
+      operationId: delete_image_history_api_images_history__record_id__delete
+      parameters:
+      - name: record_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Record Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/images/generate:
     post:
       tags:
@@ -1911,6 +2076,68 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Generate Image Api Images Generate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/videos/history:
+    get:
+      tags:
+      - videos
+      summary: List Video History
+      description: The account's video results plus the admin retention window (0 = kept forever); see
+        `images.py`.
+      operationId: list_video_history_api_videos_history_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Video History Api Videos History Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/videos/history/{record_id}:
+    delete:
+      tags:
+      - videos
+      summary: Delete Video History
+      operationId: delete_video_history_api_videos_history__record_id__delete
+      parameters:
+      - name: record_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Record Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -4533,9 +4760,11 @@ paths:
         profiles naming a model no synthesiser here could actually voice.
 
 
-        The designed voice is also saved to the account''s library, because a timbre that took a
+        The result stays on this project. The standalone voice workspace (`/api/voices`) keeps
 
-        paid request to produce should be reusable in the next series without paying again.
+        its own library, and the two are isolated: nothing designed here appears there, and
+
+        nothing saved there can be imported here.
 
 
         Queued rather than awaited: Starlette does not cancel a handler on client disconnect, so
@@ -4574,54 +4803,6 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Design Project Voice Api Projects  Project Id  Voices Design Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/projects/{project_id}/voices/import:
-    post:
-      tags:
-      - voices
-      summary: Import Project Voice
-      description: 'Bind a timbre already in the account''s library to this series.
-
-
-        Copies the audition rather than referencing the library row: a series'' voice sheet must
-
-        keep working after the user tidies up their library, and the clip is small.'
-      operationId: import_project_voice_api_projects__project_id__voices_import_post
-      parameters:
-      - name: project_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Project Id
-      - name: authorization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Authorization
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ImportVoiceProfileRequest'
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Import Project Voice Api Projects  Project Id  Voices Import Post
         '422':
           description: Validation Error
           content:
@@ -6119,34 +6300,6 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
-    ImportVoiceProfileRequest:
-      properties:
-        userVoiceId:
-          type: string
-          maxLength: 64
-          minLength: 1
-          title: Uservoiceid
-        name:
-          type: string
-          maxLength: 80
-          title: Name
-          default: ''
-        note:
-          type: string
-          maxLength: 4000
-          title: Note
-          default: ''
-        sampleText:
-          type: string
-          maxLength: 1000
-          title: Sampletext
-          default: ''
-      additionalProperties: false
-      type: object
-      required:
-      - userVoiceId
-      title: ImportVoiceProfileRequest
-      description: Bind a timbre already saved on the account to this series.
     MergeAssetsRequest:
       properties:
         name:
