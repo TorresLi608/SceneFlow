@@ -8,6 +8,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.models.config import ModelConfig, UserOfficialConfigDefault
 from app.models.export import MAX_EXPORT_CLIPS, ExportJob
 from app.models.error_log import ErrorLog
+from app.models.generation_record import GenerationRecord
 from app.models.project import Episode, GenerationJob, Project, Scene
 from app.models.prop import Prop
 from app.models.usage import UsageLog
@@ -28,6 +29,7 @@ __all__ = [
     "Episode",
     "ExportJob",
     "GenerationJob",
+    "GenerationRecord",
     "InvitationCode",
     "ModelConfig",
     "Project",

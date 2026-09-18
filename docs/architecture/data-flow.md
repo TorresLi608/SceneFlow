@@ -128,7 +128,7 @@ The **project batch endpoint requires a storyboard image for every selected shot
 
 The standalone video form must omit FPS when `videoCapabilities.fps` is empty, rather than inventing a default of 24. An explicitly submitted unsupported value still fails backend validation. See the [FPS fix record](../bugs/2026-09-07-video-unsupported-fps.md).
 
-Standalone image/video/audio panels offer Reset: a new editor key restores initial local state and native inputs, while image/video localStorage history and backend saved voices remain intact. Audio starts with no selected saved voice. See the [reset record](../bugs/2026-09-07-generation-editor-reset.md) for behavior and verification limits.
+Standalone image/video/audio panels offer Reset: a new editor key restores initial local state and native inputs, while backend image/video history (`generation_records`, `GET/DELETE /api/{images,videos}/history`) and backend saved voices remain intact. Audio starts with no selected saved voice. See the [reset record](../bugs/2026-09-07-generation-editor-reset.md) for behavior and verification limits.
 
 First/last frame choices resolve from saved `video_first_frame_json` / `video_last_frame_json`. The renderer passes them separately as `first_frame` / `last_frame`, removes matching media from additional images, and uses `adaptive` ratio when available. The editor leaves an unselected first frame empty, including after storyboard generation; only a saved or manual choice fills it. Saving `""` explicitly turns a slot off. Existing saved choices are retained. Untouched legacy rows can still use `defaultVideoReferencePaths`, including the shot's own image, as additional references. See the [first-frame default fix](../bugs/2026-09-09-video-first-frame-default.md).
 

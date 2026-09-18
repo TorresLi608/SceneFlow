@@ -92,7 +92,7 @@ Use relevant backend self-checks plus frontend typecheck/lint for code changes. 
 - Next.js **16.2.3**, React **19.2.4**, React Compiler enabled. Read the relevant installed guide under `frontend/node_modules/next/dist/docs/` before writing framework code.
 - Reuse existing libraries and helpers before custom infrastructure: `@base-ui/react` primitives, shadcn-style organization, `@assistant-ui/react` for the chat composer, `prompt-area` for mentions, and existing provider SDKs. Vendored assistant-ui skills are under `.agents/skills/`.
 - All new user-facing strings go into both `zh` and `en` in `frontend/src/lib/i18n.ts`, via `useI18n()`.
-- Standalone image/video history is stored separately in localStorage (latest 20 results); saved voices live in the backend. Reset clears only the current editor/preview and restores initial choices, never history or saved voices. An empty video FPS capability list means omit the parameter, not default to 24.
+- Standalone image/video history lives in the backend `generation_records` table (per account, newest 50, served with fresh signed URLs); saved voices live in `user_voices`. Neither panel keeps history in localStorage. Reset clears only the current editor/preview and restores initial choices, never history or saved voices. An empty video FPS capability list means omit the parameter, not default to 24.
 - Route-local components live in `_components/`; shared primitives in `src/components/ui/`. Preserve accessibility and comments explaining constraints.
 - Quote paths containing `[projectId]`, `[episodeId]`, or route-group parentheses in shell commands.
 

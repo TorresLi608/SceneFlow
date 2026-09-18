@@ -31,11 +31,12 @@ def test_generate_image_records_usage_without_references() -> None:
         patch("app.api.v1.images.active_model_config", return_value=config),
         patch("app.api.v1.images.models.generate_image", AsyncMock(return_value=SimpleNamespace(data=b"png", format="png"))),
         patch("app.api.v1.images.record_usage", usage),
-        patch("app.api.v1.images.persist_image", return_value="http://example.test/image.png"),
+        patch("app.api.v1.images.persist_image", return_value={"id": "gen_image_1", "url": "http://example.test/image.png"}),
     ):
         result = asyncio.run(generate_image({"prompt": "a fox"}, 1))
 
     assert result["image"]["url"] == "http://example.test/image.png"
+    assert result["history"]["id"] == "gen_image_1"
     assert usage.call_args.args[:3] == (1, config, "image")
     assert isinstance(usage.call_args.args[3], float)
 
@@ -74,7 +75,7 @@ def test_official_image_requires_balance_but_personal_config_does_not() -> None:
                 patch("app.api.v1.images.active_model_config", return_value=config),
                 patch("app.api.v1.images.models.generate_image", generate),
                 patch("app.api.v1.images.record_usage"),
-                patch("app.api.v1.images.persist_image", return_value="http://example.test/image.png"),
+                patch("app.api.v1.images.persist_image", return_value={"id": "gen_image_1", "url": "http://example.test/image.png"}),
             ):
                 try:
                     asyncio.run(generate_image({"prompt": "a fox"}, user_id))

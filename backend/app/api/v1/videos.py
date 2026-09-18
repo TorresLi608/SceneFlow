@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.database import db
 from app.api.deps import current_user_id
-from app.services.artifact_service import save_binary_artifact
+from app.schemas.serializers import generation_record_json
 from app.services.config_service import active_model_config, official_model_config, user_model_config
+from app.services.generation_record_service import delete_generation_record, list_generation_records, save_generation_record
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, validate_qwen_video_input, validate_video_inputs
 
@@ -16,8 +17,25 @@ from app.services.video_service import generate_video, resolve_qwen_video_qualit
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 
-def persist_video(data: bytes) -> str:
-    return save_binary_artifact("videos", "generated-video.mp4", data, "video/mp4")
+def persist_video(user_id: int, config: dict[str, Any], data: bytes, *, prompt: str, source: str, options: dict[str, Any]) -> dict[str, Any]:
+    """Store the result on the account's history and return its wire shape (with a signed URL)."""
+    with db() as session:
+        record = save_generation_record(
+            session, user_id, "video", data, "generated-video.mp4", "video/mp4", prompt=prompt, config=config, source=source, options=options
+        )
+        return generation_record_json(record)
+
+
+@router.get("/history")
+def list_video_history(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    with db() as session:
+        return {"items": [generation_record_json(item) for item in list_generation_records(session, user_id, "video")]}
+
+
+@router.delete("/history/{record_id}", status_code=204)
+def delete_video_history(record_id: str, user_id: int = Depends(current_user_id)) -> None:
+    with db() as session:
+        delete_generation_record(session, user_id, "video", record_id)
 
 
 @router.post("/generate")
@@ -80,13 +98,22 @@ async def generate_video_route(payload: dict[str, Any], user_id: int = Depends(c
         raise HTTPException(502, "AI 视频生成失败：" + str(exc)[:220]) from exc
     record_usage(user_id, config, "video", started_at, quantity=duration)
 
+    source = "video-to-video" if reference_videos else ("image-to-video" if references else "text-to-video")
+    record = persist_video(
+        user_id,
+        config,
+        result.data,
+        prompt=prompt,
+        source=source,
+        options={"quality": quality, "aspectRatio": aspect_ratio, "duration": duration, "fps": fps},
+    )
     video = {
-        "url": persist_video(result.data),
+        "url": record["url"],
         "model": config["model"],
-        "source": "video-to-video" if reference_videos else ("image-to-video" if references else "text-to-video"),
+        "source": source,
     }
     if fps is not None:
         video["fps"] = fps
     if quality is not None:
         video["quality"] = quality
-    return {"video": video}
+    return {"video": video, "history": record}

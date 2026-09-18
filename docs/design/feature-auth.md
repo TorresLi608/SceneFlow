@@ -47,7 +47,7 @@ Super admin is exempt from balance checks and from balance deduction — see `fe
 
 ## Frontend
 
-- `useUserStore` (Zustand, persisted) holds the token and user. Standalone image/video histories also use separate localStorage lists; project/episode/shot working copies are not persisted there. Resetting a generation editor must preserve both authentication and history.
+- `useUserStore` (Zustand, persisted) holds the token and user. Standalone image/video histories are backend rows (`generation_records`) fetched through React Query; project/episode/shot working copies are not persisted in localStorage. Resetting a generation editor must preserve both authentication and history.
 - The axios request interceptor attaches the token; the response interceptor calls `logout()` on any `401`. Do not add per-call 401 handling.
 - General authenticated pages use the `(workspace)` shell. `/projects/[projectId]` redirects to `/info`; the six project sections and full-screen episode/legacy editors have their own layouts. Backend dependencies enforce authorization independently of these layouts.
 - Login/register are at `/login` and `/register`.

@@ -266,12 +266,16 @@ Final exports accept `{episodeIds, rangeLabel?}` in caller order; each episode m
 | Methods | Path |
 |---|---|
 | POST | `/api/images/generate` |
+| GET | `/api/images/history` |
+| DELETE | `/api/images/history/{record_id}` |
 
 ### videos — app/api/v1/videos.py
 
 | Methods | Path |
 |---|---|
 | POST | `/api/videos/generate` |
+| GET | `/api/videos/history` |
+| DELETE | `/api/videos/history/{record_id}` |
 
 ### chat — app/api/v1/chat.py
 

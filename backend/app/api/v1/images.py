@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import db
 from app.api.deps import current_user_id
 from app.llms.registry import models
-from app.services.artifact_service import decode_image_data_url, save_binary_artifact
+from app.schemas.serializers import generation_record_json
+from app.services.artifact_service import decode_image_data_url
 from app.services.config_service import active_model_config, official_model_config_any, user_model_config_any
+from app.services.generation_record_service import delete_generation_record, list_generation_records, save_generation_record
 from app.services.usage_service import record_usage, require_model_balance
 
 
@@ -38,11 +40,28 @@ def parse_reference(value: dict[str, Any], index: int) -> tuple[str, bytes, str]
     return name, data, mime_type
 
 
-def persist_image(data: bytes, ext: str) -> str:
+def persist_image(user_id: int, config: dict[str, Any], data: bytes, ext: str, *, prompt: str, source: str, options: dict[str, Any]) -> dict[str, Any]:
+    """Store the result on the account's history and return its wire shape (with a signed URL)."""
     ext = "jpg" if ext.lower() in {"jpg", "jpeg"} else ext.lower()
     ext = ext if ext in {"png", "jpg", "webp"} else "png"
     media_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
-    return save_binary_artifact("images", f"generated-image.{ext}", data, media_type)
+    with db() as session:
+        record = save_generation_record(
+            session, user_id, "image", data, f"generated-image.{ext}", media_type, prompt=prompt, config=config, source=source, options=options
+        )
+        return generation_record_json(record)
+
+
+@router.get("/history")
+def list_image_history(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    with db() as session:
+        return {"items": [generation_record_json(item) for item in list_generation_records(session, user_id, "image")]}
+
+
+@router.delete("/history/{record_id}", status_code=204)
+def delete_image_history(record_id: str, user_id: int = Depends(current_user_id)) -> None:
+    with db() as session:
+        delete_generation_record(session, user_id, "image", record_id)
 
 
 @router.post("/generate")
@@ -86,10 +105,13 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
         raise HTTPException(502, "AI 图片生成失败：" + str(exc)[:220]) from exc
     record_usage(user_id, config, "image", started_at, quantity=1)
 
+    source = "image-to-image" if references else "text-to-image"
+    record = persist_image(user_id, config, result.data, result.format, prompt=prompt, source=source, options={"resolution": resolution, "ratio": ratio})
     return {
         "image": {
-            "url": persist_image(result.data, result.format),
+            "url": record["url"],
             "model": config["model"],
-            "source": "image-to-image" if references else "text-to-image",
-        }
+            "source": source,
+        },
+        "history": record,
     }

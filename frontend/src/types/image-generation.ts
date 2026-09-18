@@ -1,3 +1,5 @@
+import type { GenerationHistoryItem } from "./generation-history";
+
 export interface ImageReferenceInput {
   data: string;
   name: string;
@@ -18,4 +20,6 @@ export interface GenerateImageResponse {
     model: string;
     source: "text-to-image" | "image-to-image";
   };
+  /** The history row the backend stored for this result. */
+  history: GenerationHistoryItem;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Copy,
@@ -22,9 +22,10 @@ import {
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { generateImageAction } from "@/actions/image-generation-actions";
+import { deleteImageHistoryAction, generateImageAction, listImageHistoryAction } from "@/actions/image-generation-actions";
 import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
+import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +50,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
+import type { GenerationHistoryItem, GenerationHistoryListResponse } from "@/types/generation-history";
 import type { GenerateImageInput, ImageReferenceInput } from "@/types/image-generation";
 
 const resolutions: GenerateImageInput["resolution"][] = ["1K", "2K", "4K"];
@@ -64,15 +66,10 @@ const ratios: GenerateImageInput["ratio"][] = [
   "21:9",
   "9:21",
 ];
-const historyStorageKey = "sceneflow-image-generation-history";
 
-interface ImageHistoryItem {
-  id: string;
-  imageUrl: string;
-  prompt: string;
-  resolution?: string;
-  ratio?: string;
-  createdAt: string;
+function historyOption(item: GenerationHistoryItem, key: string) {
+  const value = item.options[key];
+  return typeof value === "string" ? value : value === undefined ? undefined : String(value);
 }
 
 function configSelectValue(config: UserConfig) {
@@ -116,22 +113,6 @@ function imageExtension(blob: Blob, url: string) {
   }
 }
 
-function readImageHistory(): ImageHistoryItem[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(historyStorageKey) || "[]");
-    return Array.isArray(parsed) ? (parsed as ImageHistoryItem[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveImageHistory(items: ImageHistoryItem[]) {
-  window.localStorage.setItem(historyStorageKey, JSON.stringify(items.slice(0, 20)));
-}
-
 interface ImageGenerationPanelProps {
   configs: UserConfig[];
   officialConfigs: UserConfig[];
@@ -144,6 +125,7 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
 
 function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGenerationPanelProps & { onReset: () => void }) {
   const { t, formatDateTime } = useI18n();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<GenerateImageInput["resolution"]>("1K");
@@ -155,7 +137,11 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [history, setHistory] = useState<ImageHistoryItem[]>(readImageHistory);
+  const historyQuery = useQuery({
+    queryKey: queryKeys.generationHistory("image"),
+    queryFn: listImageHistoryAction,
+  });
+  const history = historyQuery.data?.items ?? [];
   const requestController = useRef<AbortController | null>(null);
   const optimizeController = useRef<AbortController | null>(null);
 
@@ -216,21 +202,13 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
     onSuccess: (data) => {
       setImageUrl(data.image.url);
       setErrorMessage(null);
-      setHistory((current) => {
-        const next = [
-          {
-            id: `${Date.now()}`,
-            prompt: prompt.trim(),
-            imageUrl: data.image.url,
-            resolution,
-            ratio,
-            createdAt: new Date().toISOString(),
-          },
-          ...current,
-        ].slice(0, 20);
-        saveImageHistory(next);
-        return next;
-      });
+      // The backend already stored the row; prepend it so the list updates without a refetch.
+      queryClient.setQueryData(
+        queryKeys.generationHistory("image"),
+        (current: GenerationHistoryListResponse | undefined) => ({
+          items: [data.history, ...(current?.items ?? []).filter((item) => item.id !== data.history.id)],
+        })
+      );
     },
     onError: (error) => {
       if (isCancel(error)) return;
@@ -315,12 +293,24 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
     generateMutation.reset();
   };
 
+  const deleteHistoryMutation = useMutation({
+    mutationFn: deleteImageHistoryAction,
+    onSuccess: (_, id) => {
+      queryClient.setQueryData(
+        queryKeys.generationHistory("image"),
+        (current: GenerationHistoryListResponse | undefined) => ({
+          items: (current?.items ?? []).filter((item) => item.id !== id),
+        })
+      );
+    },
+    onError: (error) => {
+      setErrorMessage(resolveRequestError(error, t("common.deleteHistoryFailed")));
+    },
+  });
+
   const deleteHistory = (id: string) => {
-    setHistory((current) => {
-      const next = current.filter((item) => item.id !== id);
-      saveImageHistory(next);
-      return next;
-    });
+    if (deleteHistoryMutation.isPending) return;
+    deleteHistoryMutation.mutate(id);
   };
 
   const downloadImage = async (urlToDownload?: string) => {
@@ -660,26 +650,41 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
                   <button
                     type="button"
-                    onClick={() => { setImageUrl(item.imageUrl); setPrompt(item.prompt); }}
+                    onClick={() => {
+                      setImageUrl(item.url ?? "");
+                      setPrompt(item.prompt);
+                      const savedResolution = historyOption(item, "resolution");
+                      const savedRatio = historyOption(item, "ratio");
+                      if (savedResolution && resolutions.includes(savedResolution as GenerateImageInput["resolution"])) {
+                        setResolution(savedResolution as GenerateImageInput["resolution"]);
+                      }
+                      if (savedRatio && ratios.includes(savedRatio as GenerateImageInput["ratio"])) {
+                        setRatio(savedRatio as GenerateImageInput["ratio"]);
+                      }
+                    }}
                     className="flex min-w-0 flex-1 gap-2.5 text-left cursor-pointer"
                     aria-label={t("images.viewHistoryItem")}
                   >
                     <span className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/50">
-                      <Image
-                        src={artifactBffUrl(item.imageUrl)}
-                        alt=""
-                        fill
-                        unoptimized
-                        sizes="44px"
-                        className="object-cover"
-                      />
+                      {item.url ? (
+                        <Image
+                          src={artifactBffUrl(item.url)}
+                          alt=""
+                          fill
+                          unoptimized
+                          sizes="44px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <ImageIcon className="absolute inset-0 m-auto size-4 text-muted-foreground" />
+                      )}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-semibold text-foreground">
                         {item.prompt}
                       </span>
                       <span className="mt-1 block text-[10px] text-muted-foreground">
-                        {formatDateTime(item.createdAt)}
+                        {item.createdAt ? formatDateTime(item.createdAt) : ""}
                       </span>
                     </span>
                   </button>
@@ -691,7 +696,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
             </div>
           ) : (
             <p className="py-2 text-center text-[11px] text-muted-foreground">
-              {t("images.historyEmpty")}
+              {historyQuery.isError ? t("common.historyLoadFailed") : t("images.historyEmpty")}
             </p>
           )}
         </div>

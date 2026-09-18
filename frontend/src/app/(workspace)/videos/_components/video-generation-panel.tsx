@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AudioLines,
   Check,
@@ -23,9 +23,10 @@ import {
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { generateVideoAction } from "@/actions/video-generation-actions";
+import { deleteVideoHistoryAction, generateVideoAction, listVideoHistoryAction } from "@/actions/video-generation-actions";
 import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
+import { queryKeys } from "@/actions/query-keys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +52,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
+import type { GenerationHistoryListResponse } from "@/types/generation-history";
 import type {
   VideoAspectRatio,
   VideoFps,
@@ -59,19 +61,7 @@ import type {
   GenerateVideoInput,
 } from "@/types/video-generation";
 
-const historyStorageKey = "sceneflow-video-generation-history-v1";
 type AssetTab = "images" | "videos" | "audios";
-
-interface VideoHistoryItem {
-  id: string;
-  videoUrl: string;
-  prompt: string;
-  quality?: string;
-  aspectRatio?: string;
-  duration?: number;
-  fps?: number;
-  createdAt: string;
-}
 
 function configSelectValue(config: UserConfig) {
   return `${config.source}:${config.id}`;
@@ -102,20 +92,6 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-function readVideoHistory(): VideoHistoryItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(historyStorageKey) || "[]");
-    return Array.isArray(parsed) ? (parsed as VideoHistoryItem[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveVideoHistory(items: VideoHistoryItem[]) {
-  window.localStorage.setItem(historyStorageKey, JSON.stringify(items.slice(0, 20)));
-}
-
 interface VideoGenerationPanelProps {
   configs: UserConfig[];
   officialConfigs: UserConfig[];
@@ -132,6 +108,7 @@ function VideoGenerationEditor({
   onReset,
 }: VideoGenerationPanelProps & { onReset: () => void }) {
   const { t, formatDateTime } = useI18n();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -154,7 +131,11 @@ function VideoGenerationEditor({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [history, setHistory] = useState<VideoHistoryItem[]>(readVideoHistory);
+  const historyQuery = useQuery({
+    queryKey: queryKeys.generationHistory("video"),
+    queryFn: listVideoHistoryAction,
+  });
+  const history = historyQuery.data?.items ?? [];
   const requestController = useRef<AbortController | null>(null);
   const optimizeController = useRef<AbortController | null>(null);
 
@@ -238,23 +219,15 @@ function VideoGenerationEditor({
 
   const generateMutation = useMutation({
     mutationFn: (payload: GenerateVideoInput) => generateVideoAction(payload, requestController.current?.signal),
-    onSuccess: (response, variables) => {
-      const item: VideoHistoryItem = {
-        id: `${Date.now()}`,
-        videoUrl: response.video.url,
-        prompt: variables.prompt,
-        quality: variables.quality,
-        aspectRatio: variables.aspectRatio,
-        duration: variables.duration,
-        fps: variables.fps,
-        createdAt: new Date().toISOString(),
-      };
+    onSuccess: (response) => {
       setVideoUrl(response.video.url);
-      setHistory((current) => {
-        const next = [item, ...current].slice(0, 20);
-        saveVideoHistory(next);
-        return next;
-      });
+      // The backend already stored the row; prepend it so the list updates without a refetch.
+      queryClient.setQueryData(
+        queryKeys.generationHistory("video"),
+        (current: GenerationHistoryListResponse | undefined) => ({
+          items: [response.history, ...(current?.items ?? []).filter((item) => item.id !== response.history.id)],
+        })
+      );
       setErrorMessage(null);
     },
     onError: (error) => {
@@ -412,12 +385,24 @@ function VideoGenerationEditor({
     generateMutation.reset();
   };
 
+  const deleteHistoryMutation = useMutation({
+    mutationFn: deleteVideoHistoryAction,
+    onSuccess: (_, id) => {
+      queryClient.setQueryData(
+        queryKeys.generationHistory("video"),
+        (current: GenerationHistoryListResponse | undefined) => ({
+          items: (current?.items ?? []).filter((item) => item.id !== id),
+        })
+      );
+    },
+    onError: (error) => {
+      setErrorMessage(resolveRequestError(error, t("common.deleteHistoryFailed")));
+    },
+  });
+
   const deleteHistory = (id: string) => {
-    setHistory((current) => {
-      const next = current.filter((item) => item.id !== id);
-      saveVideoHistory(next);
-      return next;
-    });
+    if (deleteHistoryMutation.isPending) return;
+    deleteHistoryMutation.mutate(id);
   };
 
   const downloadVideo = async (urlToDownload?: string) => {
@@ -1078,7 +1063,7 @@ function VideoGenerationEditor({
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
                   <button
                     type="button"
-                    onClick={() => { setVideoUrl(item.videoUrl); setPrompt(item.prompt); }}
+                    onClick={() => { setVideoUrl(item.url ?? ""); setPrompt(item.prompt); }}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
                   >
                     <Film className="size-4 shrink-0 text-primary" />
@@ -1086,7 +1071,7 @@ function VideoGenerationEditor({
                       {item.prompt}
                     </span>
                     <span className="text-[10px] text-muted-foreground shrink-0">
-                      {formatDateTime(item.createdAt)}
+                      {item.createdAt ? formatDateTime(item.createdAt) : ""}
                     </span>
                   </button>
                   <Button type="button" variant="ghost" size="icon-xs" onClick={() => deleteHistory(item.id)} aria-label={t("videos.deleteHistory")} className="shrink-0 text-muted-foreground hover:text-destructive">
@@ -1097,7 +1082,7 @@ function VideoGenerationEditor({
             </div>
           ) : (
             <p className="py-2 text-center text-[11px] text-muted-foreground">
-              {t("videos.historyEmpty")}
+              {historyQuery.isError ? t("common.historyLoadFailed") : t("videos.historyEmpty")}
             </p>
           )}
         </div>

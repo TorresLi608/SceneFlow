@@ -42,7 +42,7 @@ Media links are absolute signed URLs rooted at `SCENEFLOW_PUBLIC_BASE_URL`; brow
 | External asset imports | `assets.path` | Deliberate HTTP(S)-URL exception; these are not signed local files |
 | Fetched server data | React Query | Shared keys in `frontend/src/actions/query-keys.ts` |
 | Auth and preferences | Persisted Zustand stores | User/token and locale/theme only |
-| Standalone image/video history | Per-surface localStorage lists | Latest 20 results/prompts; separate from project/shot data and preserved by editor reset |
+| Standalone image/video history | Backend `generation_records` + React Query | Per-account rows keyed by stored path; newest 50 per kind, links re-signed per response; separate from project/shot data and preserved by editor reset |
 | Saved standalone voices | Backend `user_voices` + React Query | Reset clears the selection/draft, not saved voices |
 | Current episode/shot drafts | Component state | Saved through actions, reconciled with query results |
 | Legacy workbench project copy | `project-store.ts` | In memory; server reload and WebSocket reconciliation |

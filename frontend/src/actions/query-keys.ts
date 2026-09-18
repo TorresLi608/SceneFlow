@@ -24,6 +24,7 @@ export const queryKeys = {
   officialConfigs: ["official-configs"] as const,
   usageLogs: (feature: string, range: TimeRangeParams, source: string) => ["usage-logs", feature, range, source] as const,
   userVoices: ["user-voices"] as const,
+  generationHistory: (kind: "image" | "video") => ["generation-history", kind] as const,
   chatSessions: ["chat-sessions"] as const,
   chatMessages: (sessionId: string | null) => ["chat-messages", sessionId] as const,
 };

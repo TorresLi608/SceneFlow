@@ -10,6 +10,7 @@ from app.models import (
     ChatMessage,
     ChatSession,
     Episode,
+    GenerationRecord,
     ModelConfig,
     Project,
     Prop,
@@ -285,6 +286,24 @@ def voice_profile_json(profile: VoiceProfile) -> dict[str, Any]:
         "audioUrl": scene_asset_url(profile.audio_path, f"voice-{profile.id}"),
         "orderNum": profile.order_num or 0,
         "updatedAt": profile.updated_at,
+    }
+
+
+def generation_record_json(record: GenerationRecord) -> dict[str, Any]:
+    try:
+        options = json.loads(record.options_json or "{}")
+    except json.JSONDecodeError:
+        options = {}
+    return {
+        "id": record.id,
+        "kind": record.kind,
+        "url": scene_asset_url(record.path, f"generated-{record.kind}-{record.id}"),
+        "prompt": record.prompt or "",
+        "provider": record.provider or "",
+        "model": record.model_name or "",
+        "source": record.source or "",
+        "options": options if isinstance(options, dict) else {},
+        "createdAt": record.created_at,
     }
 
 

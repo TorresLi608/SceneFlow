@@ -1,3 +1,5 @@
+import type { GenerationHistoryItem } from "./generation-history";
+
 export interface VideoReferenceInput {
   data?: string;
   name?: string;
@@ -32,4 +34,6 @@ export interface GenerateVideoResponse {
     fps?: number;
     quality?: VideoQuality;
   };
+  /** The history row the backend stored for this result. */
+  history: GenerationHistoryItem;
 }
