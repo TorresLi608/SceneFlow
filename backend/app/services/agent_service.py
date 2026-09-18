@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+import re
 import time
 from typing import Any, Literal
 
@@ -26,6 +27,7 @@ You can generate images, PDF files, and Word documents with tools.
 - For PDF and Word tools, write the complete document content yourself. Use simple Markdown headings and lists; do not include the title again in the content.
 - After a successful tool call, include the exact Markdown link or image Markdown returned by the tool.
 - Never claim a file was generated unless the tool returned a successful result.
+- If a tool fails, do not retry it more than once; tell the user briefly what failed and what they can do.
 - Do not expose internal paths, API keys, tool arguments, or implementation details.
 - When a super admin asks why a request failed, use the error-log tool before proposing a fix.
 """
@@ -36,6 +38,13 @@ TOOL_LABELS = {
     "generate_word_document": "生成 Word 文档",
     "search_error_logs": "查询错误日志",
 }
+TOOL_FAILURE_LABELS = {
+    "generate_image": "图片生成失败",
+    "generate_pdf": "PDF 生成失败",
+    "generate_word_document": "Word 文档生成失败",
+    "search_error_logs": "错误日志查询失败",
+}
+MAX_FAILURE_REASON_CHARS = 200
 
 
 @dataclass
@@ -62,11 +71,11 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
         """Generate an image and return a signed image URL plus Markdown. Use when the user asks to create, draw, render, or illustrate an image."""
         prompt = prompt.strip()
         if not prompt:
-            raise ToolException("image prompt is required")
+            raise ToolException("图片提示词不能为空")
         if len(prompt) > 4_000:
-            raise ToolException("image prompt is too long")
+            raise ToolException("图片提示词过长，请精简后重试")
         if not image_config:
-            raise ToolException("image generation is not configured; ask the user to enable an image model in Settings")
+            raise ToolException("尚未配置图片生成模型，请先在设置中启用一个图片模型")
         try:
             started_at = time.monotonic()
             if user_id is not None:
@@ -88,7 +97,8 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
                 record_usage(user_id, image_config, "agent_image", started_at, quantity=1)
             return tool_result(save_image_artifact(session_id, title.strip()[:160], result.data, result.format))
         except Exception as exc:
-            raise ToolException(str(exc)) from exc
+            # HTTPException (balance gate) stringifies as "402: ..."; keep only the user-facing detail.
+            raise ToolException(str(getattr(exc, "detail", None) or exc)) from exc
 
     async def generate_pdf(title: str, content: str) -> str:
         """Create a polished PDF from a title and complete Markdown-like content. Use headings with #, ##, or ### and lists with - or numbered items."""
@@ -159,25 +169,83 @@ def _final_answer(output: Any) -> str:
     return ""
 
 
-def _artifact_markdowns(output: Any) -> list[str]:
+def _tool_status(output: Any) -> str:
+    # `handle_tool_error=True` turns a ToolException into a ToolMessage with status "error"
+    # instead of an on_tool_error event, so the status is the only reliable failure signal.
+    return str(getattr(output, "status", "") or "success")
+
+
+def _tool_payload(output: Any) -> dict[str, Any] | None:
+    content = getattr(output, "content", output)
+    if not isinstance(content, str):
+        return None
+    try:
+        payload = json.loads(content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _tool_output_detail(output: Any) -> str:
+    """Execution-panel text for a finished tool: the artifact name, never its signed URL."""
+    payload = _tool_payload(output)
+    if payload and payload.get("kind"):
+        return str(payload.get("filename") or payload.get("title") or payload["kind"])[:160]
+    return _tool_detail(output)
+
+
+def _failure_reason(output: Any) -> str:
+    reason = re.sub(r"\s+", " ", _content_text(getattr(output, "content", output))).strip()
+    return reason[:MAX_FAILURE_REASON_CHARS] or "未知错误"
+
+
+def _failure_notice(tool_name: str, output: Any) -> str:
+    label = TOOL_FAILURE_LABELS.get(tool_name) or f"{TOOL_LABELS.get(tool_name, tool_name)}失败"
+    return f"> ⚠️ {label}：{_failure_reason(output)}"
+
+
+def _tool_messages(output: Any) -> list[Any]:
     messages = output.get("messages", []) if isinstance(output, dict) else []
+    return [message for message in messages if getattr(message, "type", "") == "tool"]
+
+
+def _artifact_markdowns(tool_messages: list[Any]) -> list[str]:
     markdowns: list[str] = []
-    for message in messages:
-        if getattr(message, "type", "") != "tool":
+    for message in tool_messages:
+        if _tool_status(message) == "error":
             continue
-        try:
-            payload = json.loads(str(message.content))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            continue
-        markdown = str(payload.get("markdown") or "").strip() if isinstance(payload, dict) else ""
+        payload = _tool_payload(message)
+        markdown = str(payload.get("markdown") or "").strip() if payload else ""
         if markdown and markdown not in markdowns:
             markdowns.append(markdown)
     return markdowns
 
 
-def _answer_with_artifacts(output: Any) -> str:
+def _failure_notices(tool_messages: list[Any]) -> list[str]:
+    notices: list[str] = []
+    for message in tool_messages:
+        if _tool_status(message) != "error":
+            continue
+        notice = _failure_notice(str(getattr(message, "name", "") or ""), message)
+        if notice not in notices:
+            notices.append(notice)
+    return notices
+
+
+def _missing_tool_outcomes(tool_messages: list[Any], answer: str) -> list[str]:
+    """Blocks the reply must carry whatever the model chose to say.
+
+    The chat UI renders the reply text, so a generated image only reaches the user when its
+    Markdown is in the content, and a failed tool only becomes visible when its notice is.
+    Relying on the model to echo either leaves turns that show nothing but a URL in the
+    transient execution panel, or an empty reply that fails the whole turn.
+    """
+    return [block for block in [*_artifact_markdowns(tool_messages), *_failure_notices(tool_messages)] if block not in answer]
+
+
+def _answer_with_artifacts(output: Any, tool_messages: list[Any] | None = None) -> str:
     answer = _final_answer(output)
-    missing = [markdown for markdown in _artifact_markdowns(output) if markdown not in answer]
+    missing = _missing_tool_outcomes(_tool_messages(output) if tool_messages is None else tool_messages, answer)
     if missing:
         answer = (answer + "\n\n" if answer else "") + "\n\n".join(missing)
     return answer
@@ -217,6 +285,7 @@ async def stream_chat_agent(
     agent = _agent(config, session_id, image_config, user_id)
     final_output: Any = None
     streamed_content = ""
+    tool_outputs: list[Any] = []
     with get_usage_metadata_callback() as usage_callback:
         async for event in agent.astream_events(
             {"messages": _lc_messages(messages, config["provider"])},
@@ -244,13 +313,16 @@ async def stream_chat_agent(
                     },
                 }
             elif event_type == "on_tool_end":
+                output = event["data"].get("output")
+                tool_outputs.append(output)
+                failed = _tool_status(output) == "error"
                 yield {
                     "type": "agent_step",
                     "step": {
                         "id": "tool_" + event["run_id"],
                         "label": TOOL_LABELS.get(event["name"], event["name"]),
-                        "status": "done",
-                        "detail": _tool_detail(event["data"].get("output")),
+                        "status": "error" if failed else "done",
+                        "detail": _failure_reason(output)[:160] if failed else _tool_output_detail(output),
                     },
                 }
             elif event_type == "on_tool_error":
@@ -265,8 +337,11 @@ async def stream_chat_agent(
                 }
             elif event_type == "on_chain_end" and not event["parent_ids"]:
                 final_output = event["data"].get("output")
-    answer = _answer_with_artifacts(final_output)
-    missing = [markdown for markdown in _artifact_markdowns(final_output) if markdown not in streamed_content]
+    # Tool outcomes come from the observed tool events, so they survive a run whose root
+    # on_chain_end never arrived (a stop or a provider failure after the tool finished).
+    tool_messages = tool_outputs or _tool_messages(final_output)
+    answer = _answer_with_artifacts(final_output, tool_messages)
+    missing = _missing_tool_outcomes(tool_messages, streamed_content)
     if missing:
         yield {"type": "content_delta", "content": ("\n\n" if streamed_content else "") + "\n\n".join(missing)}
     usage = aggregate_token_usage(usage_callback.usage_metadata)

@@ -4,9 +4,9 @@ import { TextMessagePartProvider } from "@assistant-ui/react";
 import { StreamdownTextPrimitive, type ControlsConfig } from "@assistant-ui/react-streamdown";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
-import { ArrowDown, CheckCircle2, FileText, ImageIcon, Loader2, Square, XCircle } from "lucide-react";
+import { ArrowDown, CheckCircle2, FileText, ImageIcon, ImageOff, Loader2, Square, XCircle } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type WheelEvent } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/lib/i18n";
@@ -38,6 +38,56 @@ const streamdownPlugins = { code, cjk };
 const streamdownControls = { code: { copy: true, download: false }, table: false, mermaid: false } as unknown as ControlsConfig;
 const BOTTOM_THRESHOLD = 80;
 const INITIAL_SCROLL_RETRY_DELAYS = [50, 150, 350];
+
+/**
+ * Generated images arrive as `![title](signed-url)` in the reply text. Streamdown's default
+ * renderer hides a broken image behind a one-line italic note, which reads as "nothing came
+ * back"; this keeps the image inline in the reply and, when the signed link cannot load, shows
+ * an explicit notice with the link so the user can still open it.
+ * Only inline elements are used so the block stays valid inside a paragraph.
+ */
+function MarkdownImage({ node, src, alt, className, ...props }: ComponentProps<"img"> & { node?: unknown }) {
+  void node; // hast node injected by Streamdown; must not reach the DOM element
+  const { t } = useI18n();
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const url = typeof src === "string" ? src : "";
+  if (!url) {
+    return null;
+  }
+
+  if (failedSrc === url) {
+    return (
+      <span role="note" className="my-2 inline-flex max-w-full items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <ImageOff className="mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {t("chat.imageLoadFailed")}{" "}
+          <a href={url} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+            {t("chat.openImage")}
+          </a>
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title={t("chat.openImage")} className="my-2 inline-block max-w-full align-top" data-streamdown="image-wrapper">
+      {/* Plain <img>: signed artifact URLs are cross-origin and must bypass the Next image optimizer. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        {...props}
+        src={url}
+        alt={alt ?? ""}
+        loading="lazy"
+        onError={() => setFailedSrc(url)}
+        data-streamdown="image"
+        className={cn("max-h-[28rem] max-w-full rounded-xl border border-border/60 bg-muted/30 object-contain", className)}
+      />
+      {alt ? <span className="mt-1 block text-xs text-muted-foreground">{alt}</span> : null}
+    </a>
+  );
+}
+
+const streamdownComponents = { img: MarkdownImage };
 
 function isNearBottom(element: HTMLDivElement) {
   return element.scrollHeight - element.scrollTop - element.clientHeight < BOTTOM_THRESHOLD;
@@ -87,6 +137,7 @@ function MessageContent({ content, isRunning }: { content: string; isRunning: bo
     <TextMessagePartProvider text={content} isRunning={isRunning}>
       <StreamdownTextPrimitive
         caret={isRunning ? "block" : undefined}
+        components={streamdownComponents}
         containerClassName="min-w-0 max-w-full [overflow-wrap:anywhere]"
         containerProps={{ onClickCapture: handleCodeCopyCapture }}
         controls={streamdownControls}
