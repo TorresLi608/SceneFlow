@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getProjectModelsAction, listProjectsAction } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
-import type { Project } from "@/types/project";
 
 /**
  * Hook to check if project settings have unsaved changes.

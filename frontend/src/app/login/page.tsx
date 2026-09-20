@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
+import { resolveSafeRedirectUrl } from "@/providers/auth-guard";
 import { useUserStore } from "@/store/user-store";
 
 export default function LoginPage() {
@@ -42,7 +43,8 @@ export default function LoginPage() {
     mutationFn: loginAction,
     onSuccess: (data) => {
       setAuth(data.token, data.user);
-      router.replace("/");
+      const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      router.replace(resolveSafeRedirectUrl(params?.get("redirect")));
     },
     onError: (requestError) => {
       setError(resolveRequestError(requestError, t("auth.loginFailed")));

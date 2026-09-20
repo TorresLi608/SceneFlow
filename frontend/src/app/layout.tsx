@@ -1,9 +1,10 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { Toaster } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { AppPreferencesProvider } from "@/providers/app-preferences-provider";
+import { AuthGuard } from "@/providers/auth-guard";
 import { QueryProvider } from "@/providers/query-provider";
 
 import "./globals.css";
@@ -21,11 +22,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "SceneFlow",
   description: "AI manga storyboard workspace",
-};
-
-export const viewport: Viewport = {
-  viewportFit: "cover",
-  interactiveWidget: "resizes-content",
 };
 
 /** Inline script to prevent theme flashing during SSR and initial page load */
@@ -68,7 +64,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <AppPreferencesProvider>
           <QueryProvider>
-            <Toaster>{children}</Toaster>
+            <AuthGuard>
+              <Toaster>{children}</Toaster>
+            </AuthGuard>
           </QueryProvider>
         </AppPreferencesProvider>
       </body>
