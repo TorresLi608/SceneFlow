@@ -13,6 +13,7 @@ import type {
   InvitationCodeListResponse,
   CreateOfficialConfigInput,
   GenerationRetentionResponse,
+  GenerationRetentionUpdate,
   ResetAdminUserPasswordResponse,
   RedemptionCodeItemResponse,
   RedemptionCodeListResponse,
@@ -109,8 +110,9 @@ export async function getGenerationRetentionAction() {
   return response.data;
 }
 
-export async function updateGenerationRetentionAction(retentionDays: number) {
-  const response = await httpClient.patch<GenerationRetentionResponse>("/api/bff/admin/generation-retention", { retentionDays });
+/** Sends only the categories given; the others keep their saved window. */
+export async function updateGenerationRetentionAction(policies: GenerationRetentionUpdate) {
+  const response = await httpClient.patch<GenerationRetentionResponse>("/api/bff/admin/generation-retention", { policies });
   return response.data;
 }
 

@@ -273,7 +273,10 @@ paths:
       tags:
       - admin
       summary: Get Generation Retention
-      description: Retention policy for the standalone image/video panels; `retentionDays` 0 keeps forever.
+      description: 'One retention window per standalone menu (image, video, chat, voice); 0 keeps forever.
+
+
+        Nothing inside the AI drama workbench is covered by these windows.'
       operationId: get_generation_retention_api_admin_generation_retention_get
       parameters:
       - name: authorization
@@ -303,6 +306,7 @@ paths:
       tags:
       - admin
       summary: Update Generation Retention
+      description: 'Body `{policies: {<category>: {retentionDays}}}`; categories left out keep their window.'
       operationId: update_generation_retention_api_admin_generation_retention_patch
       parameters:
       - name: authorization
@@ -341,7 +345,7 @@ paths:
       tags:
       - admin
       summary: Sweep Generation Retention
-      description: Apply the current policy immediately instead of waiting for the hourly pass.
+      description: Apply every window immediately instead of waiting for the hourly pass.
       operationId: sweep_generation_retention_api_admin_generation_retention_sweep_post
       parameters:
       - name: authorization
@@ -1759,6 +1763,12 @@ paths:
       tags:
       - chat
       summary: Get Sessions
+      description: 'The account''s conversations plus the admin retention window for chat (0 = kept forever).
+
+
+        A session expires after `retentionDays` without activity, together with its messages
+
+        and any images or documents its tools generated.'
       operationId: get_sessions_api_chat_sessions_get
       parameters:
       - name: authorization
@@ -1983,7 +1993,8 @@ paths:
       tags:
       - images
       summary: List Image History
-      description: 'The account''s image results plus the admin retention window (0 = kept forever).
+      description: 'The account''s image results plus the admin retention window for images (0 = kept
+        forever).
 
 
         The window rides along so the panel can warn that rows expire, without a separate
@@ -2087,8 +2098,8 @@ paths:
       tags:
       - videos
       summary: List Video History
-      description: The account's video results plus the admin retention window (0 = kept forever); see
-        `images.py`.
+      description: The account's video results plus the admin retention window for videos (0 = kept forever);
+        see `images.py`.
       operationId: list_video_history_api_videos_history_get
       parameters:
       - name: authorization
@@ -4985,6 +4996,8 @@ paths:
       tags:
       - user-voices
       summary: List User Voices
+      description: The account's saved voices plus the admin retention window for the voice menu (0 =
+        kept forever).
       operationId: list_user_voices_api_voices_get
       parameters:
       - name: authorization

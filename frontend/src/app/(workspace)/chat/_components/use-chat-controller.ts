@@ -352,6 +352,8 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     selectedConfig,
     sessions: sessionsQuery.data?.sessions ?? [],
     sessionsLoading: sessionsQuery.isLoading,
+    // Admin retention window for chat; 0 (or not loaded yet) means nothing expires and no notice is shown.
+    sessionRetentionDays: sessionsQuery.data?.retentionDays ?? 0,
     messages: aiMessages.map((message) => toChatMessage(message, effectiveSessionId, selectedConfig)),
     agentSteps,
     messagesLoading: messagesQuery.isLoading,

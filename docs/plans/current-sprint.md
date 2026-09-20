@@ -17,7 +17,7 @@ Base snapshot verified on **2026-09-07**; voice-design, media-preview, and expor
 | Prompt editing | `prompt-area` mentions, asset picker, ordered prefixes, shared reference budgets, preset/optimization and compiled-prompt preview endpoints |
 | Asset management | One shared project/episode manager for custom imports plus character/state/prop media, voices, tone sheets, and every live episode’s shot images/videos; search, media/source/episode filters, episode/shot labels, preview/source links, deletion and image merging |
 | Video/export | Per-shot generation → episode composition in selected shot order → final export in selected episode order; up to 60 inputs per merge, shared audio retention/silent padding, previous episode video retained on failed recomposition |
-| Standalone generation | Image/video/audio editors reset without deleting history; image/video history panels show the admin retention window as a cleanup notice when one is set; unsupported FPS is omitted from standalone video requests |
+| Standalone generation | Image/video/audio editors reset without deleting history; the image/video history panels, the chat session list, and the saved-voice list each show their menu's admin retention window as a cleanup notice when one is set; unsupported FPS is omitted from standalone video requests |
 | Queue | In-process three-lane worker for reference images, prompt drafts, project voice design and preview; persisted lease/cancel/retry state |
 | Run lifecycle | Project claim guards, attached-task cancellation, unfinished-media cleanup, startup recovery of abandoned project/episode status |
 | Chat | AI SDK stream/message owner, assistant-ui composer, custom Streamdown list, context compression, artifact tools, admin-only diagnostic tool |

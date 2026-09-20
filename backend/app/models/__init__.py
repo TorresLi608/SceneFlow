@@ -11,7 +11,7 @@ from app.models.error_log import ErrorLog
 from app.models.generation_record import GenerationRecord
 from app.models.project import Episode, GenerationJob, Project, Scene
 from app.models.prop import Prop
-from app.models.system_setting import SystemSetting
+from app.models.system_setting import GENERATION_RETENTION_MAX_DAYS, SystemSetting
 from app.models.usage import UsageLog
 from app.models.user import EmailVerification, InvitationCode, RedemptionCode, User
 from app.models.voice import VoiceProfile
@@ -19,6 +19,7 @@ from app.models.user_voice import UserVoice
 
 
 __all__ = [
+    "GENERATION_RETENTION_MAX_DAYS",
     "MAX_EXPORT_CLIPS",
     "Character",
     "Asset",

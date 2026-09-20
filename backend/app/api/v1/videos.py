@@ -10,7 +10,7 @@ from app.api.deps import current_user_id
 from app.schemas.serializers import generation_record_json
 from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.generation_record_service import delete_generation_record, list_generation_records, save_generation_record
-from app.services.system_setting_service import generation_retention_days
+from app.services.system_setting_service import retention_days
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, validate_qwen_video_input, validate_video_inputs
 
@@ -29,11 +29,11 @@ def persist_video(user_id: int, config: dict[str, Any], data: bytes, *, prompt: 
 
 @router.get("/history")
 def list_video_history(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
-    """The account's video results plus the admin retention window (0 = kept forever); see `images.py`."""
+    """The account's video results plus the admin retention window for videos (0 = kept forever); see `images.py`."""
     with db() as session:
         return {
             "items": [generation_record_json(item) for item in list_generation_records(session, user_id, "video")],
-            "retentionDays": generation_retention_days(session),
+            "retentionDays": retention_days(session, "video"),
         }
 
 

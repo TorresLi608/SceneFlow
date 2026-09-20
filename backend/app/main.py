@@ -35,7 +35,7 @@ from app.core.database import init_db
 from app.core.logging import configure_logging, reset_request_id, set_request_id
 from app.services.error_log_service import error_code_for, record_http_error
 from app.services import job_handlers  # noqa: F401 -- registers the generation job handlers
-from app.services.generation_record_service import retention_sweeper
+from app.services.retention_service import retention_sweeper
 from app.services.job_worker import worker
 from app.services.project_service import release_orphaned_runs
 from app.services.export_service import recover_interrupted_exports
@@ -53,8 +53,8 @@ async def lifespan(_: FastAPI):
     # Paid generation runs here rather than inside the request, so that stopping is a
     # database operation instead of a hung-up socket. See `app/services/job_worker.py`.
     worker.start()
-    # Standalone image/video results expire on the admin-configured schedule; see
-    # `generation_record_service.RetentionSweeper`.
+    # Standalone image, video, chat, and voice results expire on their admin-configured
+    # windows; see `retention_service.RetentionSweeper`. Project media never does.
     retention_sweeper.start()
     try:
         yield

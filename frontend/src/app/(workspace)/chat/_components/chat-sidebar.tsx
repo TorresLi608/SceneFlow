@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, MessageSquarePlus, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, MessageSquarePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -22,6 +22,8 @@ interface ChatSidebarProps {
   effectiveSessionId: string | null;
   sessions: ChatSession[];
   sessionsLoading: boolean;
+  /** Admin retention window in whole days; 0 hides the cleanup notice. */
+  sessionRetentionDays: number;
   isBusy: boolean;
   formatDateTime: (value: Date | string | number) => string;
   onConfigChange: (value: string) => void;
@@ -36,6 +38,7 @@ export function ChatSidebar({
   effectiveSessionId,
   sessions,
   sessionsLoading,
+  sessionRetentionDays,
   isBusy,
   formatDateTime,
   onConfigChange,
@@ -110,6 +113,16 @@ export function ChatSidebar({
           </span>
           <span className="text-[10px] text-muted-foreground">{sessions.length}</span>
         </div>
+
+        {sessionRetentionDays > 0 ? (
+          <p
+            role="note"
+            className="mb-2 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-4 text-amber-600"
+          >
+            <Clock className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+            <span>{t("chat.retentionNotice", { days: sessionRetentionDays })}</span>
+          </p>
+        ) : null}
 
         <div className="space-y-1.5">
           {sessionsLoading ? (

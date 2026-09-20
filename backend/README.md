@@ -1,6 +1,6 @@
 # SceneFlow Backend
 
-Verified on **2026-09-07**, with voice-design contracts and export-audio behavior rechecked on **2026-09-08**, and voice-workspace isolation plus the history `retentionDays` field updated on **2026-09-18**. Start with the [documentation index](../docs/README.md), [code map](../docs/architecture/code-map.md), and [data flow](../docs/architecture/data-flow.md). This file owns environment variables, provider notes, and the endpoint inventory.
+Verified on **2026-09-07**, with voice-design contracts and export-audio behavior rechecked on **2026-09-08**, voice-workspace isolation plus the history `retentionDays` field updated on **2026-09-18**, and per-menu retention windows (image, video, chat, voice) added on **2026-09-20**. Start with the [documentation index](../docs/README.md), [code map](../docs/architecture/code-map.md), and [data flow](../docs/architecture/data-flow.md). This file owns environment variables, provider notes, and the endpoint inventory.
 
 ## Run and check
 
@@ -129,6 +129,8 @@ Except for auth, health, static prompt presets, and token-signed artifact downlo
 | GET | `/api/admin/error-logs` |
 | GET, PATCH | `/api/admin/generation-retention` |
 | POST | `/api/admin/generation-retention/sweep` |
+
+`GET /api/admin/generation-retention` returns `{policies: {image, video, chat, voice: {retentionDays, updatedAt, expiredCount}}, maxDays}`, one window per standalone menu. `PATCH` takes `{policies: {<category>: {retentionDays}}}` and leaves categories that are absent untouched; an unknown category or an out-of-range value is 400 and writes nothing. `POST .../sweep` applies every window at once and adds `removedCount` per policy and in total. The windows never cover project media; see `retention_service.py`.
 | PATCH, POST, DELETE | `/api/admin/users/{target_user_id}` |
 | GET, POST | `/api/admin/invitation-codes` |
 | GET, POST | `/api/admin/redemption-codes` |
@@ -219,7 +221,7 @@ Saving with PATCH does not regenerate audio; redesign and local preview are sepa
 | POST | `/api/voices/{voice_id}/save` |
 | DELETE | `/api/voices/{voice_id}` |
 
-Standalone `/api/voices/design` remains request-scoped and requires nonempty `voicePrompt` and `previewText`, each up to 1000 characters. The optional preview/default sample and `voiceId` replacement contract above apply only to project voice design. `user_voices` belongs to the standalone voice workspace alone: project design never saves here, and nothing here can be bound to a project.
+Standalone `/api/voices/design` remains request-scoped and requires nonempty `voicePrompt` and `previewText`, each up to 1000 characters. The optional preview/default sample and `voiceId` replacement contract above apply only to project voice design. `user_voices` belongs to the standalone voice workspace alone: project design never saves here, and nothing here can be bound to a project. `GET /api/voices` returns `{voices, retentionDays}`; `retentionDays` is the voice menu's retention window (`generation_retention_voice_days`, 0 = keep forever), under which drafts and saved voices older than the window are removed with their audition audio.
 
 ### assets — app/api/v1/assets.py
 
@@ -278,7 +280,7 @@ Final exports accept `{episodeIds, rangeLabel?}` in caller order; each episode m
 | GET | `/api/videos/history` |
 | DELETE | `/api/videos/history/{record_id}` |
 
-Both `GET .../history` responses are `{items, retentionDays}`. `retentionDays` is the super-admin retention window from `system_settings` (0 = keep forever), included so the image/video panels can show a cleanup notice without members reading the admin endpoint.
+Both `GET .../history` responses are `{items, retentionDays}`. `retentionDays` is that menu's super-admin retention window from `system_settings` (`generation_retention_image_days` / `generation_retention_video_days`, 0 = keep forever), included so the image/video panels can show a cleanup notice without members reading the admin endpoint.
 
 ### chat — app/api/v1/chat.py
 
@@ -289,6 +291,8 @@ Both `GET .../history` responses are `{items, retentionDays}`. `retentionDays` i
 | DELETE | `/api/chat/sessions/{session_id}` |
 | GET, POST | `/api/chat/sessions/{session_id}/messages` |
 | POST | `/api/chat/sessions/{session_id}/messages/stream` |
+
+`GET /api/chat/sessions` returns `{sessions, retentionDays}`. `retentionDays` is the chat retention window (`generation_retention_chat_days`, 0 = keep forever): a session whose last activity (`updated_at`) is older than the window is hard-deleted with its messages and the `chat/<session id>/` directory holding its tool-generated images and documents.
 
 ### usage — app/api/v1/usage.py
 

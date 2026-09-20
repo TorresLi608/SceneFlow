@@ -6,15 +6,27 @@ and an unset or corrupted row falls back to the documented default.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from sqlmodel import Session
 
-from app.models import SystemSetting
+from app.models import GENERATION_RETENTION_MAX_DAYS, SystemSetting
 from app.utils.common import now
 
 
-GENERATION_RETENTION_KEY = "generation_retention_days"
+# One retention window per standalone menu. A category is a menu rather than a media type
+# on purpose: the AI drama workbench (storyboard frames, clips, project voices, exports)
+# is never subject to a retention sweep, and naming windows after menus keeps that boundary
+# visible to whoever adds the next one.
+RetentionCategory = Literal["image", "video", "chat", "voice"]
+RETENTION_CATEGORIES: tuple[RetentionCategory, ...] = ("image", "video", "chat", "voice")
 GENERATION_RETENTION_DEFAULT_DAYS = 0
-GENERATION_RETENTION_MAX_DAYS = 3650
+
+
+def retention_setting_key(category: str) -> str:
+    if category not in RETENTION_CATEGORIES:
+        raise ValueError(f"unknown retention category: {category}")
+    return f"generation_retention_{category}_days"
 
 
 def _read(session: Session, key: str) -> SystemSetting | None:
@@ -46,8 +58,9 @@ def normalize_retention_days(value: object) -> int:
     return days
 
 
-def generation_retention_days(session: Session) -> int:
-    setting = _read(session, GENERATION_RETENTION_KEY)
+def retention_days(session: Session, category: str) -> int:
+    """The window for one category; unset or unreadable means keep forever."""
+    setting = _read(session, retention_setting_key(category))
     if setting is None:
         return GENERATION_RETENTION_DEFAULT_DAYS
     try:
@@ -56,14 +69,24 @@ def generation_retention_days(session: Session) -> int:
         return GENERATION_RETENTION_DEFAULT_DAYS
 
 
-def generation_retention_json(session: Session) -> dict[str, object]:
-    setting = _read(session, GENERATION_RETENTION_KEY)
-    return {
-        "retentionDays": generation_retention_days(session),
-        "updatedAt": setting.updated_at if setting else None,
-    }
+def retention_policies_json(session: Session) -> dict[str, dict[str, object]]:
+    policies: dict[str, dict[str, object]] = {}
+    for category in RETENTION_CATEGORIES:
+        setting = _read(session, retention_setting_key(category))
+        policies[category] = {
+            "retentionDays": retention_days(session, category),
+            "updatedAt": setting.updated_at if setting else None,
+        }
+    return policies
 
 
-def set_generation_retention_days(session: Session, days: int, user_id: int | None) -> dict[str, object]:
-    _write(session, GENERATION_RETENTION_KEY, str(normalize_retention_days(days)), user_id)
-    return generation_retention_json(session)
+def set_retention_days(session: Session, values: dict[str, object], user_id: int | None) -> dict[str, dict[str, object]]:
+    """Write the given categories only; the others keep their window.
+
+    Every value is validated before anything is written, so a bad entry cannot leave the
+    policy half-applied.
+    """
+    normalized = {retention_setting_key(category): normalize_retention_days(days) for category, days in values.items()}
+    for key, days in normalized.items():
+        _write(session, key, str(days), user_id)
+    return retention_policies_json(session)

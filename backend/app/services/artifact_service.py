@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 import json
 import logging
 import re
+import shutil
 from typing import Literal
 
 import jwt
@@ -408,6 +409,21 @@ def remove_stored_artifacts(values: list[str]) -> None:
             artifact_absolute_path(value).unlink(missing_ok=True)
         except (OSError, ValueError) as exc:
             logger.warning("failed to remove stored artifact path=%s: %s", value, exc)
+
+
+def remove_artifact_scope(category: str, scope: str) -> None:
+    """Remove every file one scope stored under a category, e.g. a chat session's tool artifacts.
+
+    Chat rows never record their artifact paths — the agent only embeds signed links in the
+    message text — so the directory `_artifact_path` wrote them to is the one handle left
+    when the session itself is purged. A missing directory is not an error.
+    """
+    if not scope.strip():
+        raise ValueError("artifact scope is required")
+    directory = (PRIVATE_GENERATED_DIR / _safe_segment(category) / _safe_segment(scope)).resolve()
+    directory.relative_to(PRIVATE_GENERATED_DIR.resolve())
+    if directory.is_dir():
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def artifact_from_token(token: str) -> tuple[Path, str, str, bool]:

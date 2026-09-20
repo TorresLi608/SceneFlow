@@ -13,6 +13,7 @@ from app.schemas.serializers import user_voice_json
 from app.services.artifact_service import store_artifact
 from app.services.config_service import active_model_config, official_model_config, user_model_config
 from app.services.qwen_voice_service import create_voice
+from app.services.system_setting_service import retention_days
 from app.services.usage_service import record_usage, require_model_balance
 from app.utils.common import new_id, now
 
@@ -31,9 +32,10 @@ def _config(session, user_id: int, payload: dict[str, Any] | None = None) -> dic
 
 @router.get("")
 def list_user_voices(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """The account's saved voices plus the admin retention window for the voice menu (0 = kept forever)."""
     with db() as session:
         voices = session.exec(select(UserVoice).where(UserVoice.user_id == user_id, UserVoice.is_saved.is_(True), UserVoice.deleted_at.is_(None)).order_by(UserVoice.created_at.desc())).all()
-    return {"voices": [user_voice_json(voice) for voice in voices]}
+        return {"voices": [user_voice_json(voice) for voice in voices], "retentionDays": retention_days(session, "voice")}
 
 
 @router.post("/design")
