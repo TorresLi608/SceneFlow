@@ -34,6 +34,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
         effectiveSessionId={chat.effectiveSessionId}
         sessions={chat.sessions}
         sessionsLoading={chat.sessionsLoading}
+        sessionRetentionDays={chat.sessionRetentionDays}
         isBusy={chat.isBusy}
         formatDateTime={formatDateTime}
         onConfigChange={chat.setSelectedConfigId}

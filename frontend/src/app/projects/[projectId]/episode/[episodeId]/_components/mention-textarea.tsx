@@ -9,10 +9,11 @@ import {
   getChips,
   segmentsToPlainText,
   type ChipSegment,
+  type PromptAreaHandle,
   type Segment,
   type TriggerActivateContext,
 } from "prompt-area";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,7 @@ function markerAliases(label: string, index: number, media: ReferenceAssetOption
 
 function refsFromSegments(segments: Segment[]): GenerationReferenceInput[] {
   const seen = new Set<string>();
-  return getChips(segments).flatMap((item) => {
+  return getChips(segments).flatMap((item: ChipSegment) => {
     const data = item.data as { kind?: string; id?: string } | undefined;
     const [kind, id] = String(item.value).split(":");
     const reference = { kind: (data?.kind ?? kind) as GenerationReferenceKind, id: data?.id ?? id };
@@ -159,17 +160,28 @@ export function MentionTextarea({
   limits: Partial<Record<ReferenceAssetOption["media"], number>>;
 }) {
   const { t } = useI18n();
+  const promptAreaRef = useRef<PromptAreaHandle>(null);
+  const isSelectingRef = useRef(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mention, setMention] = useState<{
     context: TriggerActivateContext;
     editor: HTMLElement;
     range: Range | null;
   } | null>(null);
+  const activeMentionRef = useRef<{
+    context: TriggerActivateContext;
+    editor: HTMLElement;
+    range: Range | null;
+  } | null>(null);
+
+  useEffect(() => {
+    activeMentionRef.current = mention;
+  }, [mention]);
   const [referenceSearch, setReferenceSearch] = useState("");
   const [mediaFilter, setMediaFilter] = useState<ReferenceMedia | "all">("all");
   const [segments, setSegments] = useState<Segment[]>(() => initialSegments(value, references, assets));
   const effectiveSegments = segmentsToPlainText(segments) === value ? segments : initialSegments(value, references, assets);
-  const chips = getChips(effectiveSegments);
+  const chips: ChipSegment[] = getChips(effectiveSegments);
 
   const emit = (next: Segment[]) => {
     const nextPrompt = segmentsToPlainText(next);
@@ -230,6 +242,48 @@ export function MentionTextarea({
     // Keep the caret and insertion callback before the search input takes focus.
     setMention({ context, editor, range: selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null });
   };
+
+  const restoreCursor = useCallback((targetMention?: {
+    context: TriggerActivateContext;
+    editor: HTMLElement;
+    range: Range | null;
+  }) => {
+    const target = targetMention ?? activeMentionRef.current;
+    if (!target) return;
+    const { editor, range, context } = target;
+
+    const apply = () => {
+      editor.focus();
+      if (promptAreaRef.current && typeof context.cursorPosition === "number") {
+        promptAreaRef.current.setCursorPosition(context.cursorPosition);
+        return;
+      }
+      if (range && editor.contains(range.startContainer)) {
+        try {
+          const sel = window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch {
+          // ignore selection errors if DOM changed
+        }
+      }
+    };
+
+    apply();
+    queueMicrotask(apply);
+    requestAnimationFrame(apply);
+  }, []);
+
+  const closeMentionAndRestore = useCallback(() => {
+    if (isSelectingRef.current) return;
+    const current = mention ?? activeMentionRef.current;
+    setMention(null);
+    if (current) {
+      restoreCursor(current);
+    }
+  }, [mention, restoreCursor]);
 
   const removeChip = (target: ChipSegment) => {
     let removed = false;
@@ -346,6 +400,7 @@ export function MentionTextarea({
       ) : null}
       <PromptArea
         {...props}
+        ref={promptAreaRef}
         data-test-id={id}
         className={cn("min-h-16 rounded-md border border-input bg-background px-3 py-2 text-sm", className)}
         minHeight={rows ? rows * 24 : undefined}
@@ -371,14 +426,31 @@ export function MentionTextarea({
           filter={matches}
           itemToStringLabel={(asset) => asset.label}
           itemToStringValue={keyOf}
-          onOpenChange={(open) => { if (!open) setMention(null); }}
+          onOpenChange={(open, eventDetails) => {
+            if (!open) {
+              if (isSelectingRef.current) return;
+              if (eventDetails?.reason === "escape-key") {
+                closeMentionAndRestore();
+              } else {
+                setMention(null);
+              }
+            }
+          }}
           onValueChange={(asset) => {
             if (!asset) return;
+            isSelectingRef.current = true;
+            const targetEditor = mention.editor;
             mention.context.insertChip({
-              trigger: "@", value: keyOf(asset), displayText: asset.label,
+              trigger: "@",
+              value: keyOf(asset),
+              displayText: asset.label,
               data: { kind: asset.kind, id: asset.id },
             });
             setMention(null);
+            requestAnimationFrame(() => {
+              targetEditor.focus();
+              isSelectingRef.current = false;
+            });
           }}
         >
           <Combobox.Portal>
@@ -397,16 +469,34 @@ export function MentionTextarea({
               <Combobox.Popup
                 aria-label={t("episode.mentionAssetsAccessibility")}
                 initialFocus
-                finalFocus={() => mention.editor}
+                finalFocus={() => mention?.editor}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeMentionAndRestore();
+                  }
+                }}
                 className="flex max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-md outline-hidden"
               >
                 <div className="mb-2 flex shrink-0 items-center gap-1">
                   <Combobox.Input
-                    render={<Input type="search" />}
+                    render={
+                      <Input
+                        type="search"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            closeMentionAndRestore();
+                          }
+                        }}
+                      />
+                    }
                     aria-label={t("assets.searchReferences")}
                     placeholder={t("assets.searchReferences")}
                   />
-                  <Button type="button" size="icon-xs" variant="ghost" aria-label={t("common.close")} onClick={() => setMention(null)}>
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label={t("common.close")} onClick={closeMentionAndRestore}>
                     <X />
                   </Button>
                 </div>

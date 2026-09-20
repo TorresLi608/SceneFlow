@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   ChevronDown,
@@ -13,8 +12,6 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { queryKeys } from "@/actions/query-keys";
-import { getMeAction } from "@/actions/user-actions";
 import { PreferencesSwitcher } from "@/components/preferences-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +36,7 @@ function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/admin/error-logs")) return "home.errorLogs";
   if (pathname.startsWith("/admin/invitation-codes")) return "home.invitationCodeManagement";
   if (pathname.startsWith("/admin/redemption-codes")) return "home.redemptionCodeManagement";
+  if (pathname.startsWith("/admin/generation-retention")) return "home.generationRetention";
   return "home.chat";
 }
 
@@ -46,10 +44,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
-  const hydrated = useUserStore((state) => state.hydrated);
-  const token = useUserStore((state) => state.token);
   const user = useUserStore((state) => state.user);
-  const setUser = useUserStore((state) => state.setUser);
   const logout = useUserStore((state) => state.logout);
   const [accountOpen, setAccountOpen] = useState(false);
   const [navigationPath, setNavigationPath] = useState<string | null>(null);
@@ -63,53 +58,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     closeTimer.current = setTimeout(() => setAccountOpen(false), 160);
   };
 
-  const meQuery = useQuery({
-    queryKey: queryKeys.me,
-    queryFn: getMeAction,
-    enabled: hydrated && Boolean(token),
-  });
-
-  useEffect(() => {
-    if (meQuery.data?.user) setUser(meQuery.data.user);
-  }, [meQuery.data?.user, setUser]);
-
   useEffect(() => () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    if (meQuery.isError) {
-      logout();
-      router.replace("/login");
-    }
-  }, [hydrated, token, meQuery.isError, logout, router]);
-
-  if (!hydrated) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center bg-background">
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
-          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-sm font-medium text-muted-foreground">{t("common.initializing")}</span>
-        </div>
-      </main>
-    );
-  }
-
-  if (!token || meQuery.isError) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center bg-background">
-        <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-card/60 px-5 py-3 shadow-xl backdrop-blur-md">
-          <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-sm font-medium text-muted-foreground">{t("common.redirectingToLogin")}</span>
-        </div>
-      </main>
-    );
-  }
 
   const isSuperAdmin = user?.role === "superAdmin";
 
@@ -137,9 +88,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 </h1>
                 <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
                   {t("common.currentUser", {
-                    username: meQuery.isLoading
-                      ? t("common.loading")
-                      : user?.nickname || user?.username || t("common.unknownUser"),
+                    username: user?.nickname || user?.username || t("common.loading"),
                   })}
                 </p>
               </div>

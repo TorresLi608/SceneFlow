@@ -49,8 +49,8 @@ Super admin is exempt from balance checks and from balance deduction — see `fe
 
 - `useUserStore` (Zustand, persisted) holds the token and user. Standalone image/video histories are backend rows (`generation_records`) fetched through React Query; project/episode/shot working copies are not persisted in localStorage. Resetting a generation editor must preserve both authentication and history.
 - The axios request interceptor attaches the token; the response interceptor calls `logout()` on any `401`. Do not add per-call 401 handling.
-- General authenticated pages use the `(workspace)` shell. `/projects/[projectId]` redirects to `/info`; the six project sections and full-screen episode/legacy editors have their own layouts. Backend dependencies enforce authorization independently of these layouts.
-- Login/register are at `/login` and `/register`.
+- Client routing is protected by a global `AuthGuard` mounted in `app/layout.tsx`. All routes except `/login` and `/register` require a valid token; unauthorized visits immediately redirect to `/login?redirect=...` without mounting protected children or issuing failing requests. General authenticated pages use the `(workspace)` shell. `/projects/[projectId]` redirects to `/info`; the project sections and full-screen episode/legacy editors have their own layouts. Backend dependencies enforce authorization independently of these layouts.
+- Login/register are at `/login` and `/register`. Successful login redirects back to the original page via the `redirect` query parameter.
 - The UI displays `nickname` when present and falls back to `username`; username remains the login credential.
 
 ## Rules when extending

@@ -1,8 +1,8 @@
 import { generationRequestTimeout, httpClient } from "@/lib/http/client";
-import type { UserVoice } from "@/types/voice-generation";
+import type { UserVoice, UserVoiceListResponse } from "@/types/voice-generation";
 
 export async function listUserVoicesAction() {
-  const response = await httpClient.get<{ voices: UserVoice[] }>("/api/bff/voices");
+  const response = await httpClient.get<UserVoiceListResponse>("/api/bff/voices");
   return response.data;
 }
 

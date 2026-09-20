@@ -11,16 +11,13 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import select
 
 from app.api.deps import current_user_id
 from app.core.database import db
 from app.core.realtime import broadcast
-from app.models import UserVoice
 from app.schemas.requests import (
     CreateVoiceProfileRequest,
     DesignVoiceProfileRequest,
-    ImportVoiceProfileRequest,
     UpdateVoiceProfileRequest,
 )
 from app.schemas.serializers import project_json, voice_profile_json
@@ -90,8 +87,9 @@ async def design_project_voice(
     request. The old form asked the user to type them, which is how a series ended up with
     profiles naming a model no synthesiser here could actually voice.
 
-    The designed voice is also saved to the account's library, because a timbre that took a
-    paid request to produce should be reusable in the next series without paying again.
+    The result stays on this project. The standalone voice workspace (`/api/voices`) keeps
+    its own library, and the two are isolated: nothing designed here appears there, and
+    nothing saved there can be imported here.
 
     Queued rather than awaited: Starlette does not cancel a handler on client disconnect, so
     the stop button could only hang up the browser while this ran on and billed. See
@@ -132,59 +130,6 @@ async def design_project_voice(
         data = job_json(job)
     await broadcast(project_id, {"type": "JOB_UPDATE", "projectId": project_id, "jobId": data["id"], "data": data})
     return {"job": data}
-
-
-@router.post("/{project_id}/voices/import", status_code=201)
-async def import_project_voice(
-    project_id: str,
-    body: ImportVoiceProfileRequest,
-    user_id: int = Depends(current_user_id),
-) -> dict[str, Any]:
-    """Bind a timbre already in the account's library to this series.
-
-    Copies the audition rather than referencing the library row: a series' voice sheet must
-    keep working after the user tidies up their library, and the clip is small.
-    """
-    with db() as session:
-        owned_project(session, project_id, user_id)
-        voice = session.exec(
-            select(UserVoice).where(
-                UserVoice.id == body.user_voice_id,
-                UserVoice.user_id == user_id,
-                UserVoice.deleted_at.is_(None),
-            )
-        ).first()
-        if not voice:
-            raise HTTPException(404, "voice not found")
-        source_path = voice.preview_audio_path
-        name = body.name or voice.name or voice.voice_id
-        note = body.note or voice.voice_prompt[:200]
-        target_model = voice.voice_id
-
-    stored = None
-    if source_path:
-        try:
-            stored = store_artifact("voices", project_id, f"{target_model}.wav", artifact_absolute_path(source_path).read_bytes())
-        except (ValueError, OSError):
-            # A library entry whose audition is gone still binds; it just has to be
-            # re-auditioned before it can join the merged sheet.
-            logger.info("imported voice has no readable audition project=%s voice=%s", project_id, body.user_voice_id)
-
-    with db() as session:
-        owned_project(session, project_id, user_id)
-        profile = create_voice_profile(
-            session,
-            project_id,
-            name=name,
-            note=note,
-            voice_provider="qwen",
-            voice_model=target_model,
-            sample_text=body.sample_text or NARRATOR_SAMPLE_TEXT,
-            audio_path=stored,
-        )
-        data = voice_profile_json(profile)
-    await broadcast(project_id, {"type": "VOICE_UPDATE", "projectId": project_id, "data": data})
-    return {"voice": data}
 
 
 @router.patch("/{project_id}/voices/{voice_id}")

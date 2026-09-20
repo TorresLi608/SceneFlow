@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AudioLines,
   Check,
+  Clock,
   Copy,
   Download,
   Film,
@@ -136,6 +137,8 @@ function VideoGenerationEditor({
     queryFn: listVideoHistoryAction,
   });
   const history = historyQuery.data?.items ?? [];
+  // Admin retention window; 0 (or not loaded yet) means nothing expires and no notice is shown.
+  const retentionDays = historyQuery.data?.retentionDays ?? 0;
   const requestController = useRef<AbortController | null>(null);
   const optimizeController = useRef<AbortController | null>(null);
 
@@ -225,6 +228,7 @@ function VideoGenerationEditor({
       queryClient.setQueryData(
         queryKeys.generationHistory("video"),
         (current: GenerationHistoryListResponse | undefined) => ({
+          retentionDays: current?.retentionDays ?? 0,
           items: [response.history, ...(current?.items ?? []).filter((item) => item.id !== response.history.id)],
         })
       );
@@ -391,6 +395,7 @@ function VideoGenerationEditor({
       queryClient.setQueryData(
         queryKeys.generationHistory("video"),
         (current: GenerationHistoryListResponse | undefined) => ({
+          retentionDays: current?.retentionDays ?? 0,
           items: (current?.items ?? []).filter((item) => item.id !== id),
         })
       );
@@ -1057,6 +1062,15 @@ function VideoGenerationEditor({
               {history.length}
             </Badge>
           </div>
+          {retentionDays > 0 ? (
+            <p
+              role="note"
+              className="mb-2 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-4 text-amber-600"
+            >
+              <Clock className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+              <span>{t("common.historyRetentionNotice", { days: retentionDays })}</span>
+            </p>
+          ) : null}
           {history.length ? (
             <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
               {history.map((item) => (

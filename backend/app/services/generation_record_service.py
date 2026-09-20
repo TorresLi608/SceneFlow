@@ -2,7 +2,8 @@
 
 Files land under the private artifact root by kind and user; rows keep the relative path.
 Listing signs a fresh link per row, so history survives the 30-day link TTL and a JWT
-rotation, which a localStorage copy of the signed URL never did.
+rotation, which a localStorage copy of the signed URL never did. Expiry under the admin
+retention windows lives in `retention_service`.
 """
 
 from __future__ import annotations

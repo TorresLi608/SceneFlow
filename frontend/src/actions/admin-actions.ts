@@ -12,6 +12,8 @@ import type {
   InvitationCodeItemResponse,
   InvitationCodeListResponse,
   CreateOfficialConfigInput,
+  GenerationRetentionResponse,
+  GenerationRetentionUpdate,
   ResetAdminUserPasswordResponse,
   RedemptionCodeItemResponse,
   RedemptionCodeListResponse,
@@ -100,5 +102,21 @@ export async function deleteOfficialConfigAction(id: number) {
 
 export async function updateModelConfigAction(id: number, payload: UpdateOfficialConfigInput & { source: "user" | "official" }) {
   const response = await httpClient.patch<AdminDefaultModelItemResponse>(`/api/bff/admin/model-configs/${id}`, payload);
+  return response.data;
+}
+
+export async function getGenerationRetentionAction() {
+  const response = await httpClient.get<GenerationRetentionResponse>("/api/bff/admin/generation-retention");
+  return response.data;
+}
+
+/** Sends only the categories given; the others keep their saved window. */
+export async function updateGenerationRetentionAction(policies: GenerationRetentionUpdate) {
+  const response = await httpClient.patch<GenerationRetentionResponse>("/api/bff/admin/generation-retention", { policies });
+  return response.data;
+}
+
+export async function sweepGenerationRetentionAction() {
+  const response = await httpClient.post<GenerationRetentionResponse>("/api/bff/admin/generation-retention/sweep");
   return response.data;
 }

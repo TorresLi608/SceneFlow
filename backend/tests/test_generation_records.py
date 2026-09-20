@@ -115,6 +115,8 @@ def test_history_endpoints_list_and_delete_for_the_signed_in_account() -> None:
                 listed = client.get("/api/videos/history", headers=headers)
                 assert listed.status_code == 200, listed.text
                 assert [item["id"] for item in listed.json()["items"]] == [record.id]
+                # No retention policy configured: the panel's cleanup notice stays hidden.
+                assert listed.json()["retentionDays"] == 0
                 assert client.get("/api/images/history", headers=headers).json()["items"] == []
 
                 # The same id under the other kind is not found; kinds are separate lists.

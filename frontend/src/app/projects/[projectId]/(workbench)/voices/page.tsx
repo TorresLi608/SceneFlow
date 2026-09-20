@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Download, Loader2, Pencil, Play, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
+import { AudioLines, Loader2, Pencil, Play, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -9,7 +9,6 @@ import { isCanceled } from "@/actions/job-actions";
 import {
   designVoiceProfileAction,
   deleteVoiceAction,
-  importVoiceProfileAction,
   listProjectsAction,
   listVoicesAction,
   mergeVoiceSheetAction,
@@ -17,14 +16,12 @@ import {
   updateVoiceAction,
 } from "@/actions/projects-actions";
 import { queryKeys } from "@/actions/query-keys";
-import { listUserVoicesAction } from "@/actions/voice-generation-actions";
 import { PromptField } from "@/components/prompt-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { artifactBffUrl } from "@/lib/artifact-url";
@@ -36,6 +33,10 @@ import type { VoiceProfile } from "@/types/project";
 /**
  * Designing a voice for this series, mirroring the standalone voice workspace: name it,
  * describe the timbre, audition it, keep it.
+ *
+ * Mirroring the workflow is where the resemblance ends. The standalone workspace's saved
+ * library and this series' voice profiles are isolated: nothing designed here appears
+ * there, and there is no import in the other direction.
  *
  * The provider and model are not asked for. They come from the project's audio
  * configuration, because they are an account credential detail — the old form let a user
@@ -168,73 +169,6 @@ function DesignVoiceCard({ projectId, onError }: { projectId: string; onError: (
           {t("voice.generating")}
         </div>
       ) : null}
-    </section>
-  );
-}
-
-/** Reuse a timbre already on the account rather than paying to design the same voice twice. */
-function ImportVoiceCard({ projectId, onError }: { projectId: string; onError: (message: string) => void }) {
-  const { t } = useI18n();
-  const queryClient = useQueryClient();
-  const [selected, setSelected] = useState("");
-
-  const libraryQuery = useQuery({
-    queryKey: queryKeys.userVoices,
-    queryFn: listUserVoicesAction,
-  });
-  const library = libraryQuery.data?.voices ?? [];
-  const effective = library.some((item) => item.id === selected) ? selected : (library[0]?.id ?? "");
-
-  const importMutation = useMutation({
-    mutationFn: () => importVoiceProfileAction(projectId, { userVoiceId: effective }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.voices(projectId) }),
-    onError: (error) => onError(resolveRequestError(error, t("voice.importFailed"))),
-  });
-
-  const items = library.map((voice) => ({ value: voice.id, label: voice.name || voice.voiceId }));
-
-  return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/40 p-4">
-      <div>
-        <h2 className="text-sm font-semibold">{t("voice.importSection")}</h2>
-        <p className="mt-1 text-xs text-muted-foreground">{t("voice.importSectionHint")}</p>
-      </div>
-
-      {libraryQuery.isLoading ? (
-        <Skeleton className="h-10 rounded-lg" />
-      ) : library.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{t("voice.importEmpty")}</p>
-      ) : (
-        <div className="flex flex-wrap items-end gap-3">
-          <Select items={items} value={effective} onValueChange={(value) => setSelected(value ?? "")}>
-            <SelectTrigger className="w-full max-w-sm" aria-label={t("voice.importSection")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {items.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!effective || importMutation.isPending}
-            onClick={() => importMutation.mutate()}
-          >
-            {importMutation.isPending ? (
-              <Loader2 data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <Download data-icon="inline-start" />
-            )}
-            {t("voice.import")}
-          </Button>
-        </div>
-      )}
     </section>
   );
 }
@@ -487,8 +421,6 @@ export default function VoicesPage() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
         <DesignVoiceCard projectId={projectId} onError={setMessage} />
         <div className="flex flex-col gap-4">
-          <ImportVoiceCard projectId={projectId} onError={setMessage} />
-
           <section className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/40 p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("voice.voiceSheet")}</p>
             {project?.voiceSheetUrl ? (

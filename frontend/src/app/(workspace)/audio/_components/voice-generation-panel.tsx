@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AudioLines,
   Check,
+  Clock,
   Copy,
   Download,
   Loader2,
@@ -46,7 +47,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
-import type { UserVoice } from "@/types/voice-generation";
+import type { UserVoice, UserVoiceListResponse } from "@/types/voice-generation";
 
 function configValue(config: UserConfig) {
   return `${config.source}:${config.id}`;
@@ -133,6 +134,8 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
     queryFn: listUserVoicesAction,
   });
   const savedVoices = voicesQuery.data?.voices ?? [];
+  // Admin retention window for the voice menu; 0 (or not loaded yet) means nothing expires and no notice is shown.
+  const retentionDays = voicesQuery.data?.retentionDays ?? 0;
   const effectiveSavedVoiceId = savedVoices.some((item) => item.id === selectedVoiceId)
     ? selectedVoiceId
     : "";
@@ -186,7 +189,8 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
     onSuccess: ({ voice }) => {
       queryClient.setQueryData(
         queryKeys.userVoices,
-        (current: { voices: UserVoice[] } | undefined) => ({
+        (current: UserVoiceListResponse | undefined) => ({
+          retentionDays: current?.retentionDays ?? 0,
           voices: [voice, ...(current?.voices ?? []).filter((item) => item.id !== voice.id)],
         })
       );
@@ -202,7 +206,10 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
     onSuccess: (_, deletedId) => {
       queryClient.setQueryData(
         queryKeys.userVoices,
-        (current: { voices: UserVoice[] } | undefined) => ({ voices: (current?.voices ?? []).filter((item) => item.id !== deletedId) })
+        (current: UserVoiceListResponse | undefined) => ({
+          retentionDays: current?.retentionDays ?? 0,
+          voices: (current?.voices ?? []).filter((item) => item.id !== deletedId),
+        })
       );
       if (selectedVoiceId === deletedId) setSelectedVoiceId("");
       setErrorMessage(null);
@@ -265,6 +272,15 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
             <p className="text-xs font-semibold">{t("voice.saved")}</p>
             <Badge variant="outline" className="text-[10px]">{savedVoices.length}</Badge>
           </div>
+          {retentionDays > 0 ? (
+            <p
+              role="note"
+              className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-4 text-amber-600"
+            >
+              <Clock className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+              <span>{t("voice.retentionNotice", { days: retentionDays })}</span>
+            </p>
+          ) : null}
           <div className="mt-2 max-h-56 min-h-0 flex-1 space-y-1.5 overflow-y-auto lg:max-h-none pr-1 chat-message-list-scrollbar">
             {savedVoices.map((voice) => (
               <div key={voice.id} className={cn("flex w-full items-center gap-1 rounded-xl px-1", !draftVoice && effectiveSavedVoiceId === voice.id ? "bg-primary/10" : "hover:bg-muted/60")}>

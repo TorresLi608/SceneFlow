@@ -133,7 +133,6 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
   const hydrated = useUserStore((state) => state.hydrated);
   const token = useUserStore((state) => state.token);
   const user = useUserStore((state) => state.user);
-  const setUser = useUserStore((state) => state.setUser);
   const logout = useUserStore((state) => state.logout);
 
   const projects = useProjectStore((state) => state.projects);
@@ -578,31 +577,6 @@ export function WorkbenchEditor({ projectId }: WorkbenchEditorProps) {
     onError: (error) => setStatusMessage(resolveRequestError(error, t("scene.deleteFailed"))),
   });
 
-  useEffect(() => {
-    if (!meQuery.data?.user) {
-      return;
-    }
-
-    setUser(meQuery.data.user);
-  }, [meQuery.data?.user, setUser]);
-
-  useEffect(() => {
-    if (!hydrated) {
-      return;
-    }
-
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
-    if (!meQuery.isError) {
-      return;
-    }
-
-    logout();
-    router.replace("/login");
-  }, [hydrated, token, meQuery.isError, logout, router]);
 
   useEffect(() => {
     if (!projectsQuery.data?.projects) {

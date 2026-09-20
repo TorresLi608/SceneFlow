@@ -45,6 +45,8 @@ export interface ChatAgentStep {
 
 export interface ChatSessionListResponse {
   sessions: ChatSession[];
+  /** Admin retention window for chat in whole days; 0 means conversations are kept forever. */
+  retentionDays: number;
 }
 
 export interface ChatSessionItemResponse {

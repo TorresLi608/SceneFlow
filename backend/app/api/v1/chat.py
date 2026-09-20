@@ -17,6 +17,7 @@ from app.services.artifact_service import artifact_from_token
 from app.services.chat_service import begin_chat_turn, create_chat_session, delete_chat_session, list_chat_messages, list_chat_sessions, prepare_chat_turn, save_chat_message
 from app.services.config_service import active_model_config
 from app.services.error_log_service import record_http_error
+from app.services.system_setting_service import retention_days
 from app.services.usage_service import record_usage
 
 
@@ -47,8 +48,13 @@ def get_artifact(token: str) -> FileResponse:
 
 @router.get("/sessions")
 def get_sessions(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """The account's conversations plus the admin retention window for chat (0 = kept forever).
+
+    A session expires after `retentionDays` without activity, together with its messages
+    and any images or documents its tools generated.
+    """
     with db() as session:
-        return {"sessions": list_chat_sessions(session, user_id)}
+        return {"sessions": list_chat_sessions(session, user_id), "retentionDays": retention_days(session, "chat")}
 
 
 @router.post("/sessions", status_code=201)

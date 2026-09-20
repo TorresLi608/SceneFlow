@@ -614,14 +614,6 @@ export interface DesignVoiceProfileInput {
   sampleText?: string;
 }
 
-/** Bind a timbre already saved on the account to this series. */
-export interface ImportVoiceProfileInput {
-  userVoiceId: string;
-  name?: string;
-  note?: string;
-  sampleText?: string;
-}
-
 export interface VoiceProfileListResponse {
   voices: VoiceProfile[];
 }

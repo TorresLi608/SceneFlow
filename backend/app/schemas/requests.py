@@ -465,15 +465,6 @@ class DesignVoiceProfileRequest(CamelModel):
     voice_id: str | None = Field(default=None, max_length=64)
 
 
-class ImportVoiceProfileRequest(CamelModel):
-    """Bind a timbre already saved on the account to this series."""
-
-    user_voice_id: str = Field(min_length=1, max_length=64)
-    name: str = Field(default="", max_length=80)
-    note: str = Field(default="", max_length=4000)
-    sample_text: str = Field(default="", max_length=1000)
-
-
 class ComposeEpisodeRequest(CamelModel):
     scene_ids: list[str] = Field(min_length=1, max_length=MAX_EXPORT_CLIPS)
 

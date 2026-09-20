@@ -101,3 +101,28 @@ export interface AdminDefaultModelListResponse {
 export type CreateOfficialConfigInput = CreateUserConfigInput;
 export type UpdateOfficialConfigInput = UpdateUserConfigInput;
 export type AdminDefaultModelItemResponse = UserConfigItemResponse;
+
+/** The standalone menus that carry a retention window. Project media never has one. */
+export type RetentionCategory = "image" | "video" | "chat" | "voice";
+
+export const RETENTION_CATEGORIES: readonly RetentionCategory[] = ["image", "video", "chat", "voice"];
+
+export interface RetentionPolicy {
+  /** Whole days; 0 keeps everything. */
+  retentionDays: number;
+  /** Live rows the next sweep would remove under this window. */
+  expiredCount: number;
+  updatedAt: string | null;
+  /** Present on the manual sweep response only. */
+  removedCount?: number;
+}
+
+/** One retention window per standalone menu; `maxDays` is the shared upper bound. */
+export interface GenerationRetentionResponse {
+  policies: Record<RetentionCategory, RetentionPolicy>;
+  maxDays: number;
+  /** Total rows removed, present on the manual sweep response only. */
+  removedCount?: number;
+}
+
+export type GenerationRetentionUpdate = Partial<Record<RetentionCategory, { retentionDays: number }>>;

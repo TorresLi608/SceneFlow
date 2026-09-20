@@ -32,7 +32,6 @@ import type {
   GenerateVideoInput,
   GenerateVideoResponse,
   GenerationReferenceKind,
-  ImportVoiceProfileInput,
   OptimizeProjectInput,
   OptimizeProjectResponse,
   ParseProjectInput,
@@ -588,15 +587,6 @@ export async function designVoiceProfileAction(
       .then((response) => response.data),
     signal
   );
-}
-
-/** Binds a timbre already saved on the account to this series. */
-export async function importVoiceProfileAction(projectID: string, payload: ImportVoiceProfileInput) {
-  const response = await httpClient.post<VoiceProfileItemResponse>(
-    `/api/bff/projects/${projectID}/voices/import`,
-    payload
-  );
-  return response.data;
 }
 
 /** Synthesises the profile's sample line so the user can hear it before binding it. */

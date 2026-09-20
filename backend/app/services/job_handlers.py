@@ -22,7 +22,6 @@ from typing import Any
 from app.core.config import PRIVATE_GENERATED_DIR
 from app.core.database import db
 from app.core.realtime import broadcast
-from app.models import UserVoice
 from app.schemas.serializers import voice_profile_json
 from app.services.artifact_service import artifact_relative_path, store_artifact
 from app.services.character_service import character_payload, owned_character, owned_state
@@ -40,7 +39,7 @@ from app.services.reference_service import draft_prompt, draw_reference, image_c
 from app.services.tts_service import BUILTIN_TTS, synthesize
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.voice_service import create_voice_profile, owned_voice_profile
-from app.utils.common import new_id, now
+from app.utils.common import now
 
 
 logger = logging.getLogger(__name__)
@@ -138,10 +137,11 @@ async def draft_reference_prompt(job: dict[str, Any]) -> dict[str, Any]:
 
 @register("voice_design")
 async def design_voice(job: dict[str, Any]) -> dict[str, Any]:
-    """Design a timbre, bind it to this series, and keep it in the account's library.
+    """Design a timbre and bind it to this series.
 
-    The library copy is the point of the second write: a timbre that took a paid request to
-    produce should be reusable in the next series without paying again.
+    The result lives only on the project's voice profile. It used to be mirrored into the
+    account's standalone voice library as well, but the two workspaces are now isolated:
+    project voices never appear on `/audio`, and library voices never enter a project.
     """
     payload = job["input"]
     project_id = job["projectId"]
@@ -162,21 +162,6 @@ async def design_voice(job: dict[str, Any]) -> dict[str, Any]:
     stamp = now()
     with db() as session:
         owned_project(session, project_id, user_id)
-        session.add(
-            UserVoice(
-                id=new_id("user-voice"),
-                created_at=stamp,
-                updated_at=stamp,
-                user_id=user_id,
-                voice_id=voice_id,
-                target_model=str(config["model"]),
-                name=payload["name"],
-                voice_prompt=payload["voicePrompt"],
-                preview_text=payload["previewText"],
-                preview_audio_path=stored,
-                is_saved=True,
-            )
-        )
         target_voice_id = payload.get("voiceId") or payload.get("voice_id")
         if target_voice_id:
             profile = owned_voice_profile(session, project_id, target_voice_id)
