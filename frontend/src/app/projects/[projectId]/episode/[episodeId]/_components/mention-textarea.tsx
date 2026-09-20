@@ -51,7 +51,7 @@ function markerAliases(label: string, index: number, media: ReferenceAssetOption
 
 function refsFromSegments(segments: Segment[]): GenerationReferenceInput[] {
   const seen = new Set<string>();
-  return getChips(segments).flatMap((item) => {
+  return getChips(segments).flatMap((item: ChipSegment) => {
     const data = item.data as { kind?: string; id?: string } | undefined;
     const [kind, id] = String(item.value).split(":");
     const reference = { kind: (data?.kind ?? kind) as GenerationReferenceKind, id: data?.id ?? id };
@@ -181,7 +181,7 @@ export function MentionTextarea({
   const [mediaFilter, setMediaFilter] = useState<ReferenceMedia | "all">("all");
   const [segments, setSegments] = useState<Segment[]>(() => initialSegments(value, references, assets));
   const effectiveSegments = segmentsToPlainText(segments) === value ? segments : initialSegments(value, references, assets);
-  const chips = getChips(effectiveSegments);
+  const chips: ChipSegment[] = getChips(effectiveSegments);
 
   const emit = (next: Segment[]) => {
     const nextPrompt = segmentsToPlainText(next);
