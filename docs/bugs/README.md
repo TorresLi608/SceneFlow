@@ -10,6 +10,7 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20260920-mention-escape-cursor-position | MentionTextarea、PromptArea、Combobox、Escape、Esc、光标位置、cursorPosition、finalFocus | 输入框键入 @ 弹出素材引用浮层后按 Esc 键关闭，光标默认被重置到输入框开头；现引入 PromptArea Handle 并在关闭浮层后精准还原字符偏移量与选区 | 已修复，类型检查、Lint 与单测通过 | 2026-09-20 | [MentionTextarea Esc 光标还原](2026-09-20-mention-escape-cursor-position.md) |
 | BUG-20260918-chat-image-tool-result-display | 智能问答、生成图片、generate_image、执行流程、agent_step、工具失败、Streamdown img、全屏预览、本地下载 | 图片工具结果只在流程框显示且模型手抄长 URL 导致坏链报错与重复；现升级为精致图片卡片、点击全屏 Lightbox 预览、BFF 本地下载、后端智能替换纠错 | 已修复，前后端回归与浏览器实测通过 | 2026-09-18 | [聊天图片工具结果展示](2026-09-18-chat-image-tool-result-display.md) |
 | BUG-20260914-request-unit-metering | 视频、按次、按秒、unitName、quantity、record_usage | 按次配置仍按视频时长乘价；共享计费入口统一按次数量为 1，视频表单支持两种单位并保留保存值 | 本地专项回归通过，完整配置套件有既有失败 | 2026-09-14 | [按次计费量](2026-09-14-request-unit-metering.md) |
 | BUG-20260910-chat-composer-draft-focus | 智能问答、输入框、焦点、草稿、isSendDisabled、isSending | 发送时整体禁用输入且等待回复结束才恢复焦点；现改为立即聚焦、持续编辑并单独限制发送 | 本地检查和模拟流浏览器验证通过 | 2026-09-10 | [聊天输入框焦点与草稿](2026-09-10-chat-composer-draft-focus.md) |
