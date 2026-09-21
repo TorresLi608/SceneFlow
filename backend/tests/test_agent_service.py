@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.services import agent_service, artifact_service
 from app.llms.router import ModelRouter, _content_text, _json_object, _reasoning_text
@@ -298,6 +298,32 @@ def test_agent_system_prompt_temporal_and_search_optimization() -> None:
         assert "严禁包含问号" in prompt
 
 
+def test_final_answer_does_not_leak_prior_turn_messages() -> None:
+    # 模拟包含两轮历史和一个新用户提问的状态
+    # 历史: Human(0), AI(1), Human(2), AI(3)
+    # 本轮: Human(4), AI(5, content="")
+    output = {
+        "messages": [
+            HumanMessage(content="成都天气如何"),
+            AIMessage(content="今天成都多云转阵雨"),
+            HumanMessage(content="10月份穿什么衣服"),
+            AIMessage(content="如果10月去成都旅游建议穿外套"),
+            HumanMessage(content="牛逼"),
+            AIMessage(content=""),
+        ]
+    }
+    # 基础消息数为 5（前4条历史+第5条新提问）
+    base_count = 5
+    # 验证在新消息为空时，_final_answer 绝对不会往回翻出第 3 条消息的穿衣指南
+    answer = agent_service._final_answer(output, base_count=base_count)
+    assert answer == "", f"Expected empty answer, got: {answer}"
+
+    # 验证如果有新内容，能正确提取新内容
+    output["messages"][-1] = AIMessage(content="哈哈，能帮上忙就好！")
+    new_answer = agent_service._final_answer(output, base_count=base_count)
+    assert new_answer == "哈哈，能帮上忙就好！"
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
@@ -312,4 +338,6 @@ if __name__ == "__main__":
     test_web_search_tool_unconfigured_skips_registration()
     test_web_search_tool_configured_and_executes()
     test_agent_system_prompt_temporal_and_search_optimization()
+    test_final_answer_does_not_leak_prior_turn_messages()
+
 

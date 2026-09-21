@@ -113,11 +113,19 @@ function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; is
 
   if (isStreaming) {
     if (runningStep) {
-      summaryText = runningStep.detail
-        ? `${runningStep.label}: ${runningStep.detail}`
-        : `${runningStep.label}...`;
+      if (
+        runningStep.id === "agent_generate" ||
+        runningStep.label.includes("回复") ||
+        runningStep.label.includes("回答")
+      ) {
+        summaryText = t("chat.generatingResponse");
+      } else {
+        summaryText = runningStep.detail
+          ? `${runningStep.label}: ${runningStep.detail}`
+          : `${runningStep.label}...`;
+      }
     } else {
-      summaryText = "正在组织回答...";
+      summaryText = t("chat.generatingResponse");
     }
   } else if (hasSearch && searchStep?.detail && searchStep.detail.includes("条")) {
     summaryText = searchStep.detail;

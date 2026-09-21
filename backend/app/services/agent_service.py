@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from dataclasses import dataclass
+import logging
 import re
 import time
 from typing import Any, Literal
@@ -21,6 +22,8 @@ from app.services.crawl_service import crawl_web_page
 from app.services.error_log_service import error_log_json, find_error_logs
 from app.services.searxng_service import extract_search_step_summary, is_searxng_configured, search_searxng
 from app.services.usage_service import aggregate_token_usage, record_usage, require_model_balance
+
+logger = logging.getLogger(__name__)
 
 
 def _current_time_context() -> str:
@@ -221,9 +224,10 @@ def _agent(config: dict[str, Any], session_id: str, image_config: dict[str, Any]
     )
 
 
-def _final_answer(output: Any) -> str:
+def _final_answer(output: Any, base_count: int = 0) -> str:
     messages = output.get("messages", []) if isinstance(output, dict) else []
-    for message in reversed(messages):
+    new_messages = messages[base_count:]
+    for message in reversed(new_messages):
         if isinstance(message, AIMessage):
             content = _content_text(message.content).strip()
             if content:
@@ -272,9 +276,10 @@ def _failure_notice(tool_name: str, output: Any) -> str:
     return f"> ⚠️ {label}：{_failure_reason(output)}"
 
 
-def _tool_messages(output: Any) -> list[Any]:
+def _tool_messages(output: Any, base_count: int = 0) -> list[Any]:
     messages = output.get("messages", []) if isinstance(output, dict) else []
-    return [message for message in messages if getattr(message, "type", "") == "tool"]
+    new_messages = messages[base_count:]
+    return [message for message in new_messages if getattr(message, "type", "") == "tool"]
 
 
 def _artifact_markdowns(tool_messages: list[Any]) -> list[str]:
@@ -349,9 +354,9 @@ def _missing_tool_outcomes(tool_messages: list[Any], answer: str) -> list[str]:
     return missing
 
 
-def _answer_with_artifacts(output: Any, tool_messages: list[Any] | None = None) -> str:
-    raw_answer = _final_answer(output)
-    messages = _tool_messages(output) if tool_messages is None else tool_messages
+def _answer_with_artifacts(output: Any, tool_messages: list[Any] | None = None, base_count: int = 0) -> str:
+    raw_answer = _final_answer(output, base_count=base_count)
+    messages = _tool_messages(output, base_count=base_count) if tool_messages is None else tool_messages
     answer, missing = _reconcile_tool_artifacts(raw_answer, messages)
     if missing:
         answer = (answer + "\n\n" if answer else "") + "\n\n".join(missing)
@@ -366,18 +371,20 @@ async def run_chat_agent(
     user_id: int | None = None,
 ) -> AgentResult:
     agent = _agent(config, session_id, image_config, user_id)
+    base_messages = _lc_messages(messages, config["provider"])
+    base_count = len(base_messages)
     with get_usage_metadata_callback() as usage_callback:
         output = await agent.ainvoke(
-            {"messages": _lc_messages(messages, config["provider"])},
+            {"messages": base_messages},
             config={"recursion_limit": 12},
         )
-    answer = _answer_with_artifacts(output)
+    answer = _answer_with_artifacts(output, base_count=base_count)
     if not answer:
         raise ValueError("empty content from agent")
     usage = aggregate_token_usage(usage_callback.usage_metadata)
     if not any(usage.values()):
         usage = aggregate_token_usage(
-            {str(index): message.usage_metadata for index, message in enumerate(output.get("messages", [])) if isinstance(message, AIMessage) and message.usage_metadata}
+            {str(index): message.usage_metadata for index, message in enumerate(output.get("messages", [])[base_count:]) if isinstance(message, AIMessage) and message.usage_metadata}
         )
     return AgentResult(answer, usage)
 
@@ -398,6 +405,9 @@ async def stream_chat_agent(
     has_started_tools = False
     has_started_generation = False
 
+    base_messages = _lc_messages(messages, config["provider"])
+    base_count = len(base_messages)
+
     yield {
         "type": "agent_step",
         "step": {
@@ -410,7 +420,7 @@ async def stream_chat_agent(
 
     with get_usage_metadata_callback() as usage_callback:
         async for event in agent.astream_events(
-            {"messages": _lc_messages(messages, config["provider"])},
+            {"messages": base_messages},
             config={"recursion_limit": 12},
             version="v2",
         ):
@@ -433,9 +443,9 @@ async def stream_chat_agent(
                         "type": "agent_step",
                         "step": {
                             "id": "agent_generate",
-                            "label": "组织回答",
+                            "label": "生成回复",
                             "status": "running",
-                            "detail": "整合信息并输出",
+                            "detail": "正在生成回复内容",
                         },
                     }
                 chunk = event["data"]["chunk"]
@@ -504,26 +514,64 @@ async def stream_chat_agent(
                 "detail": "分析完成",
             },
         }
+
+    # Tool outcomes come from the observed tool events, so they survive a run whose root
+    # on_chain_end never arrived (a stop or a provider failure after the tool finished).
+    tool_messages = tool_outputs or _tool_messages(final_output, base_count=base_count)
+    answer = _answer_with_artifacts(final_output, tool_messages, base_count=base_count)
+    if not answer and streamed_content.strip():
+        answer = streamed_content.strip()
+
+    # 部分中转平台在配置 tools 且提问为纯闲聊/反馈时，流式可能异常丢弃 content 返回空流；
+    # 在未执行任何工具且全流程无输出时，自动通过纯文本模型流式补救，确保常规问答顺畅应答
+    if not has_started_tools and not streamed_content.strip() and not answer.strip():
+        logger.info("Agent stream produced empty content without tools; fallback to plain chat model stream")
+        if not has_started_generation:
+            has_started_generation = True
+            yield {
+                "type": "agent_step",
+                "step": {
+                    "id": "agent_generate",
+                    "label": "生成回复",
+                    "status": "running",
+                    "detail": "正在生成回复内容",
+                },
+            }
+        plain_model = models.chat_model(
+            config["provider"],
+            config["apiKey"],
+            config["model"],
+            config.get("baseUrl", ""),
+            temperature=0.3,
+            max_tokens=4096,
+        )
+        async for chunk in plain_model.astream(base_messages):
+            reasoning = _reasoning_text(chunk.content, chunk.additional_kwargs)
+            content = _content_text(chunk.content)
+            if reasoning:
+                yield {"type": "reasoning_delta", "content": reasoning}
+            if content:
+                streamed_content += content
+                yield {"type": "content_delta", "content": content}
+        answer = streamed_content.strip()
+
     if has_started_generation:
         yield {
             "type": "agent_step",
             "step": {
                 "id": "agent_generate",
-                "label": "组织回答",
+                "label": "生成回复",
                 "status": "done",
                 "detail": "回复生成完成",
             },
         }
-    # Tool outcomes come from the observed tool events, so they survive a run whose root
-    # on_chain_end never arrived (a stop or a provider failure after the tool finished).
-    tool_messages = tool_outputs or _tool_messages(final_output)
-    answer = _answer_with_artifacts(final_output, tool_messages)
+
     missing = _missing_tool_outcomes(tool_messages, streamed_content)
     if missing:
         yield {"type": "content_delta", "content": ("\n\n" if streamed_content else "") + "\n\n".join(missing)}
     usage = aggregate_token_usage(usage_callback.usage_metadata)
     if not any(usage.values()) and isinstance(final_output, dict):
         usage = aggregate_token_usage(
-            {str(index): message.usage_metadata for index, message in enumerate(final_output.get("messages", [])) if isinstance(message, AIMessage) and message.usage_metadata}
+            {str(index): message.usage_metadata for index, message in enumerate(final_output.get("messages", [])[base_count:]) if isinstance(message, AIMessage) and message.usage_metadata}
         )
     yield {"type": "agent_complete", "content": answer, "usage": usage}
