@@ -172,11 +172,11 @@ async def stream_message(
                         reasoning.strip(),
                     )
                     saved = True
-                    try:
-                        record_usage(user_id, config, "chat", started_at, usage)
-                    except Exception:
-                        pass
-                    return msg
+                try:
+                    record_usage(user_id, config, "chat", started_at, usage)
+                except Exception as usage_err:
+                    logger.warning("Failed to record chat usage: %s", usage_err)
+                return msg
             except Exception as save_err:
                 logger.warning("Failed to persist assistant message: %s", save_err)
                 return None

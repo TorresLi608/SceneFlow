@@ -9,7 +9,7 @@
 按最近更新日期倒序维护；同一天按首次记录日期倒序。每个详情文档只保留一行索引。
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
-|---|---|---|---|---|---|
+| BUG-20260921-chat-stream-busy-timeout-lag | 智能问答、延迟结束、悬挂、持续几秒钟才结束、busy_timeout、database is locked、SQLite 写锁死锁、persist_assistant_message、record_usage | 智能问答流式输出完毕后持久化层在未提交的 SQLite 写事务内嵌套调用 record_usage 触发单写锁死锁，阻塞重试直至 30s busy_timeout 超时才结束；现将计费日志解耦移至独立事务，回复结束时延从 31s 骤降至 0.01s | 已修复，真实端到端时序测量与全套单测通过 | 2026-09-21 | [智能问答回复完毕后延迟关闭](2026-09-21-chat-stream-busy-timeout-lag.md) |
 | BUG-20260921-chat-repeat-previous-answer | 智能问答、多轮对话、重复回复、一模一样、_final_answer、base_count、stream_chat_agent、agent_complete、persist_assistant_message | 连续多轮对话后模型未生成新正文时 _final_answer 越界回溯历史 AIMessage 导致重复输出并持久化上一轮回复；现限定只在当前轮次新增消息中检索 AIMessage 与工具产物，杜绝历史串味 | 已修复，单测回归与端到端复现通过 | 2026-09-21 | [多轮对话重复上一轮回答](2026-09-21-chat-repeat-previous-answer.md) |
 | BUG-20260920-episode-migration-test-scenes | test_episode_migration、NoSuchTableError、scenes、a1b2c3d4e5f6、LEGACY_SCHEMA、alembic、旧库升级 | 从无 episodes 表的旧库跑 init_db 时迁移链在 explicit_scene_references 处报 scenes 表不存在，四个用例全部失败；已在 HEAD 复现确认为既有问题 | 已确认未修复，未排查根因 | 2026-09-20 | [test_episode_migration 旧库升级失败](2026-09-20-episode-migration-test-scenes.md) |
 | BUG-20260920-unauthorized-projects-redirect | 未登录、跳转登录、AuthGuard、projects、workbench、redirect、401、路由守卫 | 未登录访问 projects 菜单未重定向并导致 401 报错；现引入统一 AuthGuard 覆盖全站页面并支持登录后平滑回跳 | 已修复，类型检查、Lint 与单测通过 | 2026-09-20 | [未登录访问 projects 重定向](2026-09-20-unauthorized-projects-redirect.md) |
