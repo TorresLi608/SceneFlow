@@ -39,12 +39,6 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
     void chat.sendMessage(lastUserMessage.content, lastUserMessage.attachments);
   }, [chat]);
 
-  const suggestions = [
-    { text: t("chat.suggestion1"), prompt: "构思一部微短剧大纲，包含主角人设、核心冲突与前三集悬念反转。" },
-    { text: t("chat.suggestion2"), prompt: "设定一名悬疑短剧主角的视觉概念特征，并描述开场关键分镜画面。" },
-    { text: t("chat.suggestion3"), prompt: "检索今天有哪些实时热点资讯与最新发生的重要事件？" },
-    { text: t("chat.suggestion4"), prompt: "帮我起草一份微短剧项目的策划案框架，包括题材定位、受众分析与拍摄预算。" },
-  ];
 
   const sidebar = (
     <ChatSidebar
@@ -114,20 +108,6 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {suggestions.map((item, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => void chat.sendMessage(item.prompt)}
-                    disabled={!chat.selectedConfig || chat.isBusy}
-                    className="flex flex-col gap-1 rounded-2xl border border-border/70 bg-card/60 p-3.5 text-left text-xs text-muted-foreground transition-all hover:bg-accent hover:text-foreground hover:border-foreground/20 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none shadow-2xs cursor-pointer"
-                  >
-                    <span className="font-medium text-foreground line-clamp-1">{item.text}</span>
-                    <span className="line-clamp-1 text-muted-foreground/80">{item.prompt}</span>
-                  </button>
-                ))}
-              </div>
 
               <p className="text-center text-xs text-muted-foreground/75 select-none">
                 {t("chat.disclaimer")}

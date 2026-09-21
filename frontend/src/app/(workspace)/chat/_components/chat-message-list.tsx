@@ -39,19 +39,128 @@ function StepKindIcon({ label, className }: { label: string; className?: string 
   if (label.includes("搜索") || label.includes("web") || label.includes("Search")) {
     return <Globe className={className} />;
   }
-  if (label.includes("历史") || label.includes("上下文")) {
+  if (label.includes("历史") || label.includes("上下文") || label.includes("Context")) {
     return <Clock className={className} />;
   }
-  if (label.includes("图片") || label.includes("视觉")) {
+  if (label.includes("图片") || label.includes("视觉") || label.includes("Image")) {
     return <ImageIcon className={className} />;
   }
   if (label.includes("文档") || label.includes("PDF") || label.includes("Word")) {
     return <FileText className={className} />;
   }
-  if (label.includes("分析") || label.includes("思考") || label.includes("意图")) {
+  if (label.includes("分析") || label.includes("思考") || label.includes("意图") || label.includes("Intent")) {
     return <Sparkles className={className} />;
   }
   return <Bot className={className} />;
+}
+
+function formatStepLabel(
+  step: ChatAgentStep,
+  t: (key: string, params?: Record<string, string | number>) => string,
+  locale: string
+): string {
+  if (locale !== "en") return step.label;
+
+  const id = (step.id || "").toLowerCase();
+  const label = step.label || "";
+
+  if (id === "load_context" || label.includes("加载历史") || label.includes("上下文")) {
+    return t("chat.stepLoadContext");
+  }
+  if (id === "compress_context" || label.includes("长期记忆") || label.includes("压缩")) {
+    return t("chat.stepCompressContext");
+  }
+  if (id === "agent_analyze" || label.includes("意图分析")) {
+    return t("chat.stepIntentAnalysis");
+  }
+  if (id === "agent_generate" || label.includes("生成回复") || label.includes("组织回答")) {
+    return t("chat.stepGenerateResponse");
+  }
+  if (id === "save_message" || label.includes("保存回复")) {
+    return t("chat.stepSaveMessage");
+  }
+  if (id === "runtime_error" || label.includes("失败")) {
+    return t("chat.stepRuntimeError");
+  }
+  if (label.includes("搜索") || id.includes("web_search")) {
+    return t("chat.stepWebSearch");
+  }
+  if (label.includes("网页") || id.includes("fetch_web_content")) {
+    return t("chat.stepFetchWebContent");
+  }
+  if (label.includes("图片") || id.includes("generate_image")) {
+    return t("chat.stepGenerateImage");
+  }
+  if (label.includes("PDF") || id.includes("generate_pdf")) {
+    return t("chat.stepGeneratePdf");
+  }
+  if (label.includes("Word") || id.includes("generate_word")) {
+    return t("chat.stepGenerateWord");
+  }
+  if (label.includes("日志") || id.includes("error_log")) {
+    return t("chat.stepSearchErrorLogs");
+  }
+
+  return step.label;
+}
+
+function formatStepDetail(detail: string | undefined, locale: string): string {
+  if (!detail || locale !== "en") return detail || "";
+
+  // 模型 xxx -> Model xxx
+  const modelMatch = detail.match(/^模型\s*(.+)$/);
+  if (modelMatch) return `Model ${modelMatch[1]}`;
+
+  // x 条历史，约 y tokens -> x history messages, ~y tokens
+  const historyMatch = detail.match(/^(\d+)\s*条历史[，,\s]*约\s*(\d+)\s*tokens?$/);
+  if (historyMatch) return `${historyMatch[1]} history messages, ~${historyMatch[2]} tokens`;
+
+  // 检索「xxx」 -> Searching "xxx"
+  const searchMatch = detail.match(/^检索[「"“](.+?)[」"”]$/);
+  if (searchMatch) return `Searching "${searchMatch[1]}"`;
+
+  // 抓取「xxx」 -> Fetching "xxx"
+  const fetchMatch = detail.match(/^抓取[「"“](.+?)[」"”]$/);
+  if (fetchMatch) return `Fetching "${fetchMatch[1]}"`;
+
+  // 提示词「xxx」 -> Prompt: "xxx"
+  const promptMatch = detail.match(/^提示词[「"“](.+?)[」"”]$/);
+  if (promptMatch) return `Prompt: "${promptMatch[1]}"`;
+
+  // 文档「xxx」 -> Document: "xxx"
+  const docMatch = detail.match(/^文档[「"“](.+?)[」"”]$/);
+  if (docMatch) return `Document: "${docMatch[1]}"`;
+
+  // 精选 x 条相关网页结果 -> x relevant search results
+  const resultMatch = detail.match(/^精选\s*(\d+)\s*条相关网页结果$/);
+  if (resultMatch) return `${resultMatch[1]} relevant search results`;
+
+  // 提取完成，共 x 字符 -> Extracted x characters
+  const extractMatch = detail.match(/^提取完成[，,\s]*共\s*(\d+)\s*字符$/);
+  if (extractMatch) return `Extracted ${extractMatch[1]} characters`;
+
+  // 上下文超过 x token 预算 -> Context exceeds x token budget
+  const budgetMatch = detail.match(/^上下文超过\s*(\d+)\s*token\s*预算$/);
+  if (budgetMatch) return `Context exceeds ${budgetMatch[1]} token budget`;
+
+  // 保留最近 x 条明细消息 -> Retained latest x messages
+  const retainMatch = detail.match(/^保留最近\s*(\d+)\s*条明细消息$/);
+  if (retainMatch) return `Retained latest ${retainMatch[1]} messages`;
+
+  // 固定短语
+  const exactMap: Record<string, string> = {
+    "分析完成": "Analysis completed",
+    "分析完成，调用工具": "Analysis completed, calling tools",
+    "正在生成回复内容": "Generating response content",
+    "回复生成完成": "Response generation completed",
+    "已写入 SQLite": "Saved to SQLite",
+  };
+
+  if (exactMap[detail]) {
+    return exactMap[detail];
+  }
+
+  return detail;
 }
 
 function StepStatusBadge({ status }: { status: ChatAgentStep["status"] }) {
@@ -85,7 +194,7 @@ function StepStatusBadge({ status }: { status: ChatAgentStep["status"] }) {
 }
 
 function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; isStreaming: boolean }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
 
   // 步骤去重：相同标签与详情的已完成步骤合并，避免由于模型并发调用导致冗余刷屏
@@ -108,8 +217,11 @@ function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; is
   const activeStep = runningStep ?? uniqueSteps.at(-1);
 
   let summaryText = t("chat.agentSteps");
-  const searchStep = uniqueSteps.find((s) => s.label.includes("搜索"));
+  const searchStep = uniqueSteps.find((s) => s.label.includes("搜索") || s.id.includes("search"));
   const hasSearch = Boolean(searchStep);
+
+  const formattedRunningLabel = runningStep ? formatStepLabel(runningStep, t, locale) : "";
+  const formattedRunningDetail = runningStep?.detail ? formatStepDetail(runningStep.detail, locale) : "";
 
   if (isStreaming) {
     if (runningStep) {
@@ -120,19 +232,21 @@ function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; is
       ) {
         summaryText = t("chat.generatingResponse");
       } else {
-        summaryText = runningStep.detail
-          ? `${runningStep.label}: ${runningStep.detail}`
-          : `${runningStep.label}...`;
+        summaryText = formattedRunningDetail
+          ? `${formattedRunningLabel}: ${formattedRunningDetail}`
+          : `${formattedRunningLabel}...`;
       }
     } else {
       summaryText = t("chat.generatingResponse");
     }
-  } else if (hasSearch && searchStep?.detail && searchStep.detail.includes("条")) {
-    summaryText = searchStep.detail;
+  } else if (hasSearch && searchStep?.detail && (searchStep.detail.includes("条") || searchStep.detail.includes("results"))) {
+    summaryText = formatStepDetail(searchStep.detail, locale);
   } else {
     const doneCount = uniqueSteps.filter((s) => s.status === "done").length;
     summaryText = t("chat.stepsCompleted", { count: doneCount });
   }
+
+  const activeLabel = activeStep ? formatStepLabel(activeStep, t, locale) : "";
 
   return (
     <div className="mb-3 block max-w-full text-xs">
@@ -158,7 +272,7 @@ function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; is
             ) : hasSearch ? (
               <Globe className="size-3.5 shrink-0 text-blue-500" />
             ) : (
-              <StepKindIcon label={activeStep?.label ?? ""} className="size-3.5 shrink-0 text-emerald-500" />
+              <StepKindIcon label={activeLabel} className="size-3.5 shrink-0 text-emerald-500" />
             )}
             <span className="truncate font-medium text-foreground text-xs">
               {summaryText}
@@ -174,6 +288,8 @@ function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; is
           <div className="border-t border-border/50 px-4 py-3 bg-background/40 space-y-2.5">
             <div className="relative pl-5 space-y-3 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-border/60">
               {uniqueSteps.map((step) => {
+                const label = formatStepLabel(step, t, locale);
+                const detail = formatStepDetail(step.detail, locale);
                 return (
                   <div key={step.id} className="relative flex items-start gap-2.5">
                     <span className="absolute -left-5 mt-0.5">
@@ -181,12 +297,12 @@ function AgentExecutionFlow({ steps, isStreaming }: { steps: ChatAgentStep[]; is
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 font-medium text-foreground text-xs">
-                        <StepKindIcon label={step.label} className="size-3.5 text-muted-foreground/80" />
-                        <span>{step.label}</span>
+                        <StepKindIcon label={label} className="size-3.5 text-muted-foreground/80" />
+                        <span>{label}</span>
                       </div>
-                      {step.detail ? (
+                      {detail ? (
                         <p className="mt-0.5 text-[11px] text-muted-foreground font-mono truncate leading-relaxed">
-                          {step.detail}
+                          {detail}
                         </p>
                       ) : null}
                     </div>
