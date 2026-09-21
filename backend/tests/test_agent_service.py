@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import tempfile
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -220,6 +220,84 @@ def test_breakdown_payload_recovers_complete_shots_from_a_truncated_array() -> N
     assert payload["shots"] == [{"narration": "第一镜", "visualPrompt": "山门"}]
 
 
+def test_web_search_tool_unconfigured_skips_registration() -> None:
+    from app.core import config
+
+    with patch.object(config, "SEARXNG_BASE_URL", ""):
+        tools = agent_service.create_chat_tools("chat_test", None)
+        tool_names = [t.name for t in tools]
+        assert "web_search" not in tool_names
+
+
+def test_web_search_tool_configured_and_executes() -> None:
+    from app.core import config
+    from unittest.mock import patch
+
+    async def _test():
+        with (
+            patch.object(config, "SEARXNG_BASE_URL", "http://searxng.test:8080"),
+            patch(
+                "app.services.agent_service.search_searxng",
+                AsyncMock(return_value="### 网页搜索结果（关键词：SceneFlow 资讯）\n\n1. [SceneFlow 发布](https://example.com)\n   最新 AI 生剧工作流上线。"),
+            ),
+        ):
+            tools = agent_service.create_chat_tools("chat_test", None)
+            tool_names = [t.name for t in tools]
+            assert "web_search" in tool_names
+
+            model = ToolFakeModel(
+                disable_streaming=True,
+                responses=[
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "web_search",
+                                "args": {"query": "SceneFlow 资讯"},
+                                "id": "call_search_1",
+                            }
+                        ],
+                    ),
+                    AIMessage(content="据搜索，最新 AI 生剧工作流已上线 [SceneFlow 发布](https://example.com)。"),
+                ],
+            )
+            fake_agent = create_agent(model=model, tools=tools)
+            original_agent = agent_service._agent
+            agent_service._agent = lambda *args, **kwargs: fake_agent
+            try:
+                events = [
+                    event
+                    async for event in agent_service.stream_chat_agent(
+                        {"provider": "openai", "apiKey": "test", "model": "fake", "baseUrl": ""},
+                        "chat_test",
+                        [{"role": "user", "content": "帮我搜索 SceneFlow 资讯"}],
+                        None,
+                    )
+                ]
+            finally:
+                agent_service._agent = original_agent
+
+            search_steps = [
+                e["step"] for e in events if e["type"] == "agent_step" and e["step"]["label"] == "网络搜索"
+            ]
+            assert len(search_steps) >= 2
+            assert search_steps[0]["status"] == "running"
+            assert search_steps[0]["detail"] == "检索「SceneFlow 资讯」"
+            assert search_steps[1]["status"] == "done"
+            assert search_steps[1]["detail"] == "检索完成"
+
+    asyncio.run(_test())
+
+
+def test_agent_system_prompt_temporal_and_search_optimization() -> None:
+    with patch("app.services.agent_service.is_searxng_configured", return_value=True):
+        prompt = agent_service._agent_system_prompt()
+        assert "当前现实世界日期" in prompt
+        assert "意图与时间分析" in prompt
+        assert "搜索词优化重写" in prompt
+        assert "严禁包含问号" in prompt
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
@@ -231,3 +309,7 @@ if __name__ == "__main__":
     test_breakdown_payload_accepts_escaped_quotes_from_model()
     test_breakdown_payload_accepts_twice_escaped_quotes_from_model()
     test_breakdown_payload_recovers_complete_shots_from_a_truncated_array()
+    test_web_search_tool_unconfigured_skips_registration()
+    test_web_search_tool_configured_and_executes()
+    test_agent_system_prompt_temporal_and_search_optimization()
+

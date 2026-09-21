@@ -367,3 +367,44 @@
     }
   }
 }
+
+/* AI 智能问答流式打字动态光标 (紧随输出文字末尾的 ChatGPT/Claude 风格平滑呼吸光标) */
+.chat-streaming-cursor:empty::before,
+.chat-streaming-cursor > *:empty::before,
+.chat-streaming-cursor > p:last-child::after,
+.chat-streaming-cursor > h1:last-child::after,
+.chat-streaming-cursor > h2:last-child::after,
+.chat-streaming-cursor > h3:last-child::after,
+.chat-streaming-cursor > h4:last-child::after,
+.chat-streaming-cursor > h5:last-child::after,
+.chat-streaming-cursor > h6:last-child::after,
+.chat-streaming-cursor > ul:last-child > li:last-child::after,
+.chat-streaming-cursor > ol:last-child > li:last-child::after,
+.chat-streaming-cursor > blockquote:last-child > *:last-child::after,
+.chat-streaming-cursor > table:last-child tr:last-child td:last-child::after,
+.chat-streaming-cursor > div:last-child > p:last-child::after,
+.chat-streaming-cursor > div:last-child > ul:last-child > li:last-child::after,
+.chat-streaming-cursor > div:last-child > ol:last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2.5px;
+  height: 1.15em;
+  margin-left: 3px;
+  vertical-align: -2.5px;
+  border-radius: 9999px;
+  background-color: var(--primary, #3b82f6);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+  animation: chat-cursor-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes chat-cursor-pulse {
+  0% {
+    opacity: 0.15;
+    transform: scaleY(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+

@@ -14,7 +14,7 @@ import {
   useAuiEvent,
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
-import { Paperclip, Send, Square, X } from "lucide-react";
+import { ArrowUp, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/lib/i18n";
@@ -26,6 +26,8 @@ interface AssistantComposerProps {
   messages: ChatMessage[];
   sendDisabled: boolean;
   isRunning: boolean;
+  placeholder?: string;
+  showDisclaimer?: boolean;
   onSend: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   onStop: () => void;
 }
@@ -292,7 +294,16 @@ function AttachmentError({ onError }: { onError: (message: string) => void }) {
   return null;
 }
 
-export function AssistantComposer({ sessionId, messages, sendDisabled, isRunning, onSend, onStop }: AssistantComposerProps) {
+export function AssistantComposer({
+  sessionId,
+  messages,
+  sendDisabled,
+  isRunning,
+  placeholder,
+  showDisclaimer = true,
+  onSend,
+  onStop,
+}: AssistantComposerProps) {
   const { t } = useI18n();
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -339,52 +350,63 @@ export function AssistantComposer({ sessionId, messages, sendDisabled, isRunning
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.ViewportProvider>
         <AttachmentError onError={setAttachmentError} />
-        <ComposerPrimitive.Root className="rounded-3xl border border-border/70 bg-background px-3 py-2 shadow-sm">
-          <ComposerPrimitive.AttachmentDropzone className="flex flex-col gap-1.5 rounded-2xl data-[dragging]:bg-muted/45">
-            <AuiIf condition={({ composer }) => composer.attachments.length > 0}>
-              <div className="flex flex-wrap gap-2 px-1 pb-1">
-                <ComposerPrimitive.Attachments>{() => <ComposerAttachment />}</ComposerPrimitive.Attachments>
+        <div className="w-full">
+          <ComposerPrimitive.Root className="group/composer flex w-full flex-col rounded-[28px] border border-border/80 bg-background px-3 py-2 shadow-xs transition-all focus-within:border-foreground/30 focus-within:shadow-md dark:border-white/10 dark:bg-[#212121] dark:focus-within:border-white/20">
+            <ComposerPrimitive.AttachmentDropzone className="flex flex-col gap-1.5 rounded-[22px] data-[dragging]:bg-muted/45">
+              <AuiIf condition={({ composer }) => composer.attachments.length > 0}>
+                <div className="flex flex-wrap gap-2 px-1 pt-1 pb-1.5">
+                  <ComposerPrimitive.Attachments>{() => <ComposerAttachment />}</ComposerPrimitive.Attachments>
+                </div>
+              </AuiIf>
+              <div className="flex items-end gap-1.5">
+                <ComposerPrimitive.AddAttachment
+                  multiple
+                  className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95 disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+                  aria-label={t("chat.addAttachment")}
+                >
+                  <Plus className="size-5" />
+                </ComposerPrimitive.AddAttachment>
+                <ComposerPrimitive.Input
+                  ref={inputRef}
+                  autoFocus
+                  submitMode="enter"
+                  placeholder={placeholder || t("chat.inputPlaceholder")}
+                  className="max-h-52 min-h-9 min-w-0 flex-1 resize-none bg-transparent py-1.5 pr-2 pl-1 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
+                />
+                <div className="flex shrink-0 items-center pb-0.5">
+                  {isRunning ? (
+                    <button
+                      type="button"
+                      onClick={onStop}
+                      className="group relative flex size-9 items-center justify-center rounded-full bg-foreground text-background shadow-xs transition-transform hover:scale-105 active:scale-95 cursor-pointer dark:bg-white dark:text-black"
+                      aria-label={t("common.stopGeneration")}
+                      title={t("common.stopGeneration")}
+                    >
+                      <div className="size-3 rounded-[2px] bg-current" />
+                    </button>
+                  ) : (
+                    <ComposerPrimitive.Send
+                      className={cn(
+                        "flex size-9 items-center justify-center rounded-full bg-foreground text-background shadow-xs transition-all hover:opacity-90 hover:scale-105 active:scale-95 disabled:bg-muted disabled:text-muted-foreground/40 disabled:scale-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer dark:bg-white dark:text-black dark:disabled:bg-white/10 dark:disabled:text-white/30"
+                      )}
+                      aria-label={t("chat.send")}
+                    >
+                      <ArrowUp className="size-5" />
+                    </ComposerPrimitive.Send>
+                  )}
+                </div>
               </div>
-            </AuiIf>
-            <div className="flex min-h-10 items-center gap-1.5">
-              <ComposerPrimitive.AddAttachment
-                multiple
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:text-muted-foreground/50"
-                aria-label={t("chat.addAttachment")}
-              >
-                <Paperclip className="size-4" />
-              </ComposerPrimitive.AddAttachment>
-              <ComposerPrimitive.Input
-                ref={inputRef}
-                autoFocus
-                submitMode="enter"
-                placeholder={t("chat.inputPlaceholder")}
-                className="max-h-40 min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-base leading-6 outline-none placeholder:text-muted-foreground md:text-sm"
-              />
-              {isRunning ? (
-                <button
-                  type="button"
-                  onClick={onStop}
-                  className="group relative inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs transition-all hover:bg-primary/90 hover:scale-105 active:scale-95 cursor-pointer"
-                  aria-label={t("common.stopGeneration")}
-                  title={t("common.stopGeneration")}
-                >
-                  <span className="absolute inset-0 size-8 animate-ping rounded-full bg-primary/30 opacity-30 duration-1000" />
-                  <Square className="relative z-10 size-3 fill-current transition-transform group-hover:scale-90" />
-                </button>
-              ) : (
-                <ComposerPrimitive.Send
-                  className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs transition-all hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:bg-muted disabled:text-muted-foreground disabled:scale-100 disabled:shadow-none cursor-pointer")}
-                  aria-label={t("chat.send")}
-                >
-                  <Send className="size-4" />
-                </ComposerPrimitive.Send>
-              )}
-            </div>
-          </ComposerPrimitive.AttachmentDropzone>
-        </ComposerPrimitive.Root>
-        {attachmentError ? <p className="mt-2 text-sm text-amber-600">{attachmentError}</p> : null}
+            </ComposerPrimitive.AttachmentDropzone>
+          </ComposerPrimitive.Root>
+          {showDisclaimer ? (
+            <p className="mt-2 text-center text-xs text-muted-foreground/75 select-none">
+              {t("chat.disclaimer")}
+            </p>
+          ) : null}
+          {attachmentError ? <p className="mt-2 text-center text-sm text-amber-600">{attachmentError}</p> : null}
+        </div>
       </ThreadPrimitive.ViewportProvider>
     </AssistantRuntimeProvider>
   );
 }
+

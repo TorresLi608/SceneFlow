@@ -343,6 +343,12 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     stoppedRef.current = true;
     stopAiMessage();
     setAgentSteps((current) => current.map((step) => step.status === "running" ? { ...step, status: "stopped", detail: t("chat.stopped") } : step));
+    if (effectiveSessionId) {
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(effectiveSessionId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
+      }, 300);
+    }
   };
 
   return {

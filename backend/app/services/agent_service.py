@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from dataclasses import dataclass
 import re
@@ -16,8 +17,17 @@ from app.models import User
 from app.llms.registry import models
 from app.llms.router import _content_text, _lc_messages, _openai_image_size, _reasoning_text
 from app.services.artifact_service import save_document_artifact, save_image_artifact, tool_result
+from app.services.crawl_service import crawl_web_page
 from app.services.error_log_service import error_log_json, find_error_logs
+from app.services.searxng_service import extract_search_step_summary, is_searxng_configured, search_searxng
 from app.services.usage_service import aggregate_token_usage, record_usage, require_model_balance
+
+
+def _current_time_context() -> str:
+    """Return the current date and day-of-week for temporal anchoring in reasoning."""
+    now = datetime.now()
+    weekday_map = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    return f"{now.strftime('%Y年%m月%d日')} {weekday_map[now.weekday()]}"
 
 
 AGENT_SYSTEM_PROMPT = """You are SceneFlow Assistant. Answer clearly and concisely.
@@ -33,16 +43,20 @@ You can generate images, PDF files, and Word documents with tools.
 """
 
 TOOL_LABELS = {
+    "fetch_web_content": "提取网页正文",
     "generate_image": "生成图片",
     "generate_pdf": "生成 PDF",
     "generate_word_document": "生成 Word 文档",
     "search_error_logs": "查询错误日志",
+    "web_search": "网络搜索",
 }
 TOOL_FAILURE_LABELS = {
+    "fetch_web_content": "网页正文提取失败",
     "generate_image": "图片生成失败",
     "generate_pdf": "PDF 生成失败",
     "generate_word_document": "Word 文档生成失败",
     "search_error_logs": "错误日志查询失败",
+    "web_search": "网络搜索失败",
 }
 MAX_FAILURE_REASON_CHARS = 200
 
@@ -55,6 +69,12 @@ class AgentResult:
 
 def _tool_detail(value: Any) -> str:
     if isinstance(value, dict):
+        query = value.get("query")
+        if query:
+            return f"检索「{str(query)[:80]}」"
+        url = value.get("url")
+        if url:
+            return f"提取「{str(url)[:80]}」"
         return str(value.get("title") or value.get("prompt") or "")[:120]
     content = getattr(value, "content", value)
     return str(content or "")[:160]
@@ -130,16 +150,58 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
             )
         return json.dumps([error_log_json(item) for item in logs], ensure_ascii=False)
 
+    searched_cache: dict[str, str] = {}
+
+    async def web_search(query: str) -> str:
+        """Search the web for real-time information, facts, weather, news, or documentation.
+        Parameter `query`: Clean, concise search keywords separated by spaces (e.g. '成都 实时天气', 'Python 3.12 新特性').
+        Do NOT include punctuation, conversational sentences, or question marks ('?', '？')."""
+        normalized_query = query.strip()
+        if not normalized_query:
+            raise ToolException("搜索关键词不能为空")
+        if normalized_query in searched_cache:
+            return searched_cache[normalized_query]
+        # 单轮已完成过有效检索时直接复用已有结果，防止模型反复循环或并发调用网络搜索
+        if searched_cache:
+            first_cached = next(iter(searched_cache.values()))
+            return first_cached
+        result = await search_searxng(normalized_query)
+        searched_cache[normalized_query] = result
+        return result
+
+    async def fetch_web_content(url: str) -> str:
+        """Extract clean, structured Markdown article content from a specific web URL using Crawl4AI.
+        Use when the user provides a specific web page URL to read/summarize, or when you need detailed text from a search result link."""
+        return await crawl_web_page(url)
+
     tools = [
         StructuredTool.from_function(coroutine=generate_image, name="generate_image", description=generate_image.__doc__),
         StructuredTool.from_function(coroutine=generate_pdf, name="generate_pdf", description=generate_pdf.__doc__),
         StructuredTool.from_function(coroutine=generate_word_document, name="generate_word_document", description=generate_word_document.__doc__),
+        StructuredTool.from_function(coroutine=fetch_web_content, name="fetch_web_content", description=fetch_web_content.__doc__),
     ]
+    if is_searxng_configured():
+        tools.append(StructuredTool.from_function(coroutine=web_search, name="web_search", description=web_search.__doc__))
     if can_read_error_logs:
         tools.append(StructuredTool.from_function(func=search_error_logs, name="search_error_logs", description=search_error_logs.__doc__))
     for item in tools:
         item.handle_tool_error = True
     return tools
+
+
+def _agent_system_prompt() -> str:
+    prompt = AGENT_SYSTEM_PROMPT
+    current_date = _current_time_context()
+    prompt += f"\n- 当前现实世界日期：{current_date}。"
+    prompt += (
+        "\n- 你拥有通过 web_search 进行全网广度搜索，以及通过 fetch_web_content 深度提取具体网页正文（基于 Crawl4AI）的能力。"
+        "\n  遵循以下【分析与搜索/正文提取协同】流程："
+        "\n  1.【意图与时间分析】：先分析用户的核心需求。遇到'今天'、'最近'、'今年'等相对时间，必须结合上方当前现实世界日期准确定位，禁止凭空猜测年份或使用带问号的推测年份。"
+        "\n  2.【搜索词优化重写 (Query Optimization)】：严禁将用户的口语长句或疑问句直接传给 web_search。必须提炼重构为适合搜索引擎的高纯度核心关键词（实体词+核心属性，空格分隔），去除所有口语修饰与疑问助词，绝对严禁包含问号（? 或 ？）或其它标点符号（例如：将'今天成都天气如何'重写提炼为'成都天气'或'成都 实时天气'）。"
+        "\n  3.【深度正文提取 (Crawl4AI)】：当用户明确提供网页链接（URL）要求分析总结，或单凭搜索摘要不足以回答复杂长文/技术规范时，调用 fetch_web_content 读取该页面的纯净 Markdown 正文；"
+        "\n  4.【严格防重与秒级响应】：单轮对话内严禁重复调用相同工具或循环抓取。一旦获取所需信息立即针对用户核心问题凝练、明确作答，避免冗长的背景铺垫，并在回复中以 Markdown 链接自然标注引用的网页来源。"
+    )
+    return prompt
 
 
 def _agent(config: dict[str, Any], session_id: str, image_config: dict[str, Any] | None, user_id: int | None = None):
@@ -154,7 +216,7 @@ def _agent(config: dict[str, Any], session_id: str, image_config: dict[str, Any]
     return create_agent(
         model=model,
         tools=create_chat_tools(session_id, image_config, user_id),
-        system_prompt=AGENT_SYSTEM_PROMPT,
+        system_prompt=_agent_system_prompt(),
         name="sceneflow_assistant",
     )
 
@@ -191,7 +253,13 @@ def _tool_output_detail(output: Any) -> str:
     payload = _tool_payload(output)
     if payload and payload.get("kind"):
         return str(payload.get("filename") or payload.get("title") or payload["kind"])[:160]
+    content = getattr(output, "content", output)
+    if isinstance(content, str):
+        search_summary = extract_search_step_summary(content)
+        if search_summary:
+            return search_summary
     return _tool_detail(output)
+
 
 
 def _failure_reason(output: Any) -> str:
@@ -325,6 +393,21 @@ async def stream_chat_agent(
     final_output: Any = None
     streamed_content = ""
     tool_outputs: list[Any] = []
+
+    has_analyzed = False
+    has_started_tools = False
+    has_started_generation = False
+
+    yield {
+        "type": "agent_step",
+        "step": {
+            "id": "agent_analyze",
+            "label": "意图分析",
+            "status": "running",
+            "detail": f"模型 {config['model']}",
+        },
+    }
+
     with get_usage_metadata_callback() as usage_callback:
         async for event in agent.astream_events(
             {"messages": _lc_messages(messages, config["provider"])},
@@ -333,6 +416,28 @@ async def stream_chat_agent(
         ):
             event_type = event["event"]
             if event_type == "on_chat_model_stream":
+                if not has_analyzed:
+                    has_analyzed = True
+                    yield {
+                        "type": "agent_step",
+                        "step": {
+                            "id": "agent_analyze",
+                            "label": "意图分析",
+                            "status": "done",
+                            "detail": "分析完成",
+                        },
+                    }
+                if has_started_tools and not has_started_generation:
+                    has_started_generation = True
+                    yield {
+                        "type": "agent_step",
+                        "step": {
+                            "id": "agent_generate",
+                            "label": "组织回答",
+                            "status": "running",
+                            "detail": "整合信息并输出",
+                        },
+                    }
                 chunk = event["data"]["chunk"]
                 reasoning = _reasoning_text(chunk.content, chunk.additional_kwargs)
                 content = _content_text(chunk.content)
@@ -342,6 +447,18 @@ async def stream_chat_agent(
                     streamed_content += content
                     yield {"type": "content_delta", "content": content}
             elif event_type == "on_tool_start":
+                if not has_analyzed:
+                    has_analyzed = True
+                    yield {
+                        "type": "agent_step",
+                        "step": {
+                            "id": "agent_analyze",
+                            "label": "意图分析",
+                            "status": "done",
+                            "detail": "分析完成，调用工具",
+                        },
+                    }
+                has_started_tools = True
                 yield {
                     "type": "agent_step",
                     "step": {
@@ -376,6 +493,27 @@ async def stream_chat_agent(
                 }
             elif event_type == "on_chain_end" and not event["parent_ids"]:
                 final_output = event["data"].get("output")
+
+    if not has_analyzed:
+        yield {
+            "type": "agent_step",
+            "step": {
+                "id": "agent_analyze",
+                "label": "意图分析",
+                "status": "done",
+                "detail": "分析完成",
+            },
+        }
+    if has_started_generation:
+        yield {
+            "type": "agent_step",
+            "step": {
+                "id": "agent_generate",
+                "label": "组织回答",
+                "status": "done",
+                "detail": "回复生成完成",
+            },
+        }
     # Tool outcomes come from the observed tool events, so they survive a run whose root
     # on_chain_end never arrived (a stop or a provider failure after the tool finished).
     tool_messages = tool_outputs or _tool_messages(final_output)
