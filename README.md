@@ -142,11 +142,12 @@ docker compose up -d --build
 You can also use root `pnpm` convenience scripts:
 
 ```bash
-pnpm run docker:up       # Build & start in background
-pnpm run docker:backup   # Backup database & media snapshot
+pnpm run docker:build   # Build frontend and backend images
+pnpm run docker:up      # Start container services in background
+pnpm run docker:down    # Stop and remove container services
 ```
 
-Both commands remain useful: `docker:up` builds and starts the services; `docker:backup` creates a recoverable snapshot. Persistence does not replace backups.
+These scripts map directly to standard Compose workflows: `docker:build` builds the images, `docker:up` starts the services in the background, and `docker:down` stops them. For a fresh deployment or after pulling code changes, build the images first with `pnpm run docker:build` before `pnpm run docker:up`, or run `docker compose up -d --build` directly.
 
 ### Persistent data and upgrades
 
@@ -159,8 +160,6 @@ SCENEFLOW_DATA_DIR=/srv/sceneflow/data docker compose up -d --build
 ```
 
 The backend entrypoint gives the mounted data directory to the existing `app` user (UID 10001), restricts directory access, then runs the backend as that user. Database files and data directories are excluded from Git and both Docker build contexts.
-
-`docker:backup` briefly stops a running backend, archives the whole database directory and generated media under `backups/`, then restores its prior running state. New archives contain `data/` and `private_generated/`.
 
 **Before upgrading an existing installation**, migrate the old `sceneflow_db` volume or `backend/sceneflow.db` using the [migration instructions](docs/reference/local-setup.md#migrating-existing-data). The new location is not automatically populated from old storage; an empty location creates an empty database. Keep the existing encryption/signing secrets with the deployment.
 

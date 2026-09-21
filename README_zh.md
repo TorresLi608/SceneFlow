@@ -142,11 +142,12 @@ docker compose up -d --build
 也可使用项目封装好的 pnpm 命令：
 
 ```bash
-pnpm run docker:up       # 自动构建并在后台运行
-pnpm run docker:backup   # 导出数据库与生成媒体备份快照
+pnpm run docker:build   # 构建前后端镜像
+pnpm run docker:up      # 在后台启动容器服务
+pnpm run docker:down    # 停止并移除容器服务
 ```
 
-这两个命令仍然有用：`docker:up` 负责构建并启动服务，`docker:backup` 生成可恢复的快照。数据持久化不能替代备份，因此予以保留。
+这些快捷命令对应常用的 Compose 工作流：`docker:build` 负责构建镜像，`docker:up` 负责后台启动容器，`docker:down` 负责停止容器。首次启动或更新代码后，建议先执行 `pnpm run docker:build` 再执行 `pnpm run docker:up`，或直接执行 `docker compose up -d --build`。
 
 ### 数据持久化与升级
 
@@ -159,8 +160,6 @@ SCENEFLOW_DATA_DIR=/srv/sceneflow/data docker compose up -d --build
 ```
 
 后端入口脚本会将挂载的数据目录交给现有 `app` 用户（UID 10001）、收紧目录权限，再以该普通用户运行后端。数据库文件与数据目录已从 Git 和两个 Docker 构建上下文中排除。
-
-`docker:backup` 会短暂停止正在运行的后端，将整个数据库目录和生成媒体归档到 `backups/`，然后恢复原先的运行状态。新备份包包含 `data/` 与 `private_generated/`。
 
 **已有部署升级前**，请按[旧数据迁移步骤](docs/reference/local-setup.md#migrating-existing-data)迁移原 `sceneflow_db` 卷或 `backend/sceneflow.db`。新路径不会自动导入旧存储；挂载空目录会初始化空库。请同时保留部署原有的加密和签名密钥。
 

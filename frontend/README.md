@@ -13,7 +13,7 @@ pnpm install
 pnpm dev
 ```
 
-The repository root also provides production Docker images. Run `npm run docker:build` to build both images or `npm run docker:up` to build and start the frontend with the backend.
+The repository root also provides production Docker images. Run `pnpm run docker:build` to build both images, `pnpm run docker:up` to start the containers in the background, and `pnpm run docker:down` to stop them.
 
 ## Environment
 
