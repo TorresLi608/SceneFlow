@@ -13,6 +13,7 @@ from anthropic import AsyncAnthropic
 from google import genai
 from google.genai import types
 from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -154,6 +155,13 @@ def image_base_url_for(provider: str, base_url: str = "") -> str:
             return f"{parsed.scheme or 'https'}://{parsed.netloc}/api/v1"
         return base
     raise ValueError(f"unsupported image provider: {provider}")
+
+
+def _is_native_gemini_url(base_url: str = "") -> bool:
+    if not base_url or not base_url.strip():
+        return True
+    parsed = urlparse(base_url.strip())
+    return (parsed.hostname or "").lower() in {"generativelanguage.googleapis.com", "ai.google.dev"}
 
 
 def _is_native_gemini_image_url(base_url: str = "") -> bool:
@@ -461,6 +469,14 @@ class ModelRouter:
                 timeout=GENERATION_TIMEOUT_SECONDS,
                 max_retries=1,
                 **kwargs,
+            )
+        if provider == "gemini" and _is_native_gemini_url(base_url):
+            return ChatGoogleGenerativeAI(
+                model=pick_model(provider, model),
+                google_api_key=api_key.strip(),
+                temperature=kwargs.get("temperature", 0.3),
+                max_retries=2,
+                timeout=GENERATION_TIMEOUT_SECONDS,
             )
         compatible_base_url = gemini_openai_base_url(base_url) if provider == "gemini" else base_url_for(provider, base_url)
         stream_usage = kwargs.pop("stream_usage", True)

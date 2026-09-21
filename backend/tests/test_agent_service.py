@@ -10,7 +10,7 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.services import agent_service, artifact_service
-from app.llms.router import ModelRouter, _content_text, _json_object, _reasoning_text
+from app.llms.router import ChatGoogleGenerativeAI, ModelRouter, _content_text, _json_object, _reasoning_text
 
 
 class ToolFakeModel(FakeMessagesListChatModel):
@@ -163,8 +163,10 @@ def test_reasoning_blocks_are_separate_from_answer() -> None:
 
 
 def test_openai_compatible_streams_report_usage() -> None:
-    model = ModelRouter().chat_model("gemini", "test-key", "gemini-test")
+    model = ModelRouter().chat_model("qwen", "test-key", "qwen-test")
     assert model.stream_usage is True
+    gemini_model = ModelRouter().chat_model("gemini", "test-key", "gemini-3.6-flash")
+    assert isinstance(gemini_model, ChatGoogleGenerativeAI)
 
 
 def test_openai_compatible_breakdown_skips_the_openai_beta_parser() -> None:
