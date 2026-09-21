@@ -1,7 +1,7 @@
 "use client";
 
 import { History } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -26,30 +26,49 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
   const [historyOpen, setHistoryOpen] = useState(false);
   const lastMessage = chat.messages.at(-1);
   const autoScrollKey = `${chat.effectiveSessionId ?? "new-chat"}:${chat.messages.length}:${lastMessage?.id ?? ""}`;
+  const isEmpty = chat.messages.length === 0 && !chat.messagesLoading;
+
+  const handleRegenerate = useCallback(() => {
+    if (chat.isBusy || chat.isStreaming) {
+      return;
+    }
+    const lastUserMessage = [...chat.messages].reverse().find((m) => m.role === "user");
+    if (!lastUserMessage) {
+      return;
+    }
+    void chat.sendMessage(lastUserMessage.content, lastUserMessage.attachments);
+  }, [chat]);
+
 
   const sidebar = (
     <ChatSidebar
-        chatConfigs={chat.chatConfigs}
-        effectiveConfigId={chat.effectiveConfigId}
-        effectiveSessionId={chat.effectiveSessionId}
-        sessions={chat.sessions}
-        sessionsLoading={chat.sessionsLoading}
-        sessionRetentionDays={chat.sessionRetentionDays}
-        isBusy={chat.isBusy}
-        formatDateTime={formatDateTime}
-        onConfigChange={chat.setSelectedConfigId}
-        onCreateSession={() => { chat.createSession(); setHistoryOpen(false); }}
-        onDeleteSession={chat.deleteSession}
-        onSelectSession={(id) => { chat.selectSession(id); setHistoryOpen(false); }}
-      />
+      chatConfigs={chat.chatConfigs}
+      effectiveConfigId={chat.effectiveConfigId}
+      effectiveSessionId={chat.effectiveSessionId}
+      sessions={chat.sessions}
+      sessionsLoading={chat.sessionsLoading}
+      sessionRetentionDays={chat.sessionRetentionDays}
+      isBusy={chat.isBusy}
+      formatDateTime={formatDateTime}
+      onConfigChange={chat.setSelectedConfigId}
+      onCreateSession={() => {
+        chat.createSession();
+        setHistoryOpen(false);
+      }}
+      onDeleteSession={chat.deleteSession}
+      onSelectSession={(id) => {
+        chat.selectSession(id);
+        setHistoryOpen(false);
+      }}
+    />
   );
 
   return (
     <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
       <div className="hidden min-h-0 md:flex">{sidebar}</div>
 
-      <section className="flex min-h-0 min-w-0 flex-col">
-        <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-3 py-2 sm:px-5 sm:py-4">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border/60 px-3 py-2 sm:px-5 sm:py-3.5 bg-background/80 backdrop-blur-xs">
           <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
             <DialogTrigger render={<Button variant="outline" size="sm" className="shrink-0 md:hidden" />}>
               <History data-icon="inline-start" />
@@ -60,33 +79,69 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
               {sidebar}
             </DialogContent>
           </Dialog>
-          <h2 className="min-w-0 truncate text-sm font-medium">
-            {chat.selectedConfig ? configName(chat.selectedConfig, t) : t("chat.selectModelToStart")}
-          </h2>
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            <h2 className="truncate text-sm font-medium text-foreground">
+              {chat.selectedConfig ? configName(chat.selectedConfig, t) : t("chat.selectModelToStart")}
+            </h2>
+          </div>
         </div>
 
-        <ChatMessageList
-          key={chat.effectiveSessionId ?? "new-chat"}
-          autoScrollKey={autoScrollKey}
-          messages={chat.messages}
-          agentSteps={chat.agentSteps}
-          isLoading={chat.messagesLoading}
-          isStreaming={chat.isStreaming}
-        />
+        {isEmpty ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-4 pb-[12vh]">
+            <div className="mx-auto flex w-full max-w-3xl flex-col items-stretch gap-6">
+              <div className="text-center space-y-2">
+                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground selection:bg-primary/20">
+                  {t("chat.welcomeTitle")}
+                </h1>
+              </div>
 
-        <div className="mx-auto w-full max-w-3xl shrink-0 px-3 pb-3 sm:px-4 sm:pb-5">
-          {chat.errorMessage ? <p className="text-sm text-amber-600">{chat.errorMessage}</p> : null}
+              <div className="w-full">
+                <AssistantComposer
+                  sessionId={chat.effectiveSessionId}
+                  messages={chat.messages}
+                  sendDisabled={!chat.selectedConfig || chat.isBusy}
+                  isRunning={chat.isStreaming}
+                  showDisclaimer={false}
+                  onSend={chat.sendMessage}
+                  onStop={chat.stop}
+                />
+              </div>
 
-          <AssistantComposer
-            sessionId={chat.effectiveSessionId}
-            messages={chat.messages}
-            sendDisabled={!chat.selectedConfig || chat.isBusy}
-            isRunning={chat.isStreaming}
-            onSend={chat.sendMessage}
-            onStop={chat.stop}
-          />
-        </div>
+
+              <p className="text-center text-xs text-muted-foreground/75 select-none">
+                {t("chat.disclaimer")}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <ChatMessageList
+              key={chat.effectiveSessionId ?? "new-chat"}
+              autoScrollKey={autoScrollKey}
+              messages={chat.messages}
+              agentSteps={chat.agentSteps}
+              isLoading={chat.messagesLoading}
+              isStreaming={chat.isStreaming}
+              onRegenerate={handleRegenerate}
+            />
+
+            <div className="mx-auto w-full max-w-3xl shrink-0 px-3 pb-3 sm:px-4 sm:pb-5">
+              {chat.errorMessage ? <p className="mb-2 text-center text-sm text-amber-600">{chat.errorMessage}</p> : null}
+
+              <AssistantComposer
+                sessionId={chat.effectiveSessionId}
+                messages={chat.messages}
+                sendDisabled={!chat.selectedConfig || chat.isBusy}
+                isRunning={chat.isStreaming}
+                onSend={chat.sendMessage}
+                onStop={chat.stop}
+              />
+            </div>
+          </>
+        )}
       </section>
     </div>
   );
 }
+

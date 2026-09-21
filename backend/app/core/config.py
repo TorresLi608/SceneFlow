@@ -52,3 +52,28 @@ CJK_FONT_PATH = os.getenv("SCENEFLOW_CJK_FONT_PATH", "").strip()
 CJK_FONT_NAME = os.getenv("SCENEFLOW_CJK_FONT_NAME", "Arial Unicode MS").strip() or "Arial Unicode MS"
 MAX_CONTEXT_TOKENS = max(10_000, int(os.getenv("SCENEFLOW_MAX_CONTEXT_TOKENS", "100000")))
 LOG_LEVEL = os.getenv("SCENEFLOW_LOG_LEVEL", "INFO").strip().upper()
+SEARXNG_BASE_URL = (
+    os.getenv("SCENEFLOW_SEARXNG_BASE_URL", "")
+    or os.getenv("SEARXNG_BASE_URL", "")
+).strip().rstrip("/")
+SEARXNG_ENGINE_TOKEN = (
+    os.getenv("SCENEFLOW_SEARXNG_ENGINE_TOKEN", "")
+    or os.getenv("SCENEFLOW_SEARXNG_TOKEN", "")
+    or os.getenv("SEARXNG_TOKEN", "")
+).strip()
+SEARXNG_ENGINES = (
+    os.getenv("SCENEFLOW_SEARXNG_ENGINES", "")
+    or os.getenv("SEARXNG_ENGINES", "")
+).strip()
+SEARXNG_RESULT_COUNT = max(1, min(10, int(os.getenv("SCENEFLOW_SEARXNG_RESULT_COUNT", "4"))))
+SEARXNG_MAX_SNIPPET_CHARS = max(50, min(1000, int(os.getenv("SCENEFLOW_SEARXNG_MAX_SNIPPET_CHARS", "180"))))
+SEARXNG_MAX_TOTAL_CHARS = max(200, min(5000, int(os.getenv("SCENEFLOW_SEARXNG_MAX_TOTAL_CHARS", "900"))))
+CRAWL4AI_BASE_URL = (
+    os.getenv("SCENEFLOW_CRAWL4AI_BASE_URL", "")
+    or os.getenv("CRAWL4AI_BASE_URL", "")
+).strip().rstrip("/")
+CRAWL4AI_API_TOKEN = (
+    os.getenv("SCENEFLOW_CRAWL4AI_API_TOKEN", "")
+    or os.getenv("CRAWL4AI_API_TOKEN", "")
+).strip()
+CRAWL4AI_MAX_CHARS = max(500, min(10000, int(os.getenv("SCENEFLOW_CRAWL4AI_MAX_CHARS", "2000"))))

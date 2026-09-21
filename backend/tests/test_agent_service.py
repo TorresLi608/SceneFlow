@@ -3,14 +3,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import tempfile
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.services import agent_service, artifact_service
-from app.llms.router import ModelRouter, _content_text, _json_object, _reasoning_text
+from app.llms.router import ChatGoogleGenerativeAI, ModelRouter, _content_text, _json_object, _reasoning_text
 
 
 class ToolFakeModel(FakeMessagesListChatModel):
@@ -163,8 +163,10 @@ def test_reasoning_blocks_are_separate_from_answer() -> None:
 
 
 def test_openai_compatible_streams_report_usage() -> None:
-    model = ModelRouter().chat_model("gemini", "test-key", "gemini-test")
+    model = ModelRouter().chat_model("qwen", "test-key", "qwen-test")
     assert model.stream_usage is True
+    gemini_model = ModelRouter().chat_model("gemini", "test-key", "gemini-3.6-flash")
+    assert isinstance(gemini_model, ChatGoogleGenerativeAI)
 
 
 def test_openai_compatible_breakdown_skips_the_openai_beta_parser() -> None:
@@ -220,6 +222,110 @@ def test_breakdown_payload_recovers_complete_shots_from_a_truncated_array() -> N
     assert payload["shots"] == [{"narration": "第一镜", "visualPrompt": "山门"}]
 
 
+def test_web_search_tool_unconfigured_skips_registration() -> None:
+    from app.core import config
+
+    with patch.object(config, "SEARXNG_BASE_URL", ""):
+        tools = agent_service.create_chat_tools("chat_test", None)
+        tool_names = [t.name for t in tools]
+        assert "web_search" not in tool_names
+
+
+def test_web_search_tool_configured_and_executes() -> None:
+    from app.core import config
+    from unittest.mock import patch
+
+    async def _test():
+        with (
+            patch.object(config, "SEARXNG_BASE_URL", "http://searxng.test:8080"),
+            patch(
+                "app.services.agent_service.search_searxng",
+                AsyncMock(return_value="### 网页搜索结果（关键词：SceneFlow 资讯）\n\n1. [SceneFlow 发布](https://example.com)\n   最新 AI 生剧工作流上线。"),
+            ),
+        ):
+            tools = agent_service.create_chat_tools("chat_test", None)
+            tool_names = [t.name for t in tools]
+            assert "web_search" in tool_names
+
+            model = ToolFakeModel(
+                disable_streaming=True,
+                responses=[
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "web_search",
+                                "args": {"query": "SceneFlow 资讯"},
+                                "id": "call_search_1",
+                            }
+                        ],
+                    ),
+                    AIMessage(content="据搜索，最新 AI 生剧工作流已上线 [SceneFlow 发布](https://example.com)。"),
+                ],
+            )
+            fake_agent = create_agent(model=model, tools=tools)
+            original_agent = agent_service._agent
+            agent_service._agent = lambda *args, **kwargs: fake_agent
+            try:
+                events = [
+                    event
+                    async for event in agent_service.stream_chat_agent(
+                        {"provider": "openai", "apiKey": "test", "model": "fake", "baseUrl": ""},
+                        "chat_test",
+                        [{"role": "user", "content": "帮我搜索 SceneFlow 资讯"}],
+                        None,
+                    )
+                ]
+            finally:
+                agent_service._agent = original_agent
+
+            search_steps = [
+                e["step"] for e in events if e["type"] == "agent_step" and e["step"]["label"] == "网络搜索"
+            ]
+            assert len(search_steps) >= 2
+            assert search_steps[0]["status"] == "running"
+            assert search_steps[0]["detail"] == "检索「SceneFlow 资讯」"
+            assert search_steps[1]["status"] == "done"
+            assert search_steps[1]["detail"] == "检索完成"
+
+    asyncio.run(_test())
+
+
+def test_agent_system_prompt_temporal_and_search_optimization() -> None:
+    with patch("app.services.agent_service.is_searxng_configured", return_value=True):
+        prompt = agent_service._agent_system_prompt()
+        assert "当前现实世界日期" in prompt
+        assert "意图与时间分析" in prompt
+        assert "搜索词优化重写" in prompt
+        assert "严禁包含问号" in prompt
+
+
+def test_final_answer_does_not_leak_prior_turn_messages() -> None:
+    # 模拟包含两轮历史和一个新用户提问的状态
+    # 历史: Human(0), AI(1), Human(2), AI(3)
+    # 本轮: Human(4), AI(5, content="")
+    output = {
+        "messages": [
+            HumanMessage(content="成都天气如何"),
+            AIMessage(content="今天成都多云转阵雨"),
+            HumanMessage(content="10月份穿什么衣服"),
+            AIMessage(content="如果10月去成都旅游建议穿外套"),
+            HumanMessage(content="牛逼"),
+            AIMessage(content=""),
+        ]
+    }
+    # 基础消息数为 5（前4条历史+第5条新提问）
+    base_count = 5
+    # 验证在新消息为空时，_final_answer 绝对不会往回翻出第 3 条消息的穿衣指南
+    answer = agent_service._final_answer(output, base_count=base_count)
+    assert answer == "", f"Expected empty answer, got: {answer}"
+
+    # 验证如果有新内容，能正确提取新内容
+    output["messages"][-1] = AIMessage(content="哈哈，能帮上忙就好！")
+    new_answer = agent_service._final_answer(output, base_count=base_count)
+    assert new_answer == "哈哈，能帮上忙就好！"
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
@@ -231,3 +337,9 @@ if __name__ == "__main__":
     test_breakdown_payload_accepts_escaped_quotes_from_model()
     test_breakdown_payload_accepts_twice_escaped_quotes_from_model()
     test_breakdown_payload_recovers_complete_shots_from_a_truncated_array()
+    test_web_search_tool_unconfigured_skips_registration()
+    test_web_search_tool_configured_and_executes()
+    test_agent_system_prompt_temporal_and_search_optimization()
+    test_final_answer_does_not_leak_prior_turn_messages()
+
+

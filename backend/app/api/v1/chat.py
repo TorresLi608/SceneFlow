@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from typing import Any
 
@@ -119,6 +121,9 @@ async def post_message(session_id: str, payload: dict[str, Any], user_id: int = 
     }
 
 
+logger = logging.getLogger(__name__)
+
+
 @router.post("/sessions/{session_id}/messages/stream")
 async def stream_message(
     session_id: str,
@@ -149,6 +154,33 @@ async def stream_message(
         reasoning = ""
         messages: list[dict[str, str]] = []
         usage: dict[str, int] = {}
+        saved = False
+
+        def persist_assistant_message():
+            nonlocal saved
+            if saved or not answer.strip():
+                return None
+            try:
+                with db() as session:
+                    msg = save_chat_message(
+                        session,
+                        session_id,
+                        "assistant",
+                        answer.strip(),
+                        config["provider"],
+                        config["model"],
+                        reasoning.strip(),
+                    )
+                    saved = True
+                try:
+                    record_usage(user_id, config, "chat", started_at, usage)
+                except Exception as usage_err:
+                    logger.warning("Failed to record chat usage: %s", usage_err)
+                return msg
+            except Exception as save_err:
+                logger.warning("Failed to persist assistant message: %s", save_err)
+                return None
+
         try:
             with db() as session:
                 async for event in stream_context_messages(session, session_id, config):
@@ -156,10 +188,6 @@ async def stream_message(
                         messages = event["messages"]
                         continue
                     yield json.dumps(event, ensure_ascii=False) + "\n"
-            yield json.dumps(
-                {"type": "agent_step", "step": {"id": "agent_run", "label": "运行智能助手", "status": "running", "detail": config["model"]}},
-                ensure_ascii=False,
-            ) + "\n"
             async for chunk in stream_chat_agent(config, session_id, messages, image_config, user_id):
                 if chunk["type"] == "agent_complete":
                     answer = chunk["content"] or answer
@@ -170,34 +198,29 @@ async def stream_message(
                 elif chunk["type"] == "content_delta":
                     answer += chunk["content"]
                 yield json.dumps(chunk, ensure_ascii=False) + "\n"
-            yield json.dumps(
-                {"type": "agent_step", "step": {"id": "agent_run", "label": "运行智能助手", "status": "done", "detail": "回复生成完成"}},
-                ensure_ascii=False,
-            ) + "\n"
             if not answer.strip():
                 raise ValueError("empty content from agent")
-            with db() as session:
-                assistant_message = save_chat_message(
-                    session,
-                    session_id,
-                    "assistant",
-                    answer.strip(),
-                    config["provider"],
-                    config["model"],
-                    reasoning.strip(),
-                )
-            record_usage(user_id, config, "chat", started_at, usage)
-            yield json.dumps(
-                {"type": "agent_step", "step": {"id": "save_message", "label": "保存回复", "status": "done", "detail": "已写入 SQLite"}},
-                ensure_ascii=False,
-            ) + "\n"
-            yield json.dumps({"type": "assistantMessage", "message": chat_message_json(assistant_message)}, ensure_ascii=False) + "\n"
+            assistant_message = persist_assistant_message()
+            if assistant_message:
+                yield json.dumps(
+                    {"type": "agent_step", "step": {"id": "save_message", "label": "保存回复", "status": "done", "detail": "已写入 SQLite"}},
+                    ensure_ascii=False,
+                ) + "\n"
+                yield json.dumps({"type": "assistantMessage", "message": chat_message_json(assistant_message)}, ensure_ascii=False) + "\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            # 用户手动点击中断（Stop）或客户端连接关闭时，将已生成内容落库保存
+            persist_assistant_message()
+            raise
         except Exception as exc:
+            persist_assistant_message()
             record_http_error(request, 502, "failed to chat", "CHAT_STREAM_FAILED")
             yield json.dumps(
                 {"type": "agent_step", "step": {"id": "runtime_error", "label": "执行失败", "status": "error", "detail": str(exc)[:180]}},
                 ensure_ascii=False,
             ) + "\n"
             yield json.dumps({"type": "error", "error": "failed to chat: " + str(exc)}, ensure_ascii=False) + "\n"
+        finally:
+            # 兜底：若任何异常导致退出且尚未保存已有答案，立即落库
+            persist_assistant_message()
 
     return StreamingResponse(events(), media_type="application/x-ndjson")

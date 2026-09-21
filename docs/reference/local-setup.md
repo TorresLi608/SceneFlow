@@ -98,10 +98,11 @@ Only generate a revision when intentionally changing schema. Reuse [regen_api_sp
 ```bash
 # From the repository root; configure production secrets before starting in production.
 test -f backend/.env || cp backend/.env.example backend/.env
-npm run docker:up
+pnpm run docker:build  # Build container images
+pnpm run docker:up     # Start services in background
 ```
 
-`docker:up` builds and starts the services; `docker:build` remains useful for preparing images separately. Compose runs one backend and one frontend, exposing 8080/4000.
+`docker:build` builds the images, `docker:up` runs `docker compose up -d` to start the services in the background, and `docker:down` runs `docker compose down` to stop them. Compose runs one backend and one frontend, exposing 8080/4000.
 
 | Data | Container location | Persistent storage |
 |---|---|---|
@@ -114,11 +115,6 @@ For a server, put `SCENEFLOW_DATA_DIR=/srv/sceneflow/data` in the repository-roo
 
 The image creates `/app/data` for UID 10001 (`app`). Since a bind mount hides image ownership, `docker-entrypoint.sh` starts as root, assigns the mounted data directory to `app`, sets directory mode `0700`, then uses `gosu` to execute the backend as `app`. SQLite startup sets the database file to `0600`. A deployment that overrides `--user` must prepare matching host permissions itself. Filesystems that prohibit ownership changes also need operator-side permissions. Git and both Docker build contexts exclude data directories, database files, and SQLite sidecars.
 
-```bash
-npm run docker:backup
-```
-
-`backup.sh` exports the entire `/app/data` directory and generated media to a timestamped archive under ignored `backups/`. It briefly stops a running backend for a consistent snapshot and restores its prior running state, including after a failed copy. New archives contain `data/` (including any WAL/SHM files) and `private_generated/`; old archives contained `sceneflow.db` at the archive root. Restore into empty target storage rather than overlaying a database onto unrelated WAL files. Persistence does not replace this backup, so `docker:backup` is retained along with `docker:up`.
 
 Configure `SCENEFLOW_ENV=production`, a chosen admin username, non-development secrets, public media origin, and appropriate CORS/browser addresses before deploying beyond localhost. Preserve the existing AES/JWT secrets when moving data; generating a new AES key makes existing provider keys unreadable.
 
