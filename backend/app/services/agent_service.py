@@ -18,9 +18,9 @@ from app.models import User
 from app.llms.registry import models
 from app.llms.router import _content_text, _lc_messages, _openai_image_size, _reasoning_text
 from app.services.artifact_service import save_document_artifact, save_image_artifact, tool_result
-from app.services.crawl_service import crawl_web_page
+from app.services.crawl_service import crawl_web_page, extract_crawl_step_summary
 from app.services.error_log_service import error_log_json, find_error_logs
-from app.services.searxng_service import extract_search_step_summary, is_searxng_configured, search_searxng
+from app.services.searxng_service import extract_search_step_summary, is_searxng_configured, search_limit_notice, search_searxng
 from app.services.usage_service import aggregate_token_usage, record_usage, require_model_balance
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,8 @@ TOOL_FAILURE_LABELS = {
     "web_search": "网络搜索失败",
 }
 MAX_FAILURE_REASON_CHARS = 200
+# Distinct web searches one turn may run; repeated identical queries are served from the turn cache.
+MAX_WEB_SEARCHES_PER_TURN = 3
 
 
 @dataclass
@@ -153,21 +155,25 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
             )
         return json.dumps([error_log_json(item) for item in logs], ensure_ascii=False)
 
+    # Per-turn search state: identical queries reuse their result, distinct queries each run
+    # until the budget is spent. Counting at call start also bounds parallel tool calls.
     searched_cache: dict[str, str] = {}
+    search_calls = 0
 
     async def web_search(query: str) -> str:
         """Search the web for real-time information, facts, weather, news, or documentation.
         Parameter `query`: Clean, concise search keywords separated by spaces (e.g. '成都 实时天气', 'Python 3.12 新特性').
         Do NOT include punctuation, conversational sentences, or question marks ('?', '？')."""
-        normalized_query = query.strip()
+        nonlocal search_calls
+        normalized_query = " ".join(query.split())
         if not normalized_query:
             raise ToolException("搜索关键词不能为空")
-        if normalized_query in searched_cache:
-            return searched_cache[normalized_query]
-        # 单轮已完成过有效检索时直接复用已有结果，防止模型反复循环或并发调用网络搜索
-        if searched_cache:
-            first_cached = next(iter(searched_cache.values()))
-            return first_cached
+        cached = searched_cache.get(normalized_query)
+        if cached is not None:
+            return cached
+        if search_calls >= MAX_WEB_SEARCHES_PER_TURN:
+            return search_limit_notice(MAX_WEB_SEARCHES_PER_TURN)
+        search_calls += 1
         result = await search_searxng(normalized_query)
         searched_cache[normalized_query] = result
         return result
@@ -192,18 +198,29 @@ def create_chat_tools(session_id: str, image_config: dict[str, Any] | None, user
     return tools
 
 
-def _agent_system_prompt() -> str:
+def _agent_system_prompt(web_search_enabled: bool | None = None) -> str:
+    """Tool instructions must match the registered tools: advertising `web_search` when SearXNG is
+    not configured makes models call a tool that does not exist or fabricate search results."""
+    if web_search_enabled is None:
+        web_search_enabled = is_searxng_configured()
     prompt = AGENT_SYSTEM_PROMPT
     current_date = _current_time_context()
     prompt += f"\n- 当前现实世界日期：{current_date}。"
-    prompt += (
-        "\n- 你拥有通过 web_search 进行全网广度搜索，以及通过 fetch_web_content 深度提取具体网页正文（基于 Crawl4AI）的能力。"
-        "\n  遵循以下【分析与搜索/正文提取协同】流程："
-        "\n  1.【意图与时间分析】：先分析用户的核心需求。遇到'今天'、'最近'、'今年'等相对时间，必须结合上方当前现实世界日期准确定位，禁止凭空猜测年份或使用带问号的推测年份。"
-        "\n  2.【搜索词优化重写 (Query Optimization)】：严禁将用户的口语长句或疑问句直接传给 web_search。必须提炼重构为适合搜索引擎的高纯度核心关键词（实体词+核心属性，空格分隔），去除所有口语修饰与疑问助词，绝对严禁包含问号（? 或 ？）或其它标点符号（例如：将'今天成都天气如何'重写提炼为'成都天气'或'成都 实时天气'）。"
-        "\n  3.【深度正文提取 (Crawl4AI)】：当用户明确提供网页链接（URL）要求分析总结，或单凭搜索摘要不足以回答复杂长文/技术规范时，调用 fetch_web_content 读取该页面的纯净 Markdown 正文；"
-        "\n  4.【严格防重与秒级响应】：单轮对话内严禁重复调用相同工具或循环抓取。一旦获取所需信息立即针对用户核心问题凝练、明确作答，避免冗长的背景铺垫，并在回复中以 Markdown 链接自然标注引用的网页来源。"
-    )
+    if web_search_enabled:
+        prompt += (
+            "\n- 你拥有通过 web_search 进行全网广度搜索，以及通过 fetch_web_content 深度提取具体网页正文（基于 Crawl4AI）的能力。"
+            "\n  遵循以下【分析与搜索/正文提取协同】流程："
+            "\n  1.【意图与时间分析】：先分析用户的核心需求。遇到'今天'、'最近'、'今年'等相对时间，必须结合上方当前现实世界日期准确定位，禁止凭空猜测年份或使用带问号的推测年份。"
+            "\n  2.【搜索词优化重写 (Query Optimization)】：严禁将用户的口语长句或疑问句直接传给 web_search。必须提炼重构为适合搜索引擎的高纯度核心关键词（实体词+核心属性，空格分隔），去除所有口语修饰与疑问助词，绝对严禁包含问号（? 或 ？）或其它标点符号（例如：将'今天成都天气如何'重写提炼为'成都天气'或'成都 实时天气'）。"
+            "\n  3.【深度正文提取 (Crawl4AI)】：当用户明确提供网页链接（URL）要求分析总结，或单凭搜索摘要不足以回答复杂长文/技术规范时，调用 fetch_web_content 读取该页面的纯净 Markdown 正文；"
+            f"\n  4.【严格防重与秒级响应】：单轮对话内严禁重复调用相同工具或循环抓取，最多进行 {MAX_WEB_SEARCHES_PER_TURN} 次不同关键词的搜索；工具提示已达上限时，直接基于已有结果作答。一旦获取所需信息立即针对用户核心问题凝练、明确作答，避免冗长的背景铺垫，并在回复中以 Markdown 链接自然标注引用的网页来源。"
+        )
+    else:
+        prompt += (
+            "\n- 你没有网络搜索工具，不要声称已经联网搜索；无法获取的实时信息请如实告知用户。"
+            "\n- 当用户明确提供网页链接（URL）要求阅读、分析或总结时，调用 fetch_web_content 读取该页面的纯净 Markdown 正文；单轮对话内不要重复抓取同一网页。"
+            "\n- 遇到'今天'、'最近'、'今年'等相对时间，必须结合上方当前现实世界日期理解，禁止凭空猜测年份。"
+        )
     return prompt
 
 
@@ -259,9 +276,9 @@ def _tool_output_detail(output: Any) -> str:
         return str(payload.get("filename") or payload.get("title") or payload["kind"])[:160]
     content = getattr(output, "content", output)
     if isinstance(content, str):
-        search_summary = extract_search_step_summary(content)
-        if search_summary:
-            return search_summary
+        summary = extract_search_step_summary(content) or extract_crawl_step_summary(content)
+        if summary:
+            return summary
     return _tool_detail(output)
 
 

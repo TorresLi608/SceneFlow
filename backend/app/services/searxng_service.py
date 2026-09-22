@@ -16,6 +16,13 @@ DEFAULT_SEARCH_RESULT_COUNT = max(1, min(10, getattr(config, "SEARXNG_RESULT_COU
 DEFAULT_MAX_SNIPPET_CHARS = max(50, min(1000, getattr(config, "SEARXNG_MAX_SNIPPET_CHARS", 180)))
 DEFAULT_MAX_TOTAL_CHARS = max(200, min(5000, getattr(config, "SEARXNG_MAX_TOTAL_CHARS", 900)))
 DEFAULT_SEARCH_ENGINES = "vuhuv,naver,abcnyheter,encyclosearch,sogou wechat,yandex,bing"
+# Tool text returned (not raised) when a turn exhausts its search budget; the model must
+# answer from what it already has instead of looping on new queries.
+SEARCH_LIMIT_NOTICE_MARKER = "本轮网络搜索次数已达上限"
+
+
+def search_limit_notice(limit: int) -> str:
+    return f"{SEARCH_LIMIT_NOTICE_MARKER}（{limit} 次），请直接基于已获取的搜索结果作答；如仍无法回答，请如实告知用户。"
 
 
 def is_searxng_configured() -> bool:
@@ -92,8 +99,10 @@ def format_search_results(
     if not valid_items:
         return f"未检索到与「{query}」相关的网络搜索结果。"
 
-    lines = [f"### 网页搜索结果（关键词：{query}，共精选 {len(valid_items)} 条）\n"]
-    current_chars = len(lines[0])
+    # 头部长度按最大条数估算，先裁剪条目再写头部，保证“共精选 N 条”与实际列出的条数一致
+    header_budget = len(f"### 网页搜索结果（关键词：{query}，共精选 {len(valid_items)} 条）\n")
+    entries: list[str] = []
+    current_chars = header_budget
 
     for idx, item in enumerate(valid_items, start=1):
         title = item["title"]
@@ -113,16 +122,19 @@ def format_search_results(
         # 严格控制总字符预算，保障大模型秒级首字响应与推理稳定性
         if current_chars + len(entry_text) > max_total_chars and idx > 2:
             break
-        lines.append(entry_text)
+        entries.append(entry_text)
         current_chars += len(entry_text)
 
-    return "\n".join(lines).strip()
+    header = f"### 网页搜索结果（关键词：{query}，共精选 {len(entries)} 条）\n"
+    return "\n".join([header, *entries]).strip()
 
 
 def extract_search_step_summary(content: str) -> str:
     """Extract clean, short summary text for UI step display from web_search tool output."""
     if not isinstance(content, str):
         return ""
+    if SEARCH_LIMIT_NOTICE_MARKER in content:
+        return "已达本轮搜索上限"
     if "未检索到与" in content:
         return "未检索到匹配网页"
     match = re.search(r"共(?:找到|精选)\s*(\d+)\s*条", content)
@@ -155,10 +167,10 @@ async def _execute_searxng_request(
         "Accept-Language": "zh-CN,zh;q=0.9",
     }
     if token:
+        # SearXNG reads private-engine tokens from the `tokens` request parameter
+        # (`Preferences.parse_dict`); the bearer header only serves a reverse proxy in front of it.
         params["tokens"] = token
-        params["token"] = token
         headers["Authorization"] = f"Bearer {token}"
-        headers["X-Token"] = token
 
     response = await client.get(request_url, params=params, headers=headers)
     response.raise_for_status()
@@ -198,17 +210,18 @@ async def search_searxng(query: str, count: int = DEFAULT_SEARCH_RESULT_COUNT) -
                     if fallback_data.get("results"):
                         data = fallback_data
                         results = data.get("results")
+    # Queries are user conversation content: log outcomes and sizes only, never the text.
     except httpx.TimeoutException as exc:
-        logger.warning("SearXNG search timed out for query: %s", clean_query)
+        logger.warning("SearXNG search timed out (query length %d)", len(clean_query))
         raise ToolException("网络搜索请求超时，请稍后重试") from exc
     except httpx.HTTPStatusError as exc:
-        logger.warning("SearXNG search returned HTTP %s for query: %s", exc.response.status_code, clean_query)
+        logger.warning("SearXNG search returned HTTP %s", exc.response.status_code)
         raise ToolException(f"网络搜索服务响应异常 (HTTP {exc.response.status_code})") from exc
     except httpx.RequestError as exc:
-        logger.warning("SearXNG search network error: %s", exc)
+        logger.warning("SearXNG search network error: %s", type(exc).__name__)
         raise ToolException(f"无法连接到网络搜索服务：{exc}") from exc
     except Exception as exc:
-        logger.exception("Unexpected error during SearXNG search: %s", exc)
+        logger.exception("Unexpected error during SearXNG search")
         raise ToolException(f"网络搜索解析失败：{exc}") from exc
 
     if not isinstance(results, list) or not results:

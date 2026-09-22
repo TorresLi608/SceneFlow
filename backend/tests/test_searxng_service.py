@@ -89,7 +89,17 @@ def test_searxng_sanitize_query() -> None:
 def test_searxng_step_summary() -> None:
     assert searxng_service.extract_search_step_summary("未检索到与「成都天气」相关的网络搜索结果。") == "未检索到匹配网页"
     assert searxng_service.extract_search_step_summary("### 网页搜索结果（关键词：成都天气，共找到 6 条）\n1. xxx") == "检索到 6 条相关网页"
+    assert searxng_service.extract_search_step_summary(searxng_service.search_limit_notice(3)) == "已达本轮搜索上限"
     assert searxng_service.extract_search_step_summary("普通文本") == ""
+
+
+def test_searxng_format_results_header_matches_listed_entries() -> None:
+    items = [{"title": f"T{i}", "url": f"https://e.com/{i}", "content": "x" * 180} for i in range(1, 6)]
+    formatted = searxng_service.format_search_results("q", items, max_snippet_chars=180, max_total_chars=500)
+    listed = sum(1 for line in formatted.splitlines() if line[:2].rstrip(".").isdigit())
+    assert listed == 2, formatted
+    assert formatted.startswith("### 网页搜索结果（关键词：q，共精选 2 条）")
+    assert searxng_service.extract_search_step_summary(formatted) == "检索到 2 条精选网页"
 
 
 def test_searxng_fallback_on_unresponsive_engines() -> None:
@@ -148,12 +158,11 @@ def test_searxng_search_with_token() -> None:
         result = asyncio.run(searxng_service.search_searxng("ai drama"))
 
     assert "AI Short Drama" in result
-    # Verify tokens in query params
+    # SearXNG reads private-engine tokens from the `tokens` parameter; a bearer header serves reverse proxies.
     assert recorded_request["params"]["tokens"] == "secret-token-123"
-    assert recorded_request["params"]["token"] == "secret-token-123"
-    # Verify token in headers
+    assert "token" not in recorded_request["params"]
     assert recorded_request["headers"]["authorization"] == "Bearer secret-token-123"
-    assert recorded_request["headers"]["x-token"] == "secret-token-123"
+    assert "x-token" not in recorded_request["headers"]
 
 
 def test_searxng_empty_results() -> None:
@@ -278,6 +287,7 @@ if __name__ == "__main__":
     test_searxng_search_success_without_token()
     test_searxng_sanitize_query()
     test_searxng_step_summary()
+    test_searxng_format_results_header_matches_listed_entries()
     test_searxng_fallback_on_unresponsive_engines()
     test_searxng_search_with_token()
     test_searxng_empty_results()

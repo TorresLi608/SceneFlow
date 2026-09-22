@@ -119,8 +119,8 @@ function formatStepDetail(detail: string | undefined, locale: string): string {
   const searchMatch = detail.match(/^检索[「"“](.+?)[」"”]$/);
   if (searchMatch) return `Searching "${searchMatch[1]}"`;
 
-  // 抓取「xxx」 -> Fetching "xxx"
-  const fetchMatch = detail.match(/^抓取[「"“](.+?)[」"”]$/);
+  // 提取「xxx」/ 抓取「xxx」 -> Fetching "xxx"
+  const fetchMatch = detail.match(/^(?:提取|抓取)[「"“](.+?)[」"”]$/);
   if (fetchMatch) return `Fetching "${fetchMatch[1]}"`;
 
   // 提示词「xxx」 -> Prompt: "xxx"
@@ -131,13 +131,17 @@ function formatStepDetail(detail: string | undefined, locale: string): string {
   const docMatch = detail.match(/^文档[「"“](.+?)[」"”]$/);
   if (docMatch) return `Document: "${docMatch[1]}"`;
 
-  // 精选 x 条相关网页结果 -> x relevant search results
-  const resultMatch = detail.match(/^精选\s*(\d+)\s*条相关网页结果$/);
-  if (resultMatch) return `${resultMatch[1]} relevant search results`;
+  // 检索到 x 条精选网页 / 检索到 x 条相关网页 -> x web results (backend: searxng_service.extract_search_step_summary)
+  const resultMatch = detail.match(/^检索到\s*(\d+)\s*条(?:精选|相关)网页$/);
+  if (resultMatch) return `${resultMatch[1]} web results`;
 
-  // 提取完成，共 x 字符 -> Extracted x characters
-  const extractMatch = detail.match(/^提取完成[，,\s]*共\s*(\d+)\s*字符$/);
+  // 已提取 x 字符正文 -> Extracted x characters (backend: crawl_service.extract_crawl_step_summary)
+  const extractMatch = detail.match(/^已提取\s*(\d+)\s*字符正文$/);
   if (extractMatch) return `Extracted ${extractMatch[1]} characters`;
+
+  // 已提取前 x 字符，原文约 y 字符 -> Extracted first x of ~y characters
+  const partialExtractMatch = detail.match(/^已提取前\s*(\d+)\s*字符[，,\s]*原文约\s*(\d+)\s*字符$/);
+  if (partialExtractMatch) return `Extracted first ${partialExtractMatch[1]} of ~${partialExtractMatch[2]} characters`;
 
   // 上下文超过 x token 预算 -> Context exceeds x token budget
   const budgetMatch = detail.match(/^上下文超过\s*(\d+)\s*token\s*预算$/);
@@ -154,6 +158,11 @@ function formatStepDetail(detail: string | undefined, locale: string): string {
     "正在生成回复内容": "Generating response content",
     "回复生成完成": "Response generation completed",
     "已写入 SQLite": "Saved to SQLite",
+    "检索完成": "Search completed",
+    "未检索到匹配网页": "No matching web pages",
+    "已达本轮搜索上限": "Search limit reached for this turn",
+    "提取完成": "Extraction completed",
+    "未提取到有效文本": "No readable text extracted",
   };
 
   if (exactMap[detail]) {
