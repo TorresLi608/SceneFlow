@@ -49,6 +49,15 @@ The test runner requires module names, overrides `DATABASE_URL` with a temporary
 | `SCENEFLOW_WORKER_ENABLED` | Enabled; `0`, `false`, or `no` disables queue consumption for manual test draining |
 | `SCENEFLOW_CJK_FONT_PATH` | Optional PDF font override; common local fonts are auto-detected |
 | `SCENEFLOW_CJK_FONT_NAME` | `Arial Unicode MS`; generated Word document font |
+| `SCENEFLOW_SEARXNG_BASE_URL` | Empty; self-hosted SearXNG origin. When set, chat registers the `web_search` tool. The instance must list `json` under `search.formats` in its `settings.yml` (the default is HTML only, so JSON requests get HTTP 403) and its bot limiter must allow API clients. |
+| `SCENEFLOW_SEARXNG_ENGINE_TOKEN` | Empty; sent as the SearXNG `tokens` parameter for private engines and as a bearer header for a reverse proxy |
+| `SCENEFLOW_SEARXNG_ENGINES` | Empty; comma-separated engine names (`wechat`/`weixin`/`wx` alias to `sogou wechat`). Empty uses the built-in engine list; a configured list whose engines are all unresponsive falls back to it. |
+| `SCENEFLOW_SEARXNG_RESULT_COUNT` | `4`, clamped 1–10; results handed to the model per search |
+| `SCENEFLOW_SEARXNG_MAX_SNIPPET_CHARS` | `180`, clamped 50–1000; characters per result snippet |
+| `SCENEFLOW_SEARXNG_MAX_TOTAL_CHARS` | `900`, clamped 200–5000; total search text per call |
+| `SCENEFLOW_CRAWL4AI_BASE_URL` | Empty; Crawl4AI REST service used first by `fetch_web_content`. Without it the built-in HTML extractor runs. |
+| `SCENEFLOW_CRAWL4AI_API_TOKEN` | Empty; bearer token for that service |
+| `SCENEFLOW_CRAWL4AI_MAX_CHARS` | `2000`, clamped 500–10000; extracted page text handed to the model |
 | `SCENEFLOW_SMTP_HOST` | Empty; SMTP server |
 | `SCENEFLOW_SMTP_USER` | Empty; SMTP login and default sender |
 | `SCENEFLOW_SMTP_PASSWORD` | Empty |
@@ -57,6 +66,8 @@ The test runner requires module names, overrides `DATABASE_URL` with a temporary
 | `SCENEFLOW_SMTP_SSL` | `true`; otherwise STARTTLS (port 465 also selects SSL) |
 
 When SMTP host/user are absent, `email_service` logs the registration code instead of sending email; this fallback currently has no production guard. Email is optional at registration; if supplied it requires a verification code. Codes expire after 300 seconds, with a 60-second sending cooldown.
+
+Chat web tools (`services/searxng_service.py`, `services/crawl_service.py`): `web_search` exists only when SearXNG is configured and runs at most 3 distinct queries per turn (identical queries reuse the turn's result; beyond the budget the tool returns a notice instead of a result). `fetch_web_content` is always registered for every chat user, so it is guarded before any request: HTTP(S) only, no URL credentials, no local names or numeric pseudo-hosts, and every address the host resolves to must be public. The built-in fetcher follows redirects manually with the same check per hop (5 hops max), accepts only textual content types, reads at most 2 MB, and the whole call is bounded to 30 seconds across every extraction stage. A configured Crawl4AI service fetches on its own, so only the initial URL is checked there. Search queries and fetched URLs are conversation content and are not logged.
 
 The engine creates the database parent directory before opening SQLite; both startup and Alembic use the same configuration. `sqlite://` and `sqlite:///:memory:` retain a shared in-memory database for tests. SQLite URI filenames (`uri=true`) and non-SQLite backends are not supported. Local development reads `DATABASE_URL` from `backend/.env`; leave it unset to use the repository-root default. See [migration instructions](../docs/reference/local-setup.md#migrating-existing-data) for moving an existing database.
 

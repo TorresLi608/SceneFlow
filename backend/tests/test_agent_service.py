@@ -298,6 +298,45 @@ def test_agent_system_prompt_temporal_and_search_optimization() -> None:
         assert "意图与时间分析" in prompt
         assert "搜索词优化重写" in prompt
         assert "严禁包含问号" in prompt
+        assert str(agent_service.MAX_WEB_SEARCHES_PER_TURN) in prompt
+
+
+def test_agent_system_prompt_without_search_does_not_advertise_web_search() -> None:
+    from app.core import config
+
+    with patch.object(config, "SEARXNG_BASE_URL", ""):
+        assert "web_search" not in [t.name for t in agent_service.create_chat_tools("chat_test", None)]
+        prompt = agent_service._agent_system_prompt()
+    assert "web_search" not in prompt
+    assert "没有网络搜索工具" in prompt
+    assert "fetch_web_content" in prompt
+    assert "当前现实世界日期" in prompt
+
+
+def test_web_search_runs_distinct_queries_and_caps_the_turn() -> None:
+    from app.core import config
+
+    async def fake_search(query: str, *args, **kwargs) -> str:
+        return f"### 网页搜索结果（关键词：{query}，共精选 1 条）\n1. [{query}](https://example.com/{query})"
+
+    search = AsyncMock(side_effect=fake_search)
+
+    async def _test() -> None:
+        with patch.object(config, "SEARXNG_BASE_URL", "http://searxng.test:8080"), patch("app.services.agent_service.search_searxng", search):
+            tool = {t.name: t for t in agent_service.create_chat_tools("chat_test", None)}["web_search"]
+            first = await tool.ainvoke({"query": "成都 天气"})
+            second = await tool.ainvoke({"query": "北京 天气"})
+            repeated = await tool.ainvoke({"query": "  成都   天气 "})
+            third = await tool.ainvoke({"query": "上海 天气"})
+            fourth = await tool.ainvoke({"query": "广州 天气"})
+
+        assert "成都 天气" in first and "北京 天气" in second and "上海 天气" in third
+        assert repeated == first
+        assert search.await_count == agent_service.MAX_WEB_SEARCHES_PER_TURN
+        assert fourth.startswith("本轮网络搜索次数已达上限")
+        assert agent_service._tool_output_detail(fourth) == "已达本轮搜索上限"
+
+    asyncio.run(_test())
 
 
 def test_final_answer_does_not_leak_prior_turn_messages() -> None:
@@ -340,6 +379,8 @@ if __name__ == "__main__":
     test_web_search_tool_unconfigured_skips_registration()
     test_web_search_tool_configured_and_executes()
     test_agent_system_prompt_temporal_and_search_optimization()
+    test_agent_system_prompt_without_search_does_not_advertise_web_search()
+    test_web_search_runs_distinct_queries_and_caps_the_turn()
     test_final_answer_does_not_leak_prior_turn_messages()
 
 
