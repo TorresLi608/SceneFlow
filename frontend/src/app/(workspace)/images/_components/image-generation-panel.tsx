@@ -27,6 +27,7 @@ import { deleteImageHistoryAction, generateImageAction, listImageHistoryAction }
 import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { GeneratedModelLine } from "@/components/generated-model-line";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,7 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { artifactBffUrl } from "@/lib/artifact-url";
-import { configName } from "@/lib/config-format";
+import { configName, generationModelLabel } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -135,6 +136,10 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState<ImageReferenceInput[]>([]);
   const [imageUrl, setImageUrl] = useState("");
+  // Which provider/model produced the image on screen: the last response, or the history
+  // row the user reopened. Shown in the lightbox sidebar next to the other specs.
+  const [imageProvider, setImageProvider] = useState("");
+  const [imageModel, setImageModel] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -156,6 +161,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
     prompt: string;
     resolution?: string;
     ratio?: string;
+    model?: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -204,6 +210,8 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
       ),
     onSuccess: (data) => {
       setImageUrl(data.image.url);
+      setImageModel(data.image.model);
+      setImageProvider(selectedConfig?.provider ?? "");
       setErrorMessage(null);
       // The backend already stored the row; prepend it so the list updates without a refetch.
       queryClient.setQueryData(
@@ -357,7 +365,13 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
   };
 
   const openLightbox = (url: string, p: string, res?: string, r?: string) => {
-    setLightboxItem({ url, prompt: p, resolution: res, ratio: r });
+    setLightboxItem({
+      url,
+      prompt: p,
+      resolution: res,
+      ratio: r,
+      model: generationModelLabel(imageProvider, imageModel, t),
+    });
     setLightboxOpen(true);
   };
 
@@ -667,6 +681,8 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
                     onClick={() => {
                       setImageUrl(item.url ?? "");
                       setPrompt(item.prompt);
+                      setImageModel(item.model);
+                      setImageProvider(item.provider);
                       const savedResolution = historyOption(item, "resolution");
                       const savedRatio = historyOption(item, "ratio");
                       if (savedResolution && resolutions.includes(savedResolution as GenerateImageInput["resolution"])) {
@@ -697,7 +713,8 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
                       <span className="block truncate text-xs font-semibold text-foreground">
                         {item.prompt}
                       </span>
-                      <span className="mt-1 block text-[10px] text-muted-foreground">
+                      <GeneratedModelLine provider={item.provider} model={item.model} className="mt-0.5 text-muted-foreground" />
+                      <span className="mt-0.5 block text-[10px] text-muted-foreground">
                         {item.createdAt ? formatDateTime(item.createdAt) : ""}
                       </span>
                     </span>
@@ -925,6 +942,11 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
                         {lightboxItem.ratio ? (
                           <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
                             {t("images.ratioLabel", { ratio: lightboxItem.ratio })}
+                          </Badge>
+                        ) : null}
+                        {lightboxItem.model ? (
+                          <Badge variant="outline" className="max-w-full text-[11px] font-medium px-2 py-0.5" title={lightboxItem.model}>
+                            <span className="truncate">{t("common.generatedWith", { model: lightboxItem.model })}</span>
                           </Badge>
                         ) : null}
                         <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">

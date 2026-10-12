@@ -27,7 +27,7 @@ from app.utils.common import now
 
 logger = logging.getLogger(__name__)
 
-IMAGE_PROVIDERS = {"openai", "gemini", "qwen"}
+IMAGE_PROVIDERS = {"openai", "gemini", "qwen", "grok"}
 REFERENCE_KINDS = {"character", "characterState", "prop", "tone", "sceneImage", "sceneVideo", "voice", "asset"}
 
 
@@ -302,7 +302,7 @@ def image_config(
     config = project_model_config(session, user_id, project, "image", purpose_label)
     require_model_balance(session, user_id, config)
     if config["provider"] not in IMAGE_PROVIDERS:
-        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")
+        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen/grok")
     return config
 
 

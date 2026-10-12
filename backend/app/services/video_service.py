@@ -20,6 +20,7 @@ from google.genai import types
 DOUBAO_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 GEMINI_VIDEO_BASE_URL = "https://generativelanguage.googleapis.com"
 QWEN_VIDEO_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
+GROK_VIDEO_BASE_URL = "https://api.x.ai/v1"
 DATA_URL_RE = re.compile(r"^data:([^;,]+);base64,(.+)$", re.DOTALL)
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_MEDIA_BYTES = 50 * 1024 * 1024
@@ -46,6 +47,9 @@ VIDEO_SETTINGS = {
     "1920x1080": VideoSettings("1080p", "16:9"),
 }
 QWEN_VIDEO_QUALITIES = {"480p", "720p", "1080p"}
+# xAI documents this ratio set; `adaptive` and the 5:2-style extras the API also lists are
+# deliberately not offered, because the editor and the standalone panel only speak these.
+GROK_VIDEO_ASPECT_RATIOS = {"21:9", "16:9", "4:3", "1:1", "3:4", "9:16"}
 
 
 def parse_media(value: dict[str, Any], allowed: set[str], maximum: int) -> tuple[bytes, str, str]:
@@ -137,8 +141,17 @@ def validate_video_reference_counts(
 
 def resolve_video_settings(provider: str, aspect_ratio: str, quality: str | None = None) -> VideoSettings:
     provider = provider.strip().lower()
+    if provider == "grok":
+        # xAI takes the ratio and resolution directly and has no `adaptive`; anything else
+        # is a config error rather than something to silently rewrite.
+        settings = VIDEO_SETTINGS.get(aspect_ratio)
+        if settings is None and aspect_ratio in GROK_VIDEO_ASPECT_RATIOS:
+            settings = VideoSettings(quality or "720p", aspect_ratio)
+        if settings is None:
+            raise ValueError("unsupported video aspect ratio")
+        return settings
     if provider not in {"doubao", "gemini"}:
-        raise ValueError("aspect ratio is only supported for Doubao and Gemini")
+        raise ValueError("aspect ratio is only supported for Doubao, Gemini, and Grok")
     settings = VIDEO_SETTINGS.get(aspect_ratio)
     if settings is None and aspect_ratio in {"21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"}:
         settings = VideoSettings(quality or "720p", aspect_ratio)
@@ -318,6 +331,15 @@ def _response_payload(response: httpx.Response) -> Any:
 
 def gemini_video_base_url(base_url: str = "") -> str:
     return (base_url or GEMINI_VIDEO_BASE_URL).strip().rstrip("/").removesuffix("/openai").removesuffix("/v1beta")
+
+
+def grok_video_base_url(base_url: str = "") -> str:
+    """The xAI video base: normalize only the official host, keep relays untouched."""
+    base = (base_url or GROK_VIDEO_BASE_URL).strip().rstrip("/")
+    parsed = urlparse(base)
+    if (parsed.hostname or "").lower() == "api.x.ai" and not parsed.path.rstrip("/").endswith("/v1"):
+        return f"{base}/v1"
+    return base
 
 
 def is_native_qwen_video_url(base_url: str) -> bool:
@@ -674,6 +696,71 @@ async def _generate_qwen_video_sdk(
             Path(path).unlink(missing_ok=True)
 
 
+async def _generate_grok_video(
+    api_key: str,
+    model: str,
+    prompt: str,
+    settings: VideoSettings | None,
+    quality: str | None,
+    duration: int,
+    references: list[dict[str, Any]],
+    base_url: str,
+    output_audio: bool | None = None,
+    first_frame: dict[str, Any] | None = None,
+    last_frame: dict[str, Any] | None = None,
+) -> VideoResult:
+    """xAI's asynchronous video API: submit a task, poll the request id, download the clip.
+
+    `image` pins the first frame; additional stills ride as `reference_images`, which is
+    the reference-to-video input. Reference videos and audios are not part of this
+    contract, and the capability defaults declare them unsupported.
+    """
+    payload: dict[str, Any] = {"model": model.strip(), "prompt": prompt, "duration": duration}
+    if settings:
+        payload["aspect_ratio"] = settings.ratio
+    if quality:
+        payload["resolution"] = quality
+    if output_audio is not None:
+        payload["generate_audio"] = output_audio
+    if first_frame:
+        payload["image"] = media_data_url(first_frame, "image")
+    if last_frame:
+        payload["last_frame"] = media_data_url(last_frame, "image")
+    if references:
+        payload["reference_images"] = [media_data_url(item, "image") for item in references]
+
+    base = grok_video_base_url(base_url)
+    headers = {"Authorization": f"Bearer {api_key.strip()}"}
+    async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        response = await client.post(f"{base}/videos/generations", headers=headers, json=payload)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ValueError(f"provider status {exc.response.status_code}: {exc.response.text.strip()[:220]}") from exc
+        request_id = str(response.json().get("request_id") or "").strip()
+        if not request_id:
+            raise ValueError("Grok video task creation returned no request id")
+        deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            task_response = await client.get(f"{base}/videos/{request_id}", headers=headers)
+            task_response.raise_for_status()
+            task = task_response.json()
+            status = str(task.get("status") or "").lower()
+            if status in {"done", "completed", "succeeded"}:
+                video_url = str((task.get("video") or {}).get("url") or "").strip()
+                if not video_url:
+                    raise ValueError("Grok video task succeeded without a video URL")
+                video_response = await client.get(video_url)
+                video_response.raise_for_status()
+                if not video_response.content:
+                    raise ValueError("Grok returned an empty video")
+                return VideoResult(video_response.content)
+            if status in {"failed", "error", "canceled", "cancelled", "expired"}:
+                raise ValueError(f"Grok video task {status}: {_provider_error(task.get('error') or task)[:220]}")
+        raise TimeoutError("Grok video generation timed out")
+
+
 async def generate_video(
     provider: str,
     api_key: str,
@@ -701,6 +788,11 @@ async def generate_video(
         return await _generate_qwen_video(
             api_key, model, prompt, quality or "", duration, prompt_extend, references, reference_videos, reference_audios, base_url,
             aspect_ratio, output_audio, first_frame, last_frame,
+        )
+    if provider == "grok":
+        settings = resolve_video_settings(provider, aspect_ratio, quality) if aspect_ratio else None
+        return await _generate_grok_video(
+            api_key, model, prompt, settings, quality, duration, references, base_url, output_audio, first_frame, last_frame,
         )
     reference = references[0] if references else None
     settings = resolve_video_settings(provider, aspect_ratio, quality) if aspect_ratio else None

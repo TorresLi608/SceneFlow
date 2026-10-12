@@ -133,8 +133,8 @@ async def _generate_scene_image(project_id: str, scene: dict[str, Any], config: 
         started_at = time.monotonic()
         with db() as session:
             require_model_balance(session, user_id, config)
-        if config["provider"] not in {"openai", "gemini", "qwen"}:
-            raise ValueError("image generation currently only supports provider openai/gemini/qwen")
+        if config["provider"] not in {"openai", "gemini", "qwen", "grok"}:
+            raise ValueError("image generation currently only supports provider openai/gemini/qwen/grok")
         await scene_event(project_id, scene_id, imageStatus="generating", imageProgress=20, errorMsg="")
         references: list[tuple[str, bytes, str]] = []
         if scene.get("explicitImageReferences") or scene.get("explicitReferences"):

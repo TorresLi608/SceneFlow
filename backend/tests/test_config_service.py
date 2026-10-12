@@ -15,7 +15,7 @@ from app.api.v1.settings import activate_official_config, create_config, deactiv
 from app.core import database
 from app.core.database import db, init_db
 from app.core.security import decrypt, encrypt
-from app.llms.router import _is_native_gemini_image_url, _openai_image_quality, _openai_image_size, base_url_for, gemini_openai_base_url, image_base_url_for
+from app.llms.router import _is_native_gemini_image_url, _is_native_grok_image_url, _openai_image_quality, _openai_image_size, base_url_for, gemini_openai_base_url, image_base_url_for
 from app.models import ChatMessage, ChatSession, ModelConfig, User, UserOfficialConfigDefault
 from app.services.config_service import VIDEO_MODEL_CAPABILITIES, active_model_config, config_api_key, config_create_fields, config_update_fields, default_video_capabilities, normalize_base_url, normalize_config_payload, normalize_video_capabilities, video_capabilities
 
@@ -217,6 +217,10 @@ def test_video_capabilities_are_normalized_and_stored() -> None:
         "referenceAudiosRequired": False,
         "audioParam": None,
         "audioDefault": False,
+        # wan2.7-t2v is not in the catalog, so the frame flags fall back to the qwen defaults.
+        "supportsStartEndFrames": False,
+        "supportsFirstFrame": False,
+        "supportsLastFrame": False,
     }
     unlimited_images = normalize_video_capabilities({"referenceImages": True, "maxReferenceImages": 100}, "qwen")
     assert unlimited_images["maxReferenceImages"] == 100
@@ -293,8 +297,65 @@ def test_gemini_image_helpers() -> None:
 
 def test_openai_compatible_base_urls_preserve_relays() -> None:
     assert base_url_for("qwen") == "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    for provider in ("qwen", "doubao", "deepseek", "openai", "gemini"):
+    for provider in ("qwen", "doubao", "deepseek", "openai", "gemini", "grok"):
         assert base_url_for(provider, "https://relay.example.com/v1/") == "https://relay.example.com/v1"
+
+
+def test_grok_image_helpers_normalize_only_the_official_host() -> None:
+    assert base_url_for("grok") == "https://api.x.ai/v1"
+    assert image_base_url_for("grok") == "https://api.x.ai/v1"
+    assert image_base_url_for("grok", "https://api.x.ai") == "https://api.x.ai/v1"
+    assert image_base_url_for("grok", "https://api.x.ai/v1/") == "https://api.x.ai/v1"
+    assert image_base_url_for("grok", "https://relay.example.com/v1") == "https://relay.example.com/v1"
+    assert _is_native_grok_image_url("")
+    assert _is_native_grok_image_url("https://api.x.ai/v1")
+    assert not _is_native_grok_image_url("https://relay.example.com/v1")
+
+
+def test_grok_configs_are_valid_for_every_media_purpose() -> None:
+    chat = normalize_config_payload(
+        {"purpose": "script", "provider": "grok", "modelSeries": "Grok-4.7", "apiKey": "new-secret-key"}
+    )
+    image = normalize_config_payload(
+        {"purpose": "image", "provider": "grok", "modelSeries": "grok-imagine-image-2.0", "apiKey": "new-secret-key"}
+    )
+    video = normalize_config_payload(
+        {
+            "purpose": "video",
+            "provider": "grok",
+            "modelSeries": "grok-imagine-video-1.5",
+            "baseUrl": "https://relay.example.com/v1",
+            "apiKey": "new-secret-key",
+        }
+    )
+    # xAI ids are lowercase, and the vendor name is accepted as an alias of the provider.
+    assert (chat["provider"], chat["model"]) == ("grok", "grok-4.7")
+    assert (image["provider"], image["model"]) == ("grok", "grok-imagine-image-2.0")
+    assert (video["provider"], video["base_url"]) == ("grok", "https://relay.example.com/v1")
+    assert video["video_capabilities"]["supportsLastFrame"] is True
+    alias = normalize_config_payload(
+        {"purpose": "general", "provider": "xai", "modelSeries": "grok-4.7", "apiKey": "new-secret-key"}
+    )
+    assert alias["provider"] == "grok"
+
+
+def test_grok_video_catalog_and_relay_fallback_capabilities() -> None:
+    flagship = default_video_capabilities("grok", "grok-imagine-video-1.5")
+    assert flagship["qualities"] == ["480p", "720p", "1080p"]
+    assert flagship["fps"] == []
+    assert "adaptive" not in flagship["aspectRatios"]
+    assert (flagship["supportsFirstFrame"], flagship["supportsLastFrame"], flagship["supportsStartEndFrames"]) == (True, True, True)
+    assert (flagship["audioParam"], flagship["audioDefault"]) == ("with_audio", True)
+    assert (flagship["referenceImages"], flagship["maxReferenceImages"], flagship["referenceVideo"], flagship["referenceAudio"]) == (True, 5, False, False)
+    assert VIDEO_MODEL_CAPABILITIES["grok-imagine-video-1.5"]["catalog"] is True
+
+    assert default_video_capabilities("grok", "grok-imagine-video-1.5-lite")["supportsLastFrame"] is False
+    assert default_video_capabilities("grok", "grok-imagine-video")["qualities"] == ["480p", "720p"]
+
+    # A relay id the catalog does not know still resolves the full contract shape, read conservatively.
+    relay = default_video_capabilities("grok", "some-relay-grok-video")
+    assert (relay["fps"], relay["supportsFirstFrame"], relay["supportsLastFrame"], relay["audioDefault"]) == ([], True, False, False)
+    assert "adaptive" not in relay["aspectRatios"]
 
 
 def test_user_config_pricing_round_trip() -> None:
@@ -570,6 +631,8 @@ def test_every_video_provider_resolves_capabilities() -> None:
         ("doubao", "doubao-seedance-2.5"),
         ("qwen", "wan2.7-i2v"),
         ("qwen", "wan3.0-video"),
+        ("grok", "grok-imagine-video-1.5"),
+        ("grok", "relay-grok-video"),
         ("openai", ""),
     ):
         capabilities = default_video_capabilities(provider, model)
@@ -623,6 +686,9 @@ if __name__ == "__main__":
     test_qwen_media_configs_are_valid()
     test_gemini_image_helpers()
     test_openai_compatible_base_urls_preserve_relays()
+    test_grok_image_helpers_normalize_only_the_official_host()
+    test_grok_configs_are_valid_for_every_media_purpose()
+    test_grok_video_catalog_and_relay_fallback_capabilities()
     test_user_config_pricing_round_trip()
     test_price_only_admin_edit_skips_model_revalidation()
     test_model_config_source_switch_preserves_id_and_key()

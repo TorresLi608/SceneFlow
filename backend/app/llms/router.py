@@ -6,6 +6,7 @@ import json
 import asyncio
 from dataclasses import dataclass, field
 import time
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -31,10 +32,12 @@ CHAT_BASE_URLS = {
     "doubao": "https://ark.cn-beijing.volces.com/api/v3",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "anthropic": "https://api.anthropic.com",
+    "grok": "https://api.x.ai/v1",
 }
 GEMINI_IMAGE_BASE_URL = "https://generativelanguage.googleapis.com"
 QWEN_MEDIA_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
-IMAGE_PROVIDERS = {"openai", "gemini", "qwen"}
+GROK_BASE_URL = "https://api.x.ai/v1"
+IMAGE_PROVIDERS = {"openai", "gemini", "qwen", "grok"}
 GENERATION_TIMEOUT_SECONDS = 15 * 60
 POLL_INTERVAL_SECONDS = 5
 
@@ -105,7 +108,7 @@ class ImageResult:
 def pick_model(provider: str, requested: str = "") -> str:
     requested = requested.strip()
     if requested:
-        return requested.lower() if provider in {"deepseek", "doubao", "openai", "gemini", "anthropic"} else requested
+        return requested.lower() if provider in {"deepseek", "doubao", "openai", "gemini", "anthropic", "grok"} else requested
     return {
         "openai": "gpt-4o-mini",
         "deepseek": "deepseek-chat",
@@ -113,6 +116,7 @@ def pick_model(provider: str, requested: str = "") -> str:
         "doubao": "doubao-seed-1-6-250615",
         "gemini": "gemini-3.6-flash",
         "anthropic": "claude-3-5-sonnet-20240620",
+        "grok": "grok-4.7",
     }.get(provider, "gpt-4o-mini")
 
 
@@ -154,6 +158,12 @@ def image_base_url_for(provider: str, base_url: str = "") -> str:
         if (parsed.hostname or "").lower() == "dashscope.aliyuncs.com":
             return f"{parsed.scheme or 'https'}://{parsed.netloc}/api/v1"
         return base
+    if provider == "grok":
+        base = (base_url or GROK_BASE_URL).strip().rstrip("/")
+        parsed = urlparse(base)
+        if (parsed.hostname or "").lower() == "api.x.ai" and parsed.path.rstrip("/") in {"", "/v1"}:
+            return f"{parsed.scheme or 'https'}://{parsed.netloc}/v1"
+        return base
     raise ValueError(f"unsupported image provider: {provider}")
 
 
@@ -170,6 +180,35 @@ def _is_native_gemini_image_url(base_url: str = "") -> bool:
 
 def _is_native_qwen_image_url(base_url: str = "") -> bool:
     return (urlparse(base_url or QWEN_MEDIA_BASE_URL).hostname or "").lower() == "dashscope.aliyuncs.com"
+
+
+def _is_native_grok_image_url(base_url: str = "") -> bool:
+    return (urlparse(image_base_url_for("grok", base_url)).hostname or "").lower() == "api.x.ai"
+
+
+def _grok_image_aspect(value: str) -> str:
+    """xAI takes ratios directly; pixel sizes arrive from callers using the OpenAI vocabulary."""
+    value = value.strip()
+    if ":" in value:
+        # 9:21 is an app ratio xAI does not document; the nearest portrait ratio keeps the crop.
+        return "9:16" if value == "9:21" else value
+    return {"1024x1024": "1:1", "1536x1024": "16:9", "1024x1536": "9:16"}.get(value, "auto")
+
+
+def _grok_image_resolution(value: str) -> str:
+    # xAI caps at 2k, so every higher request lands there rather than failing.
+    return {"low": "1k", "1K": "1k", "medium": "2k", "2K": "2k", "high": "2k", "4K": "2k"}.get(value.strip(), "2k")
+
+
+def _grok_image_item(payload: Any) -> dict[str, Any]:
+    """xAI edit responses are documented loosely: accept a top-level url or the OpenAI data list."""
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            return data[0]
+        if payload.get("url") or payload.get("b64_json"):
+            return {"url": payload.get("url"), "b64_json": payload.get("b64_json")}
+    raise ValueError("empty image response (expected a url or data[0])")
 
 
 def _qwen_image_url(output: dict[str, Any]) -> str:
@@ -766,7 +805,7 @@ class ModelRouter:
 
     async def validate_image_model(self, provider: str, api_key: str, model: str, base_url: str = "") -> None:
         if provider.strip().lower() not in IMAGE_PROVIDERS:
-            raise ValueError("image generation currently only supports provider openai/gemini/qwen")
+            raise ValueError("image generation currently only supports provider openai/gemini/qwen/grok")
         if not model.strip():
             raise ValueError("image purpose requires modelSeries")
         await self.generate_image(api_key, model, "Generate a simple gray square with soft light.", "1:1", "1K", base_url, provider)
@@ -786,6 +825,8 @@ class ModelRouter:
             return await self._generate_qwen_image(api_key, model, prompt, [], size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
             return await self._generate_gemini_image(api_key, model, prompt, [], size, quality, base_url)
+        if provider == "grok" and _is_native_grok_image_url(base_url):
+            return await self._generate_grok_image(api_key, model, prompt, [], size, quality, base_url)
 
         client = AsyncOpenAI(
             api_key=api_key.strip(),
@@ -822,6 +863,8 @@ class ModelRouter:
             return await self._generate_qwen_image(api_key, model, prompt, images, size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
             return await self._generate_gemini_image(api_key, model, prompt, images, size, quality, base_url)
+        if provider == "grok" and _is_native_grok_image_url(base_url):
+            return await self._generate_grok_image(api_key, model, prompt, images, size, quality, base_url)
 
         client = AsyncOpenAI(
             api_key=api_key.strip(),
@@ -846,6 +889,64 @@ class ModelRouter:
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
+        return await _openai_image_result(response)
+
+    async def _generate_grok_image(
+        self,
+        api_key: str,
+        model: str,
+        prompt: str,
+        images: list[tuple[str, bytes, str]],
+        size: str,
+        quality: str,
+        base_url: str = "",
+    ) -> ImageResult:
+        """xAI's Imagine image API: OpenAI-shaped generation plus a JSON-only edit contract.
+
+        Editing deliberately bypasses the OpenAI SDK — xAI documents that `images.edit()`
+        is unsupported because the SDK sends multipart while the API expects JSON. The
+        edit contract carries one source image, so only the first reference is sent;
+        generation keeps the ratio/resolution vocabulary instead of OpenAI's size/quality.
+        """
+        base = image_base_url_for("grok", base_url)
+        if images:
+            _, data, mime_type = images[0]
+            image_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+            async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+                response = await client.post(
+                    f"{base}/images/edits",
+                    headers={"Authorization": f"Bearer {api_key.strip()}"},
+                    json={
+                        "model": model.strip(),
+                        "prompt": prompt.strip(),
+                        "image": {"url": image_url, "type": "image_url"},
+                    },
+                )
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise ValueError(f"provider status {exc.response.status_code}: {exc.response.text.strip()[:220]}") from exc
+                return await _openai_image_result(SimpleNamespace(data=[_grok_image_item(response.json())]))
+
+        client = AsyncOpenAI(
+            api_key=api_key.strip(),
+            base_url=base,
+            timeout=GENERATION_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
+        try:
+            response = await client.images.generate(
+                model=model.strip(),
+                prompt=prompt.strip(),
+                n=1,
+                extra_body={
+                    "aspect_ratio": _grok_image_aspect(size),
+                    "resolution": _grok_image_resolution(quality),
+                    "response_format": "url",
+                },
+            )
+        except APIStatusError as exc:
+            raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
         return await _openai_image_result(response)
 
     async def _generate_gemini_image(
