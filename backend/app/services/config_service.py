@@ -37,6 +37,12 @@ VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
     "wan2.7-r2v-2026-06-12": {"provider": "qwen", "catalog": False, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16", "1:1", "4:3", "3:4"], "minDuration": 2, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 1, "maxReferenceAudios": 1, "audioParam": "reference_voice", "audioDefault": False},
     "wan3.0-video": {"provider": "qwen", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"], "minDuration": 2, "maxDuration": 30, "maxReferenceImages": 10, "maxReferenceVideos": 5, "maxReferenceAudios": 5, "audioParam": "audio", "audioDefault": True},
     "wan3.0-video-prime": {"provider": "qwen", "catalog": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"], "minDuration": 2, "maxDuration": 30, "maxReferenceImages": 10, "maxReferenceVideos": 5, "maxReferenceAudios": 5, "audioParam": "audio", "audioDefault": True},
+    # xAI does not publish a video reference-image limit; 5 is a conservative declaration
+    # (the Imagine editing contract documents five), and admins can override it for a relay
+    # revision through the capability JSON.
+    "grok-imagine-video-1.5": {"provider": "grok", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "promptExtend": False, "minDuration": 1, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 0, "maxReferenceAudios": 0, "audioParam": "with_audio", "audioDefault": True, "supportsFirstFrame": True, "supportsLastFrame": True},
+    "grok-imagine-video-1.5-lite": {"provider": "grok", "catalog": True, "supportsStartEndFrames": False, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "promptExtend": False, "minDuration": 1, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 0, "maxReferenceAudios": 0, "audioParam": "with_audio", "audioDefault": True, "supportsFirstFrame": True, "supportsLastFrame": False},
+    "grok-imagine-video": {"provider": "grok", "catalog": True, "supportsStartEndFrames": False, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "promptExtend": False, "minDuration": 1, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 0, "maxReferenceAudios": 0, "audioParam": "with_audio", "audioDefault": True, "supportsFirstFrame": True, "supportsLastFrame": False},
 }
 
 
@@ -83,6 +89,31 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
             # every series that predates the audio panel.
             "audioParam": "reference_voice" if is_i2v else None,
             "audioDefault": False,
+        }
+    if normalize_provider(provider) == "grok":
+        # A relay model id the catalog does not know: keep the xAI contract shape with the
+        # conservative reading — audio off, first frame only, references declared.
+        return {
+            "qualities": ["480p", "720p", "1080p"],
+            "fps": [],
+            "aspectRatios": [value for value in VIDEO_ASPECT_RATIOS if value != "adaptive"],
+            "promptExtend": False,
+            "minDuration": 1,
+            "maxDuration": 15,
+            "referenceImages": True,
+            "referenceImagesRequired": False,
+            "maxReferenceImages": 5,
+            "referenceVideo": False,
+            "maxReferenceVideos": 0,
+            "referenceVideosRequired": False,
+            "referenceAudio": False,
+            "maxReferenceAudios": 0,
+            "referenceAudiosRequired": False,
+            "audioParam": "with_audio",
+            "audioDefault": False,
+            "supportsStartEndFrames": False,
+            "supportsFirstFrame": True,
+            "supportsLastFrame": False,
         }
     return {
         "qualities": list(VIDEO_QUALITIES),
@@ -251,6 +282,9 @@ def normalize_provider(value: str) -> str:
         "claude code": "anthropic",
         "seedance2.0": "doubao",
         "seedance-2.0": "doubao",
+        "xai": "grok",
+        "x-ai": "grok",
+        "x.ai": "grok",
     }.get(provider, provider)
 
 
@@ -276,7 +310,7 @@ def normalize_base_url(value: str) -> str:
 
 def normalize_model(provider: str, value: str) -> str:
     value = (value or "").strip()
-    return value.lower() if value and provider in {"deepseek", "doubao", "openai", "gemini", "anthropic"} else value
+    return value.lower() if value and provider in {"deepseek", "doubao", "openai", "gemini", "anthropic", "grok"} else value
 
 
 def validate_config_fields(purpose: str, provider: str, model: str, base_url: str = "") -> None:
@@ -297,17 +331,17 @@ def validate_config_fields(purpose: str, provider: str, model: str, base_url: st
             raise HTTPException(400, "custom provider requires baseUrl")
         return
     if purpose == "video":
-        if provider not in {"doubao", "gemini", "qwen"}:
-            raise HTTPException(400, "video purpose only supports provider doubao/gemini/qwen")
+        if provider not in {"doubao", "gemini", "qwen", "grok"}:
+            raise HTTPException(400, "video purpose only supports provider doubao/gemini/qwen/grok")
         if not model.strip():
             raise HTTPException(400, "video purpose requires modelSeries")
     elif purpose == "image":
-        if provider not in {"openai", "gemini", "qwen"}:
-            raise HTTPException(400, "image purpose currently only supports provider openai/gemini/qwen")
+        if provider not in {"openai", "gemini", "qwen", "grok"}:
+            raise HTTPException(400, "image purpose currently only supports provider openai/gemini/qwen/grok")
         if not model.strip():
             raise HTTPException(400, "image purpose requires modelSeries")
-    elif provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic"}:
-        raise HTTPException(400, "provider must be one of qwen/deepseek/doubao/openai/gemini/anthropic/custom")
+    elif provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic", "grok"}:
+        raise HTTPException(400, "provider must be one of qwen/deepseek/doubao/openai/gemini/anthropic/grok/custom")
     elif not model.strip():
         raise HTTPException(400, "general/script purpose requires modelSeries")
 

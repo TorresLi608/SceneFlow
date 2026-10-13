@@ -125,7 +125,7 @@ async def discover_models(payload: dict[str, Any], _: int = Depends(current_user
         or (provider == "doubao" and base_url == "https://ark.cn-beijing.volces.com/api/v3")
     ):
         return {"models": known_models}
-    if provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic", "custom"}:
+    if provider not in {"qwen", "deepseek", "doubao", "openai", "gemini", "anthropic", "grok", "custom"}:
         raise HTTPException(400, "provider does not support model discovery")
     if provider == "custom" and not base_url:
         raise HTTPException(400, "custom provider requires baseUrl")

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.generation_service import _generate_scene_video
-from app.services.video_service import GENERATION_TIMEOUT_SECONDS, VideoResult, VideoSettings, _generate_doubao_video_sdk, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, is_native_qwen_video_url, qwen_media_policy_model, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, supported_video_defaults, validate_video_inputs
+from app.services.video_service import GENERATION_TIMEOUT_SECONDS, VideoResult, VideoSettings, _generate_doubao_video_sdk, _generate_grok_video, _generate_qwen_video, build_doubao_payload, gemini_video_base_url, grok_video_base_url, is_native_qwen_video_url, qwen_media_policy_model, resolve_qwen_video_quality, resolve_video_options, resolve_video_settings, supported_video_defaults, validate_video_inputs
 
 
 REFERENCE = {"name": "first.png", "data": "data:image/png;base64," + base64.b64encode(b"image").decode("ascii")}
@@ -26,8 +26,11 @@ def test_aspect_ratio_mapping_and_provider_limits() -> None:
     assert resolve_video_settings("doubao", "1280x720") == VideoSettings("720p", "16:9")
     assert resolve_video_settings("doubao", "720x1280") == VideoSettings("720p", "9:16")
     assert resolve_video_settings("doubao", "1920x1080") == VideoSettings("1080p", "16:9")
-    assert_raises("only supported for Doubao and Gemini", lambda: resolve_video_settings("qwen", "1280x720"))
+    assert_raises("only supported for Doubao, Gemini, and Grok", lambda: resolve_video_settings("qwen", "1280x720"))
     assert_raises("1:1", lambda: resolve_video_settings("gemini", "1024x1024"))
+    assert resolve_video_settings("grok", "16:9", "1080p") == VideoSettings("1080p", "16:9")
+    assert resolve_video_settings("grok", "1280x720") == VideoSettings("720p", "16:9")
+    assert_raises("unsupported video aspect ratio", lambda: resolve_video_settings("grok", "adaptive"))
     assert resolve_qwen_video_quality("480P") == "480p"
     assert resolve_qwen_video_quality("1080p") == "1080p"
     assert resolve_qwen_video_quality("4k") == "4k"
@@ -229,6 +232,67 @@ def test_qwen_native_url_detection_keeps_relays_configurable() -> None:
     assert not is_native_qwen_video_url("https://relay.example.com/api/v1")
 
 
+def test_grok_video_base_url_normalizes_only_the_official_host() -> None:
+    assert grok_video_base_url("") == "https://api.x.ai/v1"
+    assert grok_video_base_url("https://api.x.ai") == "https://api.x.ai/v1"
+    assert grok_video_base_url("https://api.x.ai/v1/") == "https://api.x.ai/v1"
+    assert grok_video_base_url("https://relay.example.com/v1") == "https://relay.example.com/v1"
+
+
+def test_grok_video_submits_xai_task_and_downloads_result() -> None:
+    created = SimpleNamespace(json=lambda: {"request_id": "req-1"}, raise_for_status=lambda: None)
+    done = SimpleNamespace(json=lambda: {"status": "done", "video": {"url": "https://vidgen.x.ai/result.mp4"}}, raise_for_status=lambda: None)
+    video = SimpleNamespace(content=b"mp4", raise_for_status=lambda: None)
+    client = AsyncMock()
+    client.post.return_value = created
+    client.get.side_effect = [done, video]
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with patch("app.services.video_service.httpx.AsyncClient", return_value=context), patch("app.services.video_service.asyncio.sleep", new=AsyncMock()):
+        result = asyncio.run(
+            _generate_grok_video(
+                "test-key", "grok-imagine-video-1.5", "camera move", VideoSettings("1080p", "16:9"), "1080p", 8,
+                [REFERENCE], "", True, REFERENCE, None,
+            )
+        )
+
+    assert result.data == b"mp4"
+    assert client.post.call_args.args[0] == "https://api.x.ai/v1/videos/generations"
+    assert client.post.call_args.kwargs["headers"] == {"Authorization": "Bearer test-key"}
+    request = client.post.call_args.kwargs["json"]
+    assert (request["model"], request["duration"], request["aspect_ratio"], request["resolution"]) == ("grok-imagine-video-1.5", 8, "16:9", "1080p")
+    assert request["generate_audio"] is True
+    assert request["image"].startswith("data:image/png;base64,")
+    assert request["reference_images"] == [request["image"]]
+    assert "last_frame" not in request and "fps" not in request
+    assert client.get.call_args_list[0].args[0] == "https://api.x.ai/v1/videos/req-1"
+    assert client.get.call_args_list[1].args[0] == "https://vidgen.x.ai/result.mp4"
+
+
+def test_grok_video_reports_provider_failure_and_keeps_relay_base() -> None:
+    created = SimpleNamespace(json=lambda: {"request_id": "req-2"}, raise_for_status=lambda: None)
+    failed = SimpleNamespace(
+        json=lambda: {"status": "failed", "error": {"code": "invalid_argument", "message": "prompt rejected"}},
+        raise_for_status=lambda: None,
+    )
+    client = AsyncMock()
+    client.post.return_value = created
+    client.get.side_effect = [failed]
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with patch("app.services.video_service.httpx.AsyncClient", return_value=context), patch("app.services.video_service.asyncio.sleep", new=AsyncMock()):
+        try:
+            asyncio.run(_generate_grok_video("test-key", "grok-imagine-video", "camera move", None, None, 5, [], "https://relay.example.com/v1", None))
+        except ValueError as exc:
+            assert "prompt rejected" in str(exc)
+        else:
+            raise AssertionError("a failed xAI task must surface the provider message")
+
+    # Relays keep their own base; optional fields stay out of the body when the caller has no value.
+    assert client.post.call_args.args[0] == "https://relay.example.com/v1/videos/generations"
+    assert client.post.call_args.kwargs["json"] == {"model": "grok-imagine-video", "prompt": "camera move", "duration": 5}
+
+
 def _render_scene_video(options: dict, media: list[dict], max_images: int = 1):
     """Drive one scene render with the providers stubbed, and hand back the request made."""
     config = {
@@ -330,6 +394,9 @@ if __name__ == "__main__":
     test_saved_video_defaults_drop_options_unsupported_by_a_new_model()
     test_video_media_capabilities_are_enforced()
     test_qwen_native_url_detection_keeps_relays_configurable()
+    test_grok_video_base_url_normalizes_only_the_official_host()
+    test_grok_video_submits_xai_task_and_downloads_result()
+    test_grok_video_reports_provider_failure_and_keeps_relay_base()
     test_storyboard_video_passes_scene_media_and_capabilities()
     test_a_render_without_audio_sends_none()
     test_selected_video_references_replace_automatic_character_media()

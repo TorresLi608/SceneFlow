@@ -28,6 +28,7 @@ import { deleteVideoHistoryAction, generateVideoAction, listVideoHistoryAction }
 import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { GeneratedModelLine } from "@/components/generated-model-line";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,7 +49,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { artifactBffUrl } from "@/lib/artifact-url";
-import { configName } from "@/lib/config-format";
+import { configName, generationModelLabel } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -78,7 +79,7 @@ function selectedConfigPayload(config: UserConfig | undefined) {
 function isVideoConfig(config: UserConfig) {
   return (
     config.purpose === "video" &&
-    ["doubao", "qwen"].includes(config.provider) &&
+    ["doubao", "qwen", "grok"].includes(config.provider) &&
     config.isEnabled &&
     Boolean(config.modelSeries.trim())
   );
@@ -129,6 +130,10 @@ function VideoGenerationEditor({
   const [referenceVideoUrl, setReferenceVideoUrl] = useState("");
   const [referenceAudioUrl, setReferenceAudioUrl] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
+  // Which provider/model produced the clip on screen: the last response, or the history row
+  // the user reopened. Shown in the fullscreen sidebar next to the other specs.
+  const [videoProvider, setVideoProvider] = useState("");
+  const [videoModel, setVideoModel] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -166,6 +171,7 @@ function VideoGenerationEditor({
     aspectRatio?: string;
     duration?: number;
     fps?: number;
+    model?: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -186,12 +192,14 @@ function VideoGenerationEditor({
     (config) => configSelectValue(config) === effectiveConfigId
   );
   const capabilities = selectedConfig?.videoCapabilities;
-  const usesQwenTemporaryUpload = selectedConfig?.provider === "qwen";
-  const visibleReferences = usesQwenTemporaryUpload ? references : references.filter((item) => item.url);
-  const visibleReferenceVideos = usesQwenTemporaryUpload
+  // Qwen uploads local files to temporary OSS and xAI accepts base64 data URIs directly, so
+  // both keep uploaded references; the other providers only take public URLs here.
+  const acceptsUploadedReferences = ["qwen", "grok"].includes(selectedConfig?.provider ?? "");
+  const visibleReferences = acceptsUploadedReferences ? references : references.filter((item) => item.url);
+  const visibleReferenceVideos = acceptsUploadedReferences
     ? referenceVideos
     : referenceVideos.filter((item) => item.url);
-  const visibleReferenceAudios = usesQwenTemporaryUpload
+  const visibleReferenceAudios = acceptsUploadedReferences
     ? referenceAudios
     : referenceAudios.filter((item) => item.url);
 
@@ -224,6 +232,8 @@ function VideoGenerationEditor({
     mutationFn: (payload: GenerateVideoInput) => generateVideoAction(payload, requestController.current?.signal),
     onSuccess: (response) => {
       setVideoUrl(response.video.url);
+      setVideoModel(response.video.model);
+      setVideoProvider(selectedConfig?.provider ?? "");
       // The backend already stored the row; prepend it so the list updates without a refetch.
       queryClient.setQueryData(
         queryKeys.generationHistory("video"),
@@ -449,7 +459,15 @@ function VideoGenerationEditor({
     d?: number,
     f?: number
   ) => {
-    setModalItem({ url, prompt: p, quality: q, aspectRatio: ar, duration: d, fps: f });
+    setModalItem({
+      url,
+      prompt: p,
+      quality: q,
+      aspectRatio: ar,
+      duration: d,
+      fps: f,
+      model: generationModelLabel(videoProvider, videoModel, t),
+    });
     setModalOpen(true);
   };
 
@@ -770,7 +788,7 @@ function VideoGenerationEditor({
                     </Button>
                   </div>
 
-                  {usesQwenTemporaryUpload ? (
+                  {acceptsUploadedReferences ? (
                     <Button
                       type="button"
                       variant="secondary"
@@ -873,7 +891,7 @@ function VideoGenerationEditor({
                     </Button>
                   </div>
 
-                  {usesQwenTemporaryUpload ? (
+                  {acceptsUploadedReferences ? (
                     <Button
                       type="button"
                       variant="secondary"
@@ -970,7 +988,7 @@ function VideoGenerationEditor({
                     </Button>
                   </div>
 
-                  {usesQwenTemporaryUpload ? (
+                  {acceptsUploadedReferences ? (
                     <Button
                       type="button"
                       variant="secondary"
@@ -1077,12 +1095,20 @@ function VideoGenerationEditor({
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
                   <button
                     type="button"
-                    onClick={() => { setVideoUrl(item.url ?? ""); setPrompt(item.prompt); }}
+                    onClick={() => {
+                      setVideoUrl(item.url ?? "");
+                      setPrompt(item.prompt);
+                      setVideoModel(item.model);
+                      setVideoProvider(item.provider);
+                    }}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
                   >
                     <Film className="size-4 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                      {item.prompt}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium text-foreground">
+                        {item.prompt}
+                      </span>
+                      <GeneratedModelLine provider={item.provider} model={item.model} className="mt-0.5 text-muted-foreground" />
                     </span>
                     <span className="text-[10px] text-muted-foreground shrink-0">
                       {item.createdAt ? formatDateTime(item.createdAt) : ""}
@@ -1330,6 +1356,11 @@ function VideoGenerationEditor({
                         {modalItem.fps ? (
                           <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
                             {modalItem.fps} FPS
+                          </Badge>
+                        ) : null}
+                        {modalItem.model ? (
+                          <Badge variant="outline" className="max-w-full text-[11px] font-medium px-2 py-0.5" title={modalItem.model}>
+                            <span className="truncate">{t("common.generatedWith", { model: modalItem.model })}</span>
                           </Badge>
                         ) : null}
                         <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">

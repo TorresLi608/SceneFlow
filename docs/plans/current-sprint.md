@@ -1,6 +1,6 @@
 # Current implementation snapshot
 
-Base snapshot verified on **2026-09-07**; voice-design, media-preview, and export-audio entries updated from the working tree on **2026-09-08**; project asset management updated on **2026-09-09**. The filename is retained for existing links; this is a source snapshot, not a scheduled sprint or an assignment of owners. See the [code map](../architecture/code-map.md) for implementation/test locations and [backlog](backlog.md) for remaining work.
+Base snapshot verified on **2026-09-07**; voice-design, media-preview, and export-audio entries updated from the working tree on **2026-09-08**; project asset management updated on **2026-09-09**; the model-provider row updated from the working tree on **2026-10-12**. The filename is retained for existing links; this is a source snapshot, not a scheduled sprint or an assignment of owners. See the [code map](../architecture/code-map.md) for implementation/test locations and [backlog](backlog.md) for remaining work.
 
 ## Available today
 
@@ -8,6 +8,7 @@ Base snapshot verified on **2026-09-07**; voice-design, media-preview, and expor
 |---|---|
 | Series workbench | Project list → seven sections (info, characters, props, voices, assets, episodes, videos) → full-screen episode editor; old workbench remains directly reachable |
 | Project settings | Synopsis, cover upload/generation, production settings, project-first text/image/video/audio choices with account fallback |
+| Model providers | Text: Qwen, Doubao, DeepSeek, OpenAI, Gemini, Claude, Grok, custom relay; image: OpenAI, Gemini, Qwen/Wan, Grok; video: Doubao, Gemini, Qwen/Wan, Grok; audio: Qwen voice design. Grok resolves the official `api.x.ai` host natively (xAI image fields, JSON image edits, asynchronous video tasks) and treats any other base URL as an OpenAI-compatible relay such as new-api; provider contracts are listed in the [backend reference](../../backend/README.md#providers-and-model-configuration) |
 | Unsaved model settings | Info panel sets an in-memory dirty flag; episode image/video generation can warn and continue with saved configuration |
 | Bible | Character states as parallel/ranged looks, prop ownership, labelled setting sheets, merged cast/prop references |
 | Voices | Qwen design and project redesign preserving profile IDs/bindings; optional project sample line, save-only/save-and-generate editing, local auditions, merged timbre track; project voices are isolated from the standalone voice library (no shared writes, no import); [editing flow](../architecture/data-flow.md#project-voice-design-and-editing) |
@@ -17,7 +18,7 @@ Base snapshot verified on **2026-09-07**; voice-design, media-preview, and expor
 | Prompt editing | `prompt-area` mentions, asset picker, ordered prefixes, shared reference budgets, preset/optimization and compiled-prompt preview endpoints |
 | Asset management | One shared project/episode manager for custom imports plus character/state/prop media, voices, tone sheets, and every live episode’s shot images/videos; search, media/source/episode filters, episode/shot labels, preview/source links, deletion and image merging |
 | Video/export | Per-shot generation → episode composition in selected shot order → final export in selected episode order; up to 60 inputs per merge, shared audio retention/silent padding, previous episode video retained on failed recomposition |
-| Standalone generation | Image/video/audio editors reset without deleting history; the image/video history panels, the chat session list, and the saved-voice list each show their menu's admin retention window as a cleanup notice when one is set; unsupported FPS is omitted from standalone video requests |
+| Standalone generation | Image/video/audio editors reset without deleting history; the image/video history panels, the chat session list, and the saved-voice list each show their menu's admin retention window as a cleanup notice when one is set; image/video history items and their fullscreen sidebars show the provider and model that produced them, and saved voices show their target model; unsupported FPS is omitted from standalone video requests |
 | Queue | In-process three-lane worker for reference images, prompt drafts, project voice design and preview; persisted lease/cancel/retry state |
 | Run lifecycle | Project claim guards, attached-task cancellation, unfinished-media cleanup, startup recovery of abandoned project/episode status |
 | Chat | AI SDK stream/message owner, assistant-ui composer, custom Streamdown list, context compression, artifact tools, admin-only diagnostic tool |

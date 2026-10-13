@@ -28,6 +28,7 @@ import {
   saveVoiceAction,
 } from "@/actions/voice-generation-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { GeneratedModelLine } from "@/components/generated-model-line";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -294,7 +295,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-semibold">{voice.name || voice.voiceId}</span>
-                    <span className="block truncate text-[10px] opacity-70">{voice.targetModel}</span>
+                    <GeneratedModelLine model={voice.targetModel} className="opacity-70" />
                   </span>
                   {!draftVoice && effectiveSavedVoiceId === voice.id ? <Check className="size-3.5 text-primary" /> : null}
                 </button>

@@ -62,6 +62,14 @@ const chatProviderOptions: ProviderOption[] = [
     docsUrl: "https://ai.google.dev/gemini-api/docs/openai",
   },
   {
+    value: "grok",
+    label: "Grok",
+    modelSeries: "",
+    modelPlaceholder: "grok-4.7",
+    baseUrl: "https://api.x.ai/v1",
+    docsUrl: "https://docs.x.ai/docs/overview",
+  },
+  {
     value: "custom",
     label: "Other",
     modelSeries: "",
@@ -98,6 +106,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       docsUrl: "https://platform.qianwenai.com/docs/developer-guides/image-generation/text-to-image",
     },
+    {
+      value: "grok",
+      label: "Grok",
+      modelSeries: "",
+      modelPlaceholder: "grok-imagine-image-2.0",
+      baseUrl: "https://api.x.ai/v1",
+      docsUrl: "https://docs.x.ai/developers/model-capabilities/images/generation",
+    },
   ],
   video: [
     {
@@ -115,6 +131,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       modelPlaceholder: "",
       baseUrl: "https://dashscope.aliyuncs.com/api/v1",
       docsUrl: "https://platform.qianwenai.com/docs/developer-guides/video-generation/text-to-video",
+    },
+    {
+      value: "grok",
+      label: "Grok",
+      modelSeries: "",
+      modelPlaceholder: "grok-imagine-video-1.5",
+      baseUrl: "https://api.x.ai/v1",
+      docsUrl: "https://docs.x.ai/developers/model-capabilities/video/generation",
     },
   ],
   audio: [
@@ -141,6 +165,7 @@ const providerLabelKeyMap: Record<string, string> = {
   deepseek: "provider.deepseek",
   doubao: "provider.doubao",
   gemini: "provider.gemini",
+  grok: "provider.grok",
   openai: "provider.openai",
   qwen: "provider.qwen",
   system: "provider.system",

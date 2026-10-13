@@ -13,7 +13,7 @@ from openai import RateLimitError
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
-from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _is_native_qwen_image_url, _qwen_image_size, _qwen_image_url, image_base_url_for
+from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _grok_image_aspect, _grok_image_resolution, _is_native_qwen_image_url, _qwen_image_size, _qwen_image_url, image_base_url_for
 from app.models import User
 from app.utils.common import now
 
@@ -260,6 +260,81 @@ def test_qwen_image_normalizes_only_the_official_dashscope_url() -> None:
     assert image_base_url_for("qwen", "https://relay.example.com/compatible-mode/v1") == "https://relay.example.com/compatible-mode/v1"
 
 
+def test_grok_image_maps_app_vocabulary_to_xai_fields() -> None:
+    assert _grok_image_aspect("16:9") == "16:9"
+    assert _grok_image_aspect("9:21") == "9:16"
+    assert _grok_image_aspect("1536x1024") == "16:9"
+    assert _grok_image_aspect("1024x1024") == "1:1"
+    assert _grok_image_aspect("auto") == "auto"
+    assert _grok_image_resolution("1K") == "1k"
+    assert _grok_image_resolution("medium") == "2k"
+    assert _grok_image_resolution("4K") == "2k"
+
+
+def test_grok_native_image_sends_xai_fields_instead_of_openai_size() -> None:
+    generate = AsyncMock(return_value=SimpleNamespace(data=[SimpleNamespace(b64_json="cG5n", url=None)]))
+    client = Mock(return_value=SimpleNamespace(images=SimpleNamespace(generate=generate)))
+    with patch("app.llms.router.AsyncOpenAI", client):
+        result = asyncio.run(
+            ModelRouter().generate_image("test-key", "grok-imagine-image-2.0", "draw it", "16:9", "2K", "", "grok")
+        )
+
+    assert result.data == b"png"
+    assert client.call_args.kwargs["base_url"] == "https://api.x.ai/v1"
+    request = generate.call_args.kwargs
+    assert request["extra_body"] == {"aspect_ratio": "16:9", "resolution": "2k", "response_format": "url"}
+    assert request["n"] == 1
+    assert not {"size", "quality", "output_format"} & set(request)
+
+
+def test_grok_native_edit_posts_json_and_downloads_the_result() -> None:
+    edited = SimpleNamespace(json=lambda: {"url": "https://images.x.ai/edited.jpg"}, raise_for_status=lambda: None)
+    image = SimpleNamespace(content=b"jpeg", headers={"content-type": "image/jpeg"}, raise_for_status=lambda: None)
+    client = AsyncMock()
+    client.post.return_value = edited
+    client.get.return_value = image
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with patch("app.llms.router.httpx.AsyncClient", return_value=context):
+        result = asyncio.run(
+            ModelRouter().edit_image(
+                "test-key",
+                "grok-imagine-image-2.0",
+                "make it a sketch",
+                [("face.png", b"png", "image/png"), ("extra.png", b"png", "image/png")],
+                "auto",
+                "2K",
+                "",
+                "grok",
+            )
+        )
+
+    assert (result.data, result.format) == (b"jpeg", "jpg")
+    assert client.post.call_args.args[0] == "https://api.x.ai/v1/images/edits"
+    request = client.post.call_args.kwargs["json"]
+    assert request["model"] == "grok-imagine-image-2.0"
+    # The xAI edit contract takes one source image, so only the first reference is sent.
+    assert request["image"] == {"url": "data:image/png;base64,cG5n", "type": "image_url"}
+    client.get.assert_awaited_once_with("https://images.x.ai/edited.jpg")
+
+
+def test_grok_relay_image_uses_openai_compatibility() -> None:
+    generate = AsyncMock(return_value=SimpleNamespace(data=[SimpleNamespace(b64_json="cG5n")]))
+    client = Mock(return_value=SimpleNamespace(images=SimpleNamespace(generate=generate)))
+    with patch("app.llms.router.AsyncOpenAI", client):
+        result = asyncio.run(
+            ModelRouter().generate_image(
+                "test-key", "grok-imagine-image-2.0", "draw it", "16:9", "2K", "https://relay.example.com/v1", "grok"
+            )
+        )
+
+    assert result.data == b"png"
+    assert client.call_args.kwargs["base_url"] == "https://relay.example.com/v1"
+    assert generate.call_args.kwargs["size"] == "1536x1024"
+    assert generate.call_args.kwargs["quality"] == "medium"
+    assert "extra_body" not in generate.call_args.kwargs
+
+
 if __name__ == "__main__":
     test_generate_image_records_usage_without_references()
     test_generate_image_enforces_configured_reference_limit()
@@ -272,3 +347,7 @@ if __name__ == "__main__":
     test_qwen_image_reads_wan27_choice_result()
     test_qwen_image_relay_uses_openai_compatibility()
     test_qwen_image_normalizes_only_the_official_dashscope_url()
+    test_grok_image_maps_app_vocabulary_to_xai_fields()
+    test_grok_native_image_sends_xai_fields_instead_of_openai_size()
+    test_grok_native_edit_posts_json_and_downloads_the_result()
+    test_grok_relay_image_uses_openai_compatibility()

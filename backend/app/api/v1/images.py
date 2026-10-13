@@ -96,13 +96,15 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
     if len(references) > maximum:
         raise HTTPException(400, f"selected model accepts at most {maximum} reference images")
 
-    if config["provider"] not in {"openai", "gemini", "qwen"}:
-        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen")
+    if config["provider"] not in {"openai", "gemini", "qwen", "grok"}:
+        raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen/grok")
 
     ratio = str(payload.get("ratio") or "auto")
     resolution = str(payload.get("resolution") or "2K")
-    size = ratio if config["provider"] in {"gemini", "qwen"} else RATIO.get(ratio, "auto")
-    quality = resolution if config["provider"] in {"gemini", "qwen"} else QUALITY.get(resolution, "medium")
+    # These providers take the ratio/resolution vocabulary directly; the router maps it per
+    # provider (xAI's `aspect_ratio`/`resolution`, Gemini's image config, Wan's pixel sizes).
+    size = ratio if config["provider"] in {"gemini", "qwen", "grok"} else RATIO.get(ratio, "auto")
+    quality = resolution if config["provider"] in {"gemini", "qwen", "grok"} else QUALITY.get(resolution, "medium")
     started_at = time.monotonic()
     try:
         if references:

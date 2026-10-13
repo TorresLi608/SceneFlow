@@ -173,6 +173,34 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
       supportsStartEndFrames: false,
     };
   }
+  if (provider === "grok") {
+    // Mirrors `VIDEO_MODEL_CAPABILITIES` for the xAI Imagine catalog; an unknown relay id
+    // keeps the same contract shape with audio opt-in and no last frame.
+    const known = ["grok-imagine-video-1.5", "grok-imagine-video-1.5-lite", "grok-imagine-video"].includes(normalized);
+    const supportsLastFrame = normalized === "grok-imagine-video-1.5";
+    return {
+      qualities: normalized === "grok-imagine-video" ? ["480p", "720p"] : ["480p", "720p", "1080p"],
+      fps: [],
+      aspectRatios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+      promptExtend: false,
+      minDuration: 1,
+      maxDuration: 15,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: 5,
+      referenceVideo: false,
+      maxReferenceVideos: 0,
+      referenceVideosRequired: false,
+      referenceAudio: false,
+      maxReferenceAudios: 0,
+      referenceAudiosRequired: false,
+      audioParam: "with_audio",
+      audioDefault: known,
+      supportsFirstFrame: true,
+      supportsLastFrame,
+      supportsStartEndFrames: supportsLastFrame,
+    };
+  }
   const isI2v = model.includes("-i2v");
   const isR2v = model.includes("-r2v");
   const isVideoEdit = model.includes("videoedit");
