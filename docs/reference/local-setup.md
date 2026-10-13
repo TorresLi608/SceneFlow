@@ -102,6 +102,18 @@ pnpm run docker:build  # Build container images
 pnpm run docker:up     # Start services in background
 ```
 
+The Dockerfiles use BuildKit cache mounts for Debian and Python packages, and for the pnpm store. Keep BuildKit enabled on the server (`docker buildx version` should work) so rebuilding after source-only changes does not download and unpack every dependency again. Frontend production images use the Webpack builder because this repository's Turbopack build has previously hung.
+
+On a memory-constrained host, build one image at a time and cap the Node heap used by the frontend build:
+
+```bash
+COMPOSE_PARALLEL_LIMIT=1 docker compose build backend
+SCENEFLOW_NODE_OPTIONS=--max-old-space-size=1024 \
+  COMPOSE_PARALLEL_LIMIT=1 docker compose build frontend
+```
+
+Raise the Node limit to `1536` or `2048` when the host has more available memory. A Node heap limit prevents the build from consuming all memory, but it cannot make an undersized host fast; if the build still gets killed, build the images on a workstation or CI runner and push/pull them from a registry instead of compiling on the application server.
+
 `docker:build` builds the images, `docker:up` runs `docker compose up -d` to start the services in the background, and `docker:down` runs `docker compose down` to stop them. Compose runs one backend and one frontend, exposing 8080/4000.
 
 | Data | Container location | Persistent storage |

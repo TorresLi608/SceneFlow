@@ -20,6 +20,7 @@ services:
       context: ./frontend
       args:
         BACKEND_API_BASE_URL: http://backend:8080
+        NODE_OPTIONS: ${SCENEFLOW_NODE_OPTIONS:---max-old-space-size=1536}
     environment:
       BACKEND_API_BASE_URL: http://backend:8080
       NEXT_PUBLIC_BFF_BASE_URL: ""

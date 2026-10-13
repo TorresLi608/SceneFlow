@@ -6,6 +6,8 @@ node_modules
 out
 coverage
 *.log
+*.tsbuildinfo
+.DS_Store
 **/*.db
 **/*.db-wal
 **/*.db-shm

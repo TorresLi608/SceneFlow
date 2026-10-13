@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,12 +10,14 @@ WORKDIR /app/backend
 
 # ffmpeg/ffprobe are runtime dependencies for audio audition and media merging
 # with ffprobe, and voice-sheet and export concatenation shell out to ffmpeg.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg gosu \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg gosu
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --requirement requirements.txt
 
 COPY app ./app
 COPY migrations ./migrations
