@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from app.services import agent_service, artifact_service
 from app.llms.router import ChatGoogleGenerativeAI, ModelRouter, _content_text, _json_object, _reasoning_text
@@ -365,6 +365,55 @@ def test_final_answer_does_not_leak_prior_turn_messages() -> None:
     assert new_answer == "哈哈，能帮上忙就好！"
 
 
+class _FallbackStreamModel:
+    """Stands in for the tool-free retry model and streams one usage-bearing chunk."""
+
+    def __init__(self, chunk: AIMessageChunk) -> None:
+        self._chunk = chunk
+
+    def astream(self, messages):
+        async def _generate():
+            yield self._chunk
+
+        return _generate()
+
+
+def test_plain_fallback_stream_is_metered_into_agent_complete() -> None:
+    """中转平台丢弃带工具流的正文时，纯文本补救流同样是一次计费调用，必须计入用量。"""
+
+    async def _test() -> None:
+        agent_model = ToolFakeModel(disable_streaming=True, responses=[AIMessage(content="")])
+        fake_agent = create_agent(model=agent_model, tools=agent_service.create_chat_tools("chat_fallback", None))
+        chunk = AIMessageChunk(
+            content="补救回复。",
+            usage_metadata={"input_tokens": 120, "output_tokens": 30, "total_tokens": 150},
+        )
+        original_agent = agent_service._agent
+        original_chat_model = agent_service.models.chat_model
+        agent_service._agent = lambda *args, **kwargs: fake_agent
+        agent_service.models.chat_model = lambda *args, **kwargs: _FallbackStreamModel(chunk)
+        try:
+            events = [
+                event
+                async for event in agent_service.stream_chat_agent(
+                    {"provider": "anthropic", "apiKey": "test", "model": "fake", "baseUrl": ""},
+                    "chat_fallback",
+                    [{"role": "user", "content": "闲聊一下"}],
+                    None,
+                )
+            ]
+        finally:
+            agent_service._agent = original_agent
+            agent_service.models.chat_model = original_chat_model
+
+        complete = events[-1]
+        assert complete["type"] == "agent_complete"
+        assert complete["content"] == "补救回复。"
+        assert complete["usage"] == {"inputTokens": 120, "outputTokens": 30, "cacheReadTokens": 0, "cacheWriteTokens": 0}
+
+    asyncio.run(_test())
+
+
 if __name__ == "__main__":
     test_agent_tool_loop()
     test_reasoning_blocks_are_separate_from_answer()
@@ -382,5 +431,6 @@ if __name__ == "__main__":
     test_agent_system_prompt_without_search_does_not_advertise_web_search()
     test_web_search_runs_distinct_queries_and_caps_the_turn()
     test_final_answer_does_not_leak_prior_turn_messages()
+    test_plain_fallback_stream_is_metered_into_agent_complete()
 
 

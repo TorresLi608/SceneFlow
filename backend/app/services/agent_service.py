@@ -403,6 +403,12 @@ async def run_chat_agent(
         usage = aggregate_token_usage(
             {str(index): message.usage_metadata for index, message in enumerate(output.get("messages", [])[base_count:]) if isinstance(message, AIMessage) and message.usage_metadata}
         )
+    if not any(usage.values()):
+        logger.warning(
+            "chat turn finished without usage metadata provider=%s model=%s; recorded 0 tokens",
+            config.get("provider"),
+            config.get("model"),
+        )
     return AgentResult(answer, usage)
 
 
@@ -417,6 +423,7 @@ async def stream_chat_agent(
     final_output: Any = None
     streamed_content = ""
     tool_outputs: list[Any] = []
+    fallback_usage: dict[str, int] = {}
 
     has_analyzed = False
     has_started_tools = False
@@ -562,14 +569,24 @@ async def stream_chat_agent(
             temperature=0.3,
             max_tokens=4096,
         )
-        async for chunk in plain_model.astream(base_messages):
-            reasoning = _reasoning_text(chunk.content, chunk.additional_kwargs)
-            content = _content_text(chunk.content)
-            if reasoning:
-                yield {"type": "reasoning_delta", "content": reasoning}
-            if content:
-                streamed_content += content
-                yield {"type": "content_delta", "content": content}
+        # The fallback stream is a real billed call, so meter it too. The agent-level
+        # callback cannot see it, and a relay that dropped the tool-configured run's
+        # content often reports no usage for that run either — without this, the turn
+        # records 0 tokens and $0 even though the user received an answer.
+        fallback_message: Any = None
+        with get_usage_metadata_callback() as fallback_callback:
+            async for chunk in plain_model.astream(base_messages):
+                fallback_message = chunk if fallback_message is None else fallback_message + chunk
+                reasoning = _reasoning_text(chunk.content, chunk.additional_kwargs)
+                content = _content_text(chunk.content)
+                if reasoning:
+                    yield {"type": "reasoning_delta", "content": reasoning}
+                if content:
+                    streamed_content += content
+                    yield {"type": "content_delta", "content": content}
+        fallback_usage = aggregate_token_usage(fallback_callback.usage_metadata)
+        if not any(fallback_usage.values()):
+            fallback_usage = aggregate_token_usage(getattr(fallback_message, "usage_metadata", None))
         answer = streamed_content.strip()
 
     if has_started_generation:
@@ -590,5 +607,14 @@ async def stream_chat_agent(
     if not any(usage.values()) and isinstance(final_output, dict):
         usage = aggregate_token_usage(
             {str(index): message.usage_metadata for index, message in enumerate(final_output.get("messages", [])[base_count:]) if isinstance(message, AIMessage) and message.usage_metadata}
+        )
+    if any(fallback_usage.values()):
+        # The dropped agent call and the plain-text retry are both billed calls; keep both.
+        usage = {key: usage.get(key, 0) + value for key, value in fallback_usage.items()}
+    if answer.strip() and not any(usage.values()):
+        logger.warning(
+            "chat turn finished without usage metadata provider=%s model=%s; recorded 0 tokens",
+            config.get("provider"),
+            config.get("model"),
         )
     yield {"type": "agent_complete", "content": answer, "usage": usage}
