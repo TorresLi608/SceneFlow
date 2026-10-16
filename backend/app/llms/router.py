@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 from anthropic import AsyncAnthropic
 from google import genai
 from google.genai import types
-from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -23,6 +22,7 @@ import httpx
 from dashscope.aigc.image_generation import ImageGeneration
 
 from app.services.usage_service import aggregate_token_usage
+from app.llms.anthropic import MeteredChatAnthropic
 
 
 CHAT_BASE_URLS = {
@@ -501,7 +501,7 @@ class ModelRouter:
         if provider == "anthropic":
             if "max_tokens" in kwargs:
                 kwargs["max_tokens_to_sample"] = kwargs.pop("max_tokens")
-            return ChatAnthropic(
+            return MeteredChatAnthropic(
                 model_name=pick_model(provider, model),
                 api_key=api_key.strip(),
                 base_url=base_url_for(provider, base_url) if base_url.strip() else None,

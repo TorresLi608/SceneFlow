@@ -78,7 +78,7 @@ Startup keeps the configured admin enabled. A legacy `superAdmin` row is renamed
 ## Providers and model configuration
 
 - `llms/router.py` owns text/image adapters; `video_service.py`, `qwen_voice_service.py`, and `tts_service.py` own their media adapters. Services own workflows, configuration resolution, and billing.
-- Script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, `grok`, `custom`. Chat uses LangChain adapters, with `ChatOpenAI(base_url=...)` for compatible endpoints and `ChatAnthropic` for Anthropic.
+- Script/chat providers: `qwen`, `doubao`, `deepseek`, `openai`, `gemini`, `anthropic`, `grok`, `custom`. Chat uses LangChain adapters, with `ChatOpenAI(base_url=...)` for compatible endpoints and `MeteredChatAnthropic` (`llms/anthropic.py`) for Anthropic so streamed `message_start` usage is retained.
 - Image providers: OpenAI, Gemini, Qwen/Wan, Grok (xAI Imagine). `imageMaxReferenceImages` is configurable (default 4, non-negative), not a global provider cap.
 - Video providers: Doubao, Gemini, Qwen/Wan, Grok. Capabilities come from `config_service.py` and the saved configuration: media limits, first/last frames, ratios, quality, duration, prompt extension, and audio switch. Both standalone and project video paths use `video_service`; the project endpoint additionally requires storyboard images.
 - An empty FPS capability list means callers omit `fps`; it is not an instruction to send 24. Explicit unsupported FPS values remain validation errors. The standalone form follows this contract; see the [FPS fix record](../docs/bugs/2026-09-07-video-unsupported-fps.md).
