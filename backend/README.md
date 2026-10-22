@@ -99,6 +99,8 @@ Gemini/Omni validation on **2026-10-22**: `SCENEFLOW_PRIVATE_GENERATED_DIR=<temp
 
 Chat context is SQLite history → token budget → older-context summary. LangChain `create_agent` has image/PDF/Word tools and an extra read-only error-log tool for super admins. There is no configured durable production checkpointer or approval workflow. [Chat design](../docs/design/feature-chat.md) documents the frontend/backend stream split.
 
+Chat tool loops use request-local `chat_agent_middleware.ChatToolBudget`: up to six tool rounds and eight actual tool executions per turn, with identical concurrent requests sharing one result. Repeated calls, two consecutive tool failures, or budget exhaustion switch to one final model call without tools, retaining existing evidence, generated artifacts and usage. The graph's 32-step recursion guard is a backstop. The SearXNG-specific limit of three distinct searches still applies. Cancellation propagates to in-flight tool tasks. No model request is added to an ordinary answer that finishes within budget. See [the tool-budget fix record](../docs/bugs/2026-10-22-chat-agent-tool-budget.md) for validation and limits.
+
 ## HTTP endpoints
 
 Inventory checked against the router decorators on **2026-09-07**. Paths below use the actual FastAPI parameter names. [OpenAPI](../docs/reference/api-spec.yaml) is the generated HTTP/schema reference; behavior and background execution are described in [data flow](../docs/architecture/data-flow.md).

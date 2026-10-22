@@ -18,6 +18,7 @@ from app.models import User
 from app.llms.registry import models
 from app.llms.router import _content_text, _lc_messages, _openai_image_size, _reasoning_text
 from app.services.artifact_service import save_document_artifact, save_image_artifact, tool_result
+from app.services.chat_agent_middleware import CHAT_RECURSION_LIMIT, ChatToolBudget
 from app.services.crawl_service import crawl_web_page, extract_crawl_step_summary
 from app.services.error_log_service import error_log_json, find_error_logs
 from app.services.searxng_service import extract_search_step_summary, is_searxng_configured, search_limit_notice, search_searxng
@@ -41,6 +42,7 @@ You can generate images, PDF files, and Word documents with tools.
 - When generating images or documents with tools, do NOT manually copy long artifact URLs or raw image/document markdown in your response. The system will automatically attach the generated image or document to your reply. Simply describe your creative work or summarize the result concisely to the user.
 - Never claim a file was generated unless the tool returned a successful result.
 - If a tool fails, do not retry it more than once; tell the user briefly what failed and what they can do.
+- Reuse tool results already obtained in this turn. Do not repeat an identical tool call; after failures or a tool budget notice, answer from the available results and explain any gaps.
 - Do not expose internal paths, API keys, tool arguments, or implementation details.
 - When a super admin asks why a request failed, use the error-log tool before proposing a fix.
 """
@@ -236,6 +238,7 @@ def _agent(config: dict[str, Any], session_id: str, image_config: dict[str, Any]
     return create_agent(
         model=model,
         tools=create_chat_tools(session_id, image_config, user_id),
+        middleware=[ChatToolBudget()],
         system_prompt=_agent_system_prompt(),
         name="sceneflow_assistant",
     )
@@ -353,14 +356,14 @@ def _reconcile_tool_artifacts(answer: str, tool_messages: list[Any]) -> tuple[st
                 reconciled = pattern.sub(markdown, reconciled, count=1)
                 replaced = True
 
-        if not replaced:
+        if not replaced and markdown not in missing_blocks:
             missing_blocks.append(markdown)
 
     for message in tool_messages:
         if _tool_status(message) != "error":
             continue
         notice = _failure_notice(str(getattr(message, "name", "") or ""), message)
-        if notice not in reconciled:
+        if notice not in reconciled and notice not in missing_blocks:
             missing_blocks.append(notice)
 
     return reconciled, missing_blocks
@@ -393,7 +396,7 @@ async def run_chat_agent(
     with get_usage_metadata_callback() as usage_callback:
         output = await agent.ainvoke(
             {"messages": base_messages},
-            config={"recursion_limit": 12},
+            config={"recursion_limit": CHAT_RECURSION_LIMIT},
         )
     answer = _answer_with_artifacts(output, base_count=base_count)
     if not answer:
@@ -445,7 +448,7 @@ async def stream_chat_agent(
     with get_usage_metadata_callback() as usage_callback:
         async for event in agent.astream_events(
             {"messages": base_messages},
-            config={"recursion_limit": 12},
+            config={"recursion_limit": CHAT_RECURSION_LIMIT},
             version="v2",
         ):
             event_type = event["event"]

@@ -9,6 +9,7 @@
 按最近更新日期倒序维护；同一天按首次记录日期倒序。每个详情文档只保留一行索引。
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
+| BUG-20261022-chat-agent-tool-budget | 智能问答、GRAPH_RECURSION_LIMIT、Recursion limit of 12、重复工具、ChatToolBudget | 固定 12 步无收尾导致工具循环报错；新增每轮工具预算、并发重复复用、连续失败/超额后无工具回答，并保留结果及用量 | 已修复，八组后台自检和前端检查通过；真实模型待验证 | 2026-10-22 | [问答工具循环预算](2026-10-22-chat-agent-tool-budget.md) |
 | BUG-20261022-docker-corepack-registry-timeout | Docker、Corepack、pnpm-10.28.1.tgz、registry.npmjs.org、ETIMEDOUT、ENETUNREACH、SCENEFLOW_NPM_REGISTRY | 官方 npm 源超时导致 pnpm 引导失败；支持切换源并复用缓存。再次反馈确认直接 build 仍选中默认官方源，补充显式 build-arg 命令 | Compose 配置及镜像源引导验证通过，完整构建待服务器验证 | 2026-10-22 | [Docker 下载 pnpm 超时](2026-10-22-docker-corepack-registry-timeout.md) |
 | BUG-20260907-video-unsupported-fps | Seedance 2.0、Gemini、Veo、Developer API、fps=24、videos/generate | 表单省略不支持的 FPS；2026-10-21 新增 Gemini 接入时同步修正默认能力及 SDK 参数，旧配置中的 24 也不再传给 Developer API | 已修复，专项回归与前端检查通过；未调用付费模型 | 2026-10-21 | [不支持的 FPS 参数](2026-09-07-video-unsupported-fps.md) |
 | BUG-20261016-chat-fallback-usage-unmetered | 智能问答、输入 0、输出 0、花费为 0、Claude、message_start、message_delta、message_stop、stream_usage、纯文本补救、中转平台 | 应用漏计纯文本补救且 Claude 适配器丢弃 `message_start` 输入用量；现保留并合并已收到的 usage，缺少结束事件时记 warning。当前中转站仍未透传最终输出用量，需其修复协议或更换端点 | 应用侧已修复并实测；中转站待修复 | 2026-10-16 | [智能问答补救流用量未计量](2026-10-16-chat-fallback-usage-unmetered.md) |
