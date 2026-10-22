@@ -36,3 +36,4 @@
 ## 历史与关联
 
 - 2026-10-22：根据用户构建日志确认 Corepack 官方 registry 连接超时，补充可配置 registry 与构建阶段复用。
+- 2026-10-22 再次反馈：用户同步修改后直接执行 `docker compose build`，Corepack 请求 `https://registry.npmjs.org/pnpm/10.28.1` 仍超时。新配置默认保留官方源，并不自动切换；本次日志确认镜像源未被选中，不代表镜像源本身失败。可显式执行 `docker compose --progress=plain build --build-arg NPM_REGISTRY=https://registry.npmmirror.com frontend`，避免依赖 shell 环境变量；后端另行构建。本机 `docker compose --progress=plain build --help` 已确认支持 `--build-arg` 选项，服务器执行结果仍待确认。之前成功是否来自缓存或当时网络可达没有足够证据。
