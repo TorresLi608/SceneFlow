@@ -9,6 +9,7 @@
 按最近更新日期倒序维护；同一天按首次记录日期倒序。每个详情文档只保留一行索引。
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
+| BUG-20261022-docker-corepack-registry-timeout | Docker、Corepack、pnpm-10.28.1.tgz、registry.npmjs.org、ETIMEDOUT、ENETUNREACH、SCENEFLOW_NPM_REGISTRY | 官方 npm 源连接超时导致 pnpm 引导失败；构建支持统一切换 Corepack/依赖源并复用 pnpm 下载缓存 | Compose 配置及镜像源引导验证通过，完整构建待服务器验证 | 2026-10-22 | [Docker 下载 pnpm 超时](2026-10-22-docker-corepack-registry-timeout.md) |
 | BUG-20260907-video-unsupported-fps | Seedance 2.0、Gemini、Veo、Developer API、fps=24、videos/generate | 表单省略不支持的 FPS；2026-10-21 新增 Gemini 接入时同步修正默认能力及 SDK 参数，旧配置中的 24 也不再传给 Developer API | 已修复，专项回归与前端检查通过；未调用付费模型 | 2026-10-21 | [不支持的 FPS 参数](2026-09-07-video-unsupported-fps.md) |
 | BUG-20261016-chat-fallback-usage-unmetered | 智能问答、输入 0、输出 0、花费为 0、Claude、message_start、message_delta、message_stop、stream_usage、纯文本补救、中转平台 | 应用漏计纯文本补救且 Claude 适配器丢弃 `message_start` 输入用量；现保留并合并已收到的 usage，缺少结束事件时记 warning。当前中转站仍未透传最终输出用量，需其修复协议或更换端点 | 应用侧已修复并实测；中转站待修复 | 2026-10-16 | [智能问答补救流用量未计量](2026-10-16-chat-fallback-usage-unmetered.md) |
 | BUG-20261012-config-test-frame-flags | test_config_service、test_video_capabilities_are_normalized_and_stored、supportsFirstFrame、supportsLastFrame、supportsStartEndFrames、normalize_video_capabilities、AssertionError | 首尾帧能力标志加入 normalize_video_capabilities 后测试期望字典未同步，配置测试自 2026-08-31 起在第 202 行失败并挡住其后用例；现补齐三个 False 标志，仅改测试 | 已验证，全量后端套件除既有 test_episode_migration 外通过 | 2026-10-12 | [配置测试首尾帧标志断言](2026-10-12-config-test-frame-flags.md) |

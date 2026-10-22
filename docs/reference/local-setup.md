@@ -104,6 +104,16 @@ pnpm run docker:up     # Start services in background
 
 The Dockerfiles use BuildKit cache mounts for Debian and Python packages, and for the pnpm store. Keep BuildKit enabled on the server (`docker buildx version` should work) so rebuilding after source-only changes does not download and unpack every dependency again. Frontend production images use the Webpack builder because this repository's Turbopack build has previously hung.
 
+If frontend dependency installation fails while Corepack downloads pnpm from `registry.npmjs.org` (`ETIMEDOUT` / `ENETUNREACH`), select an accessible npm registry for the build:
+
+```bash
+SCENEFLOW_NPM_REGISTRY=https://registry.npmmirror.com docker compose build frontend
+docker compose build backend
+docker compose up -d
+```
+
+`SCENEFLOW_NPM_REGISTRY` defaults to `https://registry.npmjs.org`. It configures both Corepack's pnpm download and pnpm's dependency registry; setting a host-side pnpm registry alone does not configure the container. The build stage inherits the dependency stage so it reuses the installed, package-version-pinned pnpm. To persist the registry choice, add `SCENEFLOW_NPM_REGISTRY=https://registry.npmmirror.com` to the repository-root Compose `.env` file. Direct `docker build` users can pass `--build-arg NPM_REGISTRY=https://registry.npmmirror.com` with the `frontend/` build context. This does not change Docker Hub, Debian, or Python package download sources.
+
 On a memory-constrained host, build one image at a time and cap the Node heap used by the frontend build:
 
 ```bash
