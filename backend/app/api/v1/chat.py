@@ -213,7 +213,7 @@ async def stream_message(
             raise
         except Exception as exc:
             persist_assistant_message()
-            record_http_error(request, 502, "failed to chat", "CHAT_STREAM_FAILED")
+            record_http_error(request, 502, "failed to chat", "CHAT_STREAM_FAILED", exception=exc)
             yield json.dumps(
                 {"type": "agent_step", "step": {"id": "runtime_error", "label": "执行失败", "status": "error", "detail": str(exc)[:180]}},
                 ensure_ascii=False,

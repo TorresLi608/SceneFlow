@@ -35,6 +35,15 @@ interface ChatMessageListProps {
   onRegenerate?: () => void;
 }
 
+function extractLatestReasoningSnippet(reasoning?: string): string {
+  if (!reasoning) return "";
+  const lines = reasoning
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*#>`]+\s*/, ""))
+    .filter(Boolean);
+  return lines.at(-1) ?? "";
+}
+
 function StepKindIcon({ label, className }: { label: string; className?: string }) {
   if (label.includes("搜索") || label.includes("web") || label.includes("Search")) {
     return <Globe className={className} />;
@@ -692,6 +701,8 @@ export function ChatMessageList({
           {messages.map((message, index) => {
             const isLast = index === messages.length - 1;
             const isLastAssistant = message.role === "assistant" && isLast;
+            const latestReasoning = extractLatestReasoningSnippet(message.reasoning);
+            const isReasoningActive = isStreaming && isLastAssistant;
 
             return (
               <div
@@ -721,9 +732,20 @@ export function ChatMessageList({
                     {message.reasoning ? (
                       <details className="group/reasoning mb-3.5 rounded-2xl border border-border/50 bg-muted/30 px-3.5 py-2 text-xs transition-colors hover:bg-muted/50">
                         <summary className="flex cursor-pointer select-none items-center gap-1.5 font-medium text-muted-foreground list-none group-open/reasoning:text-foreground">
-                          <Sparkles className="size-3.5 text-primary" />
-                          <span>{t("chat.reasoning")}</span>
-                          <ChevronDown className="ml-auto size-3.5 transition-transform group-open/reasoning:rotate-180" />
+                          <Sparkles className={cn("size-3.5 text-primary shrink-0", isReasoningActive && "animate-pulse")} />
+                          <span className="shrink-0">{t("chat.reasoning")}</span>
+                          {latestReasoning ? (
+                            <div className="flex min-w-0 flex-1 items-center gap-1.5 pl-1.5 group-open/reasoning:hidden">
+                              <span className="h-2.5 w-px bg-border/60 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate font-normal text-muted-foreground/75 text-[11px]">
+                                {latestReasoning}
+                              </span>
+                              {isReasoningActive ? (
+                                <span className="inline-block size-1.5 shrink-0 rounded-full bg-primary/80 animate-pulse" />
+                              ) : null}
+                            </div>
+                          ) : null}
+                          <ChevronDown className="ml-auto size-3.5 shrink-0 transition-transform group-open/reasoning:rotate-180" />
                         </summary>
                         <div className="mt-2 text-muted-foreground leading-relaxed whitespace-pre-wrap border-t border-border/40 pt-2 font-mono text-[11px] opacity-90">
                           {message.reasoning}

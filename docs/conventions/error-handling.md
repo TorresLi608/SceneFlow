@@ -57,4 +57,6 @@ The shared axios response interceptor logs out on 401. Chat streaming has its ow
 
 Request middleware creates a `req_*` ID and attaches `X-Request-Id` to responses passing through it. HTTP exception handlers attempt to store 5xx diagnosis in `error_logs`: route template, method, status/code, sanitized message, and available user/project/episode IDs. The table is not a general application-event archive. Only super admins can query it through `/api/admin/error-logs` or the chat diagnostic tool.
 
+Chat stream failures explicitly write `CHAT_STREAM_FAILED` because the HTTP response has already started. Both that catch and the HTTP exception handler pass the original exception chain to the log service for safe diagnostic extraction; raw upstream bodies remain excluded. The log's diagnostic 502 does not change an already-started stream's HTTP 200. See [logging](logging.md).
+
 Start a bug investigation with the [history index](../bugs/README.md), then matching details and current incident evidence. After a fix, update its detail and index row. See [logging](logging.md) for permitted content and [backlog](../plans/backlog.md) for known places that still violate those rules.

@@ -4,6 +4,7 @@ import base64
 from io import BytesIO
 import json
 import asyncio
+import re
 from dataclasses import dataclass, field
 import time
 from types import SimpleNamespace
@@ -498,11 +499,16 @@ def _qwen_image_size(aspect_ratio: str, resolution: str, has_images: bool, model
 class ModelRouter:
     def chat_model(self, provider: str, api_key: str, model: str, base_url: str = "", **kwargs: Any) -> Any:
         provider = provider.strip().lower()
+        model = pick_model(provider, model)
+        # Fable 5 endpoints can reject non-default sampling temperatures.
+        # Omit it for both native Anthropic and OpenAI-compatible relay calls.
+        if re.fullmatch(r"claude-fable-5(?:[-.][a-z0-9.-]+)?", model.lower()):
+            kwargs.pop("temperature", None)
         if provider == "anthropic":
             if "max_tokens" in kwargs:
                 kwargs["max_tokens_to_sample"] = kwargs.pop("max_tokens")
             return MeteredChatAnthropic(
-                model_name=pick_model(provider, model),
+                model_name=model,
                 api_key=api_key.strip(),
                 base_url=base_url_for(provider, base_url) if base_url.strip() else None,
                 timeout=GENERATION_TIMEOUT_SECONDS,
@@ -511,7 +517,7 @@ class ModelRouter:
             )
         if provider == "gemini" and _is_native_gemini_url(base_url):
             return ChatGoogleGenerativeAI(
-                model=pick_model(provider, model),
+                model=model,
                 google_api_key=api_key.strip(),
                 temperature=kwargs.get("temperature", 0.3),
                 max_retries=2,
@@ -520,7 +526,7 @@ class ModelRouter:
         compatible_base_url = gemini_openai_base_url(base_url) if provider == "gemini" else base_url_for(provider, base_url)
         stream_usage = kwargs.pop("stream_usage", True)
         return ChatOpenAI(
-            model=pick_model(provider, model),
+            model=model,
             api_key=api_key.strip(),
             base_url=compatible_base_url,
             # Explicit base URLs disable langchain-openai's automatic stream usage.

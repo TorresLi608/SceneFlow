@@ -249,9 +249,11 @@ def _final_answer(output: Any, base_count: int = 0) -> str:
     new_messages = messages[base_count:]
     for message in reversed(new_messages):
         if isinstance(message, AIMessage):
-            content = _content_text(message.content).strip()
-            if content:
-                return content
+            # Only the last model response can finish the turn. Do not turn a
+            # tool-call preamble into an answer when the final response is empty.
+            if message.tool_calls or message.invalid_tool_calls:
+                return ""
+            return _content_text(message.content).strip()
     return ""
 
 
@@ -425,6 +427,8 @@ async def stream_chat_agent(
     agent = _agent(config, session_id, image_config, user_id)
     final_output: Any = None
     streamed_content = ""
+    model_streamed_content = ""
+    last_model_output: Any = None
     tool_outputs: list[Any] = []
     fallback_usage: dict[str, int] = {}
 
@@ -452,7 +456,10 @@ async def stream_chat_agent(
             version="v2",
         ):
             event_type = event["event"]
-            if event_type == "on_chat_model_stream":
+            if event_type == "on_chat_model_start":
+                model_streamed_content = ""
+                last_model_output = None
+            elif event_type == "on_chat_model_stream":
                 if not has_analyzed:
                     has_analyzed = True
                     yield {
@@ -481,8 +488,12 @@ async def stream_chat_agent(
                 if reasoning:
                     yield {"type": "reasoning_delta", "content": reasoning}
                 if content:
-                    streamed_content += content
-                    yield {"type": "content_delta", "content": content}
+                    delta = ("\n\n" if streamed_content and not model_streamed_content else "") + content
+                    model_streamed_content += content
+                    streamed_content += delta
+                    yield {"type": "content_delta", "content": delta}
+            elif event_type == "on_chat_model_end":
+                last_model_output = event["data"].get("output")
             elif event_type == "on_tool_start":
                 if not has_analyzed:
                     has_analyzed = True
@@ -545,13 +556,25 @@ async def stream_chat_agent(
     # Tool outcomes come from the observed tool events, so they survive a run whose root
     # on_chain_end never arrived (a stop or a provider failure after the tool finished).
     tool_messages = tool_outputs or _tool_messages(final_output, base_count=base_count)
+    if final_output is None and isinstance(last_model_output, AIMessage):
+        final_output = {"messages": [*base_messages, last_model_output]}
     answer = _answer_with_artifacts(final_output, tool_messages, base_count=base_count)
-    if not answer and streamed_content.strip():
-        answer = streamed_content.strip()
+    final_text = _final_answer(final_output, base_count=base_count)
+    # Middleware can replace an unusable response, and some adapters emit only an
+    # end event. Send that final text even when a previous model call streamed a
+    # preamble; the BFF cannot infer missing text from persisted-message metadata.
+    if final_text and final_text != model_streamed_content.strip():
+        current_text = model_streamed_content.strip()
+        if current_text and final_text.startswith(current_text):
+            delta = final_text[len(current_text):]
+        else:
+            delta = ("\n\n" if streamed_content else "") + final_text
+        streamed_content += delta
+        yield {"type": "content_delta", "content": delta}
 
-    # 部分中转平台在配置 tools 且提问为纯闲聊/反馈时，流式可能异常丢弃 content 返回空流；
-    # 在未执行任何工具且全流程无输出时，自动通过纯文本模型流式补救，确保常规问答顺畅应答
-    if not has_started_tools and not streamed_content.strip() and not answer.strip():
+    # No-tool empty replies retain the plain-model fallback. Tool turns recover
+    # inside ChatToolBudget so their tool evidence is retained for both APIs.
+    if not has_started_tools and not answer.strip():
         logger.info("Agent stream produced empty content without tools; fallback to plain chat model stream")
         if not has_started_generation:
             has_started_generation = True
@@ -577,6 +600,7 @@ async def stream_chat_agent(
         # content often reports no usage for that run either — without this, the turn
         # records 0 tokens and $0 even though the user received an answer.
         fallback_message: Any = None
+        fallback_content = ""
         with get_usage_metadata_callback() as fallback_callback:
             async for chunk in plain_model.astream(base_messages):
                 fallback_message = chunk if fallback_message is None else fallback_message + chunk
@@ -585,12 +609,16 @@ async def stream_chat_agent(
                 if reasoning:
                     yield {"type": "reasoning_delta", "content": reasoning}
                 if content:
+                    fallback_content += content
                     streamed_content += content
                     yield {"type": "content_delta", "content": content}
         fallback_usage = aggregate_token_usage(fallback_callback.usage_metadata)
         if not any(fallback_usage.values()):
             fallback_usage = aggregate_token_usage(getattr(fallback_message, "usage_metadata", None))
-        answer = streamed_content.strip()
+        answer = fallback_content.strip()
+
+    if not answer.strip():
+        raise ValueError("empty final content from agent")
 
     if has_started_generation:
         yield {

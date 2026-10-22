@@ -124,7 +124,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     if exc.status_code >= 500:
         code = error_code_for(exc.status_code, exc.detail)
         logger.warning("request failed request=%s status=%s code=%s", request.state.request_id, exc.status_code, code)
-        record_http_error(request, exc.status_code, exc.detail, code)
+        record_http_error(request, exc.status_code, exc.detail, code, exception=exc)
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 

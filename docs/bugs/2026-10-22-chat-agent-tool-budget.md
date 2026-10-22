@@ -52,3 +52,8 @@ SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_
 - 未调用付费模型、真实 SearXNG/Crawl4AI，也未做浏览器端到端验证；未确认用户原始轮次的具体调用序列。
 - 此预算约束每轮工具数量及循环次数，不是总请求墙钟超时。网络、提供方、鉴权等独立失败仍按原路径报错；不保证收尾模型一定能取得原本缺失的资料。
 - 正常收尾调用也可能计费；上游未上报用量时沿用既有规则，不能估算填入。相关：[搜索专项预算](2026-09-22-chat-web-search-turn-cache.md)、[补救流计量](2026-10-16-chat-fallback-usage-unmetered.md)。
+
+
+## 2026-10-22 后续：正常工具完成后的空正文
+
+用户再次反馈中转 Sonnet 5.5 在几次工具调用后只留下过程说明。核对确认是末尾空响应回退到较早文字、以及空正文补救排除了工具轮次，见 [原有答案回退问题的复发记录](2026-09-21-chat-repeat-previous-answer.md)。本次在 `awrap_model_call` 中补齐工具后的单次无工具正文补救；现有工具轮次、调用次数、并发去重与取消语义不变。补救无可用正文时明确提示，不重开工具循环。实际回归命令/结果见该记录；`test_chat_agent_budget` 本次复跑 PASS。

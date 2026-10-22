@@ -1,8 +1,8 @@
-# BUG-20260921-chat-repeat-previous-answer：连续多轮对话重复回复上一轮内容
+# BUG-20260921-chat-repeat-previous-answer：问答结束时误用旧回复或工具前过程说明
 
 - 首次记录：2026-09-21
-- 最近更新：2026-09-21
-- 状态：已修复，单测回归与端到端复现通过
+- 最近更新：2026-10-22
+- 状态：历史多轮问题已修复；2026-10-22 工具后正文缺失已修复，模拟中转回归通过，真实中转站待验证
 - 检索词：智能问答、多轮对话、重复回复、一模一样、_final_answer、base_count、stream_chat_agent、agent_complete、persist_assistant_message、chat_messages
 
 ## 现象与复现
@@ -60,3 +60,44 @@
 ## 历史与关联
 
 - 2026-09-21：首次排查并修复会话 `chat_aa3cc985cbebde56` 出现的连续重复回复问题。
+
+
+## 2026-10-22 复发：工具后仅返回思考，过程说明被当作最终答案
+
+### 现象与证据
+
+用户反馈中转 `claude-sonnet-5.5` 搜索科技新闻后停止，界面只留有继续读取页面的过程说明；思考片段显示正在准备摘要。没有取得生产请求 ID 或原始协议，不能断言该中转站具体的停止原因。
+
+使用真实 `create_agent` 和模拟流复现：第一条 AIMessage 包含过程说明和网页工具调用，工具返回资料，最后一条 AIMessage 只有 thinking、没有正文。修复前确实返回了第一条过程说明。
+
+### 确认根因
+
+- 上次修复只限制了 `messages[base_count:]`，但 `_final_answer` 仍会跳过本轮最后的空响应，倒序找到工具调用前的文字；同一类回退选择错误仍可在本轮内发生。
+- `stream_chat_agent` 又把累计 `streamed_content` 当作答案，且旧补救条件要求完全没有工具调用、没有累计文字。只要前面出现过程说明，工具后的空正文就不会补救。
+- 工具预算只在重复/超限/连续失败时强制收尾；正常工具成功后的空正文尚未触发这些条件。
+
+### 本次修复
+
+- `_final_answer` 只读取本轮最后一条 AIMessage；空正文、有效/无效工具调用都不能回退为更早的过程说明。两个问答入口及共享产物拼接调用方使用相同规则。
+- `ChatToolBudget.awrap_model_call` 在工具调用后的最终响应无正文、无新工具调用时，保留相同消息/工具资料并禁用新工具，最多补救一次。补救指令要求直接输出最终答案，不能只思考或承诺继续。
+- 上游明确标记 `max_tokens`/`length` 截断且尚无正文时，仅将这一次补救的输出额度翻倍，最高 8192（当前常规问答为 4096）；未报告截断时保持原额度。
+- 补救仍无正文或仍请求工具时，返回明确的正文缺失提示，不重跑工具、不形成循环。正常回答不多调用模型，原有六轮/八次工具预算不变。
+- 补救仍在原有用量回调范围内，原空响应和补救调用均计量；日志只记录计数/决策，不写正文、工具参数或密钥。
+- 流式入口不再使用累计过程说明兜底；无工具空回复保留原有纯文本补救，但结果单独判断是否为空。
+- 另外修复最终正文只存在于结束事件时的增量遗漏，见 [独立流式记录](2026-10-22-chat-final-text-stream.md)。
+
+### 本次验证与限制
+
+新增 `test_chat_final_answer.py`，覆盖流式/非流式工具后仅思考、证据保留、禁止重跑工具、三次模型调用用量合并、补救仍为空时有界提示、末尾空响应不回退过程说明。另以 HTTP MockTransport 驱动真实 Anthropic SDK 的原生 SSE 协议（先 text/tool_use、再 thinking-only、最后 text），验证实际恢复请求无 tools、保留 tool_result、确认 max_tokens 截断后额度由 4096 提至 8192、最终正文进入增量与完成事件。
+
+本次实际命令：
+
+```bash
+cd backend
+check_dir=$(mktemp -d /private/tmp/sceneflow-chat-final.XXXXXX)
+SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_chat_final_answer test_agent_service test_chat_agent_budget test_anthropic_usage test_chat_model_temperature test_chat_error_logs test_chat_balance test_usage_service
+```
+
+八组 PASS。前端 `pnpm exec tsc --noEmit`、`pnpm lint` 以及聊天 `chat-message-state.test.mts`（1 项）通过。测试使用临时数据库与媒体目录。
+
+未调用真实中转站或付费模型，未做本次浏览器端到端验证。该机制处理空最终正文；若上游把一段过程说明直接作为有正文的最终响应，不能仅凭自然语言可靠判断是否答完。补救是额外一次可能计费的模型请求，仍可能遇到提供方错误/超时；不扩大工具预算或无限重试。上文历史“100% 顺畅应答”的描述不能作为此类异常的保证。
