@@ -20,7 +20,7 @@ from app.models import (
     VoiceProfile,
 )
 from app.services.artifact_service import signed_url_for_stored
-from app.services.config_service import video_capabilities
+from app.services.config_service import normalize_provider, video_capabilities
 from app.services.prompt_prefix_service import stored_prompt_prefixes
 from app.services.reference_service import stored_generation_references
 
@@ -62,7 +62,7 @@ def config_json(config: ModelConfig) -> dict[str, Any]:
         "name": config.name or "",
         "description": config.description or "",
         "purpose": config.purpose,
-        "provider": config.provider,
+        "provider": normalize_provider(config.provider),
         "baseUrl": config.base_url or "",
         "modelSeries": config.model_name or "",
         "model": config.model_name or "",

@@ -1,9 +1,9 @@
 # BUG-20260907-video-unsupported-fps：视频表单发送模型不支持的 FPS
 
 - 首次记录：2026-09-07
-- 最近更新：2026-09-07
+- 最近更新：2026-10-21
 - 状态：已修复；参数序列化、视频回归和类型检查通过，未调用真实付费模型
-- 检索词：Doubao、Seedance 2.0、`selected model does not support fps=24`、`/api/bff/videos/generate`、`selectedFps`
+- 检索词：Doubao、Seedance 2.0、Gemini、Veo、Developer API、`selected model does not support fps=24`、`/api/bff/videos/generate`、`selectedFps`
 - [返回 Bug 索引](README.md)
 
 ## 现象与复现
@@ -43,8 +43,16 @@ SCENEFLOW_PRIVATE_GENERATED_DIR="$validation_dir/media" sh scripts/run_tests.sh 
 
 真实页面已确认当前模型不显示 FPS 控件。模拟浏览器请求验证因 Chrome 扩展面板阻止自动化而未完成；不将其记为通过。没有调用真实收费生成接口。
 
+### 2026-10-21 实际验证
+
+- `cd backend; check_dir=$(mktemp -d /private/tmp/sceneflow-gemini-check.XXXXXX); SCENEFLOW_PRIVATE_GENERATED_DIR="$check_dir/media" sh scripts/run_tests.sh test_gemini_video test_video_service test_config_service test_project_production`：四项全部通过。测试运行器为每项创建临时数据库，未使用本地真实数据库或媒体目录。
+- `cd frontend; pnpm exec tsc --noEmit && pnpm lint`：均通过，无警告。
+- `git diff --check`：通过。
+- 官方 SDK 测试使用真实序列化器和 HTTP MockTransport；中转测试覆盖 `/v1/videos`、404 后的旧任务路由、轮询、同源内容下载、跨源结果 URL 不携带网关 Key、任务失败/缺少 ID/HTTP 500/超时不重复提交。没有使用真实 Google、Sub API 或 New API 付费账号联调，也未执行浏览器交互验证。
+
 ## 历史与关联
 
+- 2026-10-21：新增 Gemini 视频模型管理与中转调用时，核对已安装 Google Gen AI SDK 确认 Developer API 拒绝非空 `fps`，而原 Gemini 默认能力为 `[24]`，适配器也直接传入。现新增 Veo 目录及前后端 Gemini 默认能力均声明 `fps: []`；官方适配器省略该字段，旧配置中的 24 也不再发送。影响独立视频及项目视频共享调用；不改变 HTTP 选项解析对显式非法 FPS 的拒绝。`test_gemini_video` 使用真实 SDK 序列化及 MockTransport 校验带旧值 24 的调用、轮询和下载，验证记录见下方；调用方式见 [Backend reference](../../backend/README.md)。
 - 2026-09-07：根据用户错误报告定位到前端默认值与能力列表不一致，修正并执行上述检查。
 - 同次交付的另一问题：[生成编辑器重置](2026-09-07-generation-editor-reset.md)。它与 FPS 参数错误是不同根因。
 - 长期规则见 [数据流](../architecture/data-flow.md#6-shots--video-clips)：独立视频表单也必须遵守模型能力，不能为不支持的选项填默认值。

@@ -178,6 +178,21 @@ def test_video_gemini_config_is_valid() -> None:
     assert normalized["purpose"] == "video"
     assert normalized["provider"] == "gemini"
     assert normalized["model"] == "veo-3.1-generate-preview"
+    capabilities = normalized["video_capabilities"]
+    assert capabilities["fps"] == []
+    assert capabilities["aspectRatios"] == ["16:9", "9:16"]
+    assert capabilities["minDuration"] == capabilities["maxDuration"] == 8
+    assert capabilities["maxReferenceImages"] == 1
+    assert capabilities["supportsFirstFrame"] is True
+    for base in ("https://relay.example.com", "https://relay.example.com/v1"):
+        relay = normalize_config_payload({
+            "purpose": "video", "provider": "gemini", "modelSeries": "veo-relay-alias",
+            "baseUrl": base, "apiKey": "new-secret-key",
+        })
+        assert relay["base_url"] == base
+        assert relay["model"] == "veo-relay-alias"
+        assert relay["video_capabilities"] == capabilities
+    assert VIDEO_MODEL_CAPABILITIES["veo-3.1-generate-preview"]["catalog"] is True
 
 
 def test_video_capabilities_are_normalized_and_stored() -> None:

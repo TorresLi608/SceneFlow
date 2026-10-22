@@ -28,6 +28,14 @@ AUDIO_PARAMS = ("with_audio", "audio", "reference_voice")
 # entries the admin picker offers — superseded revisions stay here so an existing config
 # pinned to one still resolves its capabilities.
 VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
+    "gemini-omni-1.1-flash": {"provider": "gemini", "catalog": True, "qualities": ["720p", "1080p", "4K"], "aspectRatios": ["16:9", "9:16"], "promptExtend": False, "minDuration": 3, "maxDuration": 10, "maxReferenceImages": 1, "supportsFirstFrame": True, "audioDefault": False},
+    # Use the common 8-second image/text-to-video contract. Admins can override
+    # capabilities for relay aliases; FPS/audio switches are not Developer API fields.
+    "veo-3.1-generate-preview": {"provider": "gemini", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16"], "promptExtend": False, "minDuration": 8, "maxDuration": 8, "maxReferenceImages": 1, "supportsFirstFrame": True},
+    "veo-3.1-fast-generate-preview": {"provider": "gemini", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16"], "promptExtend": False, "minDuration": 8, "maxDuration": 8, "maxReferenceImages": 1, "supportsFirstFrame": True},
+    "veo-3.0-generate-001": {"provider": "gemini", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16"], "promptExtend": False, "minDuration": 8, "maxDuration": 8, "maxReferenceImages": 1, "supportsFirstFrame": True},
+    "veo-3.0-fast-generate-001": {"provider": "gemini", "catalog": True, "qualities": ["720p", "1080p"], "aspectRatios": ["16:9", "9:16"], "promptExtend": False, "minDuration": 8, "maxDuration": 8, "maxReferenceImages": 1, "supportsFirstFrame": True},
+    "veo-2.0-generate-001": {"provider": "gemini", "catalog": True, "qualities": ["720p"], "aspectRatios": ["16:9", "9:16"], "promptExtend": False, "minDuration": 8, "maxDuration": 8, "maxReferenceImages": 1, "supportsFirstFrame": True},
     "doubao-seedance-2.0": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p", "1080p", "4K"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
     "doubao-seedance-2.0-fast": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
     "doubao-seedance-2.0-mini": {"provider": "doubao", "catalog": True, "supportsStartEndFrames": True, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], "promptExtend": False, "minDuration": 4, "maxDuration": 15, "maxReferenceImages": 9, "maxReferenceVideos": 3, "maxReferenceAudios": 3, "audioParam": "with_audio", "audioDefault": True},
@@ -44,6 +52,11 @@ VIDEO_MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
     "grok-imagine-video-1.5-lite": {"provider": "grok", "catalog": True, "supportsStartEndFrames": False, "qualities": ["480p", "720p", "1080p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "promptExtend": False, "minDuration": 1, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 0, "maxReferenceAudios": 0, "audioParam": "with_audio", "audioDefault": True, "supportsFirstFrame": True, "supportsLastFrame": False},
     "grok-imagine-video": {"provider": "grok", "catalog": True, "supportsStartEndFrames": False, "qualities": ["480p", "720p"], "aspectRatios": ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], "promptExtend": False, "minDuration": 1, "maxDuration": 15, "maxReferenceImages": 5, "maxReferenceVideos": 0, "maxReferenceAudios": 0, "audioParam": "with_audio", "audioDefault": True, "supportsFirstFrame": True, "supportsLastFrame": False},
 }
+
+
+def is_omni_video_model(model: str) -> bool:
+    """Recognize native Omni IDs and common gateway aliases without rewriting them."""
+    return model.strip().lower().startswith(("gemini-omni", "omni"))
 
 
 def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]:
@@ -64,6 +77,9 @@ def default_video_capabilities(provider: str, model: str = "") -> dict[str, Any]
             "supportsFirstFrame": known.get("supportsFirstFrame", supports_first_frame),
             "supportsLastFrame": known.get("supportsLastFrame", supports_last_frame),
         }
+    if normalize_provider(provider) == "gemini":
+        fallback = "gemini-omni-1.1-flash" if is_omni_video_model(model) else "veo-3.1-generate-preview"
+        return default_video_capabilities("gemini", fallback)
     if normalize_provider(provider) == "qwen":
         is_i2v = "-i2v" in model.lower()
         is_r2v = "-r2v" in model.lower()
@@ -276,6 +292,7 @@ def config_api_key(config: ModelConfig) -> str:
 def normalize_provider(value: str) -> str:
     provider = (value or "").strip().lower()
     return {
+        "google": "gemini",  # Compatibility for previously saved Omni configurations.
         "chatgpt": "openai",
         "claude": "anthropic",
         "claude-code": "anthropic",

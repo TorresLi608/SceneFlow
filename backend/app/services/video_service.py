@@ -8,13 +8,15 @@ import re
 import tempfile
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 from dashscope.aigc.video_synthesis import VideoSynthesis
 from dashscope.utils.oss_utils import OssUtils
 from google import genai
 from google.genai import types
+
+from app.services.config_service import is_omni_video_model, normalize_provider
 
 
 DOUBAO_VIDEO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
@@ -140,7 +142,7 @@ def validate_video_reference_counts(
 
 
 def resolve_video_settings(provider: str, aspect_ratio: str, quality: str | None = None) -> VideoSettings:
-    provider = provider.strip().lower()
+    provider = normalize_provider(provider)
     if provider == "grok":
         # xAI takes the ratio and resolution directly and has no `adaptive`; anything else
         # is a config error rather than something to silently rewrite.
@@ -333,6 +335,103 @@ def gemini_video_base_url(base_url: str = "") -> str:
     return (base_url or GEMINI_VIDEO_BASE_URL).strip().rstrip("/").removesuffix("/openai").removesuffix("/v1beta")
 
 
+def is_native_gemini_video_url(base_url: str = "") -> bool:
+    base = (base_url or GEMINI_VIDEO_BASE_URL).strip().rstrip("/")
+    # Explicit /v1beta also lets a relay opt into the native Gemini protocol.
+    return (urlparse(base).hostname or "").lower() == "generativelanguage.googleapis.com" or base.endswith(("/v1beta", "/v1beta/openai"))
+
+
+async def _generate_relay_video(
+    api_key: str,
+    model: str,
+    prompt: str,
+    settings: VideoSettings | None,
+    quality: str | None,
+    duration: int,
+    reference: dict[str, Any] | None,
+    base_url: str,
+    provider_label: str = "Gemini",
+) -> VideoResult:
+    """Sub API / New API video tasks, including the older unified task route."""
+    base = base_url.strip().rstrip("/")
+    if not urlparse(base).path.rstrip("/"):
+        base += "/v1"
+    headers = {"Authorization": f"Bearer {api_key.strip()}"}
+    metadata: dict[str, Any] = {}
+    if quality:
+        metadata["resolution"] = quality.lower()
+    if settings:
+        metadata["aspectRatio"] = settings.ratio
+    payload: dict[str, Any] = {
+        "model": model, "prompt": prompt, "seconds": str(duration),
+        "duration": duration, "metadata": metadata,
+    }
+    if quality:
+        payload["resolution"] = quality.lower()
+    if settings:
+        height = {"480p": 480, "720p": 720, "1080p": 1080, "4k": 2160}.get((quality or settings.resolution).lower())
+        if height:
+            width = height * 16 // 9
+            payload["size"] = f"{height}x{width}" if settings.ratio == "9:16" else f"{width}x{height}"
+    async with httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=True) as client:
+        if reference:
+            url = external_media_url(reference)
+            if url:
+                image_response = await client.get(url)
+                image_response.raise_for_status()
+                reference = {"data": "data:" + image_response.headers.get("content-type", "image/jpeg").split(";", 1)[0] + ";base64," + base64.b64encode(image_response.content).decode("ascii")}
+            data, mime_type = parse_reference(reference)
+            image = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+            # New API consumes `images`; compatible gateways also accept `image`.
+            payload["images"] = [image]
+            payload["image"] = image
+            payload["input_reference"] = image
+
+        endpoint = f"{base}/videos"
+        response = await client.post(endpoint, headers=headers, json=payload)
+        # Only a missing route permits resubmission. Never retry an accepted task or
+        # provider failure: doing so could create a second billable generation.
+        if response.status_code in {404, 405}:
+            endpoint = f"{base}/video/generations"
+            response = await client.post(endpoint, headers=headers, json=payload)
+        response.raise_for_status()
+
+        def task_body(response: httpx.Response) -> dict[str, Any]:
+            body = response.json()
+            if not isinstance(body, dict):
+                raise ValueError(f"{provider_label} relay returned an invalid video task")
+            if isinstance(body.get("data"), dict):
+                body = body["data"]
+            return body
+
+        task = task_body(response)
+        task_id = str(task.get("task_id") or task.get("id") or "").strip()
+        if not task_id:
+            raise ValueError(f"{provider_label} relay task creation returned no task id")
+        deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            status = str(task.get("status") or "").lower()
+            if status in {"completed", "succeeded", "success"}:
+                video = task.get("video") or {}
+                video_url = task.get("url") or task.get("video_url") or task.get("result_url") or (video.get("url") if isinstance(video, dict) else None)
+                # OpenAI-format task responses expose the clip at /content instead.
+                download_url = urljoin(base + "/", str(video_url)) if video_url else f"{base}/videos/{quote(task_id, safe='')}/content"
+                # Keep the gateway token on its own origin; CDN URLs need no token.
+                download_headers = headers if urlparse(download_url)[:2] == urlparse(base)[:2] else {}
+                video_response = await client.get(download_url, headers=download_headers)
+                video_response.raise_for_status()
+                if not video_response.content:
+                    raise ValueError(f"{provider_label} relay returned an empty video")
+                return VideoResult(video_response.content)
+            if status in {"failed", "failure", "error", "canceled", "cancelled", "expired"}:
+                raise ValueError(f"{provider_label} relay video task {status}: {_provider_error(task.get('error') or task.get('fail_reason') or status)[:220]}")
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            response = await client.get(f"{endpoint}/{quote(task_id, safe='')}", headers=headers)
+            response.raise_for_status()
+            task = task_body(response)
+        raise TimeoutError(f"{provider_label} relay video generation timed out")
+
+
 def grok_video_base_url(base_url: str = "") -> str:
     """The xAI video base: normalize only the official host, keep relays untouched."""
     base = (base_url or GROK_VIDEO_BASE_URL).strip().rstrip("/")
@@ -454,7 +553,9 @@ async def _generate_gemini_video(
     duration: int,
     reference: dict[str, Any] | None,
     base_url: str,
-    ) -> VideoResult:
+) -> VideoResult:
+    if not is_native_gemini_video_url(base_url):
+        return await _generate_relay_video(api_key, model, prompt, settings, quality, duration, reference, base_url)
     client = genai.Client(
         api_key=api_key.strip(),
         http_options={
@@ -486,7 +587,8 @@ async def _generate_gemini_video(
                 duration_seconds=duration,
                 aspect_ratio=settings.ratio if settings else None,
                 resolution=quality or (settings.resolution if settings else None),
-                fps=fps,
+                # Gemini Developer API rejects fps even when it is 24. Older saved
+                # configurations may still declare it; leave the provider default.
             ),
         )
         deadline = time.monotonic() + GENERATION_TIMEOUT_SECONDS
@@ -501,12 +603,121 @@ async def _generate_gemini_video(
         generated_videos = result.generated_videos if result else None
         if not generated_videos or not generated_videos[0].video:
             raise ValueError("Gemini task completed without a video")
-        data = await client.aio.files.download(file=generated_videos[0].video)
+        video = generated_videos[0].video
+        data = video.video_bytes or await client.aio.files.download(file=video)
         if not data:
             raise ValueError("Gemini returned an empty video")
         return VideoResult(data)
     finally:
         await client.aio.aclose()
+
+
+async def _generate_omni_video(
+    api_key: str,
+    model: str,
+    prompt: str,
+    settings: VideoSettings | None,
+    quality: str | None,
+    duration: int,
+    reference: dict[str, Any] | None,
+    base_url: str,
+    *,
+    first_frame: bool = False,
+) -> VideoResult:
+    """Omni uses Interactions on Google and video tasks on compatible gateways."""
+    if not is_native_gemini_video_url(base_url):
+        return await _generate_relay_video(api_key, model, prompt, settings, quality, duration, reference, base_url, "Gemini Omni")
+    if not 3 <= duration <= 10:
+        raise ValueError("Gemini Omni video duration must be between 3 and 10 seconds")
+    if quality and quality.lower() not in {"720p", "1080p", "4k"}:
+        raise ValueError("Gemini Omni video quality must be 720p, 1080p, or 4K")
+    base = gemini_video_base_url(base_url) + "/v1beta"
+    headers = {"x-goog-api-key": api_key.strip()}
+    response_format: dict[str, Any] = {"type": "video", "delivery": "uri", "duration": f"{duration}s"}
+    if settings:
+        response_format["aspect_ratio"] = settings.ratio
+    if quality:
+        response_format["resolution"] = quality.lower()
+    try:
+        async with asyncio.timeout(GENERATION_TIMEOUT_SECONDS), httpx.AsyncClient(timeout=GENERATION_TIMEOUT_SECONDS, follow_redirects=False) as client:
+            inputs: str | list[dict[str, Any]] = prompt
+            if reference:
+                url = external_media_url(reference)
+                if url:
+                    image_response = await client.get(url, follow_redirects=True)
+                    image_response.raise_for_status()
+                    reference = {"data": "data:" + image_response.headers.get("content-type", "image/jpeg").split(";", 1)[0] + ";base64," + base64.b64encode(image_response.content).decode("ascii")}
+                data, mime_type = parse_reference(reference)
+                # A reference and an explicit first frame have different roles in
+                # Omni. Only the frame slot pins the opening shot.
+                role = "[# Sources <FIRST_FRAME>@Image1]" if first_frame else "[# References <IMAGE_REF_0>@Image1]"
+                inputs = [
+                    {"type": "image", "mime_type": mime_type, "data": base64.b64encode(data).decode("ascii")},
+                    {"type": "text", "text": f"{role}\n{prompt}"},
+                ]
+            # Use REST: the installed Gen AI SDK's VideoResponseFormat lacks the
+            # documented resolution field and can discard it during serialization.
+            response = await client.post(f"{base}/interactions", headers=headers, json={
+                "model": model, "input": inputs, "response_format": response_format,
+                "background": False, "store": False, "stream": False,
+            })
+            response.raise_for_status()
+            interaction = response.json()
+            if not isinstance(interaction, dict):
+                raise ValueError("Gemini Omni returned an invalid interaction")
+            status = str(interaction.get("status") or "").lower()
+            if status != "completed" or interaction.get("error"):
+                raise ValueError(f"Gemini Omni interaction {status or 'incomplete'}: {_provider_error(interaction.get('error') or status)[:220]}")
+            video = next((
+                content for step in interaction.get("steps", []) if step.get("type") == "model_output"
+                for content in step.get("content", []) if content.get("type") == "video"
+            ), interaction.get("output_video") or {})
+            if video.get("data"):
+                try:
+                    data = base64.b64decode(video["data"], validate=True)
+                except (ValueError, TypeError) as exc:
+                    raise ValueError("Gemini Omni returned invalid video data") from exc
+            elif video.get("uri"):
+                uri = str(video["uri"])
+                file_match = re.search(r"(?:^|/)files/([^/:?]+)", urlparse(uri).path)
+                is_google_file = not urlparse(uri).netloc or urlparse(uri).netloc in {
+                    urlparse(base).netloc, "generativelanguage.googleapis.com",
+                }
+                if file_match and is_google_file:
+                    file_path = f"{base}/files/{quote(file_match.group(1), safe='')}"
+                    while True:
+                        file_response = await client.get(file_path, headers=headers)
+                        file_response.raise_for_status()
+                        file = file_response.json()
+                        state = str(file.get("state") or "").upper()
+                        if state == "ACTIVE":
+                            break
+                        if state == "FAILED":
+                            raise ValueError("Gemini Omni generated video processing failed")
+                        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                    uri = f"{file_path}:download?alt=media"
+                else:
+                    uri = urljoin(base + "/", uri)
+                # httpx strips Authorization on cross-origin redirects, but does
+                # not strip x-goog-api-key. Recheck the origin on every hop.
+                for _ in range(6):
+                    download_headers = headers if urlparse(uri)[:2] == urlparse(base)[:2] else {}
+                    video_response = await client.get(uri, headers=download_headers)
+                    if video_response.is_redirect and video_response.headers.get("location"):
+                        uri = urljoin(uri, video_response.headers["location"])
+                        continue
+                    video_response.raise_for_status()
+                    data = video_response.content
+                    break
+                else:
+                    raise ValueError("Gemini Omni video download has too many redirects")
+            else:
+                raise ValueError("Gemini Omni interaction completed without a video")
+            if not data:
+                raise ValueError("Gemini Omni returned an empty video")
+            return VideoResult(data)
+    except TimeoutError as exc:
+        raise TimeoutError("Gemini Omni video generation timed out") from exc
 
 
 async def _generate_qwen_video(
@@ -781,6 +992,7 @@ async def generate_video(
     first_frame: dict[str, Any] | None = None,
     last_frame: dict[str, Any] | None = None,
 ) -> VideoResult:
+    provider = normalize_provider(provider)
     references = references or []
     reference_videos = reference_videos or ([reference_video] if reference_video else [])
     reference_audios = reference_audios or ([driving_audio] if driving_audio else [])
@@ -801,4 +1013,17 @@ async def generate_video(
             api_key, model, prompt, settings, quality, fps, duration, reference, base_url, output_audio,
             references[1:], reference_videos, reference_audios, first_frame, last_frame,
         )
-    return await _generate_gemini_video(api_key, model, prompt, settings, quality, fps, duration, reference, base_url)
+    if provider == "gemini":
+        if len(references) > 1 or (first_frame and references):
+            raise ValueError("Gemini video accepts one reference image or one first frame")
+        if last_frame or reference_videos or reference_audios:
+            raise ValueError("Gemini video task adapter does not support last frames, reference videos, or reference audio")
+        if is_omni_video_model(model):
+            if settings and settings.ratio not in {"16:9", "9:16"}:
+                raise ValueError("Gemini Omni video only supports 16:9 or 9:16 output")
+            return await _generate_omni_video(
+                api_key, model, prompt, settings, quality, duration, first_frame or reference,
+                base_url, first_frame=bool(first_frame),
+            )
+        return await _generate_gemini_video(api_key, model, prompt, settings, quality, fps, duration, first_frame or reference, base_url)
+    raise ValueError(f"unsupported video provider: {provider}")
