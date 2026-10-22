@@ -100,6 +100,31 @@ const videoAspectRatioOptions: VideoCapabilities["aspectRatios"] = [
 
 function defaultVideoCapabilities(provider: string, model = ""): VideoCapabilities {
   const normalized = model.toLowerCase();
+  if (provider === "gemini") {
+    const omni = normalized.startsWith("gemini-omni") || normalized.startsWith("omni");
+    return {
+      qualities: omni ? ["720p", "1080p", "4K"] : normalized.startsWith("veo-2") ? ["720p"] : ["720p", "1080p"],
+      fps: [],
+      aspectRatios: ["16:9", "9:16"],
+      promptExtend: false,
+      minDuration: omni ? 3 : 8,
+      maxDuration: omni ? 10 : 8,
+      referenceImages: true,
+      referenceImagesRequired: false,
+      maxReferenceImages: 1,
+      referenceVideo: false,
+      maxReferenceVideos: 0,
+      referenceVideosRequired: false,
+      referenceAudio: false,
+      maxReferenceAudios: 0,
+      referenceAudiosRequired: false,
+      audioParam: null,
+      audioDefault: false,
+      supportsFirstFrame: true,
+      supportsLastFrame: false,
+      supportsStartEndFrames: false,
+    };
+  }
   if (provider === "doubao" && normalized.startsWith("doubao-seedance")) {
     const is25 = normalized.includes("2.5");
     return {
@@ -225,10 +250,7 @@ function defaultVideoCapabilities(provider: string, model = ""): VideoCapabiliti
     : {
       qualities: videoQualityOptions,
       fps: [24],
-      aspectRatios:
-        provider === "gemini"
-          ? videoAspectRatioOptions.filter((value) => value !== "1:1")
-          : videoAspectRatioOptions,
+      aspectRatios: videoAspectRatioOptions,
       promptExtend: false,
       minDuration: 3,
       maxDuration: 15,
@@ -1308,6 +1330,9 @@ export function ModelConfigManager() {
                     placeholder="https://api.example.com/v1"
                     className="h-9 text-xs font-mono"
                   />
+                  {purpose === "video" && provider === "gemini" ? (
+                    <p className="text-xs text-muted-foreground">{t("admin.geminiVideoConnectionHint")}</p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-1.5">

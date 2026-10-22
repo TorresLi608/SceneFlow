@@ -133,6 +133,14 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       docsUrl: "https://platform.qianwenai.com/docs/developer-guides/video-generation/text-to-video",
     },
     {
+      value: "gemini",
+      label: "Gemini",
+      modelSeries: "",
+      modelPlaceholder: "veo-3.1-generate-preview",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      docsUrl: "https://ai.google.dev/gemini-api/docs/veo",
+    },
+    {
       value: "grok",
       label: "Grok",
       modelSeries: "",
@@ -173,6 +181,7 @@ const providerLabelKeyMap: Record<string, string> = {
 };
 
 export function providerLabel(provider: string, t?: Translate) {
+  provider = provider === "google" ? "gemini" : provider;
   const key = providerLabelKeyMap[provider];
   return key && t ? t(key) : providerLabelMap[provider] ?? provider;
 }
