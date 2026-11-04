@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import {
   Check,
   Clock,
@@ -53,8 +53,10 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { UserConfig } from "@/types/auth";
-import type { GenerationHistoryItem, GenerationHistoryListResponse } from "@/types/generation-history";
+import type { GenerationHistoryItem, ImageHistoryPageResponse } from "@/types/generation-history";
 import type { GenerateImageInput, ImageReferenceInput } from "@/types/image-generation";
+
+import { ImageHistoryThumbnail } from "./image-history-thumbnail";
 
 const resolutions: GenerateImageInput["resolution"][] = ["1K", "2K", "4K"];
 const ratios: GenerateImageInput["ratio"][] = [
@@ -131,6 +133,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
   const { t, formatDateTime } = useI18n();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<GenerateImageInput["resolution"]>("1K");
   const [ratio, setRatio] = useState<GenerateImageInput["ratio"]>("auto");
@@ -145,13 +148,19 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
-  const historyQuery = useQuery({
+  const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.generationHistory("image"),
-    queryFn: listImageHistoryAction,
+    queryFn: ({ pageParam, signal }) => listImageHistoryAction(pageParam, signal),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    enabled: active,
   });
-  const history = historyQuery.data?.items ?? [];
+  const history = useMemo(() => {
+    const items = historyQuery.data?.pages.flatMap((page) => page.items) ?? [];
+    return Array.from(new Map(items.map((item) => [item.id, item])).values());
+  }, [historyQuery.data]);
   // Admin retention window; 0 (or not loaded yet) means nothing expires and no notice is shown.
-  const retentionDays = historyQuery.data?.retentionDays ?? 0;
+  const retentionDays = historyQuery.data?.pages[0]?.retentionDays ?? 0;
   const requestController = useRef<AbortController | null>(null);
   const optimizeController = useRef<AbortController | null>(null);
 
@@ -210,19 +219,26 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
         },
         requestController.current?.signal
       ),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setImageUrl(data.image.url);
       setImageModel(data.image.model);
       setImageProvider(selectedConfig?.provider ?? "");
       setErrorMessage(null);
       // The backend already stored the row; prepend it so the list updates without a refetch.
+      await queryClient.cancelQueries({ queryKey: queryKeys.generationHistory("image") });
       queryClient.setQueryData(
         queryKeys.generationHistory("image"),
-        (current: GenerationHistoryListResponse | undefined) => ({
-          retentionDays: current?.retentionDays ?? 0,
-          items: [data.history, ...(current?.items ?? []).filter((item) => item.id !== data.history.id)],
-        })
+        (current: InfiniteData<ImageHistoryPageResponse> | undefined) => current ? ({
+          ...current,
+          pages: current.pages.map((page, index) => ({
+            ...page,
+            items: [...(index === 0 ? [data.history] : []), ...page.items.filter((item) => item.id !== data.history.id)],
+          })),
+        }) : undefined
       );
+      if (!queryClient.getQueryData(queryKeys.generationHistory("image"))) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.generationHistory("image") });
+      }
     },
     onError: (error) => {
       if (isCancel(error)) return;
@@ -312,13 +328,14 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
 
   const deleteHistoryMutation = useMutation({
     mutationFn: deleteImageHistoryAction,
-    onSuccess: (_, id) => {
+    onSuccess: async (_, id) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.generationHistory("image") });
       queryClient.setQueryData(
         queryKeys.generationHistory("image"),
-        (current: GenerationHistoryListResponse | undefined) => ({
-          retentionDays: current?.retentionDays ?? 0,
-          items: (current?.items ?? []).filter((item) => item.id !== id),
-        })
+        (current: InfiniteData<ImageHistoryPageResponse> | undefined) => current ? ({
+          ...current,
+          pages: current.pages.map((page) => ({ ...page, items: page.items.filter((item) => item.id !== id) })),
+        }) : undefined
       );
     },
     onError: (error) => {
@@ -677,8 +694,18 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
               <span>{t("common.historyRetentionNotice", { days: retentionDays })}</span>
             </p>
           ) : null}
-          {history.length ? (
-            <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar">
+          {history.length || historyQuery.hasNextPage ? (
+            <div
+              ref={historyScrollRef}
+              className="max-h-40 space-y-1.5 overflow-y-auto pr-1 chat-message-list-scrollbar"
+              onScroll={(event) => {
+                const list = event.currentTarget;
+                if (active && historyQuery.hasNextPage && !historyQuery.isFetching && !historyQuery.isFetchNextPageError
+                  && list.scrollHeight - list.scrollTop - list.clientHeight < 80) {
+                  void historyQuery.fetchNextPage({ cancelRefetch: false });
+                }
+              }}
+            >
               {history.map((item) => (
                 <div key={item.id} className="flex w-full items-center gap-1 rounded-xl border border-border/60 bg-card/60 p-2 transition-all hover:border-primary/40 hover:bg-card">
                   <button
@@ -700,20 +727,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
                     className="flex min-w-0 flex-1 gap-2.5 text-left cursor-pointer"
                     aria-label={t("images.viewHistoryItem")}
                   >
-                    <span className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/50">
-                      {item.url ? (
-                        <Image
-                          src={artifactBffUrl(item.url)}
-                          alt=""
-                          fill
-                          unoptimized
-                          sizes="44px"
-                          className="object-cover"
-                        />
-                      ) : (
-                        <ImageIcon className="absolute inset-0 m-auto size-4 text-muted-foreground" />
-                      )}
-                    </span>
+                    <ImageHistoryThumbnail url={item.thumbnailUrl} active={active} scrollRootRef={historyScrollRef} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-semibold text-foreground">
                         {item.prompt}
@@ -729,10 +743,22 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
                   </Button>
                 </div>
               ))}
+              {historyQuery.hasNextPage ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs"
+                  disabled={historyQuery.isFetching}
+                  onClick={() => { void historyQuery.fetchNextPage({ cancelRefetch: false }); }}
+                >
+                  {t(historyQuery.isFetchingNextPage ? "images.historyLoading" : historyQuery.isFetchNextPageError ? "images.historyRetry" : "images.historyLoadMore")}
+                </Button>
+              ) : null}
             </div>
           ) : (
             <p className="py-2 text-center text-[11px] text-muted-foreground">
-              {historyQuery.isError ? t("common.historyLoadFailed") : t("images.historyEmpty")}
+              {historyQuery.isPending ? t("images.historyLoading") : historyQuery.isError ? t("common.historyLoadFailed") : t("images.historyEmpty")}
             </p>
           )}
         </div>

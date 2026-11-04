@@ -28,6 +28,7 @@ from sqlmodel import Session, select
 from app.core.database import db
 from app.models import ChatMessage, ChatSession, GenerationRecord, UserVoice
 from app.services.artifact_service import remove_artifact_scope, remove_stored_artifacts
+from app.services.generation_record_service import generation_record_paths
 from app.services.system_setting_service import RETENTION_CATEGORIES, retention_days
 
 
@@ -76,7 +77,7 @@ def purge_expired_generation_records(session: Session, kind: str, retention_days
         return 0
     # Files first: if the row delete then fails, the next pass still finds the row and
     # finishes the job, whereas a row deleted ahead of its file leaves the file orphaned forever.
-    remove_stored_artifacts([record.path for record in expired if record.deleted_at is None])
+    remove_stored_artifacts([path for record in expired if record.deleted_at is None for path in generation_record_paths(record)])
     _delete_where_in(session, GenerationRecord, GenerationRecord.id, [record.id for record in expired])
     return len(expired)
 

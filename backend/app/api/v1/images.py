@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import db
 from app.api.deps import current_user_id
@@ -11,7 +12,8 @@ from app.llms.registry import models
 from app.schemas.serializers import generation_record_json
 from app.services.artifact_service import decode_image_data_url
 from app.services.config_service import active_model_config, official_model_config_any, user_model_config_any
-from app.services.generation_record_service import delete_generation_record, list_generation_records, save_generation_record
+from app.services.generation_record_service import delete_generation_record, list_image_history_page, save_generation_record
+from app.services.image_thumbnail_service import create_image_thumbnail
 from app.services.system_setting_service import retention_days
 from app.services.usage_service import record_usage, require_model_balance
 
@@ -46,24 +48,34 @@ def persist_image(user_id: int, config: dict[str, Any], data: bytes, ext: str, *
     ext = "jpg" if ext.lower() in {"jpg", "jpeg"} else ext.lower()
     ext = ext if ext in {"png", "jpg", "webp"} else "png"
     media_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
+    thumbnail = create_image_thumbnail(data)
     with db() as session:
         record = save_generation_record(
-            session, user_id, "image", data, f"generated-image.{ext}", media_type, prompt=prompt, config=config, source=source, options=options
+            session, user_id, "image", data, f"generated-image.{ext}", media_type, prompt=prompt, config=config, source=source, options=options, thumbnail=thumbnail
         )
         return generation_record_json(record)
 
 
 @router.get("/history")
-def list_image_history(user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+def list_image_history(
+    user_id: int = Depends(current_user_id),
+    limit: int = Query(20, ge=1, le=50),
+    cursor: str | None = Query(None, min_length=1, max_length=512),
+) -> dict[str, Any]:
     """The account's image results plus the admin retention window for images (0 = kept forever).
 
     The window rides along so the panel can warn that rows expire, without a separate
-    request or exposing the admin endpoint to members.
+    request or exposing the admin endpoint to members. Each item has an original `url`
+    and a `thumbnailUrl` for its stored 128px WebP derivative (null for older results or
+    failed derivatives). Listing never creates thumbnails. Pages default to 20 items
+    (maximum 50); pass `nextCursor` as `cursor` to continue. A null `nextCursor` ends the list.
     """
     with db() as session:
+        items, next_cursor = list_image_history_page(session, user_id, limit, cursor)
         return {
-            "items": [generation_record_json(item) for item in list_generation_records(session, user_id, "image")],
+            "items": [generation_record_json(item) for item in items],
             "retentionDays": retention_days(session, "image"),
+            "nextCursor": next_cursor,
         }
 
 
@@ -117,7 +129,7 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
     record_usage(user_id, config, "image", started_at, quantity=1)
 
     source = "image-to-image" if references else "text-to-image"
-    record = persist_image(user_id, config, result.data, result.format, prompt=prompt, source=source, options={"resolution": resolution, "ratio": ratio})
+    record = await asyncio.to_thread(persist_image, user_id, config, result.data, result.format, prompt=prompt, source=source, options={"resolution": resolution, "ratio": ratio})
     return {
         "image": {
             "url": record["url"],

@@ -10,6 +10,7 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20261104-image-history-loading | 图片历史、页面缓存、接口变慢、缩略图、thumbnailUrl、IntersectionObserver、分页、nextCursor | 历史小图使用高清原图且一次返回 50 条；新图增加私有 WebP 缩略图，列表按可视区域加载并按 20 条游标分页，旧图不补齐 | 已验证：后端五组自检、前端检查及 25 项测试、隔离浏览器回归通过；真实接口竞争瓶颈未实测 | 2026-11-04 | [图片历史加载压力](2026-11-04-image-history-loading.md) |
 | BUG-20261104-relay-empty-gpt-response | gpt-6.1-sol-g、gpt-6.1-sol、gpt-5.6-sol、empty final content from agent、CHAT_STREAM_FAILED、Responses、estimated | 中转两个原始接口均返回成功但正文/输出 token 为 0，响应模型名与请求不同；绕过前端和 agent 仍可复现 | 实网确认中转响应为空；中转内部原因待排查，未修复 | 2026-11-04 | [GPT 中转空成功响应](2026-11-04-relay-empty-gpt-response.md) |
 | BUG-20261103-assistant-ui-runtime-snapshot | getSnapshot、infinite loop、Maximum update depth、AssistantRuntimeProvider、ThreadListRuntimeImpl、LazyMemoizeSubject | 仅升级 tap 后暴露旧 core 线程列表快照每次新建对象的缺陷；更新官方配套依赖并新增快照/草稿回归测试 | 已验证：前端检查、25 项测试及实际 Next 菜单切换通过 | 2026-11-03 | [assistant-ui 快照循环](2026-11-03-assistant-ui-runtime-snapshot.md) |
 | BUG-20261103-assistant-ui-activity-lifecycle | already unmounted、fiber、AssistantRuntimeProvider、tap、useResources、Activity | tap 0.9.3 在资源 hook 替换后隐藏/恢复会重复清理；更新官方配套版本，保留 Activity | 已验证：旧版最小复现、新版对照及实际 Next 菜单切换通过 | 2026-11-03 | [assistant-ui Activity 生命周期](2026-11-03-assistant-ui-activity-lifecycle.md) |
