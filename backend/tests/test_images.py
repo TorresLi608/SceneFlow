@@ -4,6 +4,7 @@ import asyncio
 from contextlib import contextmanager
 from pathlib import Path
 import tempfile
+from threading import get_ident
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -26,12 +27,18 @@ def _db():
 def test_generate_image_records_usage_without_references() -> None:
     config = {"provider": "openai", "apiKey": "test-key", "model": "gpt-image-1"}
     usage = Mock()
+    request_thread = get_ident()
+
+    def persist(*args, **kwargs):
+        assert get_ident() != request_thread, "image processing/storage must not run on the event loop"
+        return {"id": "gen_image_1", "url": "http://example.test/image.png"}
+
     with (
         patch("app.api.v1.images.db", _db),
         patch("app.api.v1.images.active_model_config", return_value=config),
         patch("app.api.v1.images.models.generate_image", AsyncMock(return_value=SimpleNamespace(data=b"png", format="png"))),
         patch("app.api.v1.images.record_usage", usage),
-        patch("app.api.v1.images.persist_image", return_value={"id": "gen_image_1", "url": "http://example.test/image.png"}),
+        patch("app.api.v1.images.persist_image", side_effect=persist),
     ):
         result = asyncio.run(generate_image({"prompt": "a fox"}, 1))
 

@@ -1999,9 +1999,34 @@ paths:
 
         The window rides along so the panel can warn that rows expire, without a separate
 
-        request or exposing the admin endpoint to members.'
+        request or exposing the admin endpoint to members. Each item has an original `url`
+
+        and a `thumbnailUrl` for its stored 128px WebP derivative (null for older results or
+
+        failed derivatives). Listing never creates thumbnails. Pages default to 20 items
+
+        (maximum 50); pass `nextCursor` as `cursor` to continue. A null `nextCursor` ends the list.'
       operationId: list_image_history_api_images_history_get
       parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 512
+          - type: 'null'
+          title: Cursor
       - name: authorization
         in: header
         required: false

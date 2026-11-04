@@ -19,8 +19,9 @@ from app.models import (
     UserVoice,
     VoiceProfile,
 )
-from app.services.artifact_service import signed_url_for_stored
+from app.services.artifact_service import artifact_absolute_path, signed_url_for_stored
 from app.services.config_service import normalize_provider, video_capabilities
+from app.services.image_thumbnail_service import image_thumbnail_path
 from app.services.prompt_prefix_service import stored_prompt_prefixes
 from app.services.reference_service import stored_generation_references
 
@@ -294,10 +295,19 @@ def generation_record_json(record: GenerationRecord) -> dict[str, Any]:
         options = json.loads(record.options_json or "{}")
     except json.JSONDecodeError:
         options = {}
+    thumbnail_url = None
+    if record.kind == "image":
+        try:
+            thumbnail_path = image_thumbnail_path(record.path)
+            if artifact_absolute_path(thumbnail_path).is_file():
+                thumbnail_url = scene_asset_url(thumbnail_path, f"thumbnail-{record.id}")
+        except (ValueError, OSError):
+            pass
     return {
         "id": record.id,
         "kind": record.kind,
         "url": scene_asset_url(record.path, f"generated-{record.kind}-{record.id}"),
+        "thumbnailUrl": thumbnail_url,
         "prompt": record.prompt or "",
         "provider": record.provider or "",
         "model": record.model_name or "",

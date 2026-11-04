@@ -23,6 +23,7 @@ from app.models import ChatMessage, ChatSession, Episode, GenerationRecord, Proj
 from app.services import artifact_service
 from app.services.artifact_service import artifact_absolute_path, save_image_artifact, store_artifact
 from app.services.generation_record_service import list_generation_records, save_generation_record
+from app.services.image_thumbnail_service import image_thumbnail_path
 from app.services.retention_service import (
     expired_chat_session_count,
     expired_counts,
@@ -141,12 +142,14 @@ def test_image_and_video_windows_purge_independently() -> None:
             owner = _user("owner")
             config = {"provider": "openai", "model": "gpt-image-1"}
             with database.db() as session:
-                old_image = save_generation_record(session, owner, "image", b"old", "generated-image.png", "image/png", prompt="old", config=config, source="text-to-image")
+                old_image = save_generation_record(session, owner, "image", b"old", "generated-image.png", "image/png", prompt="old", config=config, source="text-to-image", thumbnail=b"thumbnail")
                 old_video = save_generation_record(session, owner, "video", b"old", "generated-video.mp4", "video/mp4", prompt="old", config=config, source="text-to-video")
                 fresh = save_generation_record(session, owner, "video", b"new", "generated-video.mp4", "video/mp4", prompt="new", config=config, source="text-to-video")
             _backdate(GenerationRecord, old_image.id, 31)
             _backdate(GenerationRecord, old_video.id, 31)
             files = {record.id: artifact_absolute_path(record.path) for record in (old_image, old_video, fresh)}
+            thumbnail = artifact_absolute_path(image_thumbnail_path(old_image.path))
+            assert thumbnail.exists()
 
             with database.db() as session:
                 assert all(retention_days(session, category) == 0 for category in RETENTION_CATEGORIES)
@@ -156,6 +159,7 @@ def test_image_and_video_windows_purge_independently() -> None:
                 # Only the image window fires; the equally old video waits for its own window.
                 assert purge_expired_generation_records(session, "image", 30) == 1
             assert not files[old_image.id].exists()
+            assert not thumbnail.exists()
             assert files[old_video.id].exists() and files[fresh.id].exists()
             with database.db() as session:
                 assert session.get(GenerationRecord, old_image.id) is None

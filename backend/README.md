@@ -305,6 +305,10 @@ Final exports accept `{episodeIds, rangeLabel?}` in caller order; each episode m
 
 Both `GET .../history` responses are `{items, retentionDays}`. `retentionDays` is that menu's super-admin retention window from `system_settings` (`generation_retention_image_days` / `generation_retention_video_days`, 0 = keep forever), included so the image/video panels can show a cleanup notice without members reading the admin endpoint.
 
+Image history additionally returns `nextCursor` (null at the end). `GET /api/images/history?limit=20&cursor=...` defaults to 20 items, accepts 1–50, and orders by creation time then ID descending; pass the opaque `nextCursor` back unchanged. A malformed cursor is 400; invalid limits are 422. Video history retains its newest-50 response without pagination.
+
+History items include `thumbnailUrl`: new standalone images have a private, signed 128×128 WebP derivative (quality 75), while videos, older images, and failed derivatives return null. Encoding and image persistence run in a worker thread, with encoding before the database transaction. Listing only signs existing thumbnails and never generates them. The image panel loads these thumbnails near the history scroll viewport and loads originals only on selection; missing thumbnails show a placeholder. No old-history backfill is performed. Manual deletion and retention remove both files; project images are unchanged.
+
 ### chat — app/api/v1/chat.py
 
 | Methods | Path |
