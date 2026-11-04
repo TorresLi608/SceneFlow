@@ -1,23 +1,8 @@
-"use client";
-
-import { useQuery } from "@tanstack/react-query";
-
-import { queryKeys } from "@/actions/query-keys";
-import { listUserConfigsAction } from "@/actions/settings-actions";
-
-import { VideoGenerationPanel } from "./_components/video-generation-panel";
-
+/**
+ * The video surface is mounted by the workspace shell's keep-alive host
+ * (`(workspace)/_components/keep-alive-pages.tsx`) so an in-flight generation survives switching
+ * menus. This route only claims the URL; the content lives in `_components/video-surface.tsx`.
+ */
 export default function VideosPage() {
-  const configsQuery = useQuery({
-    queryKey: queryKeys.userConfigs,
-    queryFn: listUserConfigsAction,
-    staleTime: 30_000,
-  });
-
-  return (
-    <VideoGenerationPanel
-      configs={configsQuery.data?.configs ?? []}
-      officialConfigs={configsQuery.data?.officialConfigs ?? []}
-    />
-  );
+  return null;
 }

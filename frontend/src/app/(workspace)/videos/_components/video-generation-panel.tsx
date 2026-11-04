@@ -29,6 +29,7 @@ import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { GeneratedModelLine } from "@/components/generated-model-line";
+import { ActivityView } from "@/components/ui/activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,6 +96,7 @@ function readFileAsDataUrl(file: File) {
 }
 
 interface VideoGenerationPanelProps {
+  active: boolean;
   configs: UserConfig[];
   officialConfigs: UserConfig[];
 }
@@ -105,6 +107,7 @@ export function VideoGenerationPanel(props: VideoGenerationPanelProps) {
 }
 
 function VideoGenerationEditor({
+  active,
   configs,
   officialConfigs,
   onReset,
@@ -280,13 +283,16 @@ function VideoGenerationEditor({
   });
 
   useEffect(() => {
-    if (!generateMutation.isPending) return;
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [generateMutation.isPending]);
+    if (!active || !generateMutation.isPending) return;
+    const startedAt = generateMutation.submittedAt;
+    const updateElapsed = () => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    const frame = requestAnimationFrame(updateElapsed);
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [active, generateMutation.isPending, generateMutation.submittedAt]);
 
   const addReferences = async (
     files: FileList | null,
@@ -471,12 +477,12 @@ function VideoGenerationEditor({
     setModalOpen(true);
   };
 
-  const generatingLabel = t("videos.generatingVideoWithSeconds", {
+  const generatingLabel = t("videos.generatingWithSeconds", {
     seconds: elapsedSeconds,
   });
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:overflow-hidden">
+    <ActivityView active={active} onHide={() => setModalOpen(false)} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:overflow-hidden">
       {/* 左侧控制侧边栏 */}
       <aside className="flex min-h-0 min-w-0 shrink-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         {/* 顶部标题栏 */}
@@ -1249,7 +1255,7 @@ function VideoGenerationEditor({
               <video
                 src={resolvedVideoUrl}
                 controls
-                autoPlay
+                autoPlay={active}
                 loop
                 className="max-h-full max-w-full rounded-2xl shadow-2xl border border-border/60"
               />
@@ -1323,7 +1329,7 @@ function VideoGenerationEditor({
                 <video
                   src={modalItem.url}
                   controls
-                  autoPlay
+                  autoPlay={active}
                   loop
                   className="max-h-full max-w-full rounded-2xl shadow-2xl object-contain border border-white/10"
                 />
@@ -1408,6 +1414,6 @@ function VideoGenerationEditor({
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </ActivityView>
   );
 }

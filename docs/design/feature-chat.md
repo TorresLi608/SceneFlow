@@ -8,7 +8,7 @@ Verified on **2026-09-07**. The 智能问答 surface at `/chat`. This is the mos
 composer  (assistant-ui: useExternalStoreRuntime + AssistantRuntimeProvider)
     │  onNew(message)
     ▼
-use-chat-controller.ts  (AI SDK: useChat + DefaultChatTransport)
+use-chat-controller.ts  (AI SDK: useChat over one Chat instance per session, from chat-session-registry.ts)
     │  POST /api/bff/chat/sessions/:id/messages/stream
     ▼
 Next route  ──  backend NDJSON  ⟶  AI SDK UI stream
@@ -26,13 +26,27 @@ Consequences that look like bugs but are not:
 - There is **no `AssistantModal`** — chat is a full page, not a floating widget.
 - The transport's base `api` carries a `_` placeholder that `prepareSendMessagesRequest` rewrites per send from `body.sessionId`, so a brand-new chat can send **before its session id exists**.
 
-Reference material: https://www.assistant-ui.com/llms-full.txt · MCP docs server `npx -y @assistant-ui/mcp-docs-server` · vendored skills under `.agents/skills/` (pinned in `skills-lock.json`). The frontend declares AI SDK 7 / `@ai-sdk/react` 4 and `@assistant-ui/react` 0.14. Consult the installed version and repository design before applying a newer quickstart.
+Reference material: https://www.assistant-ui.com/llms-full.txt · MCP docs server `npx -y @assistant-ui/mcp-docs-server` · vendored skills under `.agents/skills/` (pinned in `skills-lock.json`). The frontend declares AI SDK 7 / `@ai-sdk/react` 4 and `@assistant-ui/react` 0.15 (`react-streamdown` 0.3.21). Consult the installed version and repository design before applying a newer quickstart.
 
 ## Composer and failed turns
 
-Rechecked on **2026-09-10**. Sending focuses the composer immediately. Its `sendDisabled` prop maps to assistant-ui's `isSendDisabled`, so the next draft and attachments remain editable while sending is blocked. The controller's `isSending` covers automatic session creation, streaming, and the final query refresh; `isRunning` still controls the stop button. A new draft survives completion, failure, and cancellation of the preceding request.
+Rechecked on **2026-09-10**. Sending focuses the composer immediately. Its `sendDisabled` prop maps to assistant-ui's `isSendDisabled`, so the next draft and attachments remain editable while sending is blocked. The per-session `isSending` flag covers automatic session creation, streaming, and the final query refresh of that session; `isRunning` still controls the stop button. A new draft survives completion, failure, and cancellation of the preceding request.
 
 The AI SDK error callback clears transient execution steps and removes reasoning parts only from the failed turn's last assistant message. Earlier messages and partial answer text remain intact. An error before any assistant message leaves the conversation unchanged. Normal completion keeps completed steps; an explicit stop keeps partial content and marks running steps stopped. The message list does not need its own duplicate error state.
+
+## Session instances and workspace Activity
+
+Added on **2026-11-03**. Two things used to reset a running answer: switching sessions (one `useChat` instance keyed by the viewed session was recreated, and global `isSending`/`agentSteps` leaked into the next session, so the sidebar blocked new sessions and the composer while any answer ran) and switching workspace menus (Next.js unmounted the page). Now:
+
+- `chat-session-registry.ts` keeps one AI SDK `Chat` instance per session id in a module-level map with a shared `DefaultChatTransport` whose headers resolve the token per request. `useChatController` hands `useChat` the viewed session's instance (`useChat({ chat })`), so switching sessions swaps the subscription while the other instance keeps streaming; coming back shows the live or finished answer, and the normal post-stream invalidation reconciles it with the persisted messages.
+- `store/chat-runtime-store.ts` holds per-session `agentSteps`, `error`, `isSending`, and `stopped`. `isBusy` is therefore scoped to the viewed session; the sidebar's new-session button only waits for session creation itself, running sessions show a pulsing marker, and a running session cannot be deleted until it finishes.
+- The new-chat flow creates the session, selects it, and streams into that session's own instance, so the optimistic user message is never left in a discarded placeholder runtime.
+- The `/chat` page renders nothing; `(workspace)/_components/keep-alive-pages.tsx` mounts `chat-surface.tsx` inside the persistent workspace layout. The controller remains above the panel's React `Activity` view boundary, so its query/mutation subscriptions and the independent AI SDK instances keep running. Hidden composer/message-list effects disconnect and the mobile history dialog closes. The controller only writes `?chat=` while `/chat` is active, reads explicit session parameters on history/deep-link navigation, and restores the last session when the bare menu URL is used. The message list's follow-to-bottom logic still applies on return.
+- Activity compatibility depends on the complete assistant-ui dependency set: `react` 0.15.32, `core` 0.3.32, `store` 0.3.22, `tap` 0.9.24, and `react-streamdown` 0.3.21 are locked together. The old tap could clean up a replaced resource twice on reveal; updating tap alone exposed an uncached thread-list snapshot in core 0.2.19. Keep the official fixes instead of suppressing cleanup errors or wrapping unstable snapshots in application code. See [resource lifecycle](../bugs/2026-11-03-assistant-ui-activity-lifecycle.md) and [runtime snapshots](../bugs/2026-11-03-assistant-ui-runtime-snapshot.md). `lib/assistant-runtime.test.mts` checks snapshot identity and drafts across unsubscribe/resubscribe.
+- Both the registry and the store are cleared when the auth token changes, so a new login never sees or keeps streaming into the previous account's sessions.
+- Leaving the workspace layout unmounts its controllers and local drafts. The module-level chat registry remains until session deletion or an auth-token change; this is not persistent recovery after a browser refresh.
+
+See [BUG-20261103-chat-session-switch-blocked](../bugs/2026-11-03-chat-session-switch-blocked.md) and [BUG-20261103-workspace-page-state-reset](../bugs/2026-11-03-workspace-page-state-reset.md).
 
 ## The BFF route is where the halves meet
 

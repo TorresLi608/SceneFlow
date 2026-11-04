@@ -1,26 +1,8 @@
-"use client";
-
-import { useQuery } from "@tanstack/react-query";
-
-import { queryKeys } from "@/actions/query-keys";
-import { listUserConfigsAction } from "@/actions/settings-actions";
-import { useI18n } from "@/lib/i18n";
-
-import { ChatPanel } from "./_components/chat-panel";
-
+/**
+ * The chat surface is mounted by the workspace shell's keep-alive host
+ * (`(workspace)/_components/keep-alive-pages.tsx`) so a streaming answer survives switching
+ * menus. This route only claims the URL; the content lives in `_components/chat-surface.tsx`.
+ */
 export default function ChatPage() {
-  const { formatDateTime } = useI18n();
-  const configsQuery = useQuery({
-    queryKey: queryKeys.userConfigs,
-    queryFn: listUserConfigsAction,
-    staleTime: 30_000,
-  });
-
-  return (
-    <ChatPanel
-      configs={configsQuery.data?.configs ?? []}
-      officialConfigs={configsQuery.data?.officialConfigs ?? []}
-      formatDateTime={formatDateTime}
-    />
-  );
+  return null;
 }

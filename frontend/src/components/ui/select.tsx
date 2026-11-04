@@ -4,9 +4,13 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
+import { useActivityVisible } from "@/components/ui/activity"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+function Select<Value, Multiple extends boolean | undefined = false>(props: SelectPrimitive.Root.Props<Value, Multiple>) {
+  const visible = useActivityVisible()
+  return visible ? <SelectPrimitive.Root {...props} /> : null
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

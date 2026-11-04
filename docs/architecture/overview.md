@@ -47,6 +47,8 @@ Media links are absolute signed URLs rooted at `SCENEFLOW_PUBLIC_BASE_URL`; brow
 | Current episode/shot drafts | Component state | Saved through actions, reconciled with query results |
 | Legacy workbench project copy | `project-store.ts` | In memory; server reload and WebSocket reconciliation |
 | Unsaved model-settings flag | `unsaved-settings-store.ts` | In memory per project; does not preserve the settings draft |
+| Chat per-session run state | `chat-session-registry.ts` + `chat-runtime-store.ts` | In memory; one AI SDK `Chat` instance per session plus its execution trace, error, and busy flags, so other sessions stay usable while one answers; cleared when the auth token changes |
+| Kept-alive workspace surfaces | `keep-alive-pages.tsx` in the `(workspace)` layout | Chat/image/audio/video controllers stay mounted after first visit; their views use React `Activity`, which preserves state/DOM and cleans up hidden UI effects. Request-owning query/mutation hooks stay above Activity; reset when the workspace layout unmounts |
 | Active render cancel flags / socket subscriptions | Backend process memory | Not shared across workers |
 
 Do not persist project or shot data in localStorage. Stable shot IDs are React keys; `updatedAt` drives draft synchronization. Asset URLs are not row identities.

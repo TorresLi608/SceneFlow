@@ -24,7 +24,10 @@ interface ChatSidebarProps {
   sessionsLoading: boolean;
   /** Admin retention window in whole days; 0 hides the cleanup notice. */
   sessionRetentionDays: number;
-  isBusy: boolean;
+  /** Only session creation itself blocks the new-session button; answering sessions do not. */
+  isCreatingSession: boolean;
+  /** Sessions still answering, including ones not currently shown; they get a live marker and cannot be deleted yet. */
+  runningSessionIds: string[];
   formatDateTime: (value: Date | string | number) => string;
   onConfigChange: (value: string) => void;
   onCreateSession: () => void;
@@ -39,7 +42,8 @@ export function ChatSidebar({
   sessions,
   sessionsLoading,
   sessionRetentionDays,
-  isBusy,
+  isCreatingSession,
+  runningSessionIds,
   formatDateTime,
   onConfigChange,
   onCreateSession,
@@ -67,7 +71,7 @@ export function ChatSidebar({
           className="rounded-xl shadow-xs cursor-pointer"
           onClick={onCreateSession}
           aria-label={t("chat.newSession")}
-          disabled={isBusy || chatConfigs.length === 0}
+          disabled={isCreatingSession || chatConfigs.length === 0}
         >
           <MessageSquarePlus className="size-4" />
         </Button>
@@ -134,6 +138,7 @@ export function ChatSidebar({
 
           {sessions.map((session) => {
             const isActive = effectiveSessionId === session.id;
+            const isRunning = runningSessionIds.includes(session.id);
             return (
               <div
                 key={session.id}
@@ -149,8 +154,18 @@ export function ChatSidebar({
                   onClick={() => onSelectSession(session.id)}
                   className="min-w-0 flex-1 text-left cursor-pointer"
                 >
-                  <span className="block truncate font-semibold">
-                    {session.title || t("chat.newSession")}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="block min-w-0 truncate font-semibold">
+                      {session.title || t("chat.newSession")}
+                    </span>
+                    {isRunning ? (
+                      <span
+                        role="status"
+                        aria-label={t("chat.sessionRunning")}
+                        title={t("chat.sessionRunning")}
+                        className="size-1.5 shrink-0 rounded-full bg-emerald-500 animate-pulse"
+                      />
+                    ) : null}
                   </span>
                   <span className="mt-1 block text-[10px] text-muted-foreground">
                     {formatDateTime(session.updatedAt)}
@@ -159,12 +174,14 @@ export function ChatSidebar({
 
                 <button
                   type="button"
+                  disabled={isRunning}
                   onClick={(event) => {
                     event.stopPropagation();
                     onDeleteSession(session.id);
                   }}
-                  className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
-                  aria-label={t("chat.deleteSession")}
+                  className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+                  aria-label={isRunning ? t("chat.deleteRunningSession") : t("chat.deleteSession")}
+                  title={isRunning ? t("chat.deleteRunningSession") : undefined}
                 >
                   <Trash2 className="size-3.5" />
                 </button>

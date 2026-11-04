@@ -2,12 +2,8 @@
 
 import { useChat } from "@ai-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  DefaultChatTransport,
-  type UIMessage,
-} from "ai";
-import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createChatSessionAction,
@@ -16,28 +12,28 @@ import {
   listChatSessionsAction,
 } from "@/actions/chat-actions";
 import { queryKeys } from "@/actions/query-keys";
+import { markRunningStepsStopped, runningSessionIds } from "@/lib/chat-runtime";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
-import { useUserStore } from "@/store/user-store";
+import {
+  EMPTY_SESSION_RUNTIME,
+  NEW_CHAT_ID,
+  useChatRuntimeStore,
+  type ChatRuntimeErrorKind,
+} from "@/store/chat-runtime-store";
 import type { UserConfig } from "@/types/auth";
-import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
+import type { ChatAttachment } from "@/types/chat";
 
-import { clearFailedReasoning } from "./chat-message-state";
+import { chatSessionRegistry } from "./chat-session-registry";
+import { messageKey, toChatMessage, toUiMessage, type SceneFlowUIMessage } from "./chat-ui-messages";
 
-type ChatMessageMetadata = {
-  attachments?: ChatAttachment[];
-  chatMessage?: ChatMessage;
-  createdAt?: string;
-  model?: string;
-  provider?: string;
-  sessionId?: string;
+const CHAT_ROUTE = "/chat";
+
+const ERROR_FALLBACK_KEYS: Record<ChatRuntimeErrorKind, string> = {
+  send: "chat.sendFailed",
+  create: "chat.createSessionFailed",
+  delete: "chat.deleteSessionFailed",
 };
-
-type ChatMessageData = {
-  agent_step: ChatAgentStep;
-};
-
-type SceneFlowUIMessage = UIMessage<ChatMessageMetadata, ChatMessageData>;
 
 function configSelectValue(config: UserConfig) {
   return `${config.source}:${config.id}`;
@@ -54,91 +50,39 @@ function isChatConfig(config: UserConfig) {
   return ["general", "script"].includes(config.purpose) && config.isEnabled && config.modelSeries.trim();
 }
 
-function upsertAgentStep(current: ChatAgentStep[], next: ChatAgentStep) {
-  return current.some((step) => step.id === next.id)
-    ? current.map((step) => (step.id === next.id ? next : step))
-    : [...current, next];
-}
-
-function uiMessageText(message: SceneFlowUIMessage) {
-  return message.parts
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("");
-}
-
-function uiMessageReasoning(message: SceneFlowUIMessage) {
-  return message.parts
-    .filter((part) => part.type === "reasoning")
-    .map((part) => part.text)
-    .join("");
-}
-
-function toUiMessage(message: ChatMessage): SceneFlowUIMessage {
-  return {
-    id: message.id,
-    role: message.role,
-    metadata: { chatMessage: message },
-    parts: [
-      ...(message.reasoning ? [{ type: "reasoning" as const, text: message.reasoning, state: "done" as const }] : []),
-      { type: "text", text: message.content, state: "done" },
-    ],
-  };
-}
-
-function toChatMessage(message: SceneFlowUIMessage, sessionId: string | null, config: UserConfig | undefined): ChatMessage {
-  const saved = message.metadata?.chatMessage;
-  return {
-    id: saved?.id ?? message.id,
-    sessionId: saved?.sessionId ?? message.metadata?.sessionId ?? sessionId ?? "",
-    role: message.role,
-    content: uiMessageText(message) || saved?.content || "",
-    attachments: saved?.attachments ?? message.metadata?.attachments ?? [],
-    reasoning: uiMessageReasoning(message) || saved?.reasoning || "",
-    provider: saved?.provider ?? message.metadata?.provider ?? config?.provider ?? "",
-    model: saved?.model ?? message.metadata?.model ?? config?.modelSeries ?? "",
-    createdAt: saved?.createdAt ?? message.metadata?.createdAt ?? new Date().toISOString(),
-  };
-}
-
-function messageKey(messages: SceneFlowUIMessage[]) {
-  return messages.map((message) => message.id).join("|");
-}
-
-function chatRequestBody(message: SceneFlowUIMessage | undefined, body: Record<string, unknown> | undefined) {
-  return {
-    content: message ? uiMessageText(message).trim() : "",
-    attachments: message?.metadata?.attachments ?? [],
-    configId: body?.configId,
-    officialConfigId: body?.officialConfigId,
-  };
-}
-
 export function useChatController(configs: UserConfig[], officialConfigs: UserConfig[]) {
   const { t } = useI18n();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const token = useUserStore((state) => state.token);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("chat")
-  );
+  const routeSessionId = searchParams.get("chat");
+  const [selection, setSelection] = useState({ routeSessionId, sessionId: routeSessionId });
+  if (pathname === CHAT_ROUTE && routeSessionId !== selection.routeSessionId) {
+    // A history/deep-link navigation wins; the bare menu URL restores the last viewed session.
+    setSelection({ routeSessionId, sessionId: routeSessionId ?? selection.sessionId });
+  }
+  const selectedSessionId = selection.sessionId;
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [agentSteps, setAgentSteps] = useState<ChatAgentStep[]>([]);
-  const stoppedRef = useRef(false);
+  // The chat surface stays mounted while other workspace menus are shown; only touch the URL on /chat.
+  const isChatRouteActive = pathname === CHAT_ROUTE;
   const setRouteSessionId = useCallback((sessionId: string | null) => {
+    if (window.location.pathname !== CHAT_ROUTE) return;
     const params = new URLSearchParams(window.location.search);
+    if (params.get("chat") === sessionId) return;
     if (sessionId) {
       params.set("chat", sessionId);
     } else {
       params.delete("chat");
     }
     const query = params.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, { scroll: false });
-  }, [pathname, router]);
+    router.replace(`${CHAT_ROUTE}${query ? `?${query}` : ""}${window.location.hash}`, { scroll: false });
+  }, [router]);
+  const setSelectedSessionId = useCallback((sessionId: string | null) => {
+    setSelection((current) => ({ ...current, sessionId }));
+    setRouteSessionId(sessionId);
+  }, [setRouteSessionId]);
 
   const userChatConfigs = useMemo(
     () => configs.filter(isChatConfig),
@@ -165,6 +109,7 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     queryFn: listChatSessionsAction,
   });
   const effectiveSessionId = selectedSessionId ?? sessionsQuery.data?.sessions[0]?.id ?? null;
+  const runtimeKey = effectiveSessionId ?? NEW_CHAT_ID;
   const messagesQuery = useQuery({
     queryKey: queryKeys.chatMessages(effectiveSessionId),
     queryFn: () => listChatMessagesAction(effectiveSessionId || ""),
@@ -176,54 +121,29 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   const loadedMessages = messagesQuery.data?.messages;
   const serverMessages = useMemo(() => (loadedMessages ?? []).map(toUiMessage), [loadedMessages]);
   const serverMessageKey = useMemo(() => messageKey(serverMessages), [serverMessages]);
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport<SceneFlowUIMessage>({
-        api: "/api/bff/chat/sessions/_/messages/stream",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        prepareSendMessagesRequest: ({ messages, body, headers }) => {
-          const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "_";
-          return {
-            api: `/api/bff/chat/sessions/${encodeURIComponent(sessionId)}/messages/stream`,
-            headers,
-            body: chatRequestBody(messages.at(-1), body),
-          };
-        },
-      }),
-    [token]
-  );
-  const chat = useChat<SceneFlowUIMessage>({
-    id: effectiveSessionId ?? "new-chat",
-    messages: serverMessages,
-    transport,
-    onData: (part) => {
-      if (part.type === "data-agent_step") {
-        if (stoppedRef.current && part.data.status === "running") return;
-        setAgentSteps((current) => upsertAgentStep(current, part.data));
-      }
-    },
-    onError: (error) => {
-      setAgentSteps([]);
-      setAiMessages(clearFailedReasoning);
-      setErrorMessage(resolveRequestError(error, t("chat.sendFailed")));
-    },
-  });
+
+  // Each session owns its AI SDK instance; viewing another session swaps the subscription instead of
+  // discarding a running stream, and a stream that finished while hidden is still there on return.
+  const chatInstance = useMemo(() => chatSessionRegistry.ensure(runtimeKey), [runtimeKey]);
   const {
     messages: aiMessages,
-    sendMessage: sendAiMessage,
-    stop: stopAiMessage,
     setMessages: setAiMessages,
     status: chatStatus,
-  } = chat;
+  } = useChat<SceneFlowUIMessage>({ chat: chatInstance });
+  const runtime = useChatRuntimeStore((state) => state.sessions[runtimeKey] ?? EMPTY_SESSION_RUNTIME);
+  const runtimeSessions = useChatRuntimeStore((state) => state.sessions);
+  const patchSession = useChatRuntimeStore((state) => state.patchSession);
+  const runningIds = useMemo(() => runningSessionIds(runtimeSessions, NEW_CHAT_ID), [runtimeSessions]);
+
   const isStreaming = chatStatus === "submitted" || chatStatus === "streaming";
   const chatMessageKey = useMemo(() => messageKey(aiMessages), [aiMessages]);
 
   useEffect(() => {
-    if (!selectedSessionId && !sessionsQuery.data) {
+    if (!isChatRouteActive || (!selectedSessionId && !sessionsQuery.data)) {
       return;
     }
     setRouteSessionId(effectiveSessionId);
-  }, [effectiveSessionId, selectedSessionId, sessionsQuery.data, setRouteSessionId]);
+  }, [effectiveSessionId, isChatRouteActive, selectedSessionId, sessionsQuery.data, setRouteSessionId]);
 
   useEffect(() => {
     if (chatStatus === "ready" && serverMessageKey !== chatMessageKey && serverMessages.length >= aiMessages.length) {
@@ -235,35 +155,42 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     mutationFn: createChatSessionAction,
     onSuccess: async (response) => {
       setSelectedSessionId(response.session.id);
-      setErrorMessage(null);
+      patchSession(runtimeKey, { error: null });
       await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
     },
     onError: (error) => {
-      setErrorMessage(resolveRequestError(error, t("chat.createSessionFailed")));
+      patchSession(runtimeKey, { error: { cause: error, kind: "create" } });
     },
   });
 
   const deleteSessionMutation = useMutation({
     mutationFn: deleteChatSessionAction,
     onSuccess: async (_, deletedId) => {
+      chatSessionRegistry.remove(deletedId);
       if (effectiveSessionId === deletedId) {
         setSelectedSessionId(sessionsQuery.data?.sessions.find((session) => session.id !== deletedId)?.id ?? null);
       }
-      setAgentSteps([]);
-      setErrorMessage(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
         queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(deletedId) }),
       ]);
     },
     onError: (error) => {
-      setErrorMessage(resolveRequestError(error, t("chat.deleteSessionFailed")));
+      patchSession(runtimeKey, { error: { cause: error, kind: "delete" } });
     },
   });
 
-  const isBusy = createSessionMutation.isPending || deleteSessionMutation.isPending || isSending || isStreaming;
+  const isCreatingSession = createSessionMutation.isPending;
+  // Busy is scoped to the viewed session: other sessions stay usable while this one is answering.
+  const isBusy = isCreatingSession || runtime.isSending || isStreaming;
+  const errorMessage = runtime.error
+    ? resolveRequestError(runtime.error.cause, t(ERROR_FALLBACK_KEYS[runtime.error.kind]))
+    : null;
 
   const createSession = () => {
+    if (isCreatingSession) {
+      return;
+    }
     createSessionMutation.mutate({
       title: input.trim().slice(0, 40) || t("chat.newSession"),
       ...selectedConfigPayload(selectedConfig),
@@ -271,13 +198,13 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
   };
 
   const selectSession = (id: string) => {
-    stoppedRef.current = false;
     setSelectedSessionId(id);
-    setAgentSteps([]);
   };
 
+  const isSessionRunning = (id: string) => Boolean(runtimeSessions[id]?.isSending) || chatSessionRegistry.isRunning(id);
+
   const deleteSession = (id: string) => {
-    if (isStreaming) {
+    if (isSessionRunning(id)) {
       return;
     }
     deleteSessionMutation.mutate(id);
@@ -288,27 +215,30 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
       return;
     }
 
-    setErrorMessage(null);
-    stoppedRef.current = false;
-    setAgentSteps([]);
-    await sendAiMessage(
-      {
-        text: content,
-        metadata: {
-          attachments,
-          createdAt: new Date().toISOString(),
-          model: selectedConfig.modelSeries,
-          provider: selectedConfig.provider,
-          sessionId,
+    const target = chatSessionRegistry.ensure(sessionId);
+    patchSession(sessionId, { agentSteps: [], error: null, isSending: true, stopped: false });
+    try {
+      await target.sendMessage(
+        {
+          text: content,
+          metadata: {
+            attachments,
+            createdAt: new Date().toISOString(),
+            model: selectedConfig.modelSeries,
+            provider: selectedConfig.provider,
+            sessionId,
+          },
         },
-      },
-      { body: { sessionId, ...selectedConfigPayload(selectedConfig) } }
-    );
-    setInput("");
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(sessionId) }),
-    ]);
+        { body: { sessionId, ...selectedConfigPayload(selectedConfig) } }
+      );
+      setInput("");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(sessionId) }),
+      ]);
+    } finally {
+      patchSession(sessionId, { isSending: false });
+    }
   };
 
   const sendMessage = async (nextContent?: string, attachments: ChatAttachment[] = []) => {
@@ -316,36 +246,49 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     if ((!content && attachments.length === 0) || isBusy || !selectedConfig) {
       return;
     }
-    setIsSending(true);
-    try {
-      if (!effectiveSessionId) {
-        const response = await createChatSessionAction({
-          title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || t("chat.newSession"),
-          ...selectedConfigPayload(selectedConfig),
-        });
-        // Keep the temporary "new-chat" runtime mounted while the first request is in flight.
-        // Invalidating sessions here changes the useChat id before sendAiMessage can publish
-        // its optimistic user message, leaving that message in the discarded runtime.
-        await streamToSession(response.session.id, content, attachments);
-        setSelectedSessionId(response.session.id);
-      } else {
+
+    if (effectiveSessionId) {
+      try {
         await streamToSession(effectiveSessionId, content, attachments);
+      } catch (error) {
+        patchSession(effectiveSessionId, { agentSteps: [], error: { cause: error, kind: "send" } });
       }
+      return;
+    }
+
+    patchSession(NEW_CHAT_ID, { error: null, isSending: true });
+    let sessionId: string | null = null;
+    try {
+      const response = await createChatSessionAction({
+        title: content.slice(0, 40) || attachments[0]?.name?.slice(0, 40) || t("chat.newSession"),
+        ...selectedConfigPayload(selectedConfig),
+      });
+      sessionId = response.session.id;
+      // View the new session's own instance before its first turn starts: the optimistic user
+      // message lands in that instance, so nothing is lost to a discarded runtime.
+      setSelectedSessionId(sessionId);
+      patchSession(NEW_CHAT_ID, { isSending: false });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
+      await streamToSession(sessionId, content, attachments);
     } catch (error) {
-      setAgentSteps([]);
-      setErrorMessage(resolveRequestError(error, t(effectiveSessionId ? "chat.sendFailed" : "chat.createSessionFailed")));
-    } finally {
-      setIsSending(false);
+      patchSession(sessionId ?? NEW_CHAT_ID, {
+        agentSteps: [],
+        isSending: false,
+        error: { cause: error, kind: sessionId ? "send" : "create" },
+      });
     }
   };
 
   const stop = () => {
-    stoppedRef.current = true;
-    stopAiMessage();
-    setAgentSteps((current) => current.map((step) => step.status === "running" ? { ...step, status: "stopped", detail: t("chat.stopped") } : step));
+    patchSession(runtimeKey, (current) => ({
+      stopped: true,
+      agentSteps: markRunningStepsStopped(current.agentSteps, t("chat.stopped")),
+    }));
+    void chatInstance.stop();
     if (effectiveSessionId) {
+      const sessionId = effectiveSessionId;
       window.setTimeout(() => {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(effectiveSessionId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(sessionId) });
         void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
       }, 300);
     }
@@ -361,13 +304,16 @@ export function useChatController(configs: UserConfig[], officialConfigs: UserCo
     // Admin retention window for chat; 0 (or not loaded yet) means nothing expires and no notice is shown.
     sessionRetentionDays: sessionsQuery.data?.retentionDays ?? 0,
     messages: aiMessages.map((message) => toChatMessage(message, effectiveSessionId, selectedConfig)),
-    agentSteps,
+    agentSteps: runtime.agentSteps,
     messagesLoading: messagesQuery.isLoading,
     input,
     setInput,
     errorMessage,
     isBusy,
     isStreaming,
+    isCreatingSession,
+    /** Sessions with a turn in flight, including ones the user is not currently viewing. */
+    runningSessionIds: runningIds,
     createSession,
     selectSession,
     deleteSession,

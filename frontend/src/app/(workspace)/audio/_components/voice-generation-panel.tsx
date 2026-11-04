@@ -29,6 +29,7 @@ import {
 } from "@/actions/voice-generation-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { GeneratedModelLine } from "@/components/generated-model-line";
+import { ActivityView } from "@/components/ui/activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,6 +67,7 @@ function isVoiceConfig(config: UserConfig) {
 }
 
 interface VoiceGenerationPanelProps {
+  active: boolean;
   configs: UserConfig[];
   officialConfigs: UserConfig[];
 }
@@ -75,7 +77,7 @@ export function VoiceGenerationPanel(props: VoiceGenerationPanelProps) {
   return <VoiceGenerationEditor key={editorKey} {...props} onReset={() => setEditorKey((key) => key + 1)} />;
 }
 
-function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGenerationPanelProps & { onReset: () => void }) {
+function VoiceGenerationEditor({ active, configs, officialConfigs, onReset }: VoiceGenerationPanelProps & { onReset: () => void }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [selectedConfigId, setSelectedConfigId] = useState("");
@@ -232,7 +234,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden">
+    <ActivityView active={active} onHide={() => setPreviewModalOpen(false)} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden">
       <aside className="flex min-h-0 min-w-0 shrink-0 flex-col border-b border-border/70 bg-card/35 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -595,7 +597,7 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
                     </div>
 
                     {previewVoice.previewAudioUrl ? (
-                      <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls autoPlay className="w-full max-w-4xl" />
+                      <audio src={artifactBffUrl(previewVoice.previewAudioUrl)} controls autoPlay={active} className="w-full max-w-4xl" />
                     ) : null}
                   </div>
 
@@ -655,6 +657,6 @@ function VoiceGenerationEditor({ configs, officialConfigs, onReset }: VoiceGener
           ) : null}
         </div>
       </section>
-    </div>
+    </ActivityView>
   );
 }
