@@ -28,6 +28,7 @@ import { isCancel } from "axios";
 import { optimizePromptAction } from "@/actions/prompt-actions";
 import { queryKeys } from "@/actions/query-keys";
 import { GeneratedModelLine } from "@/components/generated-model-line";
+import { ActivityView } from "@/components/ui/activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -116,6 +117,7 @@ function imageExtension(blob: Blob, url: string) {
 }
 
 interface ImageGenerationPanelProps {
+  active: boolean;
   configs: UserConfig[];
   officialConfigs: UserConfig[];
 }
@@ -125,7 +127,7 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
   return <ImageGenerationEditor key={editorKey} {...props} onReset={() => setEditorKey((key) => key + 1)} />;
 }
 
-function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGenerationPanelProps & { onReset: () => void }) {
+function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: ImageGenerationPanelProps & { onReset: () => void }) {
   const { t, formatDateTime } = useI18n();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -253,17 +255,20 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
   });
 
   useEffect(() => {
-    if (!generateMutation.isPending) {
+    if (!active || !generateMutation.isPending) {
       return;
     }
 
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
+    const startedAt = generateMutation.submittedAt;
+    const updateElapsed = () => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    const frame = requestAnimationFrame(updateElapsed);
+    const timer = window.setInterval(updateElapsed, 1000);
 
-    return () => window.clearInterval(timer);
-  }, [generateMutation.isPending]);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [active, generateMutation.isPending, generateMutation.submittedAt]);
 
   const addReferences = async (files: FileList | null) => {
     if (!files) {
@@ -378,7 +383,7 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
   const generatingLabel = t("images.generatingImageWithSeconds", { seconds: elapsedSeconds });
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:overflow-hidden">
+    <ActivityView active={active} onHide={() => setLightboxOpen(false)} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:overflow-hidden">
       {/* 左侧控制栏 */}
       <aside className="flex min-h-0 min-w-0 shrink-0 flex-col border-b border-border/70 bg-card/40 p-4 backdrop-blur-xl lg:border-r lg:border-b-0 lg:p-4">
         {/* 头部标题 */}
@@ -994,6 +999,6 @@ function ImageGenerationEditor({ configs, officialConfigs, onReset }: ImageGener
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </ActivityView>
   );
 }

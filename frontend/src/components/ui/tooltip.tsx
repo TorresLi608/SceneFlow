@@ -4,9 +4,13 @@ import * as React from "react";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 
 import { cn } from "@/lib/utils";
+import { useActivityVisible } from "@/components/ui/activity";
 
 const TooltipProvider = TooltipPrimitive.Provider;
-const Tooltip = TooltipPrimitive.Root;
+function Tooltip(props: TooltipPrimitive.Root.Props) {
+  const visible = useActivityVisible();
+  return visible ? <TooltipPrimitive.Root {...props} /> : null;
+}
 
 function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;

@@ -13,14 +13,16 @@ import { AssistantComposer } from "./assistant-composer";
 import { ChatMessageList } from "./chat-message-list";
 import { ChatSidebar } from "./chat-sidebar";
 import { useChatController } from "./use-chat-controller";
+import { ActivityView } from "@/components/ui/activity";
 
 interface ChatPanelProps {
+  active: boolean;
   configs: UserConfig[];
   officialConfigs: UserConfig[];
   formatDateTime: (value: Date | string | number) => string;
 }
 
-export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPanelProps) {
+export function ChatPanel({ active, configs, officialConfigs, formatDateTime }: ChatPanelProps) {
   const { t } = useI18n();
   const chat = useChatController(configs, officialConfigs);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -48,7 +50,8 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
       sessions={chat.sessions}
       sessionsLoading={chat.sessionsLoading}
       sessionRetentionDays={chat.sessionRetentionDays}
-      isBusy={chat.isBusy}
+      isCreatingSession={chat.isCreatingSession}
+      runningSessionIds={chat.runningSessionIds}
       formatDateTime={formatDateTime}
       onConfigChange={chat.setSelectedConfigId}
       onCreateSession={() => {
@@ -64,7 +67,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
   );
 
   return (
-    <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
+    <ActivityView active={active} onHide={() => setHistoryOpen(false)} className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-0 bg-background md:grid-cols-[292px_minmax(0,1fr)]">
       <div className="hidden min-h-0 md:flex">{sidebar}</div>
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -141,7 +144,7 @@ export function ChatPanel({ configs, officialConfigs, formatDateTime }: ChatPane
           </>
         )}
       </section>
-    </div>
+    </ActivityView>
   );
 }
 

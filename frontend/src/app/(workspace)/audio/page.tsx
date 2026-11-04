@@ -1,23 +1,8 @@
-"use client";
-
-import { useQuery } from "@tanstack/react-query";
-
-import { queryKeys } from "@/actions/query-keys";
-import { listUserConfigsAction } from "@/actions/settings-actions";
-
-import { VoiceGenerationPanel } from "./_components/voice-generation-panel";
-
+/**
+ * The voice surface is mounted by the workspace shell's keep-alive host
+ * (`(workspace)/_components/keep-alive-pages.tsx`) so an in-flight voice design survives switching
+ * menus. This route only claims the URL; the content lives in `_components/audio-surface.tsx`.
+ */
 export default function AudioPage() {
-  const configsQuery = useQuery({
-    queryKey: queryKeys.userConfigs,
-    queryFn: listUserConfigsAction,
-    staleTime: 30_000,
-  });
-
-  return (
-    <VoiceGenerationPanel
-      configs={configsQuery.data?.configs ?? []}
-      officialConfigs={configsQuery.data?.officialConfigs ?? []}
-    />
-  );
+  return null;
 }

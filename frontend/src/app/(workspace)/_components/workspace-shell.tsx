@@ -22,6 +22,7 @@ import { useI18n } from "@/lib/i18n";
 import { useUserStore } from "@/store/user-store";
 
 import { AppSidebar } from "./app-sidebar";
+import { KeepAlivePages } from "./keep-alive-pages";
 
 function pageTitleKey(pathname: string) {
   if (pathname.startsWith("/images")) return "home.images";
@@ -201,8 +202,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {/* 页面内容注入 */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+        {/* 页面内容注入：生成/问答菜单由 KeepAlivePages 常驻挂载并按路由显隐，其余路由走 children */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <KeepAlivePages />
+          {children}
+        </div>
       </section>
     </main>
   );

@@ -6,10 +6,12 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
+import { useActivityVisible } from "@/components/ui/activity"
 import { XIcon } from "lucide-react"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  const visible = useActivityVisible()
+  return visible ? <DialogPrimitive.Root data-slot="dialog" {...props} /> : null
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
