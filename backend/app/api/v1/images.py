@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.database import db
 from app.api.deps import current_user_id
 from app.llms.registry import models
+from app.llms.router import supports_image_gif
 from app.schemas.serializers import generation_record_json
 from app.services.artifact_service import decode_image_data_url
 from app.services.config_service import active_model_config, official_model_config_any, user_model_config_any
@@ -46,7 +47,7 @@ def parse_reference(value: dict[str, Any], index: int) -> tuple[str, bytes, str]
 def persist_image(user_id: int, config: dict[str, Any], data: bytes, ext: str, *, prompt: str, source: str, options: dict[str, Any]) -> dict[str, Any]:
     """Store the result on the account's history and return its wire shape (with a signed URL)."""
     ext = "jpg" if ext.lower() in {"jpg", "jpeg"} else ext.lower()
-    ext = ext if ext in {"png", "jpg", "webp"} else "png"
+    ext = ext if ext in {"png", "jpg", "webp", "gif"} else "png"
     media_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
     thumbnail = create_image_thumbnail(data)
     with db() as session:
@@ -87,6 +88,11 @@ def delete_image_history(record_id: str, user_id: int = Depends(current_user_id)
 
 @router.post("/generate")
 async def generate_image(payload: dict[str, Any], user_id: int = Depends(current_user_id)) -> dict[str, Any]:
+    """Generate a PNG, or a GPT Image 2.6 GIF using outputFormat="gif".
+
+    GIF-only frameCount defaults to 9 (2–16); frameDurationMs defaults to 200
+    (20–2000, in steps of 10 ms). GIF uses auto size on OpenAI, 1024x1024 on relays.
+    """
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(400, "prompt is required")
@@ -111,7 +117,26 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
     if config["provider"] not in {"openai", "gemini", "qwen", "grok"}:
         raise HTTPException(400, "image generation currently only supports provider openai/gemini/qwen/grok")
 
+    output_format = payload.get("outputFormat", "png")
+    if output_format not in ("png", "gif"):
+        raise HTTPException(400, "outputFormat must be png or gif")
+    animation: dict[str, Any] = {}
+    if output_format == "gif":
+        if not supports_image_gif(config["provider"], config["model"]):
+            raise HTTPException(400, "GIF output requires an OpenAI GPT Image 2.6 model")
+        frame_count = payload.get("frameCount", 9)
+        frame_duration = payload.get("frameDurationMs", 200)
+        if type(frame_count) is not int or not 2 <= frame_count <= 16:
+            raise HTTPException(400, "frameCount must be an integer between 2 and 16")
+        if type(frame_duration) is not int or not 20 <= frame_duration <= 2000 or frame_duration % 10:
+            raise HTTPException(400, "frameDurationMs must be 20–2000 in steps of 10 ms")
+        animation = {"output_format": "gif", "frame_count": frame_count, "frame_duration_ms": frame_duration}
+    elif "frameCount" in payload or "frameDurationMs" in payload:
+        raise HTTPException(400, "animation fields require outputFormat=gif")
+
     ratio = str(payload.get("ratio") or "auto")
+    if output_format == "gif":
+        ratio = "auto"
     resolution = str(payload.get("resolution") or "2K")
     # These providers take the ratio/resolution vocabulary directly; the router maps it per
     # provider (xAI's `aspect_ratio`/`resolution`, Gemini's image config, Wan's pixel sizes).
@@ -121,15 +146,18 @@ async def generate_image(payload: dict[str, Any], user_id: int = Depends(current
     try:
         if references:
             images = [parse_reference(item, index + 1) for index, item in enumerate(references)]
-            result = await models.edit_image(config["apiKey"], config["model"], prompt, images, size, quality, config.get("baseUrl", ""), config["provider"])
+            result = await models.edit_image(config["apiKey"], config["model"], prompt, images, size, quality, config.get("baseUrl", ""), config["provider"], **animation)
         else:
-            result = await models.generate_image(config["apiKey"], config["model"], prompt, size, quality, config.get("baseUrl", ""), config["provider"])
+            result = await models.generate_image(config["apiKey"], config["model"], prompt, size, quality, config.get("baseUrl", ""), config["provider"], **animation)
     except Exception as exc:
         raise HTTPException(502, "AI 图片生成失败：" + str(exc)[:220]) from exc
     record_usage(user_id, config, "image", started_at, quantity=1)
 
     source = "image-to-image" if references else "text-to-image"
-    record = await asyncio.to_thread(persist_image, user_id, config, result.data, result.format, prompt=prompt, source=source, options={"resolution": resolution, "ratio": ratio})
+    options: dict[str, Any] = {"resolution": resolution, "ratio": ratio, "outputFormat": result.format}
+    if animation:
+        options.update(frameCount=frame_count, frameDurationMs=frame_duration)
+    record = await asyncio.to_thread(persist_image, user_id, config, result.data, result.format, prompt=prompt, source=source, options=options)
     return {
         "image": {
             "url": record["url"],

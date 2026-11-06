@@ -415,20 +415,24 @@ def _reasoning_text(content: Any, additional_kwargs: dict[str, Any] | None = Non
 
 
 def _image_format_from_mime(mime_type: str) -> str:
-    return {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}.get(mime_type, "png")
+    return {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(mime_type, "png")
+
+
+def supports_image_gif(provider: str, model: str) -> bool:
+    return provider.strip().lower() == "openai" and bool(re.match(r"^gpt-image-2\.6(?:-|$)", model.strip().lower()))
 
 
 def _image_response_field(image: Any, name: str) -> Any:
     return image.get(name) if isinstance(image, dict) else getattr(image, name, None)
 
 
-async def _openai_image_result(response: Any) -> ImageResult:
+async def _openai_image_result(response: Any, output_format: str = "png") -> ImageResult:
     """Accept both base64 and URL responses from OpenAI-compatible image gateways."""
     items = getattr(response, "data", None) or []
     image = items[0] if items else None
     b64_json = _image_response_field(image, "b64_json") if image else ""
     if b64_json:
-        return ImageResult(data=base64.b64decode(str(b64_json)), format="png")
+        return ImageResult(data=base64.b64decode(str(b64_json)), format=output_format)
 
     url = str(_image_response_field(image, "url") or "").strip() if image else ""
     if url.startswith("data:image/") and ";base64," in url:
@@ -457,8 +461,8 @@ def _gemini_image_size(value: str) -> str:
     return {"low": "1K", "medium": "2K", "high": "4K"}.get(value, value if value in {"1K", "2K", "4K"} else "2K")
 
 
-def _openai_image_size(value: str) -> str:
-    return {
+def _openai_image_size(value: str, base_url: str = "") -> str:
+    size = {
         "1:1": "1024x1024",
         "2:3": "1024x1536",
         "3:2": "1536x1024",
@@ -469,6 +473,10 @@ def _openai_image_size(value: str) -> str:
         "21:9": "1536x1024",
         "9:21": "1024x1536",
     }.get(value, value)
+    # New API relays can require numeric dimensions even though OpenAI accepts auto.
+    if size == "auto" and urlparse(image_base_url_for("openai", base_url)).hostname != "api.openai.com":
+        return "1024x1024"
+    return size
 
 
 def _openai_image_quality(value: str) -> str:
@@ -825,8 +833,14 @@ class ModelRouter:
         quality: str = "medium",
         base_url: str = "",
         provider: str = "openai",
+        *,
+        output_format: str = "png",
+        frame_count: int = 9,
+        frame_duration_ms: int = 200,
     ) -> ImageResult:
         provider = provider.strip().lower()
+        if output_format == "gif" and not supports_image_gif(provider, model):
+            raise ValueError("GIF output requires an OpenAI GPT Image 2.6 model")
         if provider == "qwen" and _is_native_qwen_image_url(base_url):
             return await self._generate_qwen_image(api_key, model, prompt, [], size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
@@ -844,14 +858,16 @@ class ModelRouter:
             response = await client.images.generate(
                 model=model.strip(),
                 prompt=prompt.strip(),
-                size=_openai_image_size(size),
+                size=_openai_image_size("auto" if output_format == "gif" else size, base_url),
                 quality=_openai_image_quality(quality),
-                output_format="png",
+                output_format=output_format,
+                # Installed SDK predates animation fields; extra_body also works for multipart edits.
+                **({"extra_body": {"frame_count": frame_count, "frame_duration_ms": frame_duration_ms}} if output_format == "gif" else {}),
             )
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        return await _openai_image_result(response)
+        return await _openai_image_result(response, output_format)
 
     async def edit_image(
         self,
@@ -863,8 +879,14 @@ class ModelRouter:
         quality: str = "medium",
         base_url: str = "",
         provider: str = "openai",
+        *,
+        output_format: str = "png",
+        frame_count: int = 9,
+        frame_duration_ms: int = 200,
     ) -> ImageResult:
         provider = provider.strip().lower()
+        if output_format == "gif" and not supports_image_gif(provider, model):
+            raise ValueError("GIF output requires an OpenAI GPT Image 2.6 model")
         if provider == "qwen" and _is_native_qwen_image_url(base_url):
             return await self._generate_qwen_image(api_key, model, prompt, images, size, quality, base_url)
         if provider == "gemini" and _is_native_gemini_image_url(base_url):
@@ -888,14 +910,15 @@ class ModelRouter:
                 model=model.strip(),
                 image=files,
                 prompt=prompt.strip(),
-                size=_openai_image_size(size),
+                size=_openai_image_size("auto" if output_format == "gif" else size, base_url),
                 quality=_openai_image_quality(quality),
-                output_format="png",
+                output_format=output_format,
+                **({"extra_body": {"frame_count": frame_count, "frame_duration_ms": frame_duration_ms}} if output_format == "gif" else {}),
             )
         except APIStatusError as exc:
             raise ValueError(f"provider status {exc.status_code}: {exc.response.text.strip()[:220]}") from exc
 
-        return await _openai_image_result(response)
+        return await _openai_image_result(response, output_format)
 
     async def _generate_grok_image(
         self,

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from contextlib import contextmanager
+from email.parser import BytesParser
+from io import BytesIO
+import json
 from pathlib import Path
 import tempfile
 from threading import get_ident
@@ -9,12 +13,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
-from openai import RateLimitError
+from openai import AsyncOpenAI, RateLimitError
+from PIL import Image
 
 from app.api.v1.images import generate_image
 from app.core import database
 from app.core.database import db, init_db
-from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _grok_image_aspect, _grok_image_resolution, _is_native_qwen_image_url, _qwen_image_size, _qwen_image_url, image_base_url_for
+from app.llms.router import GENERATION_TIMEOUT_SECONDS, ModelRouter, _grok_image_aspect, _grok_image_resolution, _is_native_qwen_image_url, _qwen_image_size, _qwen_image_url, image_base_url_for, supports_image_gif
 from app.models import User
 from app.utils.common import now
 
@@ -201,6 +206,125 @@ def test_openai_compatible_image_accepts_data_url_response() -> None:
     assert result.format == "webp"
 
 
+def test_openai_image_sizes_use_real_sdk_json_and_multipart_contracts() -> None:
+    buffer = BytesIO()
+    Image.new("RGB", (32, 32), "red").save(buffer, format="GIF", save_all=True,
+        append_images=[Image.new("RGB", (32, 32), "blue")], duration=200, loop=0)
+    gif = buffer.getvalue()
+    buffer = BytesIO()
+    Image.new("RGB", (32, 32), "red").save(buffer, format="PNG")
+    png = buffer.getvalue()
+
+    async def check() -> None:
+        for model, output_format, size, official_size in (
+            ("gpt-image-2.6-sunburst", "gif", "1536x1024", "auto"),
+            ("gpt-image-2.6-flare", "gif", "1536x1024", "auto"),
+            ("gpt-image-2.6-sunburst", "png", "auto", "auto"),
+            ("gpt-image-1", "png", "auto", "auto"),
+            ("gpt-image-1", "png", "1536x1024", "1536x1024"),
+            ("gpt-image-1", "png", "2:3", "1024x1536"),
+        ):
+            for base in ("https://api.openai.com/v1", "https://relay.example.test/v1"):
+                for editing in (False, True):
+                    requests = []
+                    data = gif if output_format == "gif" else png
+
+                    def respond(request):
+                        if editing:
+                            message = BytesParser().parsebytes(b"Content-Type: " + request.headers["content-type"].encode() + b"\r\n\r\n" + request.content)
+                            fields = {part.get_param("name", header="content-disposition"): part.get_payload(decode=True).decode() for part in message.walk() if part.get_content_disposition() == "form-data"}
+                        else:
+                            fields = json.loads(request.content)
+                        requests.append((request, fields))
+                        if "relay.example.test" in base and fields["size"] == "auto":
+                            return httpx.Response(400, json={"error": {"message": "size must use the exact widthxheight format", "type": "new_api_error", "code": "invalid_request"}})
+                        return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(data).decode()}]})
+
+                    async with AsyncOpenAI(api_key="test-key", base_url=base, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))) as client:
+                        with patch("app.llms.router.AsyncOpenAI", return_value=client):
+                            args = ("test-key", model, "a looping fox")
+                            if editing:
+                                args += ([("reference.png", b"png", "image/png")],)
+                            method = ModelRouter().edit_image if editing else ModelRouter().generate_image
+                            result = await method(*args, size=size, output_format=output_format, frame_count=9, frame_duration_ms=200, base_url=base)
+                    assert result.data == data and result.format == output_format
+                    assert len(requests) == 1
+                    request, fields = requests[0]
+                    assert str(request.url) == base + ("/images/edits" if editing else "/images/generations")
+                    if editing:
+                        assert any(name.startswith("image") for name in fields)
+                    assert fields["model"] == model and fields["output_format"] == output_format
+                    expected_size = "1024x1024" if official_size == "auto" and "relay.example.test" in base else official_size
+                    assert fields["size"] == expected_size
+                    if output_format == "gif":
+                        assert str(fields["frame_count"]) == "9" and str(fields["frame_duration_ms"]) == "200"
+                    else:
+                        assert "frame_count" not in fields and "frame_duration_ms" not in fields
+
+    asyncio.run(check())
+
+
+def test_gif_api_validates_model_and_animation_before_calling_provider() -> None:
+    assert supports_image_gif("openai", "GPT-IMAGE-2.6-FLARE")
+    assert not supports_image_gif("openai", "gpt-image-2.5-flare")
+    assert not supports_image_gif("gemini", "gpt-image-2.6-flare")
+    config = {"provider": "openai", "apiKey": "test-key", "model": "gpt-image-2.6-flare"}
+    generate = AsyncMock(return_value=SimpleNamespace(data=b"GIF89a", format="gif"))
+    edit = AsyncMock(return_value=SimpleNamespace(data=b"GIF89a", format="gif"))
+    persist = Mock(return_value={"id": "gif-1", "url": "https://example.test/animation.gif"})
+    with (
+        patch("app.api.v1.images.db", _db),
+        patch("app.api.v1.images.active_model_config", return_value=config),
+        patch("app.api.v1.images.require_model_balance"),
+        patch("app.api.v1.images.record_usage"),
+        patch("app.api.v1.images.models.generate_image", generate),
+        patch("app.api.v1.images.models.edit_image", edit),
+        patch("app.api.v1.images.persist_image", persist),
+    ):
+        for invalid in ({"outputFormat": "svg"}, {"outputFormat": []}, {"frameCount": 9},
+            *({"outputFormat": "gif", "frameCount": value} for value in (True, None, "9", 9.5, 1, 17)),
+            *({"outputFormat": "gif", "frameDurationMs": value} for value in (False, None, "200", 20.5, 10, 25, 2010))):
+            try:
+                asyncio.run(generate_image({"prompt": "loop", **invalid}, 1))
+                raise AssertionError(f"invalid animation accepted: {invalid}")
+            except Exception as exc:
+                assert getattr(exc, "status_code", None) == 400
+        for provider, model in (("openai", "gpt-image-1"), ("gemini", "gemini-image")):
+            config.update(provider=provider, model=model)
+            try:
+                asyncio.run(generate_image({"prompt": "loop", "outputFormat": "gif"}, 1))
+                raise AssertionError("unsupported model accepted GIF")
+            except Exception as exc:
+                assert getattr(exc, "status_code", None) == 400
+        generate.assert_not_awaited()
+        edit.assert_not_awaited()
+        persist.assert_not_called()
+
+        config.update(provider="openai", model="gpt-image-2.6-flare")
+        asyncio.run(generate_image({"prompt": "loop", "outputFormat": "gif", "ratio": "16:9"}, 1))
+        assert generate.call_args.kwargs == {"output_format": "gif", "frame_count": 9, "frame_duration_ms": 200}
+        assert persist.call_args.args[3] == "gif"
+        assert persist.call_args.kwargs["options"] == {"ratio": "auto", "resolution": "2K", "outputFormat": "gif", "frameCount": 9, "frameDurationMs": 200}
+        asyncio.run(generate_image({"prompt": "loop", "outputFormat": "gif", "frameCount": 2, "frameDurationMs": 20,
+            "references": [{"name": "reference.png", "data": "data:image/png;base64,cG5n"}]}, 1))
+        assert edit.call_args.kwargs == {"output_format": "gif", "frame_count": 2, "frame_duration_ms": 20}
+        assert edit.call_args.args[3] == [("reference.png", b"png", "image/png")]
+
+
+def test_gif_url_and_data_url_responses_keep_the_format() -> None:
+    from app.llms.router import _openai_image_result
+
+    result = asyncio.run(_openai_image_result(SimpleNamespace(data=[{"url": "data:image/gif;base64,R0lGODlh"}])))
+    assert result.format == "gif" and result.data == b"GIF89a"
+    client = AsyncMock()
+    client.get.return_value = httpx.Response(200, content=b"GIF89a", headers={"content-type": "image/gif"}, request=httpx.Request("GET", "https://example.test/animation.gif"))
+    context = AsyncMock()
+    context.__aenter__.return_value = client
+    with patch("app.llms.router.httpx.AsyncClient", return_value=context):
+        result = asyncio.run(_openai_image_result(SimpleNamespace(data=[{"url": "https://example.test/animation.gif"}])))
+    assert result.format == "gif" and result.data == b"GIF89a"
+
+
 def test_qwen_image_uses_async_task_with_reference_images() -> None:
     assert _qwen_image_size("2:3", "2K", False) == "1360*2048"
     assert _qwen_image_size("16:9", "4K", True, "wan2.7-image-pro") == "2048*1152"
@@ -350,6 +474,9 @@ if __name__ == "__main__":
     test_openai_image_does_not_retry_provider_errors()
     test_openai_compatible_image_downloads_url_response()
     test_openai_compatible_image_accepts_data_url_response()
+    test_openai_image_sizes_use_real_sdk_json_and_multipart_contracts()
+    test_gif_api_validates_model_and_animation_before_calling_provider()
+    test_gif_url_and_data_url_responses_keep_the_format()
     test_qwen_image_uses_async_task_with_reference_images()
     test_qwen_image_reads_wan27_choice_result()
     test_qwen_image_relay_uses_openai_compatibility()

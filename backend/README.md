@@ -289,6 +289,12 @@ Final exports accept `{episodeIds, rangeLabel?}` in caller order; each episode m
 
 ### images — app/api/v1/images.py
 
+OpenAI image model IDs are configurable, so `gpt-image-2.6-sunburst` and `gpt-image-2.6-flare` use the existing Images generation/edit adapter for still images. The standalone panel additionally offers PNG/GIF for OpenAI IDs beginning with `gpt-image-2.6` (including that exact alias). A relay must expose the corresponding Images API and accept the animation fields; its model access is not inferred from local configuration. Project and chat image requests continue to request PNG.
+
+`POST /api/images/generate` accepts optional `outputFormat` (`png`, the default, or `gif`). GIF requires an OpenAI GPT Image 2.6 ID. GIF-only `frameCount` is an integer from 2–16 (default 9); `frameDurationMs` is 20–2000 in increments of 10 ms (default 200). Invalid animation options return 400 before a provider call. GIF records the automatic ratio choice (`ratio=auto`): direct `api.openai.com` requests use `size=auto`; other OpenAI-compatible hosts use `1024x1024` because New API relays can reject `auto`. The same relay fallback applies to PNG automatic-size requests; explicit still-image dimensions are preserved. The adapter sends one request without an error-triggered retry. Animation pixel-budget limits still belong to the provider. See the [relay size issue](../docs/bugs/2026-11-06-image-relay-auto-size.md). The installed SDK receives animation parameters through `extra_body` for both JSON generation and multipart edits. No SDK upgrade is needed. Still PNG/JPEG/WebP images remain the accepted reference inputs; the UI renders exactly the uploaded references, with no empty slots.
+
+GIF originals are saved unchanged with `.gif` and served as `image/gif`. History retains `outputFormat` and the animation options, and the panel restores them when reopening a result. Preview/lightbox use `next/image` with `unoptimized`, and download saves the original bytes with the response's MIME-derived extension. Only the history thumbnail is a static first-frame WebP; deleting or expiring the history row removes both files. The feature adds no schema or retention-policy changes. API behavior is based on the [official OpenAI image guide](https://developers.openai.com/api/docs/guides/image-generation#generate-animated-gif-output), checked 2026-11-06. Local SDK/mock-transport and two-frame GIF persistence checks pass; no paid generation or live relay call was made.
+
 | Methods | Path |
 |---|---|
 | POST | `/api/images/generate` |

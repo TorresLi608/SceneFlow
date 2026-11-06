@@ -2085,6 +2085,12 @@ paths:
       tags:
       - images
       summary: Generate Image
+      description: 'Generate a PNG, or a GPT Image 2.6 GIF using outputFormat="gif".
+
+
+        GIF-only frameCount defaults to 9 (2–16); frameDurationMs defaults to 200
+
+        (20–2000, in steps of 10 ms). GIF uses auto size on OpenAI, 1024x1024 on relays.'
       operationId: generate_image_api_images_generate_post
       parameters:
       - name: authorization
