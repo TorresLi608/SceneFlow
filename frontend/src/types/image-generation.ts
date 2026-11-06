@@ -12,6 +12,9 @@ export interface GenerateImageInput {
   configId?: number;
   officialConfigId?: number;
   references?: ImageReferenceInput[];
+  outputFormat?: "png" | "gif";
+  frameCount?: number;
+  frameDurationMs?: number;
 }
 
 export interface GenerateImageResponse {

@@ -12,7 +12,6 @@ import {
   Maximize2,
   PanelRightClose,
   PanelRightOpen,
-  Plus,
   RotateCcw,
   Square,
   Sparkles,
@@ -31,6 +30,7 @@ import { GeneratedModelLine } from "@/components/generated-model-line";
 import { ActivityView } from "@/components/ui/activity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -137,6 +137,9 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [resolution, setResolution] = useState<GenerateImageInput["resolution"]>("1K");
   const [ratio, setRatio] = useState<GenerateImageInput["ratio"]>("auto");
+  const [outputFormat, setOutputFormat] = useState<"png" | "gif">("png");
+  const [frameCount, setFrameCount] = useState(9);
+  const [frameDurationMs, setFrameDurationMs] = useState(200);
   const [promptLanguage, setPromptLanguage] = useState<"auto" | "zh" | "en">("auto");
   const [prompt, setPrompt] = useState("");
   const [references, setReferences] = useState<ImageReferenceInput[]>([]);
@@ -145,6 +148,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
   // row the user reopened. Shown in the lightbox sidebar next to the other specs.
   const [imageProvider, setImageProvider] = useState("");
   const [imageModel, setImageModel] = useState("");
+  const [imageFormat, setImageFormat] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -173,6 +177,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
     resolution?: string;
     ratio?: string;
     model?: string;
+    format?: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -193,7 +198,11 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
     (config) => configSelectValue(config) === effectiveConfigId
   );
   const maxReferenceImages = selectedConfig?.imageMaxReferenceImages ?? 4;
-  const visibleReferenceSlots = Math.min(maxReferenceImages, Math.max(4, references.length));
+  const supportsGif = selectedConfig?.provider === "openai"
+    && /^gpt-image-2\.6(?:-|$)/i.test(selectedConfig.modelSeries.trim());
+  const isGif = supportsGif && outputFormat === "gif";
+  const invalidAnimation = isGif && (!Number.isInteger(frameCount) || frameCount < 2 || frameCount > 16
+    || !Number.isInteger(frameDurationMs) || frameDurationMs < 20 || frameDurationMs > 2000 || frameDurationMs % 10 !== 0);
   const resolvedImageUrl = artifactBffUrl(imageUrl);
 
   const stopOptimize = () => {
@@ -213,7 +222,9 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
         {
           prompt: prompt.trim(),
           resolution,
-          ratio,
+          ratio: isGif ? "auto" : ratio,
+          outputFormat: isGif ? "gif" : "png",
+          ...(isGif ? { frameCount, frameDurationMs } : {}),
           references,
           ...selectedConfigPayload(selectedConfig),
         },
@@ -222,6 +233,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
     onSuccess: async (data) => {
       setImageUrl(data.image.url);
       setImageModel(data.image.model);
+      setImageFormat(historyOption(data.history, "outputFormat") ?? "");
       setImageProvider(selectedConfig?.provider ?? "");
       setErrorMessage(null);
       // The backend already stored the row; prepend it so the list updates without a refetch.
@@ -312,7 +324,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
 
   const generate = () => {
     const content = prompt.trim();
-    if (!content || !selectedConfig || generateMutation.isPending) {
+    if (!content || !selectedConfig || generateMutation.isPending || invalidAnimation) {
       return;
     }
     requestController.current = new AbortController();
@@ -391,8 +403,9 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
       url,
       prompt: p,
       resolution: res,
-      ratio: r,
+      ratio: imageFormat === "gif" ? "auto" : r,
       model: generationModelLabel(imageProvider, imageModel, t),
+      format: imageFormat.toUpperCase(),
     });
     setLightboxOpen(true);
   };
@@ -479,11 +492,12 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
                 {t("images.ratio")}
               </label>
               <Select
-                value={ratio}
+                value={isGif ? "auto" : ratio}
+                disabled={isGif}
                 onValueChange={(value) => setRatio(value as GenerateImageInput["ratio"])}
               >
                 <SelectTrigger className="h-9 w-full text-xs">
-                  <SelectValue>{ratio === "auto" ? t("images.auto") : ratio}</SelectValue>
+                  <SelectValue>{isGif || ratio === "auto" ? t("images.auto") : ratio}</SelectValue>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false} className="max-h-60">
                   {ratios.map((item) => (
@@ -500,6 +514,41 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
               </Select>
             </div>
           </div>
+
+          {supportsGif ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground/90" id="image-output-format-label">
+                  {t("images.outputFormat")}
+                </label>
+                <Select value={outputFormat} onValueChange={(value) => setOutputFormat(value === "gif" ? "gif" : "png")}>
+                  <SelectTrigger className="h-9 w-full text-xs" aria-labelledby="image-output-format-label">
+                    <SelectValue>{t(isGif ? "images.formatGif" : "images.formatPng")}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectItem value="png" label={t("images.formatPng")}>{t("images.formatPng")}</SelectItem>
+                    <SelectItem value="gif" label={t("images.formatGif")}>{t("images.formatGif")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {isGif ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label htmlFor="image-frame-count" className="text-xs font-semibold text-foreground/90">{t("images.frameCount")}</label>
+                      <Input id="image-frame-count" type="number" min={2} max={16} step={1} value={frameCount} onChange={(event) => setFrameCount(Number(event.target.value))} aria-invalid={frameCount < 2 || frameCount > 16 || !Number.isInteger(frameCount)} className="h-9 text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label htmlFor="image-frame-duration" className="text-xs font-semibold text-foreground/90">{t("images.frameDurationMs")}</label>
+                      <Input id="image-frame-duration" type="number" min={20} max={2000} step={10} value={frameDurationMs} onChange={(event) => setFrameDurationMs(Number(event.target.value))} aria-invalid={frameDurationMs < 20 || frameDurationMs > 2000 || frameDurationMs % 10 !== 0} className="h-9 text-xs" />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">{t("images.gifHint")}</p>
+                  {invalidAnimation ? <p role="alert" className="text-[11px] text-destructive">{t("images.invalidAnimation")}</p> : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* 提示词输入区 */}
           <div className="space-y-2">
@@ -620,56 +669,37 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
                 }}
               />
 
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                {Array.from({ length: visibleReferenceSlots }).map((_, index) => {
-                  const reference = references[index];
-                  return (
+              {references.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {references.map((reference, index) => (
                     <div
                       key={index}
-                      className={cn(
-                        "group relative flex aspect-[2/1] items-center justify-center overflow-hidden rounded-xl border border-dashed text-[11px] text-muted-foreground transition-all",
-                        reference
-                          ? "border-border bg-background shadow-xs"
-                          : "border-border/60 bg-muted/20 hover:border-primary/40 hover:bg-muted/30 cursor-pointer"
-                      )}
-                      onClick={() => {
-                        if (!reference) fileInputRef.current?.click();
-                      }}
+                      className="group relative flex aspect-[2/1] items-center justify-center overflow-hidden rounded-xl border border-border bg-background shadow-xs"
                     >
-                      {reference ? (
-                        <>
-                          <Image
-                            src={reference.data}
-                            alt=""
-                            fill
-                            unoptimized
-                            sizes="180px"
-                            className="object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReferences((current) =>
-                                current.filter((_, itemIndex) => itemIndex !== index)
-                              );
-                            }}
-                            className="absolute top-1 right-1 inline-flex size-5 items-center justify-center rounded-full bg-background/90 text-foreground shadow-xs hover:bg-destructive hover:text-white cursor-pointer transition-colors"
-                            aria-label={t("images.removeReference")}
-                          >
-                            <X className="size-3" />
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                          <Plus className="size-3" />
-                          {t("images.emptySlot", { index: index + 1 })}
-                        </span>
-                      )}
+                      <Image
+                        src={reference.data}
+                        alt={reference.name}
+                        fill
+                        unoptimized
+                        sizes="180px"
+                        className="object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReferences((current) =>
+                            current.filter((_, itemIndex) => itemIndex !== index)
+                          );
+                        }}
+                        className="absolute top-1 right-1 inline-flex size-5 items-center justify-center rounded-full bg-background/90 text-foreground shadow-xs hover:bg-destructive hover:text-white cursor-pointer transition-colors"
+                        aria-label={t("images.removeReference")}
+                      >
+                        <X className="size-3" />
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -715,6 +745,13 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
                       setPrompt(item.prompt);
                       setImageModel(item.model);
                       setImageProvider(item.provider);
+                      const savedFormat = historyOption(item, "outputFormat");
+                      setImageFormat(savedFormat ?? "");
+                      setOutputFormat(savedFormat === "gif" ? "gif" : "png");
+                      const savedFrameCount = Number(historyOption(item, "frameCount"));
+                      const savedFrameDuration = Number(historyOption(item, "frameDurationMs"));
+                      setFrameCount(savedFrameCount >= 2 && savedFrameCount <= 16 ? savedFrameCount : 9);
+                      setFrameDurationMs(savedFrameDuration >= 20 && savedFrameDuration <= 2000 ? savedFrameDuration : 200);
                       const savedResolution = historyOption(item, "resolution");
                       const savedRatio = historyOption(item, "ratio");
                       if (savedResolution && resolutions.includes(savedResolution as GenerateImageInput["resolution"])) {
@@ -784,7 +821,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
           ) : <Button
             className="h-10 min-w-0 flex-1 gap-2 rounded-xl font-bold shadow-md cursor-pointer transition-all active:scale-[0.99]"
             onClick={generate}
-            disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending}
+            disabled={!prompt.trim() || !selectedConfig || generateMutation.isPending || invalidAnimation}
           >
             <Sparkles className="size-4" />
             {t("images.generateNow")}
@@ -822,7 +859,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
               size="sm"
               className="h-8 gap-1.5 text-xs cursor-pointer"
               onClick={generate}
-              disabled={!imageUrl || generateMutation.isPending}
+              disabled={!imageUrl || generateMutation.isPending || invalidAnimation}
             >
               <RotateCcw className="size-3.5" />
               {t("images.regenerate")}
@@ -980,9 +1017,9 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
                             <span className="truncate">{t("common.generatedWith", { model: lightboxItem.model })}</span>
                           </Badge>
                         ) : null}
-                        <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
-                          PNG / WebP
-                        </Badge>
+                        {lightboxItem.format ? <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5">
+                          {lightboxItem.format}
+                        </Badge> : null}
                       </div>
                     </div>
 

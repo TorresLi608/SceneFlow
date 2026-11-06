@@ -196,6 +196,42 @@ def test_new_image_thumbnail_is_private_and_deleted_with_original() -> None:
             _restore(original)
 
 
+def test_gif_history_preserves_all_frames_and_serves_image_gif() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        original = _isolated(directory)
+        try:
+            from app.main import app
+
+            with TestClient(app) as client:
+                owner = _user("gif-owner")
+                headers = {"Authorization": f"Bearer {token_for(owner)}"}
+                buffer = BytesIO()
+                Image.new("RGB", (64, 64), "red").save(buffer, format="GIF", save_all=True,
+                    append_images=[Image.new("RGB", (64, 64), "blue")], duration=200, loop=0)
+                data = buffer.getvalue()
+                result = persist_image(owner, {"provider": "openai", "model": "gpt-image-2.6-sunburst"}, data, "gif",
+                    prompt="loop", source="text-to-image", options={"outputFormat": "gif", "frameCount": 2, "frameDurationMs": 200})
+                with database.db() as session:
+                    record = list_generation_records(session, owner, "image")[0]
+                assert record.path.endswith(".gif") and record.media_type == "image/gif"
+                assert artifact_absolute_path(record.path).read_bytes() == data
+                fetched = client.get(result["url"])
+                assert fetched.status_code == 200 and fetched.content == data
+                assert fetched.headers["content-type"] == "image/gif"
+                with Image.open(BytesIO(fetched.content)) as animation:
+                    assert animation.n_frames == 2 and animation.info["loop"] == 0
+                    assert animation.info["duration"] == 200
+                thumbnail = client.get(result["thumbnailUrl"])
+                assert thumbnail.status_code == 200 and thumbnail.headers["content-type"] == "image/webp"
+                listed = client.get("/api/images/history", headers=headers).json()["items"][0]
+                assert listed["options"] == {"outputFormat": "gif", "frameCount": 2, "frameDurationMs": 200}
+                assert client.delete(f"/api/images/history/{record.id}", headers=headers).status_code == 204
+                assert not artifact_absolute_path(record.path).exists()
+                assert not artifact_absolute_path(image_thumbnail_path(record.path)).exists()
+        finally:
+            _restore(original)
+
+
 def test_thumbnail_orientation_transparency_and_failure_preserve_original() -> None:
     buffer = BytesIO()
     source = Image.new("RGB", (240, 80), "red")
@@ -280,6 +316,7 @@ def test_image_history_pages_survive_equal_timestamps_inserts_and_cursor_deletio
 
 
 if __name__ == "__main__":
+    test_gif_history_preserves_all_frames_and_serves_image_gif()
     test_history_rows_keep_a_path_and_are_scoped_to_their_owner()
     test_deleting_a_history_row_removes_its_file_and_refuses_other_owners()
     test_history_endpoints_list_and_delete_for_the_signed_in_account()

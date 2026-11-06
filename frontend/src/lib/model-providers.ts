@@ -86,7 +86,7 @@ export const providerOptions: Record<ConfigPurpose, ProviderOption[]> = {
       value: "openai",
       label: "OpenAI",
       modelSeries: "",
-      modelPlaceholder: "",
+      modelPlaceholder: "gpt-image-2.6-sunburst / gpt-image-2.6-flare",
       baseUrl: "https://api.openai.com/v1",
       docsUrl: "https://platform.openai.com/docs/api-reference/images",
     },
