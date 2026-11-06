@@ -57,6 +57,7 @@ import type { GenerationHistoryItem, ImageHistoryPageResponse } from "@/types/ge
 import type { GenerateImageInput, ImageReferenceInput } from "@/types/image-generation";
 
 import { ImageHistoryThumbnail } from "./image-history-thumbnail";
+import { ImageResultPreview } from "./image-result-preview";
 
 const resolutions: GenerateImageInput["resolution"][] = ["1K", "2K", "4K"];
 const ratios: GenerateImageInput["ratio"][] = [
@@ -838,7 +839,7 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
             </h2>
             {imageUrl ? (
               <Badge variant="default" className="text-[10px]">
-                Ready · {resolution}
+                {resolution}
               </Badge>
             ) : null}
           </div>
@@ -899,13 +900,12 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
               className="group relative z-10 flex h-full w-full items-center justify-center animate-in fade-in-0 duration-300 cursor-pointer"
               onClick={() => openLightbox(resolvedImageUrl, prompt, resolution, ratio)}
             >
-              <Image
+              {/* Reset the image element and its loading state together on history switches. */}
+              <ImageResultPreview
+                key={resolvedImageUrl}
                 src={resolvedImageUrl}
                 alt={t("images.resultAlt")}
-                fill
-                unoptimized
                 sizes="(min-width: 768px) calc(100vw - 720px), 100vw"
-                className="object-contain drop-shadow-2xl transition-transform duration-300 group-hover:scale-[1.01]"
               />
               {/* 悬停快速操作胶囊 */}
               <div className="pointer-events-none absolute bottom-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
@@ -982,13 +982,11 @@ function ImageGenerationEditor({ active, configs, officialConfigs, onReset }: Im
               <div className="relative flex-1 min-w-0 h-full flex items-center justify-center bg-black/95 dark:bg-black p-1 sm:p-2 overflow-hidden min-h-0">
                 <div className="pointer-events-none absolute inset-0 bg-grid-dots opacity-10" />
                 <div className="relative h-full w-full flex items-center justify-center">
-                  <Image
+                  <ImageResultPreview
+                    key={lightboxItem.url}
                     src={lightboxItem.url}
-                    alt=""
-                    fill
-                    unoptimized
+                    alt={t("images.resultAlt")}
                     sizes="100vw"
-                    className="object-contain drop-shadow-2xl select-none"
                   />
                 </div>
               </div>

@@ -88,6 +88,8 @@ Shared support: [reference-budget.ts](../../frontend/src/lib/reference-budget.ts
 
 ## Feature → action → backend → checks
 
+The standalone image panel's route-local `images/_components/image-result-preview.tsx` owns original-image loading/error presentation in the preview and lightbox. Each rendered instance is keyed by its displayed URL to discard the previous image immediately on selection changes; see the [history preview issue](../bugs/2026-11-06-image-history-preview-stale.md).
+
 Actions below are in [frontend/src/actions](../../frontend/src/actions/); endpoint modules are in [backend/app/api/v1](../../backend/app/api/v1/), services in [backend/app/services](../../backend/app/services/). Test names are relative to [backend/tests](../../backend/tests/). Follow the shared owner before changing a single caller.
 
 | Feature | Frontend owner | Backend owners | Existing regression entry points |
