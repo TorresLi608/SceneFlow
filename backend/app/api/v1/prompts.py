@@ -25,7 +25,7 @@ from app.services.prompt_prefix_service import (
     shot_prefix_item,
     tone_prefix_item,
 )
-from app.services.prompt_service import PRESETS
+from app.services.prompt_service import PRESETS, visual_style_prompt, with_visual_style
 from app.services.reference_service import resolve_generation_references
 from app.services.usage_service import record_usage, require_model_balance
 
@@ -127,7 +127,7 @@ def preview_compiled_prompt(body: CompilePromptRequest, user_id: int = Depends(c
                 speaker = cast_for_episode(session, body.project_id, episode.episode_number if episode else 0).get(speaker_name)
                 speaker_name = speaker.name if speaker else speaker_name
     return compile_prompt(
-        combined_prompt(prefixes, body.prompt),
+        with_visual_style(combined_prompt(prefixes, body.prompt), visual_style_prompt(project.visual_style, project.style_prompt)),
         provider=config["provider"],
         model=config["model"],
         references=resolved["items"],

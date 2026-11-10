@@ -11,6 +11,7 @@ from app.core.database import db
 from app.models import Episode, Project, Scene
 from app.services.config_service import active_model_config
 from app.services.usage_service import require_model_balance
+from app.services.prompt_service import VISUAL_STYLE_PROMPTS
 from app.utils.common import now
 
 
@@ -73,6 +74,11 @@ def production_settings(payload: dict[str, Any], *, defaults: bool = False) -> d
     for request_key, column in (("stylePrompt", "style_prompt"), ("negativePrompt", "negative_prompt")):
         if defaults or request_key in payload:
             values[column] = str(take(request_key, ""))[:4000]
+    if defaults or "visualStyle" in payload:
+        style = str(take("visualStyle", "cinematic")).strip()
+        if style and style not in VISUAL_STYLE_PROMPTS:
+            raise HTTPException(400, "unsupported visual style")
+        values["visual_style"] = style
     if defaults or "currentStage" in payload:
         stage = str(take("currentStage", "script")).strip().lower()
         if stage not in PROJECT_STAGES:

@@ -10,6 +10,7 @@ Verified against application code on **2026-09-07**. For a bug, first read the [
 | [Overview](architecture/overview.md) | Processes, versions, state ownership, and startup |
 | [Boundaries](architecture/boundaries.md) | BFF routing, provider calls, database sessions, jobs, and concurrency |
 | [Data flow](architecture/data-flow.md) | Script → shots → images → clips → export; references, cancellation, chat, billing |
+| [Production skills](architecture/production-skills.md) | Pure skill contracts, first-phase skeleton, and planned API/Agent/SDK/MCP migration |
 
 ## Conventions and feature designs
 
@@ -24,6 +25,7 @@ Verified against application code on **2026-09-07**. For a bug, first read the [
 | [Chat](design/feature-chat.md) | AI SDK state, assistant-ui composer, stream bridge, attachments, agent tools |
 | [Search and filtering](design/feature-search.md) | Local filters and paginated admin queries |
 | [Billing](design/feature-billing.md) | Micros, price snapshots, official balance gates, redemption |
+| [Project visual style](design/feature-visual-style.md) | Shared cinematic/anime/realistic/3D configuration across project image and video generation |
 
 ## Reference and status
 

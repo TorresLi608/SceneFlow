@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { VisualStyleField } from "@/components/visual-style-field";
 import { useI18n } from "@/lib/i18n";
 import type { ProductionSettings, ProjectMode } from "@/types/project";
 
@@ -163,6 +164,12 @@ export function ProductionSettingsForm({
         />
       </div>
 
+      <VisualStyleField
+        value={draft.visualStyle}
+        onChange={(visualStyle) => setDraft((current) => ({ ...current, visualStyle }))}
+        disabled={disabled}
+      />
+
       <div className="space-y-1.5">
         <Label htmlFor="style-prompt" className="text-xs font-medium text-foreground">{t("home.stylePrompt")}</Label>
         <Textarea
@@ -173,7 +180,7 @@ export function ProductionSettingsForm({
           }
           rows={2}
           disabled={disabled}
-          placeholder="例如：Cinematic, anime style, 8k resolution, Unreal Engine 5 render..."
+          placeholder={t("home.stylePromptPlaceholder")}
           className="resize-none rounded-xl text-xs bg-muted/20 focus-visible:bg-background"
         />
       </div>

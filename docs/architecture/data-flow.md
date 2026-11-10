@@ -1,5 +1,7 @@
 # Data flow
 
+Added on **2026-11-10**: [project visual style](../design/feature-visual-style.md) is a saved production constraint shared by cover generation, script authoring/breakdown, character/prop reference jobs, tone/storyboard frames and per-shot images/videos. New projects select a cinematic/anime/realistic/3D preset; existing projects keep their custom-only style until selected. Generation snapshots or job-time resolution pass the effective style into model prompts. Style edits affect future generation and retain existing media.
+
 Verified on **2026-09-07**, with project voice design/editing and export audio rechecked on **2026-09-08**. The primary production path is **series settings/bible → episode script → shots → tone sheet → frames → clips → export**. Use the [code map](code-map.md) for files and [boundaries](boundaries.md) for ownership rules.
 
 ## 1. Model resolution and settings

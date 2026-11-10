@@ -281,7 +281,7 @@ def test_the_projects_house_style_reaches_the_render_prompt() -> None:
             parsed = client.post(f"/api/projects/{project_id}/parse", json={"script": "剧本"}, headers=headers).json()
             settings = client.patch(
                 f"/api/projects/{project_id}/production-settings",
-                json={"stylePrompt": "水墨写意", "negativePrompt": "文字水印"},
+                json={"visualStyle": "", "stylePrompt": "水墨写意", "negativePrompt": "文字水印"},
                 headers=headers,
             )
             assert settings.status_code == 200, settings.text

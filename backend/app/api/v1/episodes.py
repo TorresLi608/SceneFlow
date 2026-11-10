@@ -45,7 +45,7 @@ from app.services.project_service import (
     scenes_with_assets,
     selected_scenes,
 )
-from app.services.prompt_service import with_shot_label
+from app.services.prompt_service import with_shot_label, visual_style_prompt, with_visual_style
 from app.services.prompt_prefix_service import combined_prompt, combined_references, stored_prompt_prefixes
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
@@ -356,6 +356,7 @@ async def breakdown_episode(
             **context,
         )
         config = project_model_config(session, user_id, project, "script", "分镜拆解")
+        user_prompt = with_visual_style(user_prompt, visual_style_prompt(project.visual_style, project.style_prompt))
         require_model_balance(session, user_id, config)
         claim_project_status(session, project_id, allowed_from=IDLE_STATUSES, to="parsing")
 
@@ -429,7 +430,7 @@ def _plan(
         episode_id=episode.id,
         episode_title=episode.title or f"第 {episode.episode_number} 集",
         script=episode.source_text or "",
-        style_prompt=project.style_prompt or "",
+        style_prompt=visual_style_prompt(project.visual_style, project.style_prompt),
         negative_prompt=project.negative_prompt or "",
         # Plain dicts, because the run outlives this session.
         scenes=[scene.model_dump() for scene in scenes],

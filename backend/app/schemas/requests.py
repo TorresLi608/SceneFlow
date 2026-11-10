@@ -32,6 +32,7 @@ ImageResolution = Literal["1K", "2K", "4K"]
 # declared capabilities narrow it further at write time.
 GenerationRatio = Literal["auto", "21:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:21", "adaptive"]
 VideoQuality = Literal["480p", "720p", "1080p", "2K", "4K"]
+VisualStyle = Literal["", "cinematic", "anime", "realistic", "3d"]
 
 
 class ProductionSettingsRequest(CamelModel):
@@ -49,6 +50,7 @@ class ProductionSettingsRequest(CamelModel):
     target_duration_ms: int | None = Field(default=None, ge=10_000, le=600_000)
     language: str | None = Field(default=None, min_length=1, max_length=20)
     style_prompt: str | None = Field(default=None, max_length=4000)
+    visual_style: VisualStyle | None = None
     negative_prompt: str | None = Field(default=None, max_length=4000)
     current_stage: ProjectStage | None = None
 
@@ -90,6 +92,7 @@ class UpdateProjectRequest(CamelModel):
     original_script: str | None = Field(default=None, max_length=200_000)
     series_bible: str | None = Field(default=None, max_length=200_000)
     model_settings: ProjectModelConfigRequest | None = None
+    production_settings: ProductionSettingsRequest | None = None
 
 class SetProjectCoverRequest(CamelModel):
     """A cover to store on the project. `data:image/...;base64,` — the app never takes multipart."""
@@ -113,6 +116,7 @@ class GenerateCoverRequest(CamelModel):
     prompt: str = Field(default="", max_length=4000)
     title: str = Field(default="", max_length=80)
     style_prompt: str = Field(default="", max_length=4000)
+    visual_style: VisualStyle = ""
 
 
 class PromptOptimizationContext(CamelModel):

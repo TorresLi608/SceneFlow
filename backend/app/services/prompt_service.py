@@ -13,6 +13,28 @@ from __future__ import annotations
 import re
 
 
+VISUAL_STYLE_PROMPTS = {
+    "cinematic": "电影风格，真人电影质感，电影级构图与灯光，细腻真实材质，富有层次的景深与色彩分级",
+    "anime": "动漫风格，二维动画画面，清晰线稿与赛璐璐上色，统一的动画角色造型，避免真人摄影或三维渲染质感",
+    "realistic": "写实风格，自然真实的人物与环境，准确的比例和材质，自然光与纪实摄影质感，避免动漫线稿或卡通渲染",
+    "3d": "3D 渲染风格，统一的三维角色与场景，立体建模、物理材质与体积光，精致的三维动画质感，避免二维线稿或真人摄影",
+}
+
+
+def visual_style_prompt(visual_style: str = "", style_prompt: str = "") -> str:
+    """Resolve pure style parameters; legacy projects retain their custom prompt verbatim."""
+    preset = VISUAL_STYLE_PROMPTS.get(visual_style, "")
+    custom = style_prompt.strip()
+    if not preset:
+        return custom
+    return preset + (f"。补充要求：{custom}" if custom else "") + "。整部作品保持此画面风格；冲突的风格描述以此配置为准"
+
+
+def with_visual_style(prompt: str, style: str) -> str:
+    """Apply the resolved project style without rewriting the user's subject or motion."""
+    return f"{prompt}\n整体画面风格：{style}" if style else prompt
+
+
 COVER_SYSTEM = (
     "你是短剧海报设计师。根据用户描述的封面画面，写一段用于生成竖屏短剧封面海报的图像提示词。"
     "要求：单一清晰主体，强烈氛围感，电影级打光，高细节。"
@@ -55,7 +77,7 @@ def cover_prompt(prompt: str, title: str = "", style_prompt: str = "") -> str:
 # face; the profile card (name, age, role, the one or two features that make the character
 # recognisable) is what the sheet says about itself when it is read as a reference.
 CHARACTER_SHEET_SYSTEM = (
-    "你是动画角色设定师。根据用户给的角色信息，写一段用于生成【角色设定总图】的图像提示词，"
+    "你是角色视觉设定师。根据用户给的角色信息，写一段用于生成【角色设定总图】的图像提示词，"
     "总图的全部内容绘制在同一张图上，分为三个区域："
     "①角色三面图：同一角色的正面、四分之三侧面、正侧面并排排列，同一套服装、同一光照、同一比例，"
     "全身，中性表情，不要多余道具；"

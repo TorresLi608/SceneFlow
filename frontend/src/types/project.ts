@@ -111,6 +111,7 @@ export type ProjectStatus =
   | "partial"
   | "failed";
 export type ProjectMode = "comic" | "drama";
+export type VisualStyle = "" | "cinematic" | "anime" | "realistic" | "3d";
 export type ProjectStage = "script" | "bible" | "storyboard" | "audio" | "timeline" | "export";
 
 export interface ProductionSettings {
@@ -122,6 +123,7 @@ export interface ProductionSettings {
   targetDurationMs: number;
   language: string;
   stylePrompt: string;
+  visualStyle: VisualStyle;
   negativePrompt: string;
 }
 
@@ -213,6 +215,7 @@ export interface UpdateProjectInput {
   coverPrompt?: string;
   originalScript?: string;
   seriesBible?: string;
+  productionSettings?: Partial<ProductionSettings>;
   /**
    * Send only what changed. A config id of `0` clears the pick and returns that purpose to
    * the account default — `null` cannot mean "clear", because in a PATCH it already means
@@ -236,6 +239,7 @@ export interface GenerateCoverInput {
   prompt: string;
   title?: string;
   stylePrompt?: string;
+  visualStyle?: VisualStyle;
 }
 
 export interface GenerateCoverResponse {

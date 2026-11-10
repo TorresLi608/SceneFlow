@@ -18,6 +18,10 @@ api/v1/ ──▶ services/ ──▶ models/ + core/database.py
 4. **Close database sessions before awaiting a provider.** Use a short session to authorize/load configuration, await the provider, then a new short session to persist results and usage. SQLite has one writer; carrying a transaction through a long network call blocks unrelated work.
 5. **Serialize explicitly.** Domain responses use `schemas/serializers.py`; job/export/usage/error services have their own wire serializers. These mint signed URLs and rename fields. Do not return ORM entities or decrypted configs directly.
 
+### Production skills boundary — 2026-11-10
+
+The [phase-one production skills](production-skills.md) live in `app/skills/`: pure Pydantic input/output/media contracts, a stateless async base, and explicit registration. Their core must not directly or indirectly import application DB, model, config, usage, API, or storage modules. Optional `adapter.py` modules bind authorized host runners to LangChain tools; only those runners own model selection, auth, balance, storage and artifact serialization. All five skills currently report `implemented=False` and are excluded from callable discovery. Existing production routes have not yet migrated; future SDK/MCP entry points will call the same core without importing `app.main`.
+
 ## Frontend boundaries
 
 ```text

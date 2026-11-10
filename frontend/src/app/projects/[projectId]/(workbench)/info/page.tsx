@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { VisualStyleField } from "@/components/visual-style-field";
 import { configName } from "@/lib/config-format";
 import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
@@ -410,6 +411,8 @@ function InfoForm({ project }: { project: Project }) {
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description);
   const [seriesBible, setSeriesBible] = useState(project.seriesBible);
+  const [visualStyle, setVisualStyle] = useState(project.productionSettings.visualStyle);
+  const [stylePrompt, setStylePrompt] = useState(project.productionSettings.stylePrompt);
   const [message, setMessage] = useState<string | null>(null);
 
   const saveMutation = useMutation({
@@ -418,6 +421,7 @@ function InfoForm({ project }: { project: Project }) {
         title: title.trim(),
         description: description.trim(),
         seriesBible,
+        productionSettings: { visualStyle, stylePrompt },
       }),
     onSuccess: () => {
       setMessage(t("workbench.infoSaved"));
@@ -460,6 +464,21 @@ function InfoForm({ project }: { project: Project }) {
               rows={4}
               placeholder={t("home.projectDescriptionPlaceholder")}
               onChange={(event) => setDescription(event.target.value)}
+            />
+          </Field>
+
+          <VisualStyleField value={visualStyle} onChange={setVisualStyle} disabled={saveMutation.isPending} />
+
+          <Field>
+            <FieldLabel htmlFor="infoStylePrompt">{t("home.stylePrompt")}</FieldLabel>
+            <Textarea
+              id="infoStylePrompt"
+              value={stylePrompt}
+              maxLength={4000}
+              rows={2}
+              placeholder={t("home.stylePromptPlaceholder")}
+              disabled={saveMutation.isPending}
+              onChange={(event) => setStylePrompt(event.target.value)}
             />
           </Field>
 
