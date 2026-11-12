@@ -38,6 +38,16 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 
   const isPublic = isPublicRoute(pathname);
 
+  useEffect(() => {
+    if (useUserStore.persist.hasHydrated()) {
+      useUserStore.getState().setHydrated(true);
+    }
+    const unsub = useUserStore.persist.onFinishHydration(() => {
+      useUserStore.getState().setHydrated(true);
+    });
+    return () => unsub();
+  }, []);
+
   const meQuery = useQuery({
     queryKey: queryKeys.me,
     queryFn: getMeAction,
