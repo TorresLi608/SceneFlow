@@ -32,6 +32,8 @@ The test runner requires module names, overrides `DATABASE_URL` with a temporary
 
 ## Environment
 
+The new [production skills architecture](../docs/architecture/production-skills.md) under `app/skills/` is currently a **phase-one skeleton**: five input/output contracts, a pure base/registry, and optional LangChain adapters. Importing the core requires only Pydantic, without database or application startup. Run `test_skills` through the isolated test runner to verify it. Real provider execution, API/Agent migration, independent SDK packaging and MCP Stdio are subsequent phases; no new skills environment variables or runnable MCP command exist yet.
+
 | Variable | Default / effect |
 |---|---|
 | `PORT` | `8080`; read by the development launcher (direct uvicorn uses its CLI `--port`) |
@@ -105,6 +107,8 @@ Chat tool loops use request-local `chat_agent_middleware.ChatToolBudget`: up to 
 An empty/thinking-only final response after tools gets one recovery model call without tools, retaining the evidence and counting both calls' usage. Explicit `max_tokens`/`length` truncation allows that single retry to double the output allowance up to 8192; other empty replies keep the original allowance. A second unusable response produces an explicit missing-body notice; tools are never repeated by this recovery. Final-answer selection uses only the last model response in the current turn, and the stream emits final text even when the adapter supplies only an end event. See [the final-answer recurrence](../docs/bugs/2026-09-21-chat-repeat-previous-answer.md) and [stream delivery](../docs/bugs/2026-10-22-chat-final-text-stream.md).
 
 ## HTTP endpoints
+
+Project visual style (**2026-11-10**): `productionSettings.visualStyle` accepts `cinematic`, `anime`, `realistic`, `3d`, or an empty legacy/custom-only value. New projects default to `cinematic`; existing rows retain their custom `stylePrompt`. Both project PATCH (nested `productionSettings`) and the production-settings PATCH save the configuration. `POST /api/projects/cover/generate` also accepts `visualStyle` for draft/project-less covers. The resolved style is passed to project script, reference-image, storyboard and video model calls; `stylePrompt` supplements the preset. See [behavior and validation](../docs/design/feature-visual-style.md). Migration `a8d5c2e7f901` is applied by the next normal backend startup.
 
 Inventory checked against the router decorators on **2026-09-07**. Paths below use the actual FastAPI parameter names. [OpenAPI](../docs/reference/api-spec.yaml) is the generated HTTP/schema reference; behavior and background execution are described in [data flow](../docs/architecture/data-flow.md).
 

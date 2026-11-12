@@ -19,6 +19,7 @@ SceneFlow/
 │   ├── app/main.py                 Lifespan, routers, request IDs, error handlers
 │   ├── app/api/v1/                 HTTP and WebSocket endpoints
 │   ├── app/services/               Workflows, providers, queue, artifacts
+│   ├── app/skills/                 Pure production contracts and registry (phase-one skeleton)
 │   ├── app/llms/                   Text/image model router and registry
 │   ├── app/graph/graphs/           Chat history and token-budget assembly
 │   ├── app/models/                 SQLModel tables
@@ -39,6 +40,10 @@ SceneFlow/
 ```
 
 Development data at `data/app.db` and `backend/private_generated/` is not a fixture. Use a temporary `DATABASE_URL` and media path for checks that start the backend. Configuration/seed/persistence regressions live in `backend/tests/test_database.py`.
+
+Added on **2026-11-10**: [production skills](production-skills.md) defines the new `backend/app/skills/` boundary. `base.py` owns result/media/model contracts, `registry.py` explicitly registers five planned skills, and each skill has schema/skill/adapter/public exports. `backend/tests/test_skills.py` checks import isolation, contracts, registry gating and opt-in LangChain adapters. All five execution implementations are pending; current API/services/chat callers below retain their existing owners.
+
+Also added on **2026-11-10**: [project visual style](../design/feature-visual-style.md) is configured through `components/visual-style-field.tsx`, the AI-script create/edit dialog, project info, and legacy production settings. `projects.visual_style` is owned by Alembic revision `a8d5c2e7f901`; `prompt_service.visual_style_prompt` resolves preset plus custom text, consumed by project/episode APIs, reference jobs, image/video generation and compiled previews. `test_project_visual_style.py` verifies persistence and model hand-offs.
 
 ## Frontend routes
 

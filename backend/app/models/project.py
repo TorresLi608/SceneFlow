@@ -39,6 +39,8 @@ class Project(SQLModel, table=True):
     target_duration_ms: int = Field(default=60000, sa_column_kwargs={"server_default": text("60000")})
     language: str = Field(default="zh-CN", sa_column_kwargs={"server_default": text("'zh-CN'")})
     style_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
+    # Empty preserves existing custom styles; newly created projects choose cinematic.
+    visual_style: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     negative_prompt: str = Field(default="", sa_column_kwargs={"server_default": text("''")})
     current_stage: str = Field(default="script", sa_column_kwargs={"server_default": text("'script'")})
     # World, tone, and running plot threads. Fed to the model when drafting the next episode

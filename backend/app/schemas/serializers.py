@@ -388,6 +388,7 @@ def project_json(
             "targetDurationMs": project.target_duration_ms,
             "language": project.language,
             "stylePrompt": project.style_prompt,
+            "visualStyle": project.visual_style,
             "negativePrompt": project.negative_prompt,
         },
         "currentStage": project.current_stage,

@@ -6099,6 +6099,16 @@ components:
           maxLength: 4000
           title: Styleprompt
           default: ''
+        visualStyle:
+          type: string
+          enum:
+          - ''
+          - cinematic
+          - anime
+          - realistic
+          - 3d
+          title: Visualstyle
+          default: ''
       additionalProperties: false
       type: object
       title: GenerateCoverRequest
@@ -6509,6 +6519,17 @@ components:
             maxLength: 4000
           - type: 'null'
           title: Styleprompt
+        visualStyle:
+          anyOf:
+          - type: string
+            enum:
+            - ''
+            - cinematic
+            - anime
+            - realistic
+            - 3d
+          - type: 'null'
+          title: Visualstyle
         negativePrompt:
           anyOf:
           - type: string
@@ -6986,6 +7007,10 @@ components:
         modelSettings:
           anyOf:
           - $ref: '#/components/schemas/ProjectModelConfigRequest'
+          - type: 'null'
+        productionSettings:
+          anyOf:
+          - $ref: '#/components/schemas/ProductionSettingsRequest'
           - type: 'null'
       additionalProperties: false
       type: object

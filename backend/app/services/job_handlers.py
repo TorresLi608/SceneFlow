@@ -34,6 +34,8 @@ from app.services.prompt_service import (
     CHARACTER_SHEET_SYSTEM,
     NARRATOR_SAMPLE_TEXT,
     PROP_SYSTEM,
+    visual_style_prompt,
+    with_visual_style,
 )
 from app.services.reference_service import draft_prompt, draw_reference, image_config, image_options, script_config
 from app.services.tts_service import BUILTIN_TTS, synthesize
@@ -56,7 +58,8 @@ async def draw_reference_image(job: dict[str, Any]) -> dict[str, Any]:
     project_id = job["projectId"]
     user_id = job["userId"]
     target = payload["target"]
-    prompt = str(payload["prompt"])
+    reviewed_prompt = str(payload["prompt"])
+    prompt = reviewed_prompt
 
     with db() as session:
         project = owned_project(session, project_id, user_id)
@@ -65,6 +68,7 @@ async def draw_reference_image(job: dict[str, Any]) -> dict[str, Any]:
         # queue means time passes, and what covered this job when it was queued may be spent.
         config = image_config(session, user_id, purpose, project)
         size, quality = image_options(project)
+        prompt = with_visual_style(prompt, visual_style_prompt(project.visual_style, project.style_prompt))
 
     usage_kind = "prop_image" if target == "prop" else "character_state_image"
     data, extension = await draw_reference(config, user_id, prompt, usage_kind, size, quality)
@@ -76,8 +80,9 @@ async def draw_reference_image(job: dict[str, Any]) -> dict[str, Any]:
             owned_project(session, project_id, user_id)
             prop = owned_prop(session, project_id, prop_id)
             prop.image_path = stored
-            # Remember what was actually drawn, so a reload shows the prompt behind the image.
-            prop.final_prompt = prompt[:4000]
+            # Keep the editable prompt separate from the injected project style, so
+            # changing styles and regenerating never accumulates stale style directives.
+            prop.final_prompt = reviewed_prompt[:4000]
             prop.updated_at = now()
             session.add(prop)
             session.flush()
@@ -92,7 +97,7 @@ async def draw_reference_image(job: dict[str, Any]) -> dict[str, Any]:
         owned_project(session, project_id, user_id)
         state = owned_state(session, character_id, state_id)
         state.reference_image_path = stored
-        state.final_prompt = prompt[:4000]
+        state.final_prompt = reviewed_prompt[:4000]
         state.updated_at = now()
         session.add(state)
         character = owned_character(session, project_id, character_id)
@@ -126,11 +131,12 @@ async def draft_reference_prompt(job: dict[str, Any]) -> dict[str, Any]:
         purpose = "道具提示词" if target == "prop" else "角色状态提示词"
         # Re-checks the balance; see `draw_reference_image`.
         config = script_config(session, user_id, purpose, project)
+        user_text = with_visual_style(str(payload["userText"]), visual_style_prompt(project.visual_style, project.style_prompt))
 
     system = PROP_SYSTEM if target == "prop" else CHARACTER_SHEET_SYSTEM
     usage_kind = "prop_prompt" if target == "prop" else "character_state_prompt"
     prompt = await draft_prompt(
-        config, user_id, system, str(payload["userText"]), payload.get("model") or "", usage_kind
+        config, user_id, system, user_text, payload.get("model") or "", usage_kind
     )
     return {"prompt": prompt, "target": target, "targetId": payload.get("targetId")}
 

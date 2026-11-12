@@ -7,6 +7,15 @@ import type { AuthUser } from "@/types/auth";
 
 const STORE_KEY = "sceneflow-user-store";
 
+function syncRoleCookie(role: string | null | undefined) {
+  if (typeof document === "undefined") return;
+  if (role) {
+    document.cookie = `sceneflow-role=${encodeURIComponent(role)}; path=/; max-age=604800; SameSite=Lax`;
+  } else {
+    document.cookie = "sceneflow-role=; path=/; max-age=0; SameSite=Lax";
+  }
+}
+
 interface UserStoreState {
   token: string | null;
   user: AuthUser | null;
@@ -26,13 +35,18 @@ export const useUserStore = create<UserStoreState>()(
       setAuth: (token, user) => {
         clearAppQueryCache();
         useProjectStore.getState().reset();
+        syncRoleCookie(user.role);
         set({ token, user });
       },
-      setUser: (user) => set({ user }),
+      setUser: (user) => {
+        syncRoleCookie(user?.role);
+        set({ user });
+      },
       setHydrated: (hydrated) => set({ hydrated }),
       logout: () => {
         clearAppQueryCache();
         useProjectStore.getState().reset();
+        syncRoleCookie(null);
         set({ token: null, user: null });
       },
     }),
@@ -45,6 +59,9 @@ export const useUserStore = create<UserStoreState>()(
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
+        if (state?.user?.role) {
+          syncRoleCookie(state.user.role);
+        }
       },
     }
   )

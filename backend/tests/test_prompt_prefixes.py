@@ -295,7 +295,8 @@ def test_the_preamble_reaches_the_provider_and_takes_the_low_reference_number() 
             )
             assert preview.status_code == 200, preview.text
             # The preamble is above the shot's own text, and its mention took slot 1.
-            assert preview.json()["prompt"] == "参照 图1\n少年抬头"
+            from app.services.prompt_service import visual_style_prompt, with_visual_style
+            assert preview.json()["prompt"] == with_visual_style("参照 图1\n少年抬头", visual_style_prompt("cinematic"))
 
             started = client.post(
                 f"/api/projects/{project_id}/episodes/{episode_id}/storyboard", json={}, headers=headers

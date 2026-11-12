@@ -23,6 +23,7 @@ from app.services.artifact_service import (
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video
 from app.services.prompt_compiler import compile_prompt
+from app.services.prompt_service import with_visual_style
 from app.utils.common import now
 
 
@@ -312,7 +313,7 @@ async def run_generation(
 def build_image_prompt(scene: dict[str, Any]) -> str:
     narration = str(scene.get("narration") or "").strip()
     visual = str(scene.get("visual_prompt") or narration).strip()
-    prompt = f"Create a cinematic anime storyboard frame for a short video. Keep one clear subject, strong composition, dramatic lighting, high detail, no text, no watermark. Scene narration: {narration}. Visual direction: {visual}."
+    prompt = f"Create a storyboard frame for a short video. Keep one clear subject, strong composition, high detail, no text, no watermark. Scene narration: {narration}. Visual direction: {visual}."
     framing = ", ".join(
         part for part in (str(scene.get("shot_type") or "").strip(), str(scene.get("camera_move") or "").strip()) if part
     )
@@ -487,6 +488,7 @@ async def _generate_scene_video(
                 f"{prompt}\n连续性约束：本镜开场必须直接承接上一镜结束时的人物姿态、位置、朝向、服装、手持物和环境状态，"
                 f"不得无过渡改变。上一镜提示词：{previous_prompt}"
             )
+        prompt = with_visual_style(prompt, str(scene.get("style_prompt") or "").strip())
         duration = _scene_duration(scene, options, capabilities)
         started_at = time.monotonic()
         with db() as session:

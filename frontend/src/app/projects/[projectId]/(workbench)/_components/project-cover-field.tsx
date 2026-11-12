@@ -58,7 +58,11 @@ export function ProjectCoverField({ project }: { project: Project }) {
   const generateMutation = useMutation({
     mutationFn: async () => {
       const drawn = await generateCoverAction(
-        { prompt: coverPrompt.trim(), title: project.title },
+        {
+          prompt: coverPrompt.trim(), title: project.title,
+          visualStyle: project.productionSettings.visualStyle,
+          stylePrompt: project.productionSettings.stylePrompt,
+        },
         coverController.current?.signal
       );
       return setProjectCoverAction(project.id, { imageData: drawn.imageData });

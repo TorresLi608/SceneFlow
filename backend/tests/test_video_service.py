@@ -293,7 +293,7 @@ def test_grok_video_reports_provider_failure_and_keeps_relay_base() -> None:
     assert client.post.call_args.kwargs["json"] == {"model": "grok-imagine-video", "prompt": "camera move", "duration": 5}
 
 
-def _render_scene_video(options: dict, media: list[dict], max_images: int = 1):
+def _render_scene_video(options: dict, media: list[dict], max_images: int = 1, *, style_prompt: str = ""):
     """Drive one scene render with the providers stubbed, and hand back the request made."""
     config = {
         "provider": "qwen", "apiKey": "secret", "model": "wan2.7-i2v", "baseUrl": "https://relay.example.com/api/v1",
@@ -306,6 +306,7 @@ def _render_scene_video(options: dict, media: list[dict], max_images: int = 1):
         },
     }
     scene = {"id": "scene-1", "order_num": 1, "visual_prompt": "camera move", "image_path": "frame.png", "characters": []}
+    scene["style_prompt"] = style_prompt
     if options.get("explicitVideoReferences") or options.get("explicitReferences"):
         scene["explicitVideoReferences"] = True
         scene["referenceImagePaths"] = list(options.get("referenceImagePaths") or ["frame.png"])

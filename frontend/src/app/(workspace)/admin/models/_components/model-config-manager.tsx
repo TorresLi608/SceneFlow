@@ -1169,7 +1169,7 @@ export function ModelConfigManager() {
       {/* 模型配置 新建 / 编辑 Dialog（全量卡片化重构） */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="sm:max-w-3xl max-h-[90dvh] flex flex-col p-0 overflow-hidden gap-0">
-          <DialogHeader className="p-5 border-b border-border/70">
+          <DialogHeader className="p-5 border-b border-border/70 pr-12">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -1931,11 +1931,13 @@ export function ModelConfigManager() {
         onOpenChange={(open) => !open && setViewingConfig(null)}
       >
         <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
-          <DialogHeader className="p-5 border-b border-border/70">
-            <div className="flex items-center justify-between gap-2">
+          <DialogHeader className="p-5 border-b border-border/70 pr-12">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <DialogTitle className="text-base font-bold flex items-center gap-2">
-                <Cpu className="size-4 text-primary" />
-                {viewingConfig ? configTitle(viewingConfig, purposeLabel, t) : t("admin.configDetails")}
+                <Cpu className="size-4 text-primary shrink-0" />
+                <span>
+                  {viewingConfig ? configTitle(viewingConfig, purposeLabel, t) : t("admin.configDetails")}
+                </span>
               </DialogTitle>
               {viewingConfig ? (
                 <Badge
@@ -1955,19 +1957,21 @@ export function ModelConfigManager() {
 
           {viewingConfig ? (
             <div className="p-5 space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className={cn("grid gap-2.5", isSuperAdmin ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3")}>
                 <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
                   <span className="text-[11px] text-muted-foreground block">{t("settings.purpose")}</span>
                   <span className="font-semibold text-foreground mt-0.5 block">
                     {purposeLabel[viewingConfig.purpose]}
                   </span>
                 </div>
-                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
-                  <span className="text-[11px] text-muted-foreground block">{t("settings.provider")}</span>
-                  <span className="font-semibold text-foreground mt-0.5 block">
-                    {providerLabel(viewingConfig.provider, t)}
-                  </span>
-                </div>
+                {isSuperAdmin ? (
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                    <span className="text-[11px] text-muted-foreground block">{t("settings.provider")}</span>
+                    <span className="font-semibold text-foreground mt-0.5 block">
+                      {providerLabel(viewingConfig.provider, t)}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
                   <span className="text-[11px] text-muted-foreground block">{t("admin.tableModel")}</span>
                   <span className="font-mono font-semibold text-foreground mt-0.5 block truncate">
@@ -1982,12 +1986,14 @@ export function ModelConfigManager() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
-                <span className="text-[11px] text-muted-foreground block">Base URL</span>
-                <span className="font-mono text-xs text-foreground mt-0.5 block break-all">
-                  {viewingConfig.baseUrl || "—"}
-                </span>
-              </div>
+              {isSuperAdmin ? (
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5">
+                  <span className="text-[11px] text-muted-foreground block">Base URL</span>
+                  <span className="font-mono text-xs text-foreground mt-0.5 block break-all">
+                    {viewingConfig.baseUrl || "—"}
+                  </span>
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-1">
                 <span className="text-[11px] font-semibold text-primary block">计费策略</span>

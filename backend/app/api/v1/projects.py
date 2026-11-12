@@ -54,7 +54,7 @@ from app.services.episode_service import (
 )
 from app.services.generation_service import run_generation, run_video_generation
 from app.services.job_service import list_project_jobs
-from app.services.prompt_service import cover_prompt
+from app.services.prompt_service import cover_prompt, visual_style_prompt, with_visual_style
 from app.services.project_service import (
     IDLE_STATUSES,
     claim_project_status,
@@ -85,6 +85,17 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 def _settings_payload(request: ProductionSettingsRequest) -> dict[str, Any]:
     """Only the fields the caller actually sent, so a PATCH keeps the rest untouched."""
     return request.model_dump(by_alias=True, exclude_unset=True, exclude_none=True)
+
+
+def _production_settings_updates(project: Project, payload: dict[str, Any]) -> dict[str, Any]:
+    return production_settings({
+        "mode": project.mode, "aspectRatio": project.aspect_ratio,
+        "width": project.width, "height": project.height, "fps": project.fps,
+        "targetDurationMs": project.target_duration_ms, "language": project.language,
+        "visualStyle": project.visual_style, "stylePrompt": project.style_prompt,
+        "negativePrompt": project.negative_prompt, "currentStage": project.current_stage,
+        **payload,
+    }, defaults=True)
 
 
 def _model_settings_updates(request: ProjectModelConfigRequest) -> dict[str, Any]:
@@ -135,7 +146,7 @@ def _scene_payloads(
     payloads = []
     for index, scene in enumerate(scenes):
         payload = scene.model_dump()
-        payload["style_prompt"] = project.style_prompt
+        payload["style_prompt"] = visual_style_prompt(project.visual_style, project.style_prompt)
         payload["negative_prompt"] = project.negative_prompt
         payload["characters"] = [
             cast[character_id].as_payload() for character_id in links.get(scene.id, []) if character_id in cast
@@ -299,12 +310,15 @@ async def update_project(project_id: str, body: UpdateProjectRequest, user_id: i
         broadcast_data["seriesBible"] = body.series_bible
     if body.model_settings is not None:
         updates.update(_model_settings_updates(body.model_settings))
-    if not updates:
+    settings_payload = _settings_payload(body.production_settings) if body.production_settings is not None else {}
+    if not updates and not settings_payload:
         raise HTTPException(400, "no fields to update")
 
     stamp = now()
     with db() as session:
         project = owned_project(session, project_id, user_id)
+        if settings_payload:
+            updates.update(_production_settings_updates(project, settings_payload))
         for key, value in updates.items():
             setattr(project, key, value)
         project.updated_at = stamp
@@ -315,6 +329,9 @@ async def update_project(project_id: str, body: UpdateProjectRequest, user_id: i
         # The whole block rather than the changed keys: the panel re-reads it as one unit,
         # and a partial payload would leave the other fields showing stale values.
         broadcast_data["modelSettings"] = data["modelSettings"]
+    if settings_payload:
+        broadcast_data["productionSettings"] = data["productionSettings"]
+        broadcast_data["currentStage"] = data["currentStage"]
     # camelCase on the wire: every other realtime payload is camelCase, and the client reads it directly.
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {**broadcast_data, "updatedAt": stamp}})
     return {"project": data}
@@ -332,22 +349,7 @@ async def update_production_settings(
     stamp = now()
     with db() as session:
         project = owned_project(session, project_id, user_id)
-        updates = production_settings(
-            {
-                "mode": project.mode,
-                "aspectRatio": project.aspect_ratio,
-                "width": project.width,
-                "height": project.height,
-                "fps": project.fps,
-                "targetDurationMs": project.target_duration_ms,
-                "language": project.language,
-                "stylePrompt": project.style_prompt,
-                "negativePrompt": project.negative_prompt,
-                "currentStage": project.current_stage,
-                **payload,
-            },
-            defaults=True,
-        )
+        updates = _production_settings_updates(project, payload)
         for key, value in updates.items():
             setattr(project, key, value)
         project.updated_at = stamp
@@ -389,7 +391,7 @@ async def generate_cover(body: GenerateCoverRequest, user_id: int = Depends(curr
         image = await models.generate_image(
             config["apiKey"],
             config["model"],
-            cover_prompt(body.prompt, body.title, body.style_prompt),
+            cover_prompt(body.prompt, body.title, visual_style_prompt(body.visual_style, body.style_prompt)),
             base_url=config.get("baseUrl", ""),
             provider=config["provider"],
         )
@@ -873,6 +875,8 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
         raise HTTPException(400, "invalid project id")
     with db() as session:
         config = prepare_parse(session, user_id, project_id, body.script)
+        project = owned_project(session, project_id, user_id)
+        styled_script = with_visual_style(body.script, visual_style_prompt(project.visual_style, project.style_prompt))
 
     await broadcast(project_id, {"type": "PROJECT_UPDATE", "projectId": project_id, "data": {"status": "parsing"}})
     started_at = time.monotonic()
@@ -881,7 +885,7 @@ async def parse_project(project_id: str, body: ParseProjectRequest, user_id: int
             config["provider"],
             config["apiKey"],
             body.model or config["model"],
-            body.script,
+            styled_script,
             config.get("baseUrl", ""),
         )
     except Exception as exc:
@@ -971,13 +975,14 @@ async def optimize_project(project_id: str, body: OptimizeProjectRequest, user_i
             raise HTTPException(400, "script is required")
         config = active_model_config(session, user_id, "script", "故事生成/剧本优化")
         require_model_balance(session, user_id, config)
+        styled_script = with_visual_style(script, visual_style_prompt(project.visual_style, project.style_prompt))
     started_at = time.monotonic()
     try:
         result = await models.optimize_script(
             config["provider"],
             config["apiKey"],
             body.model or config["model"],
-            script,
+            styled_script,
             config.get("baseUrl", ""),
         )
     except Exception as exc:

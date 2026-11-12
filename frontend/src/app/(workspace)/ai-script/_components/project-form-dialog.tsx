@@ -14,6 +14,7 @@ import {
   updateProjectAction,
 } from "@/actions/projects-actions";
 import { PromptField } from "@/components/prompt-field";
+import { VisualStyleField } from "@/components/visual-style-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -23,7 +24,7 @@ import { resolveRequestError } from "@/lib/http/errors";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { IMAGE_TYPES, readImageFile } from "@/lib/image-file";
-import type { Project } from "@/types/project";
+import type { Project, VisualStyle } from "@/types/project";
 
 interface ProjectFormProps {
   /** Null puts the form in create mode. */
@@ -43,6 +44,7 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
   const coverController = useRef<AbortController | null>(null);
   const [title, setTitle] = useState(project?.title ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
+  const [visualStyle, setVisualStyle] = useState<VisualStyle>(project?.productionSettings.visualStyle ?? "cinematic");
   const [coverPrompt, setCoverPrompt] = useState(project?.coverPrompt ?? "");
   /**
    * What the preview shows: a data URL when the user just picked or generated one, the
@@ -69,7 +71,10 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
     mutationFn: () =>
       // The user's own description drives the picture. Title and house style ride along as
       // context, but asking for a cover no longer means rewriting the synopsis.
-      generateCoverAction({ prompt: coverPrompt.trim(), title: title.trim() }, coverController.current?.signal),
+      generateCoverAction({
+        prompt: coverPrompt.trim(), title: title.trim(), visualStyle,
+        stylePrompt: project?.productionSettings.stylePrompt ?? "",
+      }, coverController.current?.signal),
     onSuccess: (response) => {
       setCoverPreview(response.imageData);
       setCoverData(response.imageData);
@@ -90,6 +95,7 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
         title: title.trim(),
         description: description.trim(),
         coverPrompt: coverPrompt.trim(),
+        productionSettings: { visualStyle },
       };
       let saved = project
         ? (await updateProjectAction(project.id, payload)).project
@@ -181,6 +187,8 @@ function ProjectForm({ project, onSaved, onClose }: ProjectFormProps) {
               className="min-h-24 resize-none rounded-xl text-xs bg-muted/20 focus-visible:bg-background leading-relaxed"
             />
           </Field>
+
+          <VisualStyleField value={visualStyle} onChange={setVisualStyle} disabled={busy} />
 
           <Field className="space-y-1.5">
             <FieldLabel className="text-xs font-medium text-foreground">
