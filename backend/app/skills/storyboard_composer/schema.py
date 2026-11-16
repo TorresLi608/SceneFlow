@@ -4,7 +4,7 @@ from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
-from ..base import MediaArtifact, Milliseconds, NonEmptyStr, PositiveInt, SkillModel, require_media_kind
+from ..base import MediaArtifact, Milliseconds, NonEmptyStr, PositiveInt, SkillModel, require_media_kind, require_unique
 
 
 class SubtitleCue(SkillModel):
@@ -27,6 +27,8 @@ class AudioCue(SkillModel):
     @model_validator(mode="after")
     def audio_media(self) -> Self:
         require_media_kind(self.media, "audio")
+        if self.media.duration_ms is not None and self.duration_ms > self.media.duration_ms:
+            raise ValueError("audio cue exceeds source media duration")
         return self
 
 
@@ -45,7 +47,13 @@ class ComposerShot(SkillModel):
             raise ValueError("shot visual must be image or video media")
         if self.visual.media_type.startswith("image/") and self.source_start_ms:
             raise ValueError("still images have no source time offset")
-        if self.visual.duration_ms is not None and self.source_start_ms + self.duration_ms > self.visual.duration_ms:
+        # Only video has a source timeline to run out of. A still is held for the shot, and
+        # an animated image (GIF) loops, however short its own duration.
+        if (
+            self.visual.media_type.startswith("video/")
+            and self.visual.duration_ms is not None
+            and self.source_start_ms + self.duration_ms > self.visual.duration_ms
+        ):
             raise ValueError("shot exceeds source media duration")
         if any(cue.start_ms + cue.duration_ms > self.duration_ms for cue in self.audio):
             raise ValueError("audio cue exceeds shot duration")
@@ -63,8 +71,7 @@ class StoryboardComposerInput(SkillModel):
 
     @model_validator(mode="after")
     def unique_keys(self) -> Self:
-        if len({shot.key for shot in self.shots}) != len(self.shots):
-            raise ValueError("shot keys must be unique")
+        require_unique([shot.key for shot in self.shots], "shot keys")
         return self
 
 

@@ -198,6 +198,11 @@ async def _generate_shot(
             raise ValueError("该分镜没有内容，先填写分镜描述")
         if narration and visual_prompt and narration != visual_prompt:
             text = f"{narration}\n画面提示词：{visual_prompt}"
+        # The breakdown ends a frame prompt with its shot size, but an edited one often
+        # loses it — and a frame drawn at the wrong size no longer cuts with its neighbours.
+        shot_type = str(scene.get("shot_type") or "").strip()
+        if shot_type and shot_type not in text:
+            text = f"{text}\n景别：{shot_type}"
         # The preamble reads first and compiles in the same pass, so its `@素材` take the low
         # `图N` — matching the prefix-first order their references were resolved in.
         prefix_text = str(scene.get("promptPrefixText") or "").strip()
@@ -216,6 +221,7 @@ async def _generate_shot(
             plan.episode_title,
             plan.style_prompt,
             plan.negative_prompt,
+            reference_count=len(references),
         )
         method = models.edit_image if references else models.generate_image
         image = await method(

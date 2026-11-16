@@ -22,6 +22,12 @@ from openai import APIStatusError, AsyncOpenAI
 import httpx
 from dashscope.aigc.image_generation import ImageGeneration
 
+from app.services.prompt_service import (
+    SCRIPT_PARSE_INSTRUCTION,
+    SCRIPT_PARSE_SYSTEM,
+    SCRIPT_POLISH_SYSTEM,
+    fallback_frame_prompt,
+)
 from app.services.usage_service import aggregate_token_usage
 from app.llms.anthropic import MeteredChatAnthropic
 
@@ -580,15 +586,8 @@ class ModelRouter:
             response = await llm.ainvoke(
                 _lc_messages(
                     [
-                        {
-                            "role": "system",
-                            "content": 'You convert screenplay text into storyboard scenes. Return strict JSON only with schema: {"scenes":[{"narration":"...","visualPrompt":"..."}]}',
-                        },
-                        {
-                            "role": "user",
-                            "content": "Parse the script into 4-12 scenes. Keep narration concise and generate a cinematic anime visual prompt for each scene. Script:\n"
-                            + script,
-                        },
+                        {"role": "system", "content": SCRIPT_PARSE_SYSTEM},
+                        {"role": "user", "content": SCRIPT_PARSE_INSTRUCTION + script},
                     ]
                 )
             )
@@ -602,8 +601,7 @@ class ModelRouter:
             scenes.append(
                 SceneDraft(
                     narration=narration,
-                    visualPrompt=visual
-                    or f"anime storyboard frame, cinematic composition, {_trim_prompt(narration)}",
+                    visualPrompt=visual or fallback_frame_prompt(_trim_prompt(narration)),
                 )
             )
         if not scenes:
@@ -692,7 +690,7 @@ class ModelRouter:
             shots.append(
                 ShotDraft(
                     narration=narration or _trim_prompt(visual),
-                    visualPrompt=visual or f"anime storyboard frame, cinematic composition, {_trim_prompt(narration)}",
+                    visualPrompt=visual or fallback_frame_prompt(_trim_prompt(narration)),
                     dialogue=str(item.get("dialogue", "")).strip(),
                     speaker=str(item.get("speaker", "")).strip(),
                     shotType=str(item.get("shotType", "")).strip()[:80],
@@ -719,15 +717,8 @@ class ModelRouter:
             response = await llm.ainvoke(
                 _lc_messages(
                     [
-                        {
-                            "role": "system",
-                            "content": "You are a screenplay doctor. Return strict JSON with fields optimizedScript (string) and tips (string array).",
-                        },
-                        {
-                            "role": "user",
-                            "content": "Polish and optimize this script for short anime video production. Keep style concise and cinematic. Script:\n"
-                            + script,
-                        },
+                        {"role": "system", "content": SCRIPT_POLISH_SYSTEM},
+                        {"role": "user", "content": "请打磨下面的剧本：\n" + script},
                     ]
                 )
             )

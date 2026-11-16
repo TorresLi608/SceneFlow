@@ -5,20 +5,29 @@ from typing import Any
 from .base import BaseSkill, SkillMetadata
 
 
+class SkillUnavailableError(LookupError):
+    """The name is unknown, or names a planned skill that cannot run yet."""
+
+
 class SkillRegistry:
     def __init__(self) -> None:
         self._skills: dict[str, BaseSkill[Any, Any]] = {}
 
     def register(self, skill: BaseSkill[Any, Any]) -> None:
+        for attribute in ("name", "description", "input_schema", "output_schema"):
+            if not hasattr(skill, attribute):
+                raise TypeError(f"{type(skill).__name__} must define {attribute}")
         skill.metadata()  # Validate metadata/schema before publishing the entry.
         if skill.name in self._skills:
             raise ValueError(f"skill already registered: {skill.name}")
         self._skills[skill.name] = skill
 
     def get(self, name: str, *, implemented_only: bool = True) -> BaseSkill[Any, Any]:
-        skill = self._skills[name]
+        skill = self._skills.get(name)
+        if skill is None:
+            raise SkillUnavailableError(f"unknown skill: {name[:64]}")
         if implemented_only and not skill.implemented:
-            raise ValueError(f"skill is not implemented: {name}")
+            raise SkillUnavailableError(f"skill is not implemented: {name}")
         return skill
 
     def list_metadata(self, *, implemented_only: bool = True) -> list[SkillMetadata]:
@@ -43,4 +52,3 @@ def create_registry() -> SkillRegistry:
     ):
         registry.register(skill_type())
     return registry
-

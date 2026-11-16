@@ -10,7 +10,9 @@ These are instructions sent to a model, not user-facing UI copy, so they stay ou
 
 from __future__ import annotations
 
+import math
 import re
+from typing import Any
 
 
 VISUAL_STYLE_PROMPTS = {
@@ -35,9 +37,32 @@ def with_visual_style(prompt: str, style: str) -> str:
     return f"{prompt}\n整体画面风格：{style}" if style else prompt
 
 
+# The finish every rendered frame is held to. Worded without naming a look — "真实材质"
+# would fight an anime project — so it sits under whichever visual style is configured.
+# The defect list is the part that earns its place: image models drift toward exactly
+# these failures on multi-character frames, and a storyboard frame with a sixth finger
+# becomes the first frame of a clip.
+IMAGE_QUALITY_DIRECTIVE = (
+    "成片级完成度：主体清晰锐利、焦点落在本镜的戏剧重点上；构图有明确的视觉引导与前景、中景、背景层次；"
+    "光线有明确的主光方向并与场景的时间、光源一致，明暗过渡自然；人物五官端正、比例准确，"
+    "手部与肢体结构正确，表情与视线符合剧情。"
+    "不要出现畸形或多余的手指与肢体、重复或融合的人物、面部崩坏、模糊、噪点、低清晰度、过曝或死黑。"
+)
+
+# The same bar for a clip. A video model left alone tends to do three things that break a
+# drama: cut inside the shot, let a face drift over the seconds, and paint captions.
+VIDEO_QUALITY_DIRECTIVE = (
+    "成片要求：全片只有本镜这一个连续镜头，不在镜头内切换画面、不分屏；"
+    "人物的长相、发型、服装与配饰从头到尾保持不变，五官与肢体不变形；"
+    "动作自然连贯、符合物理规律，表演有细微的表情与眼神变化；镜头运动平稳，光线与色调稳定；"
+    "画面中不出现字幕、文字或水印。"
+)
+
+
 COVER_SYSTEM = (
     "你是短剧海报设计师。根据用户描述的封面画面，写一段用于生成竖屏短剧封面海报的图像提示词。"
-    "要求：单一清晰主体，强烈氛围感，电影级打光，高细节。"
+    "要求：单一清晰主体，强烈氛围感，电影级打光，高细节；写明主体的姿态与视线、构图与留白、"
+    "主光方向与色调、景深；人物五官清晰端正、肢体结构准确。"
     "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 300 字以内。"
 )
 
@@ -55,7 +80,7 @@ def cover_prompt(prompt: str, title: str = "", style_prompt: str = "") -> str:
     """
     parts = [
         "为一部竖屏短剧绘制封面海报。要求：单一清晰主体，强烈氛围感，电影级打光，高细节，"
-        "画面中不要出现任何文字、字幕或水印。",
+        "人物五官清晰端正、肢体结构准确，画面中不要出现任何文字、字幕或水印。",
         f"封面画面：{prompt.strip()}。" if prompt.strip() else "",
         f"剧名：{title.strip()}。" if title.strip() else "",
         f"整体风格：{style_prompt.strip()}。" if style_prompt.strip() else "",
@@ -84,6 +109,8 @@ CHARACTER_SHEET_SYSTEM = (
     "②角色多表情集：至少 4 个情绪反差鲜明的五官特写（如喜、怒、冷、悲），同一张脸、同一发型，每格下方标注情绪名称；"
     "③角色档案摘要：姓名、年龄、定位、核心外貌记忆点。年龄与定位依据用户给的角色信息填写，"
     "信息不足时按剧情合理推断并保持简短，不要编造与原意冲突的设定。"
+    "三个区域里必须是同一个人：脸型、五官、发型发色、体型比例与服装细节完全一致；"
+    "线条干净、五官清晰端正、手部与肢体结构准确，服装的材质、配色与配饰写具体，便于后续每个分镜对照。"
     "纯色背景。画面中必须以清晰易读的排版标注：角色名称（作为标题）、角色简介、角色设定要点与上述档案摘要。"
     "文字排布在画面边缘或下方的信息栏内，不要遮挡角色本身。"
     "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 500 字以内。"
@@ -96,7 +123,7 @@ CHARACTER_SHEET_SYSTEM = (
 PROP_SYSTEM = (
     "你是美术道具设计师。根据用户给的道具信息，写一段用于生成【道具多角度设定图】的图像提示词。"
     "要求：同一物体的正面、侧面、背面与一个材质或结构细节特写并排排列，同一光照与比例，"
-    "纯色背景，均匀打光，清晰展示材质、结构与工艺细节，不要人物。"
+    "纯色背景，均匀打光，清晰展示材质、结构与工艺细节，各视角是同一件物体、形制与配色完全一致，不要人物。"
     "画面中必须以清晰易读的排版标注：道具名称（作为标题）、归属角色（这是谁的道具）、"
     "道具简介、道具设定要点。文字排布在画面边缘或下方的信息栏内，不要遮挡道具本身。"
     "只输出提示词正文本身，不要标题、不要解释、不要 Markdown 标记，控制在 400 字以内。"
@@ -204,6 +231,48 @@ def fallback_prop_prompt(name: str, description: str, owner_name: str = "") -> s
     )
 
 
+# Polishing a script is where dialogue gets better — the breakdown copies lines verbatim,
+# so a flat line stays flat all the way to the clip. The brief is a short drama's: a hook
+# in the first seconds, one goal per scene, lines short enough to be said in one shot.
+# It names no visual style: the project's configured style is appended to the script by
+# the caller, and a hardcoded "anime" here used to contradict a realistic or 3D project.
+SCRIPT_POLISH_SYSTEM = (
+    "你是短剧编剧与剧本医生。在不改变故事主线、人物关系、结局与原文语言的前提下打磨剧本，"
+    "返回严格的 JSON：optimizedScript（字符串，打磨后的完整剧本）与 tips（字符串数组，3 到 5 条仍可改进的建议）。\n"
+    "打磨要求：\n"
+    "1. 结构：开场三句话内抛出悬念或冲突；每一场只有一个明确的目标和一次情绪转折；冲突逐场升级；"
+    "结尾停在悬念或情绪顶点上。删掉不推动剧情的铺垫与重复。\n"
+    "2. 场次：每一场用一行写明地点与时间（如「客厅·黄昏」），再写动作与台词，便于后续拆分镜头。\n"
+    "3. 台词：口语化、短句为主，单句尽量不超过 25 个字；每个角色有自己的说话方式，不要所有人一个腔调；"
+    "多用潜台词与动作代替直白的解释，删掉「正如你所知」式的说明性对白；关键台词要有记忆点。"
+    "台词前标明说话角色，必要时在括号里写语气或动作。\n"
+    "4. 动作与画面：把心理活动改写成拍得出来的动作、表情与细节；每段只写一个动作焦点；"
+    "不要写镜头术语，镜头由分镜阶段决定。\n"
+    "5. 不要新增与主线无关的人物和情节，不要改动专有名词。\n"
+    "6. 剧本末尾若附有「整体画面风格：…」一行，那是画面风格说明而不是剧本正文：不要改写它，也不要写进 optimizedScript。\n"
+    "只输出 JSON，不要解释、不要 Markdown 代码块。"
+)
+
+# The legacy single-screen parse. Style-neutral for the same reason as the polish above.
+SCRIPT_PARSE_SYSTEM = (
+    "You convert screenplay text into storyboard scenes. Return strict JSON only with schema: "
+    '{"scenes":[{"narration":"...","visualPrompt":"..."}]}'
+)
+SCRIPT_PARSE_INSTRUCTION = (
+    "Parse the script into 4-12 scenes in story order. Keep each narration to one concise sentence. "
+    "For each scene write a visualPrompt for one finished frame: camera angle and shot size, who is in "
+    "frame with their position, pose, expression and clothing, the location and time of day, the "
+    "key-light direction and mood. Keep every character's look and each location's layout consistent "
+    "across scenes, and write in the script's own language. Do not name an art style; the project "
+    "supplies it. Script:\n"
+)
+
+
+def fallback_frame_prompt(narration: str) -> str:
+    """A frame prompt for a shot the model described but never wrote a picture for."""
+    return f"storyboard frame, cinematic composition, {narration}"
+
+
 # What a voice says in the merged reference track. The wording matters: this line is the
 # only thing telling the video model *when* to use the timbre it just heard, so it names
 # the role rather than merely demonstrating the voice. Both are editable per profile.
@@ -219,38 +288,82 @@ def character_sample_text(name: str) -> str:
 # storyboard for a comic, not for a drama: nothing said how the camera moved, how one shot
 # reached the next, or how long any of it ran. These are the fields a shot actually needs
 # before a clip can be generated from it.
+#
+# The fields alone still produced shots that each looked fine and did not cut together:
+# every shot was written as if it were the only one. The 导演工作法 block is what makes the
+# model plan the episode before it writes a shot — fix each location's geography and light
+# once, fix each character's look once, and then obey the handful of editing rules (axis,
+# shot-size progression, match on action) that make consecutive clips read as one scene.
+# It plans silently: asking for the plan in the JSON would spend the output budget on
+# text nothing consumes.
+#
+# Dialogue is copied, never rewritten — the script is the author's, and polishing lines is
+# a separate, explicit step. What the breakdown does own is pacing: one line per shot, a
+# long line split across a cut, and a duration long enough to say it.
+#
+# The length caps are load-bearing. The reply is capped at 8192 output tokens and a
+# detailed split can run to forty shots; uncapped prompts get the array truncated.
 BREAKDOWN_SYSTEM = (
-    "你是短剧分镜导演。把剧本拆解成可直接用于生成画面与视频的分镜表，返回严格的 JSON。\n"
+    "你是院线级短剧的分镜导演兼摄影指导。把剧本拆解成可直接用于生成画面与视频的分镜表，"
+    '返回严格的 JSON，结构为 {"shots":[{...}, ...]}，按剧情顺序排列。\n'
+    "【导演工作法】动笔前先在心里完成以下设计，不要输出设计过程，只输出 JSON：\n"
+    "1. 场次：按「地点＋时间」把剧本分成若干场。为每一场确定固定的空间布局（每个人物在画面的左/右/前/后，"
+    "门窗与主要陈设的位置）、时间与天气、主光源的方向与色温。同一场内的所有分镜必须沿用，不得无故改变。\n"
+    "2. 造型：为每个出场人物确定本集固定的发型、服装、配饰与随身道具；除非剧本写明换装、受伤或弄脏，"
+    "每个分镜都保持一致。人物一律用设定资料或剧本里的名字称呼，全程同一个称呼，不要换成「他」「男主」「老板」。\n"
+    "3. 节奏：找出本集的钩子、冲突升级点与高潮。第 1 个分镜要在 3 秒内用强悬念、强冲突或强画面抓住观众；"
+    "情绪逐镜递进；最后一个分镜落在情绪顶点或悬念上，不要平淡收尾。"
+    "这些只能靠选取、编排和强调剧本已有的内容来实现，不要编造剧本里没有的情节、人物或台词。\n"
+    "4. 镜头语言：\n"
+    "   - 每一场的第一个分镜用远景或全景交代环境与人物的位置关系，之后再推近；\n"
+    "   - 景别随情绪收紧：铺垫用全景、中景，对峙与爆发用近景、特写，关键信息（眼神、手部动作、关键道具）单独给特写；\n"
+    "   - 相邻两个分镜的景别或机位角度要有明显变化，避免跳切；\n"
+    "   - 对话遵守轴线：两人各自始终在画面固定一侧，视线相对；用正反打与过肩镜头，并穿插听者的反应镜头；\n"
+    "   - 动作接动作：上一镜结束时的动作、位置、朝向与手持物，就是下一镜的起点；\n"
+    "   - 一个分镜只表达一个动作或一次情绪转折，只用一个连续镜头，镜头内不切换画面。\n"
     "字段说明：\n"
-    "- narration：这一分镜发生了什么，简洁的画面叙述。\n"
-    "- dialogue：这一分镜的台词原文；没有台词就留空字符串。\n"
+    "- narration：这一分镜发生了什么，一句简洁的剧情叙述，不超过 40 字。\n"
+    "- dialogue：这一分镜里说出的台词，逐字沿用剧本原文，不要改写、润色或补写；内心独白与画外音也写在这里。"
+    "一个分镜最多一位角色的一句台词（或一小段连贯的话）；超过约 25 字的长台词按语气停顿拆到相邻分镜，"
+    "中间可插入听者的反应镜头。没有台词就留空字符串。\n"
     "- speaker：说这句台词的角色名；没有台词或是旁白就留空字符串。\n"
-    "- visualPrompt：静态画面提示词，描述构图、环境、人物姿态、光线、氛围。\n"
+    "- visualPrompt：静态画面提示词，定格这一分镜最有代表性的一瞬间。\n"
     "- shotType：景别，如 远景 / 全景 / 中景 / 近景 / 特写 / 过肩。\n"
-    "- cameraMove：运镜手法，如 固定 / 推镜 / 拉镜 / 摇镜 / 跟拍 / 手持晃动 / 升降。\n"
-    "- transition：从上一个分镜进入这一分镜的转场方式，如 硬切 / 叠化 / 淡入 / 淡出 / 闪白；"
-    "第一个分镜通常是 淡入。\n"
-    "- durationSeconds：这一分镜预计生成多少秒视频，整数，通常 2 到 10 秒，按台词长度与动作复杂度估算。\n"
+    "- cameraMove：这一分镜的一种主要运镜，如 固定 / 缓慢推镜 / 拉镜 / 摇镜 / 跟拍 / 环绕 / 手持晃动 / 升降；"
+    "运镜要有动机（推近强调情绪、跟拍跟随行动、固定承载对话），不要每个分镜都推拉。\n"
+    "- transition：从上一个分镜进入这一分镜的转场方式，如 硬切 / 叠化 / 淡入 / 淡出 / 闪白。"
+    "同一场内用 硬切；换场或时间跳跃才用 叠化、淡入淡出；第一个分镜通常是 淡入。\n"
+    "- durationSeconds：这一分镜的视频秒数，整数，通常 2 到 10 秒。有台词时不少于「台词字数÷4＋1」秒；"
+    "纯动作或反应镜头 2 到 5 秒；交代环境的镜头 3 到 4 秒。\n"
     "- videoPrompt：动态提示词，描述这几秒内人物与镜头如何运动、表情与情绪如何变化；"
     "它描述的是一段时间，不是一张静止画面，不要照抄 visualPrompt。\n"
     "写法要求（visualPrompt 与 videoPrompt 都必须遵守）：\n"
     "1. 开头写「分镜X：」，X 是这一分镜在本集中的序号，从 1 开始。\n"
     "2. 从第 2 个分镜起，紧接着写一个【】承接块，说明与上一镜的关系：是否同一场景、"
     "人物的样貌与衣着是否延续、上一镜结束时的姿态与位置朝向如何被接住。"
-    "发生转场时在【】里写明切到的新场景，并注明人物形象与服装保持不变。第 1 个分镜不写【】。\n"
-    "3.【】之后才写这一分镜自己的内容：visualPrompt 写构图、环境、人物姿态、光线、氛围；"
-    "videoPrompt 写这几秒内人物与镜头如何运动、表情与情绪如何变化，并在结尾带上景别。\n"
-    "4. 承接块要写出可执行的连续性约束（具体到五官、发型、服装、配饰、位置、朝向、光线、环境），"
+    "发生转场时在【】里写明切到的新场景（地点、时间、光线），并注明人物形象与服装保持不变。第 1 个分镜不写【】。\n"
+    "3. 承接块要写出可执行的连续性约束（具体到发型、服装、配饰、手持物、左右站位、朝向、光线、环境），"
     "而不是只重复剧情。\n"
+    "4.【】之后写这一分镜自己的内容。visualPrompt 依次写：机位角度（平视 / 俯拍 / 仰拍 / 过肩）；"
+    "主体是谁、在画面的什么位置、姿态动作、表情与视线方向、衣着；地点与时间、前中后景的层次与关键陈设；"
+    "主光方向、色温与明暗对比；色调与氛围；结尾带上景别。\n"
+    "5. videoPrompt 依次写：起始状态（接住上一镜）；按时间先后的 1 到 3 个动作节拍，写清谁做什么、速度与力度；"
+    "表情与情绪从什么变成什么；镜头的运动方向、速度与起止景别；结束时的姿态与位置（留给下一镜承接）。"
+    "有台词时写明谁在说话以及说话时的神态，但不要把台词原文写进 videoPrompt；结尾带上景别。\n"
+    "6. 只写镜头拍得到的东西：把「气氛紧张」「十分愤怒」这类抽象词换成看得见的细节（指节发白、下颌绷紧、眼眶泛红）。"
+    "不要在画面里安排字幕、文字或对话气泡。\n"
+    "7. visualPrompt 与 videoPrompt 各自控制在 60 到 130 字之间：信息要具体，但不要堆砌形容词。\n"
     "示例（visualPrompt 和 videoPrompt 都要带承接块）：\n"
     "分镜 1：\n"
-    "  visualPrompt: 分镜 1：男主站在客厅中央，面向镜头左侧的女主，表情愤怒，中景\n"
-    "  videoPrompt: 分镜 1：男主保持站立姿态，目光锁定女主，拳头微微握紧，持续 3 秒，中景镜头\n"
+    "  visualPrompt: 分镜 1：平视，陆沉站在客厅中央偏右，黑色衬衫袖口挽起，下颌绷紧，目光压向画面左侧沙发旁的苏晚；"
+    "苏晚穿米色针织衫，双手攥着手机；落地窗在画面左后方，黄昏暖光从窗外斜射进来，在两人之间拉出长影，全景\n"
+    "  videoPrompt: 分镜 1：陆沉站定不动，胸口起伏，右手缓缓握拳，目光始终锁住苏晚；苏晚后退半步，手机攥得更紧；"
+    "镜头从全景缓慢推向两人之间，结束时陆沉仍在画面右侧，全景\n"
     "分镜 2：\n"
-    "  visualPrompt: 分镜 2：【承接上一镜，同一客厅场景，男主还是刚才的样貌衣着和站位】男主右脚向前迈一步，"
-    "伸出右手抓住女主左臂，面部愤怒表情加深，中景\n"
-    "  videoPrompt: 分镜 2：【承接上一镜结束姿态，男主从静止状态开始】男主往前走一步，伸手拉住女主手臂，"
-    "面部表情从愤怒到激动，眉头紧锁，持续 4 秒，中景镜头\n"
+    "  visualPrompt: 分镜 2：【承接上一镜，同一客厅、同样的黄昏暖光；陆沉仍是黑色衬衫、袖口挽起，站在画面右侧，"
+    "苏晚仍在左侧】过肩机位越过苏晚左肩拍陆沉，他右脚前迈一步，右手抓住苏晚左臂，眉头紧锁、眼眶泛红，近景\n"
+    "  videoPrompt: 分镜 2：【承接上一镜结束姿态，陆沉从站定握拳开始】陆沉向前迈一步，右手抓住苏晚左臂并收紧，"
+    "开口说话时嘴唇发抖，神情从压抑的愤怒变为激动；苏晚肩膀一缩，偏过头；镜头固定，结束时两人相距半步，近景\n"
     "只输出 JSON，不要解释、不要 Markdown 代码块。"
 )
 
@@ -274,6 +387,100 @@ def with_shot_label(text: str, order: int) -> str:
     """
     body = SHOT_LABEL_PATTERN.sub("", str(text or "").strip())
     return f"{shot_label(order)}{body}" if body else ""
+
+
+# The 【】 block a shot opens with, right after its label.
+CARRY_OVER_PATTERN = re.compile(r"^\s*【[^】]*】\s*")
+
+
+def shot_action_text(text: str) -> str:
+    """A stored shot prompt with its `分镜X：` label and 【承接块】 removed.
+
+    What is left is what the shot itself does. The carry-over block describes the shot
+    *before* it, so quoting a whole prompt as "the previous shot" hands the model the
+    state from two shots back alongside a shot number that is not the one being rendered.
+    """
+    body = SHOT_LABEL_PATTERN.sub("", str(text or "").strip())
+    return CARRY_OVER_PATTERN.sub("", body).strip()
+
+
+# Chinese drama dialogue runs at roughly four to five characters a second, English at
+# under three words; the half second is the breath before the line.
+CJK_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
+WORD_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’-]*")
+MAX_SHOT_SECONDS = 60
+
+
+def dialogue_seconds(dialogue: str) -> int:
+    """The shortest clip a line can be spoken in; 0 when there is no line."""
+    text = str(dialogue or "").strip()
+    cjk = len(CJK_PATTERN.findall(text))
+    words = len(WORD_PATTERN.findall(text))
+    if not cjk and not words:
+        return 0
+    return max(2, math.ceil(cjk / 4.5 + words / 2.8 + 0.5))
+
+
+def shot_duration_seconds(estimate: int, dialogue: str = "") -> int:
+    """The model's duration estimate, raised until the shot's line fits in it.
+
+    The breakdown is told the rule and still under-counts long lines — and a clip shorter
+    than its dialogue either cuts the line off or rushes the performance, which no later
+    step can repair. A shot with no line keeps the estimate untouched, 0 included: that
+    means undecided, and the render falls back to the batch default.
+    """
+    estimate = max(int(estimate or 0), 0)
+    needed = dialogue_seconds(dialogue)
+    return min(max(estimate, needed), MAX_SHOT_SECONDS) if needed else min(estimate, MAX_SHOT_SECONDS)
+
+
+# Transitions that mean "no effect at the seam". Naming one to a video model is worse than
+# silence: told about a 硬切, it tends to perform a cut inside the clip.
+HARD_CUTS = {"", "硬切", "直切", "切", "切镜", "切换", "无", "cut", "hard cut", "straight cut", "none"}
+
+# How much of the previous shot is quoted back. Enough for its action and end state; the
+# full prompt would crowd out the shot actually being rendered.
+PREVIOUS_SHOT_CHARS = 260
+
+
+def video_direction(shot_type: str = "", camera_move: str = "", transition: str = "", prompt: str = "") -> str:
+    """Shot size, camera move and opening transition, as one line under the motion prompt.
+
+    These are the fields the breakdown works out that the motion prompt has no guaranteed
+    place for — a user-edited prompt often drops them. Shot size is skipped when the
+    prompt already states it. A transition is scoped to the opening instant so the rest of
+    the clip stays one continuous take.
+    """
+    shot_type, camera_move, transition = (str(value or "").strip() for value in (shot_type, camera_move, transition))
+    parts = [
+        f"景别：{shot_type}" if shot_type and shot_type not in str(prompt or "") else "",
+        f"运镜：{camera_move}" if camera_move else "",
+        f"开场转场：以{transition}进入本镜，只作用于开场瞬间，之后保持连续镜头"
+        if transition.lower() not in HARD_CUTS
+        else "",
+    ]
+    return "；".join(part for part in parts if part)
+
+
+def dialogue_performance(speaker_name: str = "") -> str:
+    """How a spoken line is to be performed; goes with the line `compile_prompt` appends."""
+    who = f"角色“{speaker_name.strip()}”" if speaker_name.strip() else "说话的角色"
+    return (
+        f"表演：{who}说出下面这句台词，口型与台词同步，语气、表情与眼神贴合此刻的情绪；"
+        "其他人物只做在场反应，不开口、不抢话；台词以外不要增加别的对白，不要生成字幕。"
+    )
+
+
+def video_continuity(previous_prompt: str) -> str:
+    """The seam with the previous shot: open where it ended, on the same people and place."""
+    previous = shot_action_text(previous_prompt)[:PREVIOUS_SHOT_CHARS]
+    if not previous:
+        return ""
+    return (
+        "连续性约束：本镜开场必须直接承接上一镜结束时的人物姿态、位置、朝向、服装、手持物和环境状态，"
+        "人物长相与场景布局、光线方向保持一致，不得无过渡改变。"
+        f"上一镜内容（仅供承接，不要重演）：{previous}"
+    )
 
 
 def breakdown_reference_block(
@@ -370,6 +577,8 @@ def tone_sheet_prompt(
         "每格左上角用清晰易读的小字标注分镜序号和一句不超过十个字的画面概述，"
         "格式如「1 黄昏街道 | 青年走路」，概述从该分镜内容提炼，写地点或状态加人物动作。",
         "要求：所有格子共用同一套光线、色调、材质与渲染风格；"
+        "同一人物在每一格里都是同一张脸、同一发型与同一套服装；"
+        "发生在同一地点的格子保持相同的空间布局、陈设与主光方向，相邻格子的景别要有变化；"
         "除每格左上角的序号与画面概述外，不要出现字幕、水印或其他说明文字。",
         f"整体风格：{style_prompt.strip()}。" if style_prompt.strip() else "",
         f"避免出现：{negative_prompt.strip()}。" if negative_prompt.strip() else "",
@@ -386,24 +595,40 @@ def shot_prompt(
     episode_title: str,
     style_prompt: str = "",
     negative_prompt: str = "",
+    reference_count: int = 0,
 ) -> str:
-    """One full-resolution frame, told explicitly to match the references it is given.
+    """One full-resolution frame, told what the references it actually carries are for.
 
-    The reference images do the heavy lifting; this names what they are for, because a model
-    handed four unlabelled references will happily average them.
+    The reference images do the heavy lifting; this names their job, because a model
+    handed several unlabelled references will happily average them. It describes them by
+    count and by the `图N` numbers the shot text was compiled to — not as a fixed
+    "tone, cast, prop, previous frame" sequence. A shot ships only the references its own
+    prefixes and mentions select, so that sequence was usually untrue, and a model told
+    the first image is the tone sheet when it is a character sheet draws the wrong thing.
+    With none, saying so stops the model from inventing a reference to stay faithful to.
 
     The instruction against text is load-bearing rather than cosmetic: the cast and prop
-    sheets now print names and setting notes next to the drawings, and without this the
-    model copies those captions straight into the rendered shot.
+    sheets print names and setting notes next to the drawings, and without this the model
+    copies those captions straight into the rendered shot.
     """
+    if reference_count > 0:
+        reference_lines = [
+            f"本次随附 {reference_count} 张参考图，分镜内容里的「图1」「图2」…按顺序对应它们并写明了各自的用途："
+            "基调图决定光线、色调与渲染风格，角色与道具设定图决定人物长相、服饰与道具外观，"
+            "其他分镜的成图决定场景与镜头的连续性。请严格沿用，不要重新设计人物或场景。",
+            "重要：参考图上的角色名、道具名、简介、序号与设定文字只是给你看的说明，"
+            "成片画面里绝对不能出现任何文字、标注、信息栏、字幕或水印。",
+        ]
+    else:
+        reference_lines = [
+            "本次没有参考图：人物的长相、服饰与场景完全依据下面的文字描述绘制，描述里的每一处外观细节都要画准。",
+            "成片画面里绝对不能出现任何文字、标注、信息栏、字幕或水印。",
+        ]
     parts = [
         f"为短剧《{episode_title.strip()}》绘制第 {order}/{total} 个分镜的成片画面。",
-        "参考图依次是：整集基调图（决定光线、色调与渲染风格）、角色设定三面图（决定人物长相与服饰）、"
-        "道具设定图（决定道具外观）、上一个分镜的成图（决定场景与镜头的连续性）。"
-        "请严格沿用它们，不要重新设计人物或场景。",
-        "重要：参考图上的角色名、道具名、简介与设定文字只是给你看的说明，"
-        "成片画面里绝对不能出现任何文字、标注、信息栏、字幕或水印。",
+        *reference_lines,
         "只画这一个分镜，单幅完整画面，不要拼图、不要网格。",
+        IMAGE_QUALITY_DIRECTIVE,
         f"分镜内容：{shot_text.strip()}",
         f"整体风格：{style_prompt.strip()}。" if style_prompt.strip() else "",
         f"避免出现：{negative_prompt.strip()}。" if negative_prompt.strip() else "",

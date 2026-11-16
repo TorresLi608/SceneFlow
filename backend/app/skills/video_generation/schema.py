@@ -31,8 +31,8 @@ class VideoGenerationInput(SkillModel):
             require_media_kind(reference, "video")
         for reference in self.reference_audios:
             require_media_kind(reference, "audio")
-        if self.last_frame is not None and self.first_frame is None:
-            raise ValueError("last frame requires an explicit first frame")
+        # A last frame alone is valid: providers take the two slots independently, and
+        # SceneFlow already renders shots that pin only where the clip must end.
         return self
 
 

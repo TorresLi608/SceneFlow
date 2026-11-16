@@ -4,7 +4,7 @@ from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
-from ..base import MediaArtifact, ModelSettings, NonEmptyStr, SkillModel, require_media_kind
+from ..base import MediaArtifact, ModelSettings, NonEmptyStr, SkillModel, require_media_kind, require_unique
 
 
 class VoiceSpec(SkillModel):
@@ -45,8 +45,13 @@ class VoiceDesignInput(SkillModel):
                 raise ValueError("synthesis requires lines and a voice for every line")
         elif self.lines:
             raise ValueError("dialogue lines require synthesize mode")
-        if len({line.key for line in self.lines}) != len(self.lines):
-            raise ValueError("dialogue line keys must be unique")
+        # Fields another mode owns are rejected rather than ignored, so a caller that mixed
+        # two modes finds out instead of paying for the one it did not mean.
+        if self.reference_audio is not None and self.mode != "clone":
+            raise ValueError("reference audio requires clone mode")
+        if self.voice is not None and self.mode not in {"select", "synthesize"}:
+            raise ValueError("a provider voice requires select or synthesize mode")
+        require_unique([line.key for line in self.lines], "dialogue line keys")
         return self
 
 
@@ -70,4 +75,5 @@ class VoiceDesignOutput(SkillModel):
         require_media_kind(self.preview_audio, "audio")
         if self.voice is None and not self.clips:
             raise ValueError("voice output requires a voice or dialogue audio clips")
+        require_unique([clip.line_key for clip in self.clips], "dialogue clip line keys")
         return self

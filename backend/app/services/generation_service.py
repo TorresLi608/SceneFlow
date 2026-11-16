@@ -23,7 +23,13 @@ from app.services.artifact_service import (
 from app.services.usage_service import record_usage, require_model_balance
 from app.services.video_service import generate_video
 from app.services.prompt_compiler import compile_prompt
-from app.services.prompt_service import with_visual_style
+from app.services.prompt_service import (
+    VIDEO_QUALITY_DIRECTIVE,
+    dialogue_performance,
+    video_continuity,
+    video_direction,
+    with_visual_style,
+)
 from app.utils.common import now
 
 
@@ -313,7 +319,13 @@ async def run_generation(
 def build_image_prompt(scene: dict[str, Any]) -> str:
     narration = str(scene.get("narration") or "").strip()
     visual = str(scene.get("visual_prompt") or narration).strip()
-    prompt = f"Create a storyboard frame for a short video. Keep one clear subject, strong composition, high detail, no text, no watermark. Scene narration: {narration}. Visual direction: {visual}."
+    prompt = (
+        "Create a finished storyboard frame for a short drama. Keep one clear subject in sharp focus, "
+        "a strong composition with foreground, midground and background depth, motivated lighting with a "
+        "clear key-light direction, and high detail. Faces must be well-formed and expressive, with correct "
+        "anatomy and hands; no extra or fused limbs, no duplicated characters, no blur, no text, no watermark. "
+        f"Scene narration: {narration}. Visual direction: {visual}."
+    )
     framing = ", ".join(
         part for part in (str(scene.get("shot_type") or "").strip(), str(scene.get("camera_move") or "").strip()) if part
     )
@@ -456,18 +468,21 @@ async def _generate_scene_video(
         ).strip()
         if not prompt:
             raise ValueError("该分镜缺少画面提示词")
-        # Camera and transition reach the video model or nothing does — they are the two
-        # things the breakdown works out that the still prompt has no place to carry.
-        direction = "；".join(
-            part
-            for part in (
-                f"运镜：{str(scene.get('camera_move') or '').strip()}" if scene.get("camera_move") else "",
-                f"转场：{str(scene.get('transition') or '').strip()}" if scene.get("transition") else "",
-            )
-            if part
+        # Shot size, camera and transition reach the video model or nothing does — they
+        # are what the breakdown works out that the still prompt has no place to carry.
+        direction = video_direction(
+            str(scene.get("shot_type") or ""),
+            str(scene.get("camera_move") or ""),
+            str(scene.get("transition") or ""),
+            prompt,
         )
         if direction:
             prompt = f"{prompt}\n{direction}"
+        dialogue = str(scene.get("dialogue") or "").strip()
+        speaker_name = str((scene.get("speaker") or {}).get("name") or "")
+        if dialogue:
+            # Directly above the line `compile_prompt` appends, so the two read together.
+            prompt = f"{prompt}\n{dialogue_performance(speaker_name)}"
         # Ahead of the motion prompt and before compiling, for the same reason as the still:
         # the preamble's mentions were resolved first, so they must read first too.
         prefix_text = str(scene.get("videoPromptPrefixText") or options.get("videoPromptPrefixText") or "").strip()
@@ -478,16 +493,16 @@ async def _generate_scene_video(
             provider=config["provider"],
             model=config["model"],
             references=scene.get("compiledVideoReferenceItems") or options.get("compiledVideoReferenceItems") or [],
-            dialogue=str(scene.get("dialogue") or ""),
+            dialogue=dialogue,
             image_offset=image_offset,
-            speaker_name=str((scene.get("speaker") or {}).get("name") or ""),
+            speaker_name=speaker_name,
         )["prompt"]
-        previous_prompt = str(scene.get("previous_video_prompt") or "").strip()
-        if previous_prompt:
-            prompt = (
-                f"{prompt}\n连续性约束：本镜开场必须直接承接上一镜结束时的人物姿态、位置、朝向、服装、手持物和环境状态，"
-                f"不得无过渡改变。上一镜提示词：{previous_prompt}"
-            )
+        # The previous shot's own action only: its label and 【承接块】 describe an earlier
+        # shot still, and quoting them made the model open on the wrong moment.
+        continuity = video_continuity(str(scene.get("previous_video_prompt") or ""))
+        if continuity:
+            prompt = f"{prompt}\n{continuity}"
+        prompt = f"{prompt}\n{VIDEO_QUALITY_DIRECTIVE}"
         prompt = with_visual_style(prompt, str(scene.get("style_prompt") or "").strip())
         duration = _scene_duration(scene, options, capabilities)
         started_at = time.monotonic()

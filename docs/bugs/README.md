@@ -10,6 +10,8 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20261116-production-prompt-coherence | AI 生剧、漫剧、分镜拆解、BREAKDOWN_SYSTEM、shot_prompt、参考图依次是、连续性约束、承接块、转场、硬切、台词时长、cinematic anime、optimize_script、画面质量 | 成图模板描述了未发送的参考图、连续性约束引用上一镜的序号与承接块、硬切被发给视频模型、片段短于台词、剧本提示词写死 anime；现按实际参考图描述，重写拆解导演提示词并补充时长下限、表演与完成度要求 | 已修改，离线自检通过；真实模型成片效果未验证 | 2026-11-16 | [生剧提示词与衔接逻辑](2026-11-16-production-prompt-coherence.md) |
+| BUG-20261116-skills-contract-defects | app/skills、SkillResult、extra_forbidden、INVALID_INPUT、to_tool、adapter、ModelSettings、baseUrl、lastFrame、existingShots、SkillExecutionError、SkillUnavailableError | 技能骨架评审：裸 SkillResult 装不了输出、协议比现有业务严、adapter 泄露原始校验错误并把模型配置暴露给 Agent、baseUrl 可带凭据等；现新增结果构造方法、脱敏错误明细、宿主绑定的工具 schema 并放宽 / 补齐校验 | 已修复，离线自检通过；尚无真实 runner 验证 | 2026-11-16 | [技能骨架协议缺陷](2026-11-16-skills-contract-defects.md) |
 | BUG-20261106-image-history-preview-stale | 图片生成、历史记录、旧图残留、A 切 B、文图错位、next/image、onLoad、key、乱序响应 | 历史切换复用图片节点，新图加载前继续显示旧图；现原图预览按 URL 重建并显示加载/失败状态，全屏共用 | 前端检查、25 项测试及隔离浏览器回归通过 | 2026-11-06 | [历史切换旧图残留](2026-11-06-image-history-preview-stale.md) |
 | BUG-20261106-image-relay-auto-size | 图片生成、GIF、GPT Image 2.6、New API、new_api_error、invalid_request、size must use the exact widthxheight format、auto、1024x1024 | 兼容中转拒绝官方允许的 auto 尺寸；共享图片生成/编辑适配器在中转上转为明确尺寸，保留官方 auto 和静态图显式尺寸 | 本地复现与修复验证通过；真实中转待重试 | 2026-11-06 | [图片中转自动尺寸](2026-11-06-image-relay-auto-size.md) |
 | BUG-20261104-image-history-loading | 图片历史、页面缓存、接口变慢、缩略图、thumbnailUrl、IntersectionObserver、分页、nextCursor | 历史小图使用高清原图且一次返回 50 条；新图增加私有 WebP 缩略图，列表按可视区域加载并按 20 条游标分页，旧图不补齐 | 已验证：后端五组自检、前端检查及 25 项测试、隔离浏览器回归通过；真实接口竞争瓶颈未实测 | 2026-11-04 | [图片历史加载压力](2026-11-04-image-history-loading.md) |

@@ -111,6 +111,8 @@ TARGET_INSTRUCTIONS = {
     "video": (
         "本次只需要补充视频分镜：为下方已有的每个分镜，按原顺序填写 cameraMove、transition、"
         "durationSeconds、videoPrompt。narration 与 visualPrompt 请原样回填，不要改写。"
+        "videoPrompt 的动作必须从该分镜的画面提示词所定格的那一瞬间出发，并接住上一个分镜结束时的状态；"
+        "有台词的分镜，时长要足够把台词说完。"
         "返回的分镜数量必须与已有分镜完全一致。"
     ),
     "both": "本次需要同时拆解画面分镜与视频分镜：所有字段都要填写完整。",
@@ -142,7 +144,10 @@ def build_user_prompt(
     props = [item for item in (props or []) if isinstance(item, dict)]
     existing_shots = [item for item in (existing_shots or []) if isinstance(item, dict)]
     parts = [TARGET_INSTRUCTIONS.get(target, TARGET_INSTRUCTIONS["both"])]
-    parts.append("连续性要求：按镜头顺序保持同场景中的人物外观、服装、道具、空间位置、视线、光线和情绪变化连贯；切换场景时写明转场并保留人物形象设定。")
+    parts.append(
+        "连续性要求：按镜头顺序保持同场景中的人物外观、服装、道具、空间位置、视线、光线和情绪变化连贯；"
+        "切换场景时写明转场并保留人物形象设定。台词逐字沿用剧本原文，不得改写或增删。"
+    )
     if detail_level == "custom" and (detail_prompt or "").strip():
         parts.append(f"自定义拆分要求（优先遵守）：\n{detail_prompt.strip()[:6000]}")
     else:
@@ -166,6 +171,14 @@ def build_user_prompt(
                 line
                 for line in (
                     f"{index}. 剧情：{str(shot.get('narration') or '').strip()}",
+                    # The line decides how long the shot runs and who is performing in it;
+                    # without it the motion pass times every shot as if it were silent.
+                    f"   台词：{str(shot.get('dialogue') or '').strip()}"
+                    if str(shot.get("dialogue") or "").strip()
+                    else "",
+                    f"   景别：{str(shot.get('shot_type') or '').strip()}"
+                    if str(shot.get("shot_type") or "").strip()
+                    else "",
                     f"   画面提示词：{str(shot.get('visual_prompt') or '').strip()}"
                     if str(shot.get("visual_prompt") or "").strip()
                     else "",

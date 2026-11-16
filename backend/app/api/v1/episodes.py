@@ -45,7 +45,7 @@ from app.services.project_service import (
     scenes_with_assets,
     selected_scenes,
 )
-from app.services.prompt_service import with_shot_label, visual_style_prompt, with_visual_style
+from app.services.prompt_service import shot_duration_seconds, with_shot_label, visual_style_prompt, with_visual_style
 from app.services.prompt_prefix_service import combined_prompt, combined_references, stored_prompt_prefixes
 from app.services.reference_service import resolve_generation_references, stored_generation_references
 from app.services.storyboard_service import StoryboardPlan, run_storyboard, run_tone_sheet
@@ -200,12 +200,15 @@ def _image_config(session, user_id: int, project) -> dict[str, Any]:
     return config
 
 
-def _shot_values(draft: Any, target: str, order: int) -> dict[str, Any]:
+def _shot_values(draft: Any, target: str, order: int, dialogue: str | None = None) -> dict[str, Any]:
     """Columns a drafted shot writes, narrowed to what this target actually produced.
 
     Both prompts are re-labelled from `order` rather than trusting the model's own
     numbering: it drops the opener often enough, and the number has to survive shots being
     inserted, deleted or reordered afterwards.
+
+    `dialogue` is the line the shot will actually carry. A motion-only pass does not write
+    dialogue, so the stored line is passed in rather than read off the draft.
     """
     values: dict[str, Any] = {}
     if target in {"shots", "both"}:
@@ -222,7 +225,11 @@ def _shot_values(draft: Any, target: str, order: int) -> dict[str, Any]:
             video_prompt=with_shot_label(draft.videoPrompt, order),
             # Seconds in, milliseconds out: the column is milliseconds like every other
             # duration here, but a model asked for milliseconds guesses far worse.
-            duration_ms=draft.durationSeconds * 1000,
+            # ...and raised until the shot's line fits: a clip shorter than its dialogue
+            # cuts the line off, and nothing downstream can lengthen it.
+            duration_ms=shot_duration_seconds(
+                draft.durationSeconds, draft.dialogue if dialogue is None else dialogue
+            ) * 1000,
         )
     return values
 
@@ -292,7 +299,10 @@ def _apply_video_shots(project_id: str, scenes: list[Scene], drafts: list[Any]) 
             session.execute(
                 update(Scene)
                 .where(Scene.id == scene.id)
-                .values(updated_at=stamp, **_shot_values(draft, "video", scene.order_num or index)),
+                .values(
+                    updated_at=stamp,
+                    **_shot_values(draft, "video", scene.order_num or index, scene.dialogue or ""),
+                ),
                 execution_options={"synchronize_session": False},
             )
 
