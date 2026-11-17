@@ -476,7 +476,6 @@ export function ModelConfigManager() {
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const options = providerOptions[purpose];
   const isRelay = isRelayConnection(provider, connectionMode);
-  const selectedProviderOption = providerOption(purpose, provider);
   const usesKnownModelList =
     ["edge", "system"].includes(provider) ||
     (provider === "qwen" &&
@@ -1273,7 +1272,7 @@ export function ModelConfigManager() {
                     id="adminConfigName"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="例如：通义千问 2.5 旗舰"
+                    placeholder={t("settings.namePlaceholder")}
                     className="h-9 text-xs"
                   />
                 </div>
@@ -1418,7 +1417,7 @@ export function ModelConfigManager() {
                         ?? defaultVideoCapabilities(provider, value),
                       );
                   }}
-                  placeholder={selectedProviderOption?.modelPlaceholder}
+                  placeholder={t("settings.modelSeriesPlaceholder")}
                   selectLabel={t("admin.selectModelSeries")}
                   emptyLabel={t("admin.noMatchingModels")}
                 />
