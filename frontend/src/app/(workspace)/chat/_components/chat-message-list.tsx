@@ -22,6 +22,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { rewriteArtifactLinks } from "@/lib/artifact-url";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ChatAgentStep, ChatAttachment, ChatMessage } from "@/types/chat";
@@ -430,8 +431,16 @@ function handleCodeCopyCapture(event: MouseEvent<HTMLDivElement>) {
   copyWithFallback(codeText);
 }
 
+/**
+ * 消息正文里的图片/文档链接由后端按 SCENEFLOW_PUBLIC_BASE_URL 签发并随消息落库；该变量保持回环默认值
+ * （或部署后变更）时，线上浏览器访问不到。渲染与复制前统一改写为当前页面同源的 BFF 代理地址。
+ */
+function withReachableArtifactLinks(content: string) {
+  return rewriteArtifactLinks(content, typeof window === "undefined" ? "" : window.location.origin);
+}
+
 function MessageContent({ content, isRunning }: { content: string; isRunning: boolean }) {
-  const sanitizedContent = sanitizeChatMessageContent(content);
+  const sanitizedContent = withReachableArtifactLinks(sanitizeChatMessageContent(content));
   return (
     <div className="relative min-w-0 max-w-full">
       <TextMessagePartProvider text={sanitizedContent} isRunning={isRunning}>
@@ -501,7 +510,7 @@ function MessageActionBar({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    copyWithFallback(content);
+    copyWithFallback(withReachableArtifactLinks(content));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [content]);

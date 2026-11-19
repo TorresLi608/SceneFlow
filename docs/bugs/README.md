@@ -10,6 +10,7 @@
 
 | 问题 ID | 检索词 / 模块 | 摘要 | 状态 | 最近更新 | 详情 |
 |---|---|---|---|---|---|
+| BUG-20261119-chat-artifact-link-loopback-origin | 智能问答、generate_pdf、generate_docx、PDF、Word、下载链接、127.0.0.1:8080、SCENEFLOW_PUBLIC_BASE_URL、/api/chat/artifacts、artifactBffUrl、rewriteArtifactLinks、线上部署 | 线上未配置 SCENEFLOW_PUBLIC_BASE_URL 时签名链接指向回环地址，聊天正文的文档链接和图片未走同源代理而无法下载；现渲染与复制前改写为当前站点的 BFF 地址，历史消息同样生效 | 已修改待验证：单测、类型检查、lint 与浏览器实测均未执行 | 2026-11-19 | [问答文档链接指向回环地址](2026-11-19-chat-artifact-link-loopback-origin.md) |
 | BUG-20261116-production-prompt-coherence | AI 生剧、漫剧、分镜拆解、BREAKDOWN_SYSTEM、shot_prompt、参考图依次是、连续性约束、承接块、转场、硬切、台词时长、cinematic anime、optimize_script、画面质量 | 成图模板描述了未发送的参考图、连续性约束引用上一镜的序号与承接块、硬切被发给视频模型、片段短于台词、剧本提示词写死 anime；现按实际参考图描述，重写拆解导演提示词并补充时长下限、表演与完成度要求 | 已修改，离线自检通过；真实模型成片效果未验证 | 2026-11-16 | [生剧提示词与衔接逻辑](2026-11-16-production-prompt-coherence.md) |
 | BUG-20261116-skills-contract-defects | app/skills、SkillResult、extra_forbidden、INVALID_INPUT、to_tool、adapter、ModelSettings、baseUrl、lastFrame、existingShots、SkillExecutionError、SkillUnavailableError | 技能骨架评审：裸 SkillResult 装不了输出、协议比现有业务严、adapter 泄露原始校验错误并把模型配置暴露给 Agent、baseUrl 可带凭据等；现新增结果构造方法、脱敏错误明细、宿主绑定的工具 schema 并放宽 / 补齐校验 | 已修复，离线自检通过；尚无真实 runner 验证 | 2026-11-16 | [技能骨架协议缺陷](2026-11-16-skills-contract-defects.md) |
 | BUG-20261106-image-history-preview-stale | 图片生成、历史记录、旧图残留、A 切 B、文图错位、next/image、onLoad、key、乱序响应 | 历史切换复用图片节点，新图加载前继续显示旧图；现原图预览按 URL 重建并显示加载/失败状态，全屏共用 | 前端检查、25 项测试及隔离浏览器回归通过 | 2026-11-06 | [历史切换旧图残留](2026-11-06-image-history-preview-stale.md) |

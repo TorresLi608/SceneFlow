@@ -213,7 +213,7 @@ DATABASE_URL="sqlite:///$scratch_dir/app.db" SCENEFLOW_PRIVATE_GENERATED_DIR="$s
 ```
 
 - **Requests fail:** verify backend port and frontend rewrite origin, then restart the frontend after env edits.
-- **Media fails while APIs work:** inspect `SCENEFLOW_PUBLIC_BASE_URL`; artifact requests can go directly from browser to backend.
+- **Media fails while APIs work:** inspect `SCENEFLOW_PUBLIC_BASE_URL`; artifact requests can go directly from browser to backend. Deployments must set it to a browser-reachable backend origin (Compose only picks it up from `backend/.env`). Workspace panels and chat message bodies rewrite signed links to the same-origin `/api/bff/chat/artifacts/*` proxy, so they keep working when it is wrong; links read straight from API responses do not.
 - **Queued work never starts:** check `SCENEFLOW_WORKER_ENABLED`, worker logs, and the job's lease/status. A 202 is not completion.
 - **Interrupted render:** startup clears abandoned project busy state but does not resume work. Inspect existing media before explicitly retrying; exports have separate state.
 - **Port occupied:** inspect its owner or choose a free port; the root launcher forcibly frees its selected port.
